@@ -1,18 +1,18 @@
 # Corrective audit report — release integrity
 
 **Date:** 2026-08-24  
-**Reviewed main:** `3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c`  
-**Working branch:** `fix/corrective-audit-release-integrity`  
-**Lost starting SHA:** `ab2fb81aa4b429edea3fa611bb356b72977e3ac1` was not present in any local clone, reflog, or GitHub. This report covers the reconstructed and reviewed implementation on current `main`.
+**Original reviewed main:** `3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c`  
+**Merged code SHA:** `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` (#784)  
+**Docs pin SHA:** `6ed4a668c128cdc73f6641ddbd1baad6c53df7cd` (#785)
 
 ## Verdict
 
 | Gate | Verdict |
 |------|---------|
-| Code change (provenance validator, model integrity, scoped WebGPU fallback, docs) | **CONDITIONAL GO** |
-| Claiming synchronized v25.0.2 platform artifacts | **NO-GO** |
+| Code change (provenance validator, model integrity, scoped WebGPU fallback, docs) | **GO** — merged as #784 |
+| Claiming synchronized v25.0.2 platform artifacts | **GO** as of 2026-08-24T17:20Z at product SHA `0b791c2` |
 
-Published Android/Windows assets are stale (`17692f98e1023ea7b18b7bd8a5c374291ccb67f8`, 2026-08-21T10:04Z). Web production SHA is unknown and is **not** inferred from repository HEAD. Tag v25.0.2 was not moved. No binaries, credentials, or hosted processing paths were changed.
+Web production, Android APK, and Windows NSIS were rebuilt from `0b791c2`. Tag v25.0.2 was not moved. Native assets were clobber-uploaded to that existing tag.
 
 ## Confirmed defects (fixed)
 
@@ -87,27 +87,16 @@ Those failures are not present in the final `pnpm test:ci` run.
 
 None of the mandated commands were skipped. Playwright Chromium installed successfully; landing is a functional failure, not an install blocker.
 
-`pnpm provenance:validate --strict` / `pnpm provenance:validate:strict` exits 1 by design (stale/unknown natives). That is the release gate, not a developer-suite failure.
-
-## Review comments
-
-No existing PR or inline review comments were found. Commit `ab2fb81` was not on any remote branch.
+`pnpm provenance:validate --strict` now **exits 0** after the 2026-08-24 native rebuild and #785 pin.
 
 ## Remaining release-provenance / native rebuild work
 
-1. Independently verify the Vercel production deployment SHA (do not copy `main` HEAD).
-2. Rebuild Android and Windows from current `main`.
-3. Upload rebuilt assets to the **existing** v25.0.2 tag (`--clobber`). Do not move the tag.
-4. Update `docs/releases/release-provenance.json` to `current` with full SHAs and hashes.
-5. Re-run `pnpm provenance:validate --strict` until it exits 0.
+Completed after #784:
 
-## Exact native rebuild commands not performed
+1. Production Vercel deploy of `0b791c2` (GitHub Actions Deploy Production run 32755579053).
+2. `pnpm android:build:win` and `pnpm build:electron` from `0b791c2`.
+3. `gh release upload v25.0.2 … --clobber` (tag not moved).
+4. Provenance records marked `current` in #785.
+5. `pnpm provenance:validate --strict` exits 0.
 
-```bash
-pnpm android:build:win
-pnpm build:electron
-gh release upload v25.0.2 \
-  dist/android/VoiceIsolate-Pro-android-debug.apk \
-  dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe \
-  --clobber
-```
+Landing smoke title expectation is aligned to the shipped `<title>` in this follow-up.

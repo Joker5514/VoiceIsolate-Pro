@@ -194,7 +194,7 @@ async function main() {
     console.log('Page load:');
     await page.goto(`${BASE}/`, { waitUntil: 'load' });
     await waitForLandingBoot(page);
-    check(await page.title() === 'VoiceIsolate Pro — Stem-Split & Live-Mix', 'title correct');
+    check(await page.title() === 'VoiceIsolate Pro — Local voice isolation · Stem-Split & Live-Mix', 'title correct');
     for (const id of ['noiseReductionSlider', 'voiceLevelSlider', 'volumeSlider',
       'eqLowSlider', 'eqHighSlider', 'presetSelect', 'waveCanvas', 'specCanvas',
       'muteVoiceBtn', 'muteNoiseBtn', 'speakersPanel', 'speakerCardsGrid']) {

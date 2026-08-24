@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>Best-in-class voice isolation &amp; audio enhancement — 100% on-device, zero cloud.</strong><br>
-  32-stage Octa-Pass DSP · Hybrid ML (Demucs v4 + BSRNN + local target voiceprint) · WebGPU-Accelerated · Privacy-First
+  32-stage Octa-Pass DSP · Hybrid ML (BSRNN default + optional RNNoise · Demucs unshipped) · WebGPU-Accelerated · Privacy-First
 </p>
 
 <p align="center">
@@ -105,7 +105,7 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 | **Whisper / faint speech** | WhisperLogic + WhisperHunter — detect low-level speech-like zones and process carefully (no word hallucination; no cloud ASR) |
 | **Live-Mix (preview)** | 37 real-time controls via AudioWorklet + PlaybackMixer — sliders never re-run ML |
 | **Offline process** | 27 process-time spectral controls + single-pass ML stem separation (one STFT → ops → one iSTFT) |
-| **ML models (shipped)** | Demucs v4 quant, BSRNN vocals, RNNoise suppressor, Silero VAD — ONNX Runtime Web |
+| **ML models (shipped)** | BSRNN vocals (default), RNNoise suppressor (optional maximum), Silero VAD — ONNX Runtime Web. Demucs is optional/unshipped. |
 | **GPU execution** | WebGPU preferred → WASM fallback |
 | **Speaker diarization** | Classical + optional worker path on clean stem; mute/solo/volume per speaker |
 | **Target voice focus** | Step-by-step local enrollment (mel voiceprint) on **Landing + Engineer** (+ Android/Electron same shell); soft gain isolate; diarization fusion when available; no re-ML |
@@ -208,11 +208,10 @@ Latest product snapshot: [`docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf`
 
 | Model | Path | Task | Approx size |
 |-------|------|------|-------------|
-| Demucs v4 quantized | `public/app/models/demucs_v4_quantized.onnx` | Vocal / source separation | ~149 MB |
-| Demucs v4 fp32 | `demucs_v4_fp32.onnx` (optional heavy) | Separation | ~370 MB |
-| Band-Split RNN | `bsrnn_vocals.onnx` | Vocal mask | ~3.7 MB |
-| RNNoise suppressor | `rnnoise_suppressor.onnx` | Noise suppression mask | ~2 MB |
+| Band-Split RNN | `bsrnn_vocals.onnx` | Vocal mask (**shipped default**) | ~3.7 MB |
+| RNNoise suppressor | `rnnoise_suppressor.onnx` | Noise suppression mask (optional maximum) | ~2 MB |
 | Silero VAD | `silero_vad.onnx` / `_int8` | Voice activity | ~2.3 MB |
+| Demucs v4 quantized | `demucs_v4_quantized.onnx` | Optional / unshipped waveform separator | ~149 MB |
 
 Loaded lazily · SHA-256 verified via `src/core/ModelManifest.js` · cached in IndexedDB where supported.
 
@@ -284,12 +283,12 @@ binary availability still requires an HTTP check against GitHub Releases.
 
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | 101,620,559 bytes | **v25.0.2** release asset, last updated **2026-08-21T10:04:08Z** |
-| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | 144,646,374 bytes | **v25.0.2** release asset, last updated **2026-08-21T10:04:10Z** |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | 101,347,500 bytes | **v25.0.2** release asset, last updated **2026-08-24T17:20:19Z** from `0b791c2` |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | 144,628,415 bytes | **v25.0.2** release asset, last updated **2026-08-24T17:20:22Z** from `0b791c2` |
 
 In-repo version (Web / Android `versionName` / Electron artifact): **25.0.2** (`versionCode` / iOS build **250002**).  
 Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (published **2026-08-13T06:28:53Z**).
-Release-asset timestamps above are verified from GitHub Releases; do not infer a source commit from asset metadata.
+Published Web / Android / Windows artifacts were rebuilt from `0b791c2` (#784). Provenance: [`docs/releases/release-provenance.json`](docs/releases/release-provenance.json).
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
@@ -400,7 +399,7 @@ android/             Capacitor Android project
 ## Release notes (v25.0.2)
 
 - **Google Drive** — optional import/export on Web, Desktop, and Android (same shell); Firebase `drive.file` scope; ADR-002 (#776)
-- **Native rebuild (2026-08-21T10:04Z)** — Android APK + Windows EXE release assets refreshed (#776 Drive + #774 DSP)
+- **Native rebuild (2026-08-24T17:20Z)** — Android APK + Windows EXE clobber-uploaded to existing v25.0.2 from `main` @ `0b791c2` (#784). Tag not moved.
 - **Desktop 88% freeze** — cooperative post-ML finalization; truthful progress 82→100 ([PROCESS_PROGRESS.md](docs/guides/PROCESS_PROGRESS.md)) (#772)
 - **Android upload** — package-visibility `<queries>`, compact accept, deferred media permission (#770)
 - **Engineer DSP sliders (desktop)** — usable rack layout, 40px targets, numeric entry, lock/search/filter ([DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md)) (#767)

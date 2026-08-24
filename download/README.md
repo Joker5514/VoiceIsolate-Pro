@@ -9,7 +9,7 @@ Web download page: https://voice-isolate-pro.vercel.app/download/
 
 **In-repo version:** **25.0.2** · build **250002**  
 **Published GitHub Release (latest):** **v25.0.2**  
-**Last native rebuild:** **2026-08-21T10:04Z** (`17692f9` — #776 Google Drive + #774). Guide: `docs/guides/GOOGLE_DRIVE.md`.
+**Last native rebuild:** **2026-08-24T17:20Z** (`0b791c2` — #784). Guide: `docs/guides/GOOGLE_DRIVE.md`.
 
 Local rebuild (artifacts under `dist/`, not committed):
 
