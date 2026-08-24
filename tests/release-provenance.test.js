@@ -177,6 +177,17 @@ describe('release provenance validator', () => {
     expect(result.errors.some((e) => /https URL/.test(e.message))).toBe(true);
   });
 
+  test('rejects hostless https URLs and impossible calendar dates', () => {
+    const doc = validDoc();
+    doc.generatedAt = '2026-02-31T10:00:00Z';
+    const android = doc.platforms.find((p) => p.platform === 'android');
+    android.artifact.url = 'https://';
+    const result = provenance.validateProvenance(doc);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === 'generatedAt')).toBe(true);
+    expect(result.errors.some((e) => /hostname/.test(e.message))).toBe(true);
+  });
+
   test('rejects unsupported same-build claims', () => {
     const doc = validDoc();
     doc.claims.sameBuildAcrossWebAndroidWindowsMainAndTag = true;

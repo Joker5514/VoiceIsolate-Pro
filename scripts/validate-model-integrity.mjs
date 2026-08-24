@@ -141,9 +141,17 @@ export function validateModelIntegrity(options = {}) {
     }
   }
 
-  const vercelJson = options.vercelJson === undefined
-    ? readJsonIfExists(path.join(root, 'vercel.json'))
-    : options.vercelJson;
+  let vercelJson = options.vercelJson;
+  if (vercelJson === undefined) {
+    const loaded = readJsonFile(path.join(root, 'vercel.json'));
+    if (loaded.error) {
+      errors.push(`vercel.json exists but is unreadable: ${loaded.error}`);
+    } else if (loaded.missing) {
+      notices.push('vercel.json not present; rewrite ownership not checked');
+    } else {
+      vercelJson = loaded.json;
+    }
+  }
   let rewrites = null;
   if (vercelJson) {
     rewrites = inspectVercelModelRewrites(vercelJson);
@@ -152,12 +160,10 @@ export function validateModelIntegrity(options = {}) {
     } else if (!rewrites.usesBlobStorage) {
       notices.push('vercel.json /app/models rewrite is present but not a *.blob.vercel-storage.com destination');
     }
-  } else {
-    notices.push('vercel.json not present; rewrite ownership not checked');
   }
 
   if (options.downloadRemote) {
-    notices.push('download-remote requested — caller must hash downloaded bytes before claiming a remote pass');
+    errors.push('--download-remote is not implemented; refusing to claim remote Blob hashes without downloading bytes');
   } else {
     notices.push('remote Blob hashes were not downloaded and are not claimed as passed');
   }
@@ -182,12 +188,12 @@ function verifyFile(entry, filePath) {
   return { ok, size, hash, missing: false };
 }
 
-function readJsonIfExists(filePath) {
+function readJsonFile(filePath) {
+  if (!fs.existsSync(filePath)) return { missing: true, json: null, error: null };
   try {
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
+    return { missing: false, json: JSON.parse(fs.readFileSync(filePath, 'utf8')), error: null };
+  } catch (err) {
+    return { missing: false, json: null, error: err.message };
   }
 }
 

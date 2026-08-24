@@ -30,14 +30,31 @@ export const ALLOWED_VERIFICATION_METHODS = Object.freeze([
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const GIT_SHA_RE = /^[0-9a-f]{40}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
-const HTTPS_RE = /^https:\/\//i;
+function isHttpsUrl(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
 
 function hasUnsupportedSameBuildClaim(text) {
   const sentences = String(text || '').split(/(?<=[.!?])\s+/);
   return sentences.some((sentence) => {
-    if (!/same build/i.test(sentence)) return false;
-    if (/\bnot\b/i.test(sentence) || /do\s+\*\*not\*\*/i.test(sentence)) return false;
-    return /web/i.test(sentence) && /android/i.test(sentence) && /windows/i.test(sentence);
+    const claim = /same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(sentence);
+    if (!claim) return false;
+    if (!(/web/i.test(sentence) && /android/i.test(sentence) && /windows/i.test(sentence))) {
+      return false;
+    }
+    if (
+      /do\s+\*\*not\*\*|do not claim|\*\*not\*\*\s+currently contain the same|not currently contain the same|not a claim that/i
+        .test(sentence)
+    ) {
+      return false;
+    }
+    return true;
   });
 }
 
@@ -49,7 +66,22 @@ export const AUTHORITATIVE_DOC_PATHS = Object.freeze([
 ]);
 
 function isIsoTimestamp(value) {
-  return typeof value === 'string' && ISO_RE.test(value) && Number.isFinite(Date.parse(value));
+  if (typeof value !== 'string') return false;
+  const match = ISO_RE.exec(value);
+  if (!match) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const hour = Number(value.slice(11, 13));
+  const minute = Number(value.slice(14, 16));
+  const second = Number(value.slice(17, 19));
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() + 1 === month
+    && date.getUTCDate() === day
+    && date.getUTCHours() === hour
+    && date.getUTCMinutes() === minute
+    && date.getUTCSeconds() === second;
 }
 
 function push(errors, pathRef, message) {
@@ -276,8 +308,8 @@ function validatePlatformRecord(rec, p, doc, errors, notices, strictFailures) {
     if (artifact.sha256 != null && artifact.sha256 !== '' && !SHA256_RE.test(artifact.sha256)) {
       push(errors, `${p}.artifact.sha256`, 'sha256 must be 64 lowercase hex characters when present');
     }
-    if (artifact.url != null && artifact.url !== '' && !HTTPS_RE.test(artifact.url)) {
-      push(errors, `${p}.artifact.url`, 'artifact.url must be an https URL when present');
+    if (artifact.url != null && artifact.url !== '' && !isHttpsUrl(artifact.url)) {
+      push(errors, `${p}.artifact.url`, 'artifact.url must be an https URL with a hostname when present');
     }
     if (rec.platform === 'android' || rec.platform === 'windows') {
       const expectedName = filenameForPlatform(rec.platform, doc.productVersion);
@@ -303,8 +335,8 @@ function validateCurrentRecord(rec, p, doc, errors) {
   }
   const artifact = rec.artifact;
   if (rec.platform === 'web') {
-    if (!HTTPS_RE.test(artifact.url || '')) {
-      push(errors, `${p}.artifact.url`, 'current web records require an https artifact.url');
+    if (!isHttpsUrl(artifact.url || '')) {
+      push(errors, `${p}.artifact.url`, 'current web records require an https artifact.url with a hostname');
     }
     if (rec.verification?.method !== 'vercel-deployment') {
       push(
@@ -318,8 +350,8 @@ function validateCurrentRecord(rec, p, doc, errors) {
     if (artifact.filename !== expectedName) {
       push(errors, `${p}.artifact.filename`, `current records require filename ${expectedName}`);
     }
-    if (!HTTPS_RE.test(artifact.url || '')) {
-      push(errors, `${p}.artifact.url`, 'current records require an https artifact.url');
+    if (!isHttpsUrl(artifact.url || '')) {
+      push(errors, `${p}.artifact.url`, 'current records require an https artifact.url with a hostname');
     }
     if (typeof artifact.sha256 !== 'string' || !SHA256_RE.test(artifact.sha256)) {
       push(errors, `${p}.artifact.sha256`, 'current native records require a 64-character sha256');

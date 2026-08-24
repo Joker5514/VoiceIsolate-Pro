@@ -162,6 +162,26 @@ describe('model integrity validator', () => {
     expect(result.errors.join('\n')).toMatch(/build/);
   });
 
+  test('malformed vercel.json is a validation error, not a silent skip', () => {
+    const bytes = Buffer.from('ok-model');
+    const entry = fixtureEntry('probe', bytes);
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-models-vercel-'));
+    writeOnnx(root, 'public/app/models/probe.onnx', bytes);
+    fs.writeFileSync(path.join(root, 'vercel.json'), '{ not json');
+    const result = integrity.validateModelIntegrity({
+      root,
+      manifest: { probe: entry },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/vercel\.json exists but is unreadable/);
+  });
+
+  test('--download-remote fails closed instead of claiming remote hashes', () => {
+    const result = integrity.validateModelIntegrity({ downloadRemote: true });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/download-remote is not implemented/);
+  });
+
   test('rewrite ownership is logical, not a hardcoded blob host name', () => {
     const state = integrity.inspectVercelModelRewrites({
       rewrites: [

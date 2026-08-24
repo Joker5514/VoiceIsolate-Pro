@@ -172,8 +172,14 @@ check(fs.existsSync(path.resolve(__dirname, '..', 'docs/releases/release-provena
 check(fs.existsSync(path.resolve(__dirname, '..', 'scripts/validate-release-provenance.mjs')), 'provenance validator present');
 check(fs.existsSync(path.resolve(__dirname, '..', 'scripts/validate-model-integrity.mjs')), 'model-integrity validator present');
 const claudeMd = fs.readFileSync(path.resolve(__dirname, '..', 'CLAUDE.md'), 'utf8');
-check(claudeMd.includes("['bsrnn_vocals']"), 'CLAUDE.md names BSRNN as the default isolation chain');
-check(!claudeMd.includes("Default isolation chain:** `['demucs', 'rnnoise']`"), 'CLAUDE.md does not claim Demucs as the default chain');
+check(
+  /^\*\*Default isolation chain:\*\* `\['bsrnn_vocals'\]`/m.test(claudeMd),
+  'CLAUDE.md Default isolation chain heading is BSRNN-only',
+);
+check(
+  !/^\*\*Default isolation chain:\*\* `\['demucs'/m.test(claudeMd),
+  'CLAUDE.md does not claim Demucs as the default chain',
+);
 check(fs.readFileSync(path.resolve(__dirname, '..', 'src/core/audio-config.js'), 'utf8')
   .includes('SAMPLE_RATE = 48000'), 'Canonical SAMPLE_RATE = 48000 in audio-config.js');
 
