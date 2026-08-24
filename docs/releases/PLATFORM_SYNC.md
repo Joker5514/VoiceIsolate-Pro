@@ -4,6 +4,7 @@
 |-------|--------|
 | **Reviewed product SHA** | `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` (#784) |
 | **Git SHA (last native rebuild)** | `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` |
+| **Later docs-only on main** | #785, #786 — do not require a native rebuild |
 | **Package version** | `25.0.2` / build `250002` |
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
 | **Native assets updated (UTC)** | 2026-08-24T17:20Z |

@@ -315,7 +315,7 @@ console.log('\nRelease provenance & shipped models:');
 const provenance = spawnSync(process.execPath, [path.join(__dirname, 'validate-release-provenance.mjs')], {
   stdio: 'inherit',
 });
-check(provenance.status === 0, 'release provenance schema valid (default mode; stale/unknown natives allowed)');
+check(provenance.status === 0, 'release provenance schema valid (default mode)');
 const modelIntegrity = spawnSync(process.execPath, [path.join(__dirname, 'validate-model-integrity.mjs')], {
   stdio: 'inherit',
 });

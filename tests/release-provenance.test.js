@@ -251,7 +251,7 @@ describe('release provenance validator', () => {
     }
   });
 
-  test('CLI default mode exits 0 for the checked-in stale/unknown file', async () => {
+  test('CLI default mode exits 0 for the checked-in provenance file', async () => {
     const code = await provenance.main([]);
     expect(code).toBe(0);
   });
