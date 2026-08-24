@@ -199,6 +199,16 @@ describe('release provenance validator', () => {
     expect(result.errors.filter((e) => String(e.path).startsWith('docs:'))).toEqual([]);
   });
 
+  test('still flags a same-build claim that contains an unrelated not', () => {
+    const doc = validDoc();
+    const result = provenance.validateProvenance(doc, {
+      docs: {
+        'CLAUDE.md': 'Web, Android, and Windows are not independent releases; each shipped the same build as main.',
+      },
+    });
+    expect(result.errors.some((e) => String(e.path).startsWith('docs:'))).toBe(true);
+  });
+
   test('rejects unsupported same-build claims', () => {
     const doc = validDoc();
     doc.claims.sameBuildAcrossWebAndroidWindowsMainAndTag = true;

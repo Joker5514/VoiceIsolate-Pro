@@ -434,6 +434,9 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
     const session = await create(['webgpu'], safeBytes);
     if (_webgpuDisabledReason) {
       _wasmSessionKeys[key] = true;
+      try {
+        if (session && typeof session.release === 'function') await session.release();
+      } catch { /* ignore */ }
       const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
       const wasmSession = await create(['wasm'], wasmBytes);
       SESSION_BACKENDS[key] = 'wasm';
@@ -476,7 +479,13 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
 }
 
 async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
-  if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
+  if (SESSIONS[sessionKey]) {
+    if (_webgpuDisabledReason && SESSION_BACKENDS[sessionKey] !== 'wasm') {
+      delete SESSIONS[sessionKey];
+    } else {
+      return SESSIONS[sessionKey];
+    }
+  }
   if (_sessionInflight[sessionKey]) return _sessionInflight[sessionKey];
   _sessionInflight[sessionKey] = (async () => {
     // Re-check after awaiting the lock — concurrent warmup/process share one compile.
@@ -490,7 +499,7 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
       SESSION_COMPILE_TIMEOUT_MS,
       `Compile ${entry.id}`,
     );
-    if (_webgpuDisabledReason && SESSION_BACKENDS[sessionKey] === 'webgpu') {
+    if (_webgpuDisabledReason && SESSION_BACKENDS[sessionKey] !== 'wasm') {
       delete SESSIONS[sessionKey];
       _wasmSessionKeys[sessionKey] = true;
       const wasmSession = await withTimeout(

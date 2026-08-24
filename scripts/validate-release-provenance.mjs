@@ -49,7 +49,11 @@ function hasUnsupportedSameBuildClaim(text) {
     if (!(/web/i.test(plain) && /android/i.test(plain) && /windows/i.test(plain))) {
       return false;
     }
-    if (/\b(?:do(?:es)?\s+)?not\b.{0,120}same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(plain)) {
+    if (
+      /^\s*do(?:es)? not claim that\b/i.test(plain)
+      || /\bnot a claim that\b/i.test(plain)
+      || /\b(?:do(?:es)?\s+)?not(?:\s+currently)?\s+(?:share|contain|have)(?:s|ed)?\s+(?:the\s+)?same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(plain)
+    ) {
       return false;
     }
     return true;
