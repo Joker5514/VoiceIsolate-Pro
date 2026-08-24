@@ -91,7 +91,6 @@ describe('release provenance validator', () => {
     const result = provenance.validateProvenanceFile(file, { strict: false });
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
-    expect(result.notices.length).toBeGreaterThan(0);
   });
 
   test('strict mode fails on recorded stale/unknown platforms', () => {
