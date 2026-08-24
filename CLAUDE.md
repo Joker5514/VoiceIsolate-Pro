@@ -295,16 +295,14 @@ and verifies Web/PWA, Electron, Android, API health metadata, and download-page
 asset naming (`versionCode` / `CFBundleVersion` = **250002**). Published GitHub
 Release **`latest` = v25.0.2**.
 
-**Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-21T10:04Z** from
-`main` @ `17692f98e1023ea7b18b7bd8a5c374291ccb67f8` (#776 Google Drive + #774 DSP release)
-and clobber-uploaded to **existing** tag v25.0.2. That SHA is **behind** current `main`
-(`3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c`). Web, Android, Windows, `main`, and
-v25.0.2 do **not** currently contain the same build. Do not move the tag.
-Machine-readable record: [docs/releases/release-provenance.json](docs/releases/release-provenance.json).
+**Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-24T17:20Z** from
+`main` @ `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` (#784) and clobber-uploaded to the
+**existing** tag v25.0.2 (tag was not moved). Web production was deployed from the
+same SHA (GitHub Actions Deploy Production run 32755579053). Machine-readable
+record: [docs/releases/release-provenance.json](docs/releases/release-provenance.json).
 Canonical pins: [docs/DOWNLOADS.md](docs/DOWNLOADS.md), [docs/releases/PLATFORM_SYNC.md](docs/releases/PLATFORM_SYNC.md).
-After shell/UX or native WebView changes on `main`, re-run `pnpm android:build:win` +
-`pnpm build:electron` and `gh release upload v25.0.2 … --clobber` (human release
-publish; not part of this code PR).
+After later shell/UX or native WebView changes on `main`, re-run `pnpm android:build:win` +
+`pnpm build:electron` and `gh release upload v25.0.2 … --clobber`.
 
 **Engineer DSP sliders (desktop-first):** rows are built by
 `src/presentation/DspSlider.js` (`createDspSliderRow`) from `SLIDER_REGISTRY` in

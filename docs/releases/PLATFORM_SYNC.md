@@ -2,17 +2,15 @@
 
 | Field | Value |
 |-------|--------|
-| **Reviewed `main` SHA** | `3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c` |
-| **Git SHA (last native rebuild)** | `17692f98e1023ea7b18b7bd8a5c374291ccb67f8` (#776 + #774) |
+| **Reviewed product SHA** | `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` (#784) |
+| **Git SHA (last native rebuild)** | `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` |
 | **Package version** | `25.0.2` / build `250002` |
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
-| **Native assets updated (UTC)** | 2026-08-21T10:04Z |
-| **Artifacts** | APK 101,620,559 bytes · Windows NSIS 144,646,374 bytes |
-| **Sync verdict** | **Not synchronized.** Published Android/Windows artifacts are stale vs current `main`. Web production SHA is unknown (not inferred from HEAD). |
+| **Native assets updated (UTC)** | 2026-08-24T17:20Z |
+| **Artifacts** | APK 101,347,500 bytes · Windows NSIS 144,628,415 bytes |
+| **Sync verdict** | **Synchronized** at `0b791c2`. Web production deploy, Android APK, and Windows NSIS were all built from that SHA. Tag v25.0.2 was not moved. |
 
 Machine-readable record: [release-provenance.json](release-provenance.json).
-
-Do **not** claim that Web, Android, Windows, `main`, and v25.0.2 contain the same build. The tag must not be moved. Rebuild natives from current `main` before any synchronized-release claim.
 
 ## Version sources of truth
 

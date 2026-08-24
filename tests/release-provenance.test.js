@@ -91,13 +91,19 @@ describe('release provenance validator', () => {
     const result = provenance.validateProvenanceFile(file, { strict: false });
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
-    expect(result.notices.length).toBeGreaterThan(0);
   });
 
   test('strict mode fails on recorded stale/unknown platforms', () => {
     const result = provenance.validateProvenance(validDoc(), { strict: true });
     expect(result.ok).toBe(false);
     expect(result.strictFailures.length).toBeGreaterThan(0);
+  });
+
+  test('checked-in synchronized provenance passes strict mode', () => {
+    const file = path.join(__dirname, '../docs/releases/release-provenance.json');
+    const result = provenance.validateProvenanceFile(file, { strict: true });
+    expect(result.errors).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 
   test('rejects duplicate platform records', () => {
@@ -250,9 +256,9 @@ describe('release provenance validator', () => {
     expect(code).toBe(0);
   });
 
-  test('CLI strict mode exits 1 for the checked-in file', async () => {
+  test('CLI strict mode exits 0 for the checked-in synchronized file', async () => {
     const code = await provenance.main(['--strict']);
-    expect(code).toBe(1);
+    expect(code).toBe(0);
   });
 
   test('CLI rejects invalid JSON files', async () => {
