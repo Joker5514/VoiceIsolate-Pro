@@ -144,12 +144,7 @@
     '.mp4', '.m4v', '.mov', '.mkv', '.avi', '.ogv', '.3gp', '.3g2',
     '.wmv', '.mpeg', '.mpg', '.ts', '.m2ts', '.mts', '.flv', '.f4v', '.asf',
   ].join(',');
-  const AUDIO_ACCEPT_ANDROID_NATIVE = [
-    'audio/*', 'video/*',
-    'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm',
-    'video/mp4', 'video/webm', 'video/quicktime',
-    '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.mov',
-  ].join(',');
+  const AUDIO_ACCEPT_ANDROID_NATIVE = 'audio/*,video/*';
 
   function isAndroidNativeShell() {
     try {
@@ -166,6 +161,8 @@
   function patchFileInput() {
     var accept = isAndroidNativeShell() ? AUDIO_ACCEPT_ANDROID_NATIVE : AUDIO_ACCEPT_FULL;
     document.querySelectorAll('input[type="file"]').forEach(function (inp) {
+      var current = (inp.getAttribute('accept') || '');
+      if (/\.vippack|octet-stream/i.test(current)) return;
       inp.setAttribute('accept', accept);
     });
   }

@@ -40,29 +40,7 @@ export const FILE_INPUT_ACCEPT = [
  * a 70+ entry list (many unknown extensions) breaks OEM file pickers.
  * Wildcards keep audio/video selectable without choking Intent extras.
  */
-export const FILE_INPUT_ACCEPT_ANDROID_NATIVE = [
-  'audio/*',
-  'video/*',
-  'audio/mpeg',
-  'audio/wav',
-  'audio/mp4',
-  'audio/aac',
-  'audio/ogg',
-  'audio/flac',
-  'audio/webm',
-  'video/mp4',
-  'video/webm',
-  'video/quicktime',
-  '.mp3',
-  '.wav',
-  '.m4a',
-  '.aac',
-  '.ogg',
-  '.flac',
-  '.webm',
-  '.mp4',
-  '.mov',
-].join(',');
+export const FILE_INPUT_ACCEPT_ANDROID_NATIVE = 'audio/*,video/*';
 
 /**
  * @param {object} [opts]

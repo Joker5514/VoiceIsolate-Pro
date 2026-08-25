@@ -58,5 +58,8 @@ describe('Landing + Engineer import UploadWiring', () => {
     expect(landingHtml).toContain('<label for="fileInput" id="browseBtn"');
     expect(engineerHtml).toContain('<label for="fileInput" id="fileBtn"');
     expect(engineerHtml).toContain('class="visually-hidden-file"');
+    expect(landingHtml).toMatch(/id="fileInput"[^>]*accept="audio\/\*,video\/\*"/);
+    expect(engineerHtml).toMatch(/id="fileInput"[^>]*accept="audio\/\*,video\/\*"/);
+    expect(engineerHtml).not.toMatch(/id="fileInput"[^>]*aria-hidden="true"/);
   });
 });
