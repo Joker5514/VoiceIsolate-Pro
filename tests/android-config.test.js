@@ -572,6 +572,7 @@ describe('MainActivity.java — WebView isolation and upload-only permission flo
     expect(mainActivity).toContain('"audio/*"');
     expect(mainActivity).toContain('"video/*"');
     expect(mainActivity).toContain('installUploadFileChooser');
+    expect(mainActivity).toContain('import android.app.Activity');
   });
 
   test('reloads WebView at most once per process for COOP/COEP', () => {
