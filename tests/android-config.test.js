@@ -197,11 +197,16 @@ describe('AndroidManifest.xml — structure and security', () => {
     expect(manifest).toContain('android.permission.READ_MEDIA_AUDIO');
   });
 
+  test('READ_MEDIA_VIDEO permission is declared for gallery/video picks', () => {
+    expect(manifest).toContain('android.permission.READ_MEDIA_VIDEO');
+  });
+
   test('declares Android 11+ package-visibility queries for file picker intents', () => {
     // Without these, Capacitor onShowFileChooser → ActivityNotFoundException on API 30+.
     expect(manifest).toMatch(/<queries>[\s\S]*GET_CONTENT[\s\S]*<\/queries>/);
     expect(manifest).toContain('android.intent.action.OPEN_DOCUMENT');
     expect(manifest).toContain('android.intent.action.GET_CONTENT');
+    expect(manifest).toContain('android.intent.category.OPENABLE');
   });
 
   test('FOREGROUND_SERVICE permission is declared (background audio processing)', () => {
@@ -555,8 +560,18 @@ describe('MainActivity.java — WebView isolation and upload-only permission flo
     expect(mainActivity).toContain('scheduleDeferredMediaPermission');
     expect(mainActivity).toContain('requestReadMediaPermissionIfNeeded');
     expect(mainActivity).toContain('READ_MEDIA_AUDIO');
+    expect(mainActivity).toContain('READ_MEDIA_VIDEO');
     expect(mainActivity).toContain('READ_EXTERNAL_STORAGE');
     expect(mainActivity).toMatch(/postDelayed/);
+  });
+
+  test('overrides file chooser with OPEN_DOCUMENT audio/video wildcards', () => {
+    expect(mainActivity).toContain('onShowFileChooser');
+    expect(mainActivity).toContain('ACTION_OPEN_DOCUMENT');
+    expect(mainActivity).toContain('CATEGORY_OPENABLE');
+    expect(mainActivity).toContain('"audio/*"');
+    expect(mainActivity).toContain('"video/*"');
+    expect(mainActivity).toContain('installUploadFileChooser');
   });
 
   test('reloads WebView at most once per process for COOP/COEP', () => {

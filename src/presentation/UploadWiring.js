@@ -21,10 +21,7 @@ export function openFilePicker(fileInput) {
     const androidNative = (cap?.isNativePlatform?.() && cap?.getPlatform?.() === 'android')
       || (/Android/i.test(ua) && (/; wv\)/i.test(ua) || /VoiceIsolatePro\//i.test(ua)));
     if (androidNative && typeof fileInput.setAttribute === 'function') {
-      fileInput.setAttribute(
-        'accept',
-        'audio/*,video/*,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac,audio/webm,video/mp4,video/webm,video/quicktime,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov',
-      );
+      fileInput.setAttribute('accept', 'audio/*,video/*');
     }
   } catch { /* ignore */ }
 

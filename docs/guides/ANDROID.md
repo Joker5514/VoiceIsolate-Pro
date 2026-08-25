@@ -52,7 +52,7 @@ Rebuild after web changes: `pnpm android:build:win` (or `pnpm android:build`) so
 | Symptom | Check |
 |---------|--------|
 | White screen on open | Uninstall old APK; reinstall latest; confirm WebView up to date |
-| **Browse / upload does nothing** | Manifest must declare `<queries>` for `GET_CONTENT` / `OPEN_DOCUMENT` (Android 11+). Grant **Music and audio** / storage when prompted. Prefer compact `accept` (`audio/*,video/*`) — huge MIME lists break OEM pickers via Capacitor `EXTRA_MIME_TYPES`. |
+| **Browse / upload does nothing** | Uninstall old APK and install a build that includes the native `OPEN_DOCUMENT` chooser in `MainActivity`. Manifest `<queries>` must include `GET_CONTENT` / `OPEN_DOCUMENT` with `OPENABLE` + `*/*`. Grant **Music and audio** / **Videos** when prompted. File inputs use compact `accept="audio/*,video/*"` — huge MIME lists break OEM pickers via Capacitor `EXTRA_MIME_TYPES`. |
 | **UI freezes on open / Engineer** | Sideload APK ≥ **2026-08-18T23:15Z**: no microphone permission, one COOP reload/process, deferred media permission, debounced upload MutationObserver, and collapsible rack sections. Uninstall old APK first. |
 | Models fail | APK must include `app/models/*.onnx` (run `verify-android-complete`) |
 | Worklets fail | MIME must be `application/javascript` (MainActivity) |

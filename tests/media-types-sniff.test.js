@@ -40,6 +40,7 @@ describe('file input accept helpers', () => {
     const a = mediaTypes.FILE_INPUT_ACCEPT_ANDROID_NATIVE;
     expect(a).toMatch(/audio\/\*/);
     expect(a).toMatch(/video\/\*/);
+    expect(a).toBe('audio/*,video/*');
     expect(a.split(',').length).toBeLessThan(30);
     expect(mediaTypes.FILE_INPUT_ACCEPT.split(',').length).toBeGreaterThan(a.split(',').length);
   });

@@ -2,15 +2,22 @@ package com.voiceisolatepro.app;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -18,6 +25,7 @@ import androidx.webkit.WebViewAssetLoader;
 
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 
 import java.io.IOException;
@@ -44,6 +52,30 @@ public class MainActivity extends BridgeActivity {
     /** One COOP/COEP reload per process — avoids stacked freezes on activity recreate. */
     private static boolean sIsolationReloadDone = false;
 
+    /**
+     * Capacitor's default file chooser packs the HTML accept list into
+     * EXTRA_MIME_TYPES. A long list (or unknown types like audio/x-caf) makes
+     * OEM GET_CONTENT resolvers throw ActivityNotFoundException — Browse
+     * appears to do nothing. OPEN_DOCUMENT + audio/video wildcards is stable.
+     */
+    private ValueCallback<Uri[]> pendingFilePathCallback;
+    private final ActivityResultLauncher<Intent> audioPickerLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                ValueCallback<Uri[]> cb = pendingFilePathCallback;
+                pendingFilePathCallback = null;
+                if (cb == null) return;
+                Uri[] uris = null;
+                try {
+                    if (result.getResultCode() == Activity.RESULT_OK) {
+                        uris = WebChromeClient.FileChooserParams.parseResult(
+                                result.getResultCode(), result.getData());
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "File chooser result parse failed", t);
+                }
+                cb.onReceiveValue(uris);
+            });
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -60,11 +92,19 @@ public class MainActivity extends BridgeActivity {
     private void requestReadMediaPermissionIfNeeded() {
         try {
             if (Build.VERSION.SDK_INT >= 33) {
+                java.util.ArrayList<String> needed = new java.util.ArrayList<>();
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO)
                         != PackageManager.PERMISSION_GRANTED) {
+                    needed.add(Manifest.permission.READ_MEDIA_AUDIO);
+                }
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    needed.add(Manifest.permission.READ_MEDIA_VIDEO);
+                }
+                if (!needed.isEmpty()) {
                     ActivityCompat.requestPermissions(
                             this,
-                            new String[]{Manifest.permission.READ_MEDIA_AUDIO},
+                            needed.toArray(new String[0]),
                             REQUEST_READ_MEDIA
                     );
                 }
@@ -127,6 +167,8 @@ public class MainActivity extends BridgeActivity {
                 .addPathHandler("/", new PublicAssetPathHandler())
                 .build();
 
+        installUploadFileChooser(bridge, webView);
+
         webView.setWebViewClient(new BridgeWebViewClient(bridge) {
             @Override
             public WebResourceResponse shouldInterceptRequest(
@@ -168,6 +210,7 @@ public class MainActivity extends BridgeActivity {
                     try {
                         Log.i(TAG, "Reloading WebView once so COOP/COEP apply to document load");
                         webView.reload();
+                        installUploadFileChooser(bridge, webView);
                     } catch (Throwable t) {
                         Log.w(TAG, "WebView reload after header injection failed", t);
                     }
@@ -180,6 +223,36 @@ public class MainActivity extends BridgeActivity {
         } else {
             scheduleDeferredMediaPermission(webView);
         }
+    }
+
+    private void installUploadFileChooser(Bridge bridge, WebView webView) {
+        webView.setWebChromeClient(new BridgeWebChromeClient(bridge) {
+            @Override
+            public boolean onShowFileChooser(
+                    WebView view,
+                    ValueCallback<Uri[]> filePathCallback,
+                    FileChooserParams fileChooserParams) {
+                if (pendingFilePathCallback != null) {
+                    pendingFilePathCallback.onReceiveValue(null);
+                    pendingFilePathCallback = null;
+                }
+                pendingFilePathCallback = filePathCallback;
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] { "audio/*", "video/*" });
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    audioPickerLauncher.launch(Intent.createChooser(intent, "Select audio or video"));
+                    return true;
+                } catch (ActivityNotFoundException e) {
+                    Log.e(TAG, "No document picker available", e);
+                    pendingFilePathCallback = null;
+                    filePathCallback.onReceiveValue(null);
+                    return false;
+                }
+            }
+        });
     }
 
     /**
