@@ -4,70 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VoiceIsolate Pro Blueprint</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #101316;
-        --panel: #171c20;
-        --text: #edf2f4;
-        --muted: #a8b3ba;
-        --accent: #ff4f43;
-        --border: #2f3940;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        line-height: 1.55;
-      }
-      main {
-        max-width: 980px;
-        margin: 0 auto;
-        padding: 40px 20px 72px;
-      }
-      h1 {
-        margin: 0 0 12px;
-        font-size: clamp(2rem, 5vw, 3.8rem);
-        line-height: 1.1;
-      }
-      h2 {
-        border-top: 1px solid var(--border);
-        margin-top: 32px;
-        padding-top: 24px;
-      }
-      p, li {
-        color: var(--muted);
-      }
-      a {
-        color: var(--accent);
-      }
-      code {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 0.12rem 0.3rem;
-      }
-      .summary {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 18px 20px;
-        margin-top: 24px;
-      }
-    </style>
+    <link rel="icon" href="/icon.jpg" />
+    <link rel="stylesheet" href="/ps-shell.css" />
   </head>
-  <body>
-    <main>
-      <h1>VoiceIsolate Pro Blueprint</h1>
-      <p>
-        Production blueprint for the current Stem-Split and Live-Mix browser
-        architecture. Historical blueprint claims have been removed from this
-        served page to avoid pointing users at deleted runtime paths.
+  <body class="ps-shell">
+    <header class="ps-titlebar">
+      <div class="ps-titlebar-left">
+        <a class="ps-logo" href="/">VoiceIsolate Pro</a>
+        <span class="ps-chip">Blueprint</span>
+      </div>
+      <p class="ps-meta">Operational dashboard<br>Not a marketing diagram</p>
+    </header>
+    <main style="max-width:1280px;margin:0 auto;padding:32px 28px 72px;">
+      <p class="ps-kicker">Architecture</p>
+      <h1>Production architecture at a glance.</h1>
+      <p class="ps-hero__sub">
+        Current Stem-Split and Live-Mix browser architecture. Historical blueprint
+        claims for deleted runtime paths are not shown here.
       </p>
 
-      <section class="summary">
-        <h2>Current Production Shape</h2>
+      <section class="ps-dash" aria-label="Runtime layers">
+        <article class="ps-card"><h2>Public shell</h2><p><code>public/</code> landing, Engineer Console, download, docs. Web, Android, and Desktop share <code>public/app/</code>.</p></article>
+        <article class="ps-card"><h2>Core</h2><p><code>src/core/</code> pure primitives: config, STFT budget, model manifest, buffer pool. No DOM, no Web Audio.</p></article>
+        <article class="ps-card"><h2>Workers</h2><p><code>src/workers/</code> MLWorker ONNX, diarization, spectral cleanup, encoder. Gate + De-Esser playback worklets only.</p></article>
+        <article class="ps-card"><h2>Pipeline</h2><p><code>src/pipeline/</code> ingestion, PlaybackMixer Live-Mix graph, processing and export orchestrators.</p></article>
+        <article class="ps-card"><h2>Presentation</h2><p><code>src/presentation/</code> sliders, speakers, export, visualizers. May import pipeline and core only.</p></article>
+        <article class="ps-card"><h2>Models</h2><p>Same-origin <code>/app/models/*.onnx</code>. SHA-256 via <code>ModelManifest.js</code>. Default chain <code>bsrnn_vocals</code>.</p></article>
+        <article class="ps-card"><h2>Audio graph</h2><p>Clean/noise stems → gains → EQ → master. Sliders drive AudioParams. Process-time controls snapshot on Process.</p></article>
+        <article class="ps-card"><h2>Deployment</h2><p>Vercel <code>public/</code> with COOP/COEP. Capacitor and Electron consume <code>build/</code>. No CDN runtime for ORT.</p></article>
+      </section>
+
+      <section class="summary ps-card" style="margin-top:24px;">
+        <h2>Current production shape</h2>
         <ul>
           <li>Static deployment source: <code>public/</code>.</li>
           <li>Build step: validate, verify worklets, then copy <code>src/</code> into <code>public/src/</code>.</li>
@@ -78,14 +46,14 @@
         </ul>
       </section>
 
-      <h2>Spectral Rule</h2>
+      <h2>Spectral rule</h2>
       <p>
         Compatible spectral-mask stages use one forward STFT, in-place mask
         application on the shared representation, and one inverse STFT per
         analyzed frame.
       </p>
 
-      <h2>Deployment Headers</h2>
+      <h2>Deployment headers</h2>
       <p>
         Production keeps COOP <code>same-origin</code> and COEP
         <code>require-corp</code> for isolation-sensitive browser features.

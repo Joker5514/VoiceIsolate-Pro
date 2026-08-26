@@ -7,6 +7,7 @@
   <meta name="description" content="Download VoiceIsolate Pro for Android, Windows desktop, or open the web app. 100% on-device voice isolation." />
   <link rel="icon" href="/icon.jpg" />
   <link rel="stylesheet" href="/landing.css" />
+  <link rel="stylesheet" href="/ps-shell.css" />
   <style>
     .dl-main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
     .dl-card {
@@ -37,20 +38,32 @@
     }
   </style>
 </head>
-<body>
-  <main class="dl-main">
+<body class="ps-shell">
+  <header class="ps-titlebar">
+    <div class="ps-titlebar-left">
+      <a class="ps-logo" href="/">VoiceIsolate Pro</a>
+      <span class="ps-chip ps-chip--process">Download</span>
+    </div>
+    <p class="ps-meta">Build v25.0.2<br>Local DSP · Private by design</p>
+  </header>
+  <main class="dl-main" style="max-width:1280px;">
     <nav class="dl-nav" aria-label="Site">
       <a href="/">← Landing</a>
       <a href="/app/">Engineer Console</a>
       <a href="https://github.com/Joker5514/VoiceIsolate-Pro" rel="noopener noreferrer" target="_blank">GitHub</a>
     </nav>
 
-    <h1 class="section-label" style="font-size:1.4rem;letter-spacing:.06em;">Download VoiceIsolate Pro</h1>
-    <p class="hint">Privacy-first voice isolation. Processing stays on your device. Optional Google Drive open/save is user-initiated only. Same web shell on Web, Android, and Desktop.</p>
+    <p class="ps-kicker">One engine. Three surfaces.</p>
+    <h1>Run VoiceIsolate Pro anywhere.</h1>
+    <p class="hint">The same local-first audio stack on web, Android, and Windows. Processing stays on your device. Optional Google Drive open/save is user-initiated only.</p>
 
+    <div class="ps-env" style="padding:0;margin:24px 0;">
     <!-- ── Android ─────────────────────────────────────────────────────── -->
-    <section class="dl-card" aria-labelledby="android-dl">
-      <h2 id="android-dl">Android (APK) — complete offline app</h2>
+    <section class="dl-card ps-card" aria-labelledby="android-dl">
+      <span class="ps-chip ps-chip--ok">APK</span>
+      <h2 id="android-dl">ANDROID</h2>
+      <p>Complete offline app. Offline after install. No network required after install.</p>
+      <h3 class="visually-hidden">Android (APK) — complete offline app</h3>
       <p>
         Full on-device studio: <strong>Landing + Engineer Console</strong> (same shell as web/desktop), BS-RNN isolation,
         worklets, ONNX models, and the optional <strong>SAM 3 vision</strong> JS sidecar
@@ -102,8 +115,10 @@
     </section>
 
     <!-- ── Desktop ─────────────────────────────────────────────────────── -->
-    <section class="dl-card" aria-labelledby="desktop-dl">
-      <h2 id="desktop-dl">Desktop (Windows) — 100% offline</h2>
+    <section class="dl-card ps-card" aria-labelledby="desktop-dl">
+      <span class="ps-chip ps-chip--process">EXE</span>
+      <h2 id="desktop-dl">WINDOWS</h2>
+      <p>Full desktop package. 100% offline after install.</p>
       <p>
         NSIS installer for Windows x64. Install once, then isolate with
         <strong>no internet</strong>. UI, ORT WASM, default ONNX models
@@ -157,8 +172,10 @@ pnpm build:electron:dir    # portable win-unpacked/</pre>
     </section>
 
     <!-- ── Web ─────────────────────────────────────────────────────────── -->
-    <section class="dl-card" aria-labelledby="web-dl">
-      <h2 id="web-dl">Web (no install)</h2>
+    <section class="dl-card ps-card" aria-labelledby="web-dl">
+      <span class="ps-chip ps-chip--live">OPEN</span>
+      <h2 id="web-dl">WEB</h2>
+      <p>No installation. Browser WebGPU/WASM fallback.</p>
       <p>
         Run fully in the browser — Landing (stem-split / Live-Mix) or Engineer Console (studio rack + full DSP).
         SAM 3 vision modules load from same-origin <code>/src/sam3_integration/</code> when enabled.
@@ -169,6 +186,14 @@ pnpm build:electron:dir    # portable win-unpacked/</pre>
         <a class="btn btn-outline" href="https://github.com/Joker5514/VoiceIsolate-Pro" rel="noopener noreferrer" target="_blank">Source</a>
       </div>
       <p class="dl-meta">Docs: <code>docs/SAM3_TECHNICAL_DOCUMENTATION.md</code> · <code>docs/guides/SAM_AUDIO.md</code> · <code>docs/DOWNLOADS.md</code></p>
+    </section>
+    </div>
+    <section class="ps-band" style="margin-top:8px;">
+      <div>
+        <p class="ps-kicker" style="color:var(--state-warning)">Verify before installing</p>
+        <h2 style="margin:0 0 8px;font-size:1.35rem;">Release provenance and privacy should be visible, not buried.</h2>
+        <p class="hint">Show version · SHA256 · release notes · offline capability · SmartScreen/sideload guidance. Native APK/EXE pins are recorded in <code>docs/releases/release-provenance.json</code> — this page does not claim the three packages are byte-synchronized unless that record says so.</p>
+      </div>
     </section>
   </main>
 </body>

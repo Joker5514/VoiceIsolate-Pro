@@ -4,84 +4,40 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VoiceIsolate Pro Contributor Guide</title>
+    <link rel="icon" href="/icon.jpg" />
+    <link rel="stylesheet" href="/ps-shell.css" />
     <style>
-      :root {
-        color-scheme: dark;
-        --bg: #101316;
-        --panel: #171c20;
-        --text: #edf2f4;
-        --muted: #a8b3ba;
-        --accent: #ff4f43;
-        --border: #2f3940;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        line-height: 1.55;
-      }
-      main {
-        max-width: 980px;
-        margin: 0 auto;
-        padding: 40px 20px 72px;
-      }
-      h1, h2 {
-        line-height: 1.15;
-      }
-      h1 {
-        margin: 0 0 12px;
-        font-size: clamp(2rem, 5vw, 3.8rem);
-      }
-      h2 {
-        border-top: 1px solid var(--border);
-        margin-top: 32px;
-        padding-top: 24px;
-      }
-      p, li {
-        color: var(--muted);
-      }
-      code, pre {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-      }
-      code {
-        padding: 0.12rem 0.3rem;
-      }
-      pre {
-        overflow-x: auto;
-        padding: 16px;
-      }
-      a {
-        color: var(--accent);
-      }
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        margin: 16px 0;
-      }
-      th, td {
-        border: 1px solid var(--border);
-        padding: 10px;
-        text-align: left;
-        vertical-align: top;
-      }
-      th {
-        color: var(--text);
-        background: var(--panel);
-      }
+      table { width: 100%; border-collapse: collapse; margin: 12px 0 24px; }
+      th, td { border: 1px solid var(--border-subtle); padding: 10px; text-align: left; vertical-align: top; }
+      th { background: var(--surface-raised); }
+      pre, code { font-family: var(--font-mono); }
+      pre { overflow-x: auto; padding: 16px; background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: 8px; }
     </style>
   </head>
-  <body>
-    <main>
+  <body class="ps-shell">
+    <header class="ps-titlebar">
+      <div class="ps-titlebar-left">
+        <a class="ps-logo" href="/">VoiceIsolate Pro</a>
+        <span class="ps-chip">Contributor</span>
+      </div>
+      <p class="ps-meta">Control room<br>CLAUDE.md is source of truth</p>
+    </header>
+    <main style="max-width:1100px;margin:0 auto;padding:32px 20px 72px;">
+      <p class="ps-kicker">Contributor control room</p>
       <h1>VoiceIsolate Pro Contributor Guide</h1>
       <p>
         This served guide mirrors the current production architecture. The
         repository source of truth for contributors is <code>CLAUDE.md</code>;
         this page exists so deployed documentation does not point agents or
-        users toward removed runtime paths.
+        users toward removed runtime paths. Do not treat this HTML as a second contract.
       </p>
+
+      <section class="ps-dash" style="margin:24px 0;">
+        <article class="ps-card"><h2>Architectural contract</h2><p>Stem-Split &amp; Live-Mix. Four layers: core → workers → pipeline → presentation. Upload-only.</p></article>
+        <article class="ps-card"><h2>Pre-merge checks</h2><p><code>pnpm lint</code>, <code>validate</code>, <code>test:ci</code>, worklet hash verify, privacy checks.</p></article>
+        <article class="ps-card"><h2>Model / runtime integrity</h2><p><code>ModelManifest.js</code> SHA-256. <code>pnpm models:validate</code>. No CDN ORT.</p></article>
+        <article class="ps-card"><h2>Security rules</h2><p>COOP/COEP, CSP, <code>microphone=()</code>. No audio to remote inference.</p></article>
+      </section>
 
       <h2>Current Runtime</h2>
       <p>
@@ -134,14 +90,16 @@ one inverse STFT</code></pre>
       </p>
 
       <h2>Build And Deploy</h2>
-      <pre><code>pnpm install
-pnpm run validate
-pnpm run build
-pnpm test -- --runInBand</code></pre>
+      <pre><code>pnpm install --frozen-lockfile
+pnpm lint
+pnpm validate
+pnpm test:ci
+pnpm build</code></pre>
       <p>
         Vercel uses <code>node scripts/vercel-build.js</code> and
         <code>bash scripts/vercel-install.sh</code>. The install hook reads the
         pinned pnpm version from <code>package.json#packageManager</code>.
+        Full command set remains in <code>CLAUDE.md</code>.
       </p>
 
       <h2>Headers</h2>
@@ -153,7 +111,7 @@ pnpm test -- --runInBand</code></pre>
 
       <p>
         Full source: <a href="https://github.com/Joker5514/VoiceIsolate-Pro">GitHub repository</a>.
-        Current technical guide: <a href="/docs/TECHNICAL_GUIDE.md">TECHNICAL_GUIDE.md</a>.
+        Canonical rules: <a href="https://github.com/Joker5514/VoiceIsolate-Pro/blob/main/CLAUDE.md">CLAUDE.md</a>.
       </p>
     </main>
   </body>
