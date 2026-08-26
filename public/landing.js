@@ -167,6 +167,19 @@ function setStatus(msg, cls = '') {
   renderStatusPill(STATE_FOR_CLS[cls] || 'pending', msg);
   const legacy = ui.statusText || document.getElementById('statusText');
   if (legacy) legacy.textContent = msg;
+  const preview = document.getElementById('signalPreviewState');
+  if (preview) {
+    const text = String(msg || '');
+    let state = 'idle';
+    let label = 'Idle';
+    if (cls === 'error' || /fail|error/i.test(text)) { state = 'error'; label = 'Error'; }
+    else if (/Stems ready/i.test(text)) { state = 'ready'; label = 'Ready'; }
+    else if (/separat|process|decode|load/i.test(text)) { state = 'busy'; label = 'Processing'; }
+    preview.dataset.state = state;
+    preview.textContent = label;
+    preview.classList.toggle('ps-chip--ok', state === 'ready');
+    preview.classList.toggle('ps-chip--process', state === 'error');
+  }
 }
 
 function fmtTime(s) {
