@@ -6,10 +6,10 @@
 export const WORKFLOW_TIERS = Object.freeze({
   creator: {
     id: 'creator',
-    label: 'Creator Pro',
-    short: 'Creator',
-    tagline: 'Fast clean voice — full DSP rack with one-tap presets',
-    statusIdle: 'Creator Pro — upload audio for one-tap clean voice',
+    label: 'Quick',
+    short: 'Quick',
+    tagline: 'Guided local cleanup — one primary action, full rack still available',
+    statusIdle: 'Quick — upload audio, apply the recommended preset, then Fix My Audio',
     defaultPreset: 'Voice Clarity',
     presets: ['Voice Clarity', 'Podcast Clean', 'Whisper Boost'],
     // Full ~67-slider rack (same as Forensic). Use Essentials chip to focus gate/nr/out.
@@ -91,7 +91,7 @@ function $(id) { return document.getElementById(id); }
 
 function resolveTierId(raw) {
   const id = String(raw || '').toLowerCase();
-  if (id === 'creator' || id === 'creator-pro' || id === 'pro') return 'creator';
+  if (id === 'creator' || id === 'creator-pro' || id === 'pro' || id === 'quick') return 'creator';
   if (id === 'studio') return 'studio';
   if (id === 'forensic') return 'forensic';
   return null;
