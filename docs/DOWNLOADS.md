@@ -29,13 +29,19 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 | Platform | Artifact | What’s included |
 |----------|----------|-----------------|
 | **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,620,559 bytes) | Capacitor WebView of **same** `build/` shell (Drive UI included); release asset updated **2026-08-21T10:04:08Z** |
-| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,646,374 bytes) | Electron loads **same** `build/**` (+ Drive OAuth popups); release asset updated **2026-08-21T10:04:10Z** |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,620,559 bytes) | Capacitor WebView built from `17692f98e1023ea7b18b7bd8a5c374291ccb67f8`; stale relative to reviewed main; release asset updated **2026-08-21T10:04:08Z** |
+| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,646,374 bytes) | Electron package built from `17692f98e1023ea7b18b7bd8a5c374291ccb67f8`; stale relative to reviewed main; release asset updated **2026-08-21T10:04:10Z** |
 | **macOS / Linux** | Build targets only | Electron config can produce `.dmg` / `.AppImage`; no v25.0.2 GitHub Release assets are published |
 
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 
 `build/`, `android/.../assets/public`, and `dist/*` binaries are **gitignored** — regenerate after pulling.
+
+The deployed Web source SHA and published APK/EXE SHA-256 values are currently
+unknown. The tag points to `1cb37fd495cb80eaac369e028ad2c1fcae0a63ea`, not to
+the native source or reviewed main. See [`release-provenance.json`](releases/release-provenance.json);
+`pnpm provenance:validate --strict` intentionally blocks a release while any
+platform remains stale or unknown.
 
 ## Build & publish (maintainers)
 
@@ -66,7 +72,7 @@ gh release upload v25.0.2 \
 |-----------|-----|---------|---------|
 | **SAM-Audio** | optional loopback / ONNX | optional `sam_audio.onnx` | real worker via Electron IPC |
 | **SAM 3** (vision) | JS bundled; flag OFF | same in WebView | same + extraResources |
-| Default isolation | BSRNN / RNNoise / USM | same | same |
+| Default isolation | BSRNN | BSRNN in recorded native source | BSRNN in recorded native source |
 
 Enable SAM 3: `VIP_SAM3_ENABLED=1` or `localStorage.setItem('vip-sam3-enabled','1')`.  
 Docs: [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) · [SAM_AUDIO.md](guides/SAM_AUDIO.md)

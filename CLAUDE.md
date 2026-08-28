@@ -215,16 +215,18 @@ Rules:
 
 | Model | Task | Format | Size | Status |
 |---|---|---|---|---|
-| Demucs HT Demucs (`demucs_htdemucs.onnx`) | Vocal-ratio waveform mask (default chain) | ONNX, fp32 | ~149 MB | **Blob-hosted, hash-pinned** |
+| Demucs v4 (`demucs_v4_quantized.onnx`) | Optional waveform separator | ONNX, int8 | ~149 MB | **Optional, unshipped** |
 | BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned** |
 | Band-Split RNN Vocal Extractor (`bsrnn_vocals.onnx`) | Vocal-separation mask | ONNX, fp32 | ~3.7 MB | **Committed, trained, hash-pinned** |
 | Silero VAD (`silero_vad.onnx`) | Voice activity detection | ONNX, fp32 | ~2.2 MB | **Committed, hash-pinned** |
 | Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~2.3 MB | **Committed, hash-pinned** |
 | Diarization ONNX bundle | Speaker embedding + clustering | ONNX, fp32 | ~3 files | **Blob-hosted, hash-pinned** |
 
-**Default isolation chain:** `['demucs', 'rnnoise']` — Demucs extracts the vocal
-ratio mask (waveform strategy, 44.1 kHz internal resample), then RNNoise strips
-residual background. Spectral-mask models (`bsrnn_vocals`, `rnnoise`) share one
+**Default isolation chain:** `['bsrnn_vocals']` — BSRNN performs the shipped,
+hash-pinned vocal extraction pass. **Optional maximum chain:** `['bsrnn_vocals', 'rnnoise']`
+adds a second denoise pass when explicitly selected. Demucs remains an optional,
+unshipped waveform model unless its separately pinned artifact is installed.
+Spectral-mask models (`bsrnn_vocals`, `rnnoise`) share one
 inference contract: `float32 [batch, 2049]` STFT magnitudes in → sigmoid mask out
 (fft 4096, hop 1024, Hann, 48 kHz). VAD models gate silence before diarization.
 Larger upgrades (DeepFilterNet INT8, MDX-Net INT8) are planned and must follow
@@ -293,9 +295,10 @@ asset naming (`versionCode` / `CFBundleVersion` = **250002**). Published GitHub
 Release **`latest` = v25.0.2**.
 
 **Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-21T10:04Z** from
-`main` @ `17692f9` (#776 Google Drive + #774 DSP release) and clobber-uploaded to v25.0.2.
-After shell/UX or native WebView changes on `main`, re-run `pnpm android:build:win` +
-`pnpm build:electron` and `gh release upload v25.0.2 … --clobber`.
+`main` @ `17692f9` (#776 Google Drive + #774 DSP release). They predate reviewed
+`main` @ `3385ca3` and are therefore stale; the current Web deployment's immutable
+source SHA is unknown. See the machine-readable provenance record before rebuilding.
+Never infer platform parity from a shared build recipe.
 Canonical pins: [docs/DOWNLOADS.md](docs/DOWNLOADS.md), [docs/releases/PLATFORM_SYNC.md](docs/releases/PLATFORM_SYNC.md).
 
 **Engineer DSP sliders (desktop-first):** rows are built by

@@ -167,8 +167,9 @@ describe('USM / ORT hardening markers', () => {
     expect(usmNode).toMatch(/messageerror/);
   });
 
-  test('MLWorker allows one local WASM retry after WebGPU session failure', () => {
-    expect(mlWorker).toMatch(/_webgpuWasmFallbackUsed/);
+  test('MLWorker scopes local WASM retry state per failed session', () => {
+    expect(mlWorker).toMatch(/_wasmSessionKeys/);
+    expect(mlWorker).toMatch(/_webgpuDisabledReason/);
     expect(mlWorker).toMatch(/one local WASM retry/);
     expect(mlWorker).toMatch(/ort-fallback/);
   });

@@ -69,7 +69,7 @@ let _processChain = Promise.resolve();
 const _runQueues = Object.create(null);
 
 function inferenceQueueKey(sessionKey) {
-  return BACKEND === 'webgpu' ? sessionKey : '__wasm_global__';
+  return _wasmSessionKeys.has(sessionKey) || BACKEND === 'wasm' ? '__wasm_global__' : sessionKey;
 }
 
 async function queuedSessionRun(sessionKey, session, feeds) {
@@ -87,8 +87,10 @@ async function queuedSessionRun(sessionKey, session, feeds) {
 
 /** Resolved execution backend, decided once (WebGPU preferred; WASM fallback). */
 let BACKEND = null;
-/** One-shot local WASM retry after a WebGPU session/compile failure. */
-let _webgpuWasmFallbackUsed = false;
+/** Session keys that must remain on WASM after a qualifying WebGPU failure. */
+const _wasmSessionKeys = new Set();
+/** Device loss invalidates the worker's GPU context, unlike a graph compile failure. */
+let _webgpuDisabledReason = null;
 
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
@@ -354,8 +356,18 @@ async function resolveBackend() {
   return BACKEND;
 }
 
-async function createSessionFromBytes(entry, bytes) {
-  const backend = await resolveBackend();
+function classifyWebGpuFailure(err) {
+  const message = String(err?.message || err || '');
+  if (/device.?lost/i.test(message)) return 'device-lost';
+  if (/out of memory|\boom\b/i.test(message)) return 'out-of-memory';
+  if (/webgpu|\bgpu\b|Failed to create|compile/i.test(message)) return 'session-compile';
+  return null;
+}
+
+async function createSessionFromBytes(entry, bytes, sessionKey = entry.id) {
+  const preferredBackend = await resolveBackend();
+  const backend = preferredBackend === 'webgpu' && !_webgpuDisabledReason &&
+    !_wasmSessionKeys.has(sessionKey) ? 'webgpu' : 'wasm';
   const opts = {
     executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
@@ -369,11 +381,12 @@ async function createSessionFromBytes(entry, bytes) {
     return await ort.InferenceSession.create(safeBytes, opts);
   } catch (err) {
     const msg = String(err?.message || err || '');
-    const looksGpuFail = /webgpu|gpu|device.?lost|out of memory|oom|Failed to create/i.test(msg);
-    // Never endlessly retry WebGPU — one approved local WASM retry when safe.
-    if (backend === 'webgpu' && looksGpuFail && !_webgpuWasmFallbackUsed) {
-      _webgpuWasmFallbackUsed = true;
-      BACKEND = 'wasm';
+    const reason = classifyWebGpuFailure(err);
+    // Pin only this graph to WASM after compile/OOM failure. Device loss is
+    // worker-wide because the adapter context is no longer trustworthy.
+    if (backend === 'webgpu' && reason) {
+      _wasmSessionKeys.add(sessionKey);
+      if (reason === 'device-lost') _webgpuDisabledReason = reason;
       console.warn(
         '[VIP][MLWorker] WebGPU session failed; one local WASM retry:',
         msg,
@@ -384,6 +397,9 @@ async function createSessionFromBytes(entry, bytes) {
         percent: 0,
         label: 'WebGPU failed — local WASM retry',
         backend: 'wasm',
+        modelId: entry.id,
+        sessionKey,
+        reason,
         detail: msg.slice(0, 240),
       });
       const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
@@ -407,7 +423,7 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
     if (!quiet) postStage('load', 40, { modelId: entry.id, label: `Verifying ${entry.name || entry.id}…` });
     if (!quiet) postStage('load', 55, { modelId: entry.id, label: `Compiling ${entry.name || entry.id}…` });
     const session = await withTimeout(
-      createSessionFromBytes(entry, bytes),
+      createSessionFromBytes(entry, bytes, sessionKey),
       SESSION_COMPILE_TIMEOUT_MS,
       `Compile ${entry.id}`,
     );
