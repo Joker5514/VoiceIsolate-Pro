@@ -1,0 +1,166 @@
+/* Precision Studio workstation chrome. Layout only — IDs stay in engineer-console.js. */
+
+body.ps-workstation {
+  --ps-nav-w: 220px;
+  background: var(--surface-root, #070b10) !important;
+}
+
+body.ps-workstation .hdr {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.ps-workspace-nav {
+  display: none;
+}
+
+@media (min-width: 1100px) {
+  body.ps-workstation {
+    padding-left: var(--ps-nav-w);
+  }
+  .ps-workspace-nav {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0;
+    top: var(--titlebar-h, 48px);
+    bottom: 0;
+    width: var(--ps-nav-w);
+    padding: 16px 10px 24px;
+    gap: 4px;
+    background: var(--surface-panel, #0d131b);
+    border-right: 1px solid var(--border-subtle, #1d2a34);
+    z-index: 30;
+    overflow-y: auto;
+  }
+  .ps-workspace-nav a {
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 12px;
+    border-radius: 8px;
+    color: var(--text-secondary, #8d9aaa);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .ps-workspace-nav a:hover,
+  .ps-workspace-nav a:focus-visible {
+    background: var(--surface-raised, #121a23);
+    color: var(--text-primary, #f4f7fa);
+    outline: none;
+  }
+  .ps-workspace-nav a[aria-current="page"] {
+    color: var(--text-primary, #f4f7fa);
+    box-shadow: inset 2px 0 0 var(--action-process, #ff3d4d);
+    background: rgba(255, 61, 77, 0.08);
+  }
+}
+
+body.ps-forensic .ps-workspace-nav a[aria-current="page"] {
+  box-shadow: inset 2px 0 0 var(--action-live, #2ed5e5);
+  background: rgba(46, 213, 229, 0.08);
+}
+
+.ps-quick-strip {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 16px;
+  list-style: none;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle, #1d2a34);
+  background: var(--surface-panel, #0d131b);
+}
+.ps-quick-strip li {
+  flex: none;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle, #1d2a34);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, #8d9aaa);
+}
+.ps-quick-strip li::before {
+  content: attr(data-step) " · ";
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--action-process, #ff3d4d);
+}
+
+.ps-field-nav {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .ps-field-nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    min-height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--surface-panel, #0d131b);
+    border-top: 1px solid var(--border-subtle, #1d2a34);
+  }
+  .ps-field-nav__btn {
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary, #8d9aaa);
+    font: 600 12px/1 var(--font-ui, system-ui, sans-serif);
+  }
+  .ps-field-nav__btn[aria-current="page"] {
+    color: var(--text-primary, #f4f7fa);
+    box-shadow: inset 0 -2px 0 var(--action-process, #ff3d4d);
+  }
+  body.ps-workstation {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  .ps-field-sheet {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    z-index: 45;
+    max-height: 40vh;
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid var(--border-subtle, #1d2a34);
+    border-radius: 10px 10px 0 0;
+    background: var(--surface-raised, #121a23);
+  }
+  .ps-field-sheet__close {
+    min-height: 44px;
+    width: 100%;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle, #1d2a34);
+    background: var(--surface-panel, #0d131b);
+    color: var(--text-primary, #f4f7fa);
+  }
+}
+
+@media (max-width: 1024px) and (min-width: 641px) {
+  .ec-col-rack,
+  .ec-col-session {
+    max-height: none;
+  }
+}
+
+body.eng-console .btn:hover,
+body.eng-console input[type="range"]:hover {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.ps-workstation *,
+  body.ps-workstation *::before,
+  body.ps-workstation *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

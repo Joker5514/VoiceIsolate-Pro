@@ -38,6 +38,7 @@
       injectSummaryCards();
       wireViewToggle();
       wireFocusExplain();
+      installPrecisionStudioShell();
       // Defer ticker + summary so reparent paints before any interval work.
       const schedule = globalThis.requestIdleCallback
         ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
@@ -343,6 +344,170 @@
       } catch { /* preference is optional */ }
     });
     actions.appendChild(btn);
+  }
+
+  function installPrecisionStudioShell() {
+    document.body.classList.add('ps-workstation');
+    installWorkspaceNav();
+    installFieldNav();
+    installQuickStrip();
+    syncWorkspaceMode();
+    window.addEventListener('vip:tierChanged', syncWorkspaceMode);
+  }
+
+  function currentTierId() {
+    try {
+      const fromHero = document.getElementById('vipHero')?.dataset.workflowTier;
+      if (fromHero) return fromHero;
+      const stored = localStorage.getItem('vip-workflow-tier');
+      if (stored) return stored;
+    } catch { /* ignore */ }
+    return 'studio';
+  }
+
+  function syncWorkspaceMode() {
+    const tier = currentTierId();
+    document.body.dataset.psMode = tier === 'creator' ? 'quick' : tier;
+    document.body.classList.toggle('ps-forensic', tier === 'forensic');
+    document.body.classList.toggle('ps-quick', tier === 'creator');
+    const studioNav = document.getElementById('psWorkspaceNav');
+    const forensicNav = document.getElementById('psForensicNav');
+    if (studioNav) studioNav.hidden = tier === 'forensic';
+    if (forensicNav) forensicNav.hidden = tier !== 'forensic';
+    const strip = document.getElementById('psQuickStrip');
+    if (strip) strip.hidden = tier !== 'creator';
+    const mode = document.getElementById('ecModeBadge');
+    if (mode && mode.dataset.mode !== 'live') {
+      mode.textContent = tier === 'creator' ? 'Quick' : tier === 'forensic' ? 'Forensic' : 'Studio';
+    }
+  }
+
+  function installWorkspaceNav() {
+    if (document.getElementById('psWorkspaceNav')) return;
+    const studioItems = [
+      ['Overview', '#vipHero'],
+      ['Media', '#section-upload'],
+      ['Analysis', '#section-analysis'],
+      ['Sources', '#section-target-speaker'],
+      ['Processing', '#section-processing'],
+      ['Compare', '#btn-abcompare'],
+      ['Exports', '#exportProjectPackBtn'],
+      ['Audit', '#ecIntegrityCard'],
+      ['Settings', '#ecViewToggle'],
+    ];
+    const forensicItems = [
+      ['Observe', '#vizCard'],
+      ['Analyze', '#section-analysis'],
+      ['Isolate', '#section-separation'],
+      ['Restore', '#section-spectral'],
+      ['Mix', '.transport-card'],
+      ['Compare', '#btn-abcompare'],
+      ['Export', '#exportProjectPackBtn'],
+    ];
+    const nav = el('nav', 'ps-workspace-nav');
+    nav.id = 'psWorkspaceNav';
+    nav.setAttribute('aria-label', 'Studio workspace');
+    fillNav(nav, studioItems);
+    const forensic = el('nav', 'ps-workspace-nav ps-workspace-nav--forensic');
+    forensic.id = 'psForensicNav';
+    forensic.hidden = true;
+    forensic.setAttribute('aria-label', 'Forensic workspace');
+    fillNav(forensic, forensicItems);
+    document.body.prepend(nav, forensic);
+  }
+
+  function fillNav(nav, items) {
+    items.forEach(([label, sel], i) => {
+      const a = document.createElement('a');
+      a.href = sel;
+      a.textContent = label;
+      a.dataset.psNav = sel;
+      a.addEventListener('click', (e) => {
+        const t = document.querySelector(sel);
+        if (!t) return;
+        e.preventDefault();
+        if (t instanceof HTMLDetailsElement) t.open = true;
+        if (t.id === 'btn-abcompare') t.click();
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        t.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+        t.focus?.({ preventScroll: true });
+        nav.querySelectorAll('[aria-current]').forEach((n) => n.removeAttribute('aria-current'));
+        a.setAttribute('aria-current', 'page');
+      });
+      if (i === 0) a.setAttribute('aria-current', 'page');
+      nav.appendChild(a);
+    });
+  }
+
+  function installFieldNav() {
+    if (document.getElementById('psFieldNav')) return;
+    const bar = el('nav', 'ps-field-nav');
+    bar.id = 'psFieldNav';
+    bar.setAttribute('aria-label', 'Field navigation');
+    const items = [
+      ['Files', '#section-upload'],
+      ['Analyze', '#section-analysis'],
+      ['Mix', '.transport-card'],
+      ['Export', '#exportProjectPackBtn'],
+    ];
+    items.forEach(([label, sel], i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.className = 'ps-field-nav__btn';
+      if (i === 0) b.setAttribute('aria-current', 'page');
+      b.addEventListener('click', () => {
+        const t = document.querySelector(sel);
+        if (!t) return;
+        if (t instanceof HTMLDetailsElement) t.open = true;
+        openFieldSheet(t);
+        t.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        bar.querySelectorAll('[aria-current]').forEach((n) => n.removeAttribute('aria-current'));
+        b.setAttribute('aria-current', 'page');
+      });
+      bar.appendChild(b);
+    });
+    document.body.appendChild(bar);
+  }
+
+  function openFieldSheet(node) {
+    if (!window.matchMedia || !window.matchMedia('(max-width: 640px)').matches) return;
+    const existing = document.getElementById('psFieldSheet');
+    if (existing) existing.remove();
+    const sheet = el('div', 'ps-field-sheet');
+    sheet.id = 'psFieldSheet';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-modal', 'false');
+    sheet.setAttribute('aria-label', 'Inspector');
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ps-field-sheet__close';
+    close.textContent = 'Close';
+    const previouslyFocused = document.activeElement;
+    close.addEventListener('click', () => {
+      sheet.remove();
+      if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+    });
+    sheet.appendChild(close);
+    document.body.appendChild(sheet);
+    close.focus();
+  }
+
+  function installQuickStrip() {
+    if (document.getElementById('psQuickStrip')) return;
+    const strip = el('ol', 'ps-quick-strip');
+    strip.id = 'psQuickStrip';
+    strip.hidden = true;
+    strip.setAttribute('aria-label', 'Quick workflow');
+    ['Import', 'Recommended preset', 'Fix My Audio', 'A/B review', 'Export'].forEach((label, i) => {
+      const li = document.createElement('li');
+      li.textContent = label;
+      li.dataset.step = String(i + 1);
+      strip.appendChild(li);
+    });
+    const hdr = document.querySelector('.hdr');
+    if (hdr) hdr.insertAdjacentElement('afterend', strip);
+    else document.body.prepend(strip);
   }
 
   function setPill(id, state, text) {

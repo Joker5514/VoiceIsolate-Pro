@@ -13,14 +13,15 @@ const css = fs.readFileSync(path.join(ROOT, 'public/landing.css'), 'utf8');
 describe('Landing first-impression / mobile premium', () => {
   test('hero communicates local/privacy value prop', () => {
     expect(html).toMatch(/vip-hero/);
-    expect(html).toMatch(/Clean voice\. Zero cloud audio\./i);
+    expect(html).toMatch(/Clean voice\./i);
+    expect(html).toMatch(/Keep the evidence\./i);
     expect(html).toMatch(/Zero telemetry/i);
     expect(html).toMatch(/Upload &amp; isolate|Upload & isolate/);
   });
 
   test('trust strip present', () => {
     expect(html).toMatch(/vip-trust/);
-    expect(html).toMatch(/100% local ONNX/i);
+    expect(html).toMatch(/100% local/i);
     expect(html).toMatch(/no mic/i);
   });
 
@@ -56,9 +57,11 @@ describe('Landing first-impression / mobile premium', () => {
     expect(html).toMatch(/type="module" src="\/landing\.js"/);
   });
 
-  test('font weights are limited (no 300/800 bloat)', () => {
-    expect(html).toMatch(/Outfit:wght@400;500;600;700/);
-    expect(html).not.toMatch(/Outfit:wght@300/);
+  test('fonts are local/system only (no CDN Outfit/Inter)', () => {
+    expect(html).not.toMatch(/fonts\.googleapis\.com/);
+    expect(html).not.toMatch(/fonts\.gstatic\.com/);
+    expect(css).toMatch(/ui-sans-serif/);
+    expect(css).not.toMatch(/--font-ui:\s*['"]?Inter/);
   });
 
   test('CSS enforces mobile tap targets and hero layout', () => {

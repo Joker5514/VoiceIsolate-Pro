@@ -12,11 +12,8 @@
   <title>VoiceIsolate Pro — Local voice isolation · Stem-Split &amp; Live-Mix</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/icon.jpg">
-  <!-- Fonts: limited weights + display=swap (no inline onload — strict CSP) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/landing.css">
+  <link rel="stylesheet" href="/ps-shell.css">
   <link rel="stylesheet" href="/transport-polish.css">
   <!--
     ARCHITECTURE NOTE (CLAUDE.md): this page contains NO inline scripts so it
@@ -27,41 +24,100 @@
     ORT loads inside MLWorker via importScripts — not on the landing main thread.
   -->
 </head>
-<body>
-  <header class="titlebar">
-    <div class="titlebar-left">
+<body class="ps-shell">
+  <header class="titlebar ps-titlebar">
+    <div class="titlebar-left ps-titlebar-left">
       <div class="logo-icon">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ff3d4d" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
           <path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/>
         </svg>
       </div>
       <span class="app-title">VoiceIsolate Pro</span>
-      <span class="arch-badge" id="archBadgeMount">LOCAL · STEM-SPLIT</span>
+      <span class="arch-badge ps-chip ps-chip--process" id="archBadgeMount">STEM-SPLIT</span>
     </div>
-    <div class="titlebar-right">
+    <div class="titlebar-right ps-titlebar-right">
+      <span class="ps-meta">Web / Android / Desktop<br>Local DSP · Private by design</span>
       <a href="/download/" class="eng-mode-link">Download</a>
-      <a href="/app/" class="eng-mode-link eng-mode-link--primary">Engineer</a>
+      <a href="/app/" class="eng-mode-link eng-mode-link--primary">Studio</a>
     </div>
   </header>
 
   <!-- First-impression hero (conversion + trust) — does not alter pipeline IDs -->
-  <section class="vip-hero" aria-labelledby="heroTitle">
-    <p class="vip-hero__eyebrow">Privacy-first voice isolation</p>
-    <h1 id="heroTitle" class="vip-hero__title">Clean voice. Zero cloud audio.</h1>
-    <p class="vip-hero__sub">
-      Upload a noisy clip and isolate speech <strong>entirely on this device</strong> —
-      browser, Android, or desktop. No audio leaves your machine. No microphone. No telemetry.
-    </p>
-    <div class="vip-hero__actions">
-      <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-btn--lg vip-hero__cta">Upload &amp; isolate</a>
-      <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg">Open Engineer Mode</a>
+  <section class="vip-hero ps-hero" aria-labelledby="heroTitle">
+    <div class="ps-hero-copy">
+      <p class="vip-hero__eyebrow ps-kicker">Private audio workstation</p>
+      <h1 id="heroTitle" class="vip-hero__title">Clean voice.<br>Keep the evidence.</h1>
+      <p class="vip-hero__sub">
+        Studio-grade local voice isolation with stem separation, Live-Mix, and export —
+        without uploading audio.
+      </p>
+      <div class="vip-hero__actions ps-actions">
+        <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-btn--lg vip-hero__cta ps-btn ps-btn--process">Upload &amp; isolate</a>
+        <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg ps-btn ps-btn--ghost">Engineer mode</a>
+      </div>
+      <ul class="vip-trust ps-trust" aria-label="Trust signals">
+        <li class="vip-trust__item ps-chip ps-chip--ok">100% local</li>
+        <li class="vip-trust__item ps-chip ps-chip--process">No mic</li>
+        <li class="vip-trust__item ps-chip">No telemetry</li>
+        <li class="vip-trust__item ps-chip ps-chip--live">ONNX / WebGPU</li>
+      </ul>
     </div>
-    <ul class="vip-trust" aria-label="Trust signals">
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> 100% local ONNX</li>
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Zero cloud inference</li>
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Zero telemetry</li>
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Upload-only · no mic</li>
-    </ul>
+    <aside class="ps-panel ps-signal" aria-label="Signal preview">
+      <div class="ps-panel__head">
+        <span>Signal preview</span>
+        <span id="signalPreviewState" class="ps-chip" data-state="idle">Idle</span>
+      </div>
+      <div class="vis-block">
+        <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek after processing</span></div>
+        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
+        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to Live-Mix sliders in real time</span></div>
+        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
+      </div>
+      <div id="sourceConfidencePanel" class="ps-empty" data-state="unavailable" role="status">
+        Source confidence appears after on-device analysis. No placeholder measurements.
+      </div>
+    </aside>
+  </section>
+
+  <section class="ps-steps" aria-labelledby="workflowLabel">
+    <h2 id="workflowLabel" class="visually-hidden">Three-step workflow</h2>
+    <article class="ps-step">
+      <span class="ps-step__n" aria-hidden="true">01</span>
+      <h2>Upload</h2>
+      <p>Local decode + model choice. Audio never leaves the device.</p>
+    </article>
+    <article class="ps-step">
+      <span class="ps-step__n" aria-hidden="true">02</span>
+      <h2>Separate</h2>
+      <p>Batch ONNX stem split. Sliders do not re-run ML.</p>
+    </article>
+    <article class="ps-step ps-step--live">
+      <span class="ps-step__n" aria-hidden="true">03</span>
+      <h2>Live Mix</h2>
+      <p>Instant gain + EQ on stems, then export.</p>
+    </article>
+  </section>
+
+  <section class="ps-modes" aria-labelledby="modesLabel">
+    <h2 id="modesLabel" class="visually-hidden">Product modes</h2>
+    <article class="ps-card">
+      <span class="ps-chip ps-chip--ok">Quick</span>
+      <h2>Guided cleanup</h2>
+      <p>One primary action: import, recommended preset, Fix My Audio, A/B, export.</p>
+      <a class="ps-btn ps-btn--ghost" href="/app/?tier=quick">Open Quick</a>
+    </article>
+    <article class="ps-card">
+      <span class="ps-chip ps-chip--process">Studio</span>
+      <h2>Precision workstation</h2>
+      <p>Default professional shell with the full local DSP rack.</p>
+      <a class="ps-btn ps-btn--process" href="/app/?tier=studio">Open Studio</a>
+    </article>
+    <article class="ps-card">
+      <span class="ps-chip ps-chip--live">Forensic</span>
+      <h2>Signal inspection</h2>
+      <p>Spectrogram-first workspace. Overlays appear only from real analysis.</p>
+      <a class="ps-btn ps-btn--ghost" href="/app/?tier=forensic">Open Forensic</a>
+    </article>
   </section>
 
   <main class="main-area">
@@ -158,12 +214,7 @@
         <input type="range" id="seekSlider" class="landing-seek-input" min="0" max="1000" value="0" disabled aria-label="Playback position">
       </div>
 
-      <div class="vis-block">
-        <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek · In/Out to crop · Loop toggles repeat</span></div>
-        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
-        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
-        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
-      </div>
+      <p class="hint">Waveform and spectrum live in the signal preview above. Transport and Live-Mix remain here so sliders never trigger ML.</p>
 
       <!--
         Output level meter. Powered by the design-system LevelMeter component;
@@ -331,28 +382,20 @@
     </section>
 
     <!-- Conversion sections (below fold on phones — after the product flow) -->
-    <section class="panel vip-card vip-pitch" aria-labelledby="whyLabel">
-      <h2 id="whyLabel" class="section-label">Why it’s different</h2>
-      <ul class="vip-pitch__list">
-        <li><strong>100% local audio</strong> — ONNX runs in a Web Worker on your device (WebGPU when available). No cloud inference API for your files.</li>
-        <li><strong>Privacy by architecture</strong> — no microphone, no telemetry, nothing leaves the device for isolation.</li>
-        <li><strong>Live-Mix after one separation</strong> — rebalance voice vs background instantly without re-running ML.</li>
-        <li><strong>Engineer Mode when you need depth</strong> — Creator · Studio · Forensic racks, same privacy model.</li>
-      </ul>
-    </section>
-
-    <section class="panel vip-card vip-pitch" aria-labelledby="howLabel">
-      <h2 id="howLabel" class="section-label">How it works</h2>
-      <ol class="vip-steps">
-        <li><span class="vip-steps__n">1</span><span><strong>Upload</strong> audio or video — decode stays on-device.</span></li>
-        <li><span class="vip-steps__n">2</span><span><strong>Separate</strong> with local BS-RNN (or denoise-only for speed).</span></li>
-        <li><span class="vip-steps__n">3</span><span><strong>Live-Mix</strong> voice vs residual, then download the result.</span></li>
-      </ol>
-      <p class="hint vip-pitch__foot">Creators: cleaner podcasts &amp; calls. Engineers: full rack in <a href="/app/">Engineer Mode</a>. Offline apps on <a href="/download/">Download</a>.</p>
+    <section class="panel vip-card vip-pitch ps-band" aria-labelledby="whyLabel" style="max-width:1280px;margin:0 auto 24px;">
+      <div>
+        <p class="ps-kicker" id="whyLabel">Why this feels different</p>
+        <h2 class="vip-hero__title" style="font-size:1.6rem;max-width:none;">Audio never leaves the device.</h2>
+        <p class="hint">The interface shows privacy, engine health, and processing state instead of hiding them behind a spinner. No fabricated customer counts or quality percentages.</p>
+      </div>
+      <div class="ps-actions">
+        <div class="ps-stat-box"><span>Pipeline</span><strong>32 stages</strong></div>
+        <div class="ps-stat-box"><span>Spectral</span><strong style="color:var(--action-live)">1 × STFT</strong></div>
+      </div>
     </section>
 
     <section class="panel vip-card privacy-panel">
-      <h2 class="section-label">Privacy &amp; performance</h2>
+      <h2 class="section-label">Privacy &amp; local processing</h2>
       <p class="hint">
         100% local processing — models run in a Web Worker on your device
         (WebGPU when available, WASM fallback). No microphone access, no audio

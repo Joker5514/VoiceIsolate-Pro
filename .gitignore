@@ -78,6 +78,9 @@ Voice enhancement/
 # Agent / IDE scratch (not part of the shipped product)
 .qodo/
 .jules/
+
+# Local design-reference downloads (not shipped)
+.tmp-ui-refs/
 .Jules/
 .claude/
 

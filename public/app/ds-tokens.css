@@ -4,35 +4,48 @@
    Import this before any component or layout CSS.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* Precision Studio tokens. No CDN fonts — system stacks only (CSP + offline APK). */
 
 :root {
-  /* ── Backgrounds ──────────────────────────────────────────── */
-  --void:      #030306;
-  --bg:        #0a0a0e;
-  --app-bg:    #0a0a0e;
-  --surface-1: #0e0e13;
-  --surface-2: #111118;
-  --surface-3: #15151d;
-  --surface-4: #1a1a23;
-  --canvas-bg: #030306;
+  /* ── Precision Studio semantic surfaces ───────────────────── */
+  --surface-root:  #070b10;
+  --surface-panel: #0d131b;
+  --surface-raised:#121a23;
+  --border-subtle: #1d2a34;
+  --text-primary:  #f4f7fa;
+  --text-secondary:#8d9aaa;
+  --action-process:#ff3d4d;
+  --action-live:   #2ed5e5;
+  --state-success: #31cf7d;
+  --state-warning: #f0b541;
+  --source-secondary: #9b6cff;
+
+  /* ── Backgrounds (legacy aliases → Precision Studio) ──────── */
+  --void:      var(--surface-root);
+  --bg:        var(--surface-root);
+  --app-bg:    var(--surface-root);
+  --surface-1: var(--surface-panel);
+  --surface-2: var(--surface-raised);
+  --surface-3: #161f29;
+  --surface-4: #1a2430;
+  --canvas-bg: #05080c;
   --well-bg:   rgba(0,0,0,0.32);
 
   /* ── Signal red ramp ──────────────────────────────────────── */
   --red-900: #450a0a;
   --red-800: #7f1d1d;
   --red-700: #b91c1c;
-  --red-600: #dc2626;
-  --red-500: #ef4444;
-  --red-400: #f87171;
+  --red-600: #e11d3a;
+  --red-500: var(--action-process);
+  --red-400: #ff6b78;
   --red-300: #fca5a5;
-  --red-wash: rgba(220,38,38,0.06);
+  --red-wash: rgba(255,61,77,0.08);
 
   /* ── Status ───────────────────────────────────────────────── */
-  --ok:     #34d399;
-  --warn:   #eab308;
-  --danger: #ef4444;
-  --info:   #60a5fa;
+  --ok:     var(--state-success);
+  --warn:   var(--state-warning);
+  --danger: var(--action-process);
+  --info:   var(--action-live);
 
   /* ── Stem colors ──────────────────────────────────────────── */
   --stem-voice: #ef4444;
@@ -47,15 +60,15 @@
   --signal-clip:  #ffffff;
 
   /* ── Text ramp ────────────────────────────────────────────── */
-  --text-hi:    #eeeef2;
-  --text:       #c4c4d0;
-  --text-2:     #9090a4;
-  --text-dim:   #5e5e78;
-  --text-ghost: rgba(255,255,255,0.18);
+  --text-hi:    var(--text-primary);
+  --text:       #c5ced6;
+  --text-2:     var(--text-secondary);
+  --text-dim:   #6d7a86;
+  --text-ghost: rgba(244,247,250,0.18);
 
   /* ── Borders ──────────────────────────────────────────────── */
-  --border:       rgba(255,255,255,0.06);
-  --border-strong: #2a2a30;
+  --border:       var(--border-subtle);
+  --border-strong: #26323d;
   --border-red:   rgba(220,38,38,0.14);
   --border-focus: rgba(220,38,38,0.55);
 
@@ -72,8 +85,8 @@
   --grid-line: rgba(220,38,38,0.035);
 
   /* ── Typography ───────────────────────────────────────────── */
-  --font-ui:   'Outfit', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-ui:   ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
 
   --fw-regular:   400;
   --fw-medium:    500;
@@ -131,6 +144,17 @@
   --dur-slow: 0.32s;
 
   /* ── Layout ───────────────────────────────────────────────── */
-  --titlebar-h: 44px;
-  --rail-w:     280px;
+  --titlebar-h: 48px;
+  --rail-w:     220px;
+  --inspector-w: 320px;
+  --field-nav-h: 64px;
+}
+
+.ps-tabular,
+.time-readout,
+.hs-val,
+.slider-val,
+.ec-meter-val {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }

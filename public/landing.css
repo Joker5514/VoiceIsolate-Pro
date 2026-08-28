@@ -2,35 +2,47 @@
 
 /* ── Design Tokens ────────────────────────────────────────────────────── */
 :root {
-  --void:       #030306;
-  --bg:         #0a0a0e;
-  --surface-1:  #0e0e13;
-  --surface-2:  #111118;
-  --surface-3:  #15151d;
-  --canvas-bg:  #030306;
+  --surface-root: #070b10;
+  --surface-panel: #0d131b;
+  --surface-raised: #121a23;
+  --border-subtle: #1d2a34;
+  --text-primary: #f4f7fa;
+  --text-secondary: #8d9aaa;
+  --action-process: #ff3d4d;
+  --action-live: #2ed5e5;
+  --state-success: #31cf7d;
+  --state-warning: #f0b541;
+  --source-secondary: #9b6cff;
+
+  --void:       var(--surface-root);
+  --bg:         var(--surface-root);
+  --surface-1:  var(--surface-panel);
+  --surface-2:  var(--surface-raised);
+  --surface-3:  #161f29;
+  --canvas-bg:  #05080c;
   --well-bg:    rgba(0,0,0,0.32);
 
   --red-700: #b91c1c;
-  --red-600: #dc2626;
-  --red-500: #ef4444;
-  --red-400: #f87171;
-  --red-wash: rgba(220,38,38,0.06);
+  --red-600: #e11d3a;
+  --red-500: var(--action-process);
+  --red-400: #ff6b78;
+  --red-wash: rgba(255,61,77,0.08);
   --signal-peak: #fcd34d;
 
-  --ok:     #34d399;
-  --warn:   #eab308;
-  --danger: #ef4444;
+  --ok:     var(--state-success);
+  --warn:   var(--state-warning);
+  --danger: var(--action-process);
 
-  --text-hi:   #eeeef2;
-  --text:      #c4c4d0;
-  --text-2:    #9090a4;
-  --text-dim:  #5e5e78;
-  --text-ghost: rgba(255,255,255,0.18);
+  --text-hi:   var(--text-primary);
+  --text:      #c5ced6;
+  --text-2:    var(--text-secondary);
+  --text-dim:  #6d7a86;
+  --text-ghost: rgba(244,247,250,0.18);
 
-  --border:        rgba(255,255,255,0.06);
-  --border-strong: #2a2a30;
-  --border-red:    rgba(220,38,38,0.14);
-  --border-focus:  rgba(220,38,38,0.55);
+  --border:        var(--border-subtle);
+  --border-strong: #26323d;
+  --border-red:    rgba(255,61,77,0.18);
+  --border-focus:  rgba(46,213,229,0.55);
 
   --hover-fill: rgba(255,255,255,0.04);
 
@@ -39,8 +51,8 @@
 
   --grid-line: rgba(220,38,38,0.035);
 
-  --font-ui:   'Outfit', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-ui:   ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
 
   --fw-regular:  400;
   --fw-medium:   500;
@@ -115,7 +127,7 @@ body::after {
   pointer-events: none;
   z-index: 0;
   animation: vip-aurora-drift 18s ease-in-out infinite alternate;
-  opacity: 0.9;
+  opacity: 0.35;
 }
 
 @keyframes vip-aurora-drift {
@@ -238,10 +250,16 @@ body {
 
 /* ── Hero (first impression / conversion) ─────────────────────────────── */
 .vip-hero {
-  max-width: 860px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: 28px 16px 8px;
   text-align: left;
+}
+.vip-hero.ps-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  gap: 24px;
+  align-items: start;
 }
 .vip-hero__eyebrow {
   margin: 0 0 10px;
@@ -252,10 +270,10 @@ body {
 }
 .vip-hero__title {
   margin: 0 0 12px;
-  font: var(--fw-bold) clamp(1.55rem, 5.2vw, 2.15rem)/1.15 var(--font-ui);
+  font: var(--fw-bold) clamp(1.9rem, 4.6vw, 3.2rem)/1.08 var(--font-ui);
   letter-spacing: -0.03em;
   color: var(--text-hi);
-  max-width: 18ch;
+  max-width: 12ch;
 }
 .vip-hero__sub {
   margin: 0 0 20px;
@@ -506,6 +524,18 @@ a.vip-btn {
  * Visually hidden but kept in the viewport — Chromium 120+ blocks programmatic
  * .click() on file inputs positioned far off-screen (left:-9999px).
  */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .visually-hidden-file {
   position: fixed;
   left: 0;
@@ -932,6 +962,7 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
     flex: 0 0 auto;
   }
   .vip-hero { padding: 20px 14px 4px; }
+  .vip-hero.ps-hero { grid-template-columns: 1fr; }
   .vip-hero__title { max-width: none; }
   .vip-hero__actions .vip-btn,
   .vip-hero__actions a.vip-btn {
