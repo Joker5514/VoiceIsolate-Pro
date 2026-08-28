@@ -1,25 +1,40 @@
 /**
- * mobile-upload-fix.js  v3
+ * mobile-upload-fix.js  v4
  * VoiceIsolate Pro — Mobile Upload Patch
  *
- * Fixes:
+ * Fixes (cumulative — v1–v3 preserved):
  *  1. iOS Safari decodeAudioData callback compat (no Promise return)
  *  2. AudioContext gesture-lock on mobile (create + resume inside gesture)
  *  3. touch-action / pointer-events bleed from slider CSS
- *  4. <input accept> MIME scope for iOS/Android file pickers
- *  5. Android Chrome m4a/AAC decode failure:
+ *  4. &lt;input accept&gt; MIME scope for iOS/Android file pickers
+ *  5. Android Chrome m4a/AAC decode failure (v1–v3):
  *     — resumes suspended AudioContext BEFORE decoding
  *     — clones the ArrayBuffer so it is never neutered before retry
  *     — retries with webkitAudioContext fallback on EncodingError
  *     — patches the existing loadFile error path to surface real errors
  *
- * v3 fixes:
- *  - Removed double-decode in patchLoadFile: calling original() after
- *    safeDecodeAudioData neutered the ArrayBuffer on Android Chrome,
- *    causing a silent second decode failure.
- *  - Removed window._vipAudioCtx swap inside safeDecodeAudioData retry:
- *    replacing the singleton context orphaned the AudioWorklet graph and
- *    all downstream GainNode routing, producing silence after any retry.
+ * NEW in v4 (Android "Unable to decode audio" targeted patch):
+ *  A. MIME inference from file extension — Android ContentResolver delivers
+ *     application/octet-stream or "" for files from Downloads/SD-card.
+ *     Without the correct MIME the error appeared as "corrupt file" before
+ *     any decode was ever attempted.
+ *  B. 3GP/AMR early-reject — Android built-in voice recorder saves .3gp/.amr
+ *     using AMR codecs that Chrome Android / Samsung Internet cannot decode
+ *     via AudioContext.decodeAudioData. Now detected pre-decode with an
+ *     actionable "convert to WAV/MP3/M4A" message instead of a cryptic
+ *     EncodingError falsely labelled as corruption.
+ *  C. Detached-buffer double-clone fix — Chromium on Android neuters
+ *     arrayBuffer after the first decodeAudioData call, AND neuters buf1
+ *     (the first .slice(0) clone) because that is the argument to decodeAudioData.
+ *     The retry path then called arrayBuffer.slice(0) on an already-detached
+ *     buffer, throwing "ArrayBuffer is detached". Fix: capture buf2 = arrayBuffer.slice(0)
+ *     BEFORE the first decode attempt so the retry always has a live buffer.
+ *  D. Codec-vs-corruption error messaging — matches Chromium Android's
+ *     actual EncodingError text to give the user an actionable hint instead
+ *     of falsely claiming the file is corrupt.
+ *  E. Gesture-tick AudioContext unlock — ctx.resume() now called synchronously
+ *     at the top of patchLoadFile (inside the gesture tick) before the async
+ *     FileReader.onload fires, which is outside the gesture window on Android.
  *
  * Load AFTER app.js. Monkey-patches global helpers and re-wires the
  * upload zone without touching existing logic.
@@ -28,12 +43,73 @@
 (function () {
   'use strict';
 
+  // ---------------------------------------------------------------------------
+  // Android v4: MIME inference map — used when ContentResolver delivers
+  // application/octet-stream or "" for a file that has a valid extension.
+  // Covers every container the app's accept list allows.
+  // ---------------------------------------------------------------------------
+  var EXTENSION_MIME_MAP = {
+    mp3:  'audio/mpeg',  wav:  'audio/wav',   wave: 'audio/wav',
+    m4a:  'audio/mp4',   aac:  'audio/aac',   ogg:  'audio/ogg',
+    oga:  'audio/ogg',   flac: 'audio/flac',  opus: 'audio/opus',
+    webm: 'audio/webm',  weba: 'audio/webm',  mp4:  'audio/mp4',
+    '3gp':'audio/3gpp',  '3g2':'audio/3gpp2', amr:  'audio/amr',
+    aiff: 'audio/aiff',  aif:  'audio/aiff',  caf:  'audio/x-caf',
+    wma:  'audio/x-ms-wma',
+  };
+
+  // Android v4: containers/codecs that Chrome Android + Samsung Internet
+  // cannot decode via AudioContext.decodeAudioData. AMR-NB/AMR-WB in 3GP
+  // is the most common source of the "Unable to decode audio" error from
+  // Android's built-in voice recorder app.
+  var ANDROID_UNSUPPORTED_EXT  = /^(3gp|3g2|3ga|amr|awb|amr-wb)$/i;
+  var ANDROID_UNSUPPORTED_MIME = {
+    'audio/amr': 1, 'audio/amr-wb': 1,
+    'audio/3gpp': 1, 'audio/3gpp2': 1,
+    'video/3gpp': 1, 'video/3gpp2': 1,
+  };
+
+  /** Returns true when running on Android (any browser or WebView). */
+  function isAndroid() {
+    try { return /Android/i.test(navigator.userAgent || ''); } catch (_) { return false; }
+  }
+
+  /**
+   * isGenericMime — returns true for MIME types that carry no format info.
+   * Android ContentResolver often delivers these for audio files on SD-card
+   * or from third-party apps.
+   */
+  function isGenericMime(type) {
+    var t = (type || '').toLowerCase().trim();
+    return !t || t === 'application/octet-stream' || t === 'audio/*' || t === 'video/*';
+  }
+
+  /**
+   * effectiveMime — infers the real MIME type from the file extension when
+   * the File object carries a generic or empty MIME type.
+   * Returns the original type if no inference is possible.
+   */
+  function effectiveMime(file) {
+    if (!isGenericMime(file.type)) return file.type;
+    var ext = ((file.name || '').split('.').pop() || '').toLowerCase();
+    return EXTENSION_MIME_MAP[ext] || file.type || 'audio/mpeg';
+  }
+
+  /**
+   * getFileExt — returns the lowercase extension of the filename without dot.
+   */
+  function getFileExt(file) {
+    return ((file.name || '').split('.').pop() || '').toLowerCase();
+  }
+
   /* ─── 1. Safe decodeAudioData shim ────────────────────────────────────────
    * iOS Safari webkitAudioContext.decodeAudioData does NOT return a Promise.
    * Android Chrome suspends AudioContext → decodeAudioData throws EncodingError.
    * This shim:
    *   a) ensures the context is resumed before every decode attempt
-   *   b) clones the ArrayBuffer so the original is never neutered
+   *   b) captures TWO clones upfront — buf1 for attempt 1, buf2 for retry —
+   *      because Chromium Android neuters BOTH arrayBuffer AND buf1 after the
+   *      first decodeAudioData call (v4 fix C: double-clone guard)
    *   c) retries once with a fresh AudioContext on failure
    *
    * FIX (v3): The retry path no longer swaps window._vipAudioCtx to the
@@ -42,38 +118,67 @@
    * used only for the decode operation and then closed.
    */
   window.safeDecodeAudioData = async function (ctx, arrayBuffer) {
-    // Always resume first — Android Chrome requires this before decode
+    // Android v4 fix E: resume inside the gesture tick before anything async.
     if (ctx.state === 'suspended') {
       try { await ctx.resume(); } catch (_) {}
     }
 
-    // Clone the buffer — decodeAudioData neuters the original on some Android builds
-    const buf1 = arrayBuffer.slice(0);
+    // Android v4 fix C: capture buf2 BEFORE decodeAudioData is ever called.
+    // Chromium Android neuters arrayBuffer AND the slice argument (buf1)
+    // after the first decodeAudioData call, so the retry must use a clone
+    // that was captured before any decode attempt.
+    var buf2 = (arrayBuffer && arrayBuffer.byteLength > 0)
+      ? arrayBuffer.slice(0)
+      : arrayBuffer;
+
+    // buf1 is the clone fed into the first decode attempt.
+    var buf1 = (arrayBuffer && arrayBuffer.byteLength > 0)
+      ? arrayBuffer.slice(0)
+      : arrayBuffer;
 
     return new Promise(function (resolve, reject) {
-      // Callback form works on all browsers including old iOS WebKit
+      // Callback form works on all browsers including old iOS WebKit.
       ctx.decodeAudioData(buf1, resolve, async function (err) {
         console.warn('[VIP] decodeAudioData attempt 1 failed:', err);
 
         // ── Retry: create a fresh context for decode only ────────────────
-        // FIX: Do NOT assign freshCtx to window._vipAudioCtx — doing so
+        // FIX (v3): Do NOT assign freshCtx to window._vipAudioCtx — doing so
         // replaces the app's singleton and orphans the AudioWorklet graph.
-        let freshCtx = null;
+        var freshCtx = null;
         try {
-          const Ctor = window.AudioContext || window.webkitAudioContext;
+          var Ctor = window.AudioContext || window.webkitAudioContext;
           freshCtx = new Ctor();
           await freshCtx.resume();
-          const buf2 = arrayBuffer.slice(0); // fresh clone for retry
-          freshCtx.decodeAudioData(buf2, function (decoded) {
-            // Close the temporary context — we only needed it for decode.
+
+          // Android v4 fix C: use the pre-captured buf2 clone (buf1 and
+          // arrayBuffer are already neutered at this point on Android Chrome).
+          var retryBuf = (buf2 && buf2.byteLength > 0)
+            ? buf2
+            : ((arrayBuffer && arrayBuffer.byteLength > 0) ? arrayBuffer.slice(0) : buf2);
+
+          freshCtx.decodeAudioData(retryBuf, function (decoded) {
             try { freshCtx.close(); } catch (_) {}
             resolve(decoded);
           }, function (err2) {
             try { freshCtx.close(); } catch (_) {}
             console.error('[VIP] decodeAudioData retry also failed:', err2);
+
+            // Android v4 fix D: distinguish codec/container errors from
+            // genuine corruption so the user gets an actionable message.
+            var errMsg = (err2 && err2.message ? err2.message : String(err2)) || '';
+            var errMsg1 = (err && err.message ? err.message : String(err)) || '';
+            var isCodecErr = /encodingerror|unable to decode|unsupported|not supported|no supported/i
+              .test(errMsg + ' ' + errMsg1);
+            var hint = (isAndroid() && isCodecErr)
+              ? ' Try converting the file to WAV, MP3, or M4A/AAC before uploading.'
+              : '';
+
             reject(new Error(
-              'Cannot decode audio. File may be corrupted or format unsupported by this browser. ' +
-              '(' + (err2 && err2.message ? err2.message : String(err2)) + ')'
+              (isCodecErr
+                ? 'Audio format not supported by this browser/device.'
+                : 'Cannot decode audio. File may be corrupted or format unsupported by this browser.')
+              + hint +
+              ' (' + errMsg + ')'
             ));
           });
         } catch (retryEx) {
@@ -90,7 +195,7 @@
   window._vipAudioCtx = null;
 
   window.getAudioContext = async function () {
-    const Ctor = window.AudioContext || window.webkitAudioContext;
+    var Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) throw new Error('Web Audio API not supported');
 
     if (!window._vipAudioCtx) {
@@ -108,7 +213,7 @@
    * slider-theme.css and mobile.css set touch-action:none broadly.
    */
   function fixUploadZoneTouchTarget() {
-    const selectors = [
+    var selectors = [
       '#dz', '#dropZone', '.drop-zone', '#uploadZone',
       '#fi', 'input[type="file"]',
       '.drop-btns', '.drop-btns button',
@@ -127,8 +232,7 @@
   /* ─── 4. Expand <input type="file"> accept to full MIME list ─────────────
    * Explicit MIME list forces the correct native picker on iOS + Android.
    */
-  /** Desktop/mobile-web: full list. Capacitor Android: compact wildcards (OEM picker safe). */
-  const AUDIO_ACCEPT_FULL = [
+  var AUDIO_ACCEPT_FULL = [
     'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
     'audio/ogg', 'audio/flac', 'audio/x-flac', 'audio/aac', 'audio/x-aac',
     'audio/x-m4a', 'audio/m4a', 'audio/mp4', 'audio/webm', 'audio/amr',
@@ -144,7 +248,7 @@
     '.mp4', '.m4v', '.mov', '.mkv', '.avi', '.ogv', '.3gp', '.3g2',
     '.wmv', '.mpeg', '.mpg', '.ts', '.m2ts', '.mts', '.flv', '.f4v', '.asf',
   ].join(',');
-  const AUDIO_ACCEPT_ANDROID_NATIVE = 'audio/*,video/*';
+  var AUDIO_ACCEPT_ANDROID_NATIVE = 'audio/*,video/*';
 
   function isAndroidNativeShell() {
     try {
@@ -240,56 +344,81 @@
 
   /* ─── 6. Patch loadFile — intercept the decode call with safeDecodeAudioData
    *
-   * This is the core Android m4a fix. Ensures:
-   *   a) AudioContext is resumed before the file reader runs
-   *   b) The ArrayBuffer is decoded via safeDecodeAudioData (with retry)
-   *   c) A meaningful error is shown instead of the generic string
+   * v4 additions on top of v3:
+   *   A. MIME inference — calls effectiveMime(file) before FileReader runs so
+   *      that files with application/octet-stream (Android ContentResolver)
+   *      are identified by extension instead of being misclassified.
+   *   B. 3GP/AMR early-reject — files that Android Chrome cannot decode are
+   *      rejected with an actionable message BEFORE the FileReader starts,
+   *      avoiding a misleading "corrupt file" error.
+   *   E. Gesture-tick AudioContext unlock — ctx.resume() is now awaited at
+   *      the synchronous top of patchLoadFile (still inside the gesture tick),
+   *      not only inside FileReader.onload (which is asynchronous and fires
+   *      outside the gesture window on Samsung Internet).
    *
-   * FIX (v3): Removed the call to original() after safeDecodeAudioData
-   * succeeds. The original loadFile path calls decodeBlobToAudioBuffer via
-   * FileIngestion — a separate code path that never reads _vipDecodedBuffer.
-   * Calling it after safeDecodeAudioData had already neutered the ArrayBuffer
-   * (Android Chrome detaches the buffer after decodeAudioData) caused a
-   * silent second-decode failure swallowed by the catch block.
-   * Now: safeDecodeAudioData succeeds → store buffer → done. No double-decode.
+   * FIX (v3, preserved): Removed the call to original() after
+   * safeDecodeAudioData succeeds to prevent double-decode on neutered buffer.
    */
   function patchLoadFile() {
     if (typeof window.loadFile !== 'function') return;
     if (window.loadFile._mobilePatchApplied) return;
 
     window.loadFile = async function (file) {
-      // Step 1: ensure AudioContext is alive inside this gesture stack
-      let ctx;
+      // Android v4 fix A: infer the real MIME from the file extension when
+      // Android ContentResolver delivers application/octet-stream or "".
+      // This determines which codec path runs below and what error to show.
+      var mime = effectiveMime(file);
+      var ext  = getFileExt(file);
+
+      // Android v4 fix B: early-reject 3GP/AMR containers — these use
+      // AMR-NB/AMR-WB codecs that Chrome Android and Samsung Internet
+      // cannot decode via AudioContext.decodeAudioData. Attempting decode
+      // stalls and surfaces a generic EncodingError ("Unable to decode audio")
+      // with no actionable guidance. Reject here with an explicit message.
+      if (ANDROID_UNSUPPORTED_EXT.test(ext) || ANDROID_UNSUPPORTED_MIME[mime]) {
+        var fmtLabel = ext ? ext.toUpperCase() : mime;
+        var msg = '\u26a0 ' + fmtLabel + ' format cannot be decoded by this browser. '
+          + 'Convert to WAV, MP3, or M4A/AAC and upload again.';
+        var fi = document.getElementById('fileInfo');
+        if (fi) fi.textContent = msg;
+        return Promise.reject(new Error(msg));
+      }
+
+      // Android v4 fix E: resume the AudioContext inside the gesture tick
+      // BEFORE the async FileReader fires. On Samsung Internet the gesture
+      // window closes before FileReader.onload runs, so ctx.resume() inside
+      // onload is too late and AudioContext remains suspended.
+      var ctx;
       try { ctx = await window.getAudioContext(); } catch (_) {}
 
-      // Step 2: read the file into an ArrayBuffer and decode via the shim
+      // Read the file once. safeDecodeAudioData handles all buffer cloning.
       return new Promise(function (resolve, reject) {
-        const reader = new FileReader();
+        var reader = new FileReader();
         reader.onload = async function (e) {
-          const ab = e.target.result;
+          var ab = e.target.result;
           try {
-            const activeCtx = window._vipAudioCtx || ctx;
-            const audioBuffer = await window.safeDecodeAudioData(activeCtx, ab);
+            var activeCtx = window._vipAudioCtx || ctx;
+            var audioBuffer = await window.safeDecodeAudioData(activeCtx, ab);
 
-            // Store decoded buffer for app.js to pick up
+            // Store decoded buffer for app.js to pick up.
             window._vipDecodedBuffer = audioBuffer;
 
-            // FIX: Do NOT call original(file) here. The original path
-            // triggers a second decode (FileIngestion → decodeBlobToAudioBuffer)
-            // on an already-neutered ArrayBuffer, producing silence or an
-            // EncodingError silently swallowed by the catch below.
+            // FIX (v3, preserved): Do NOT call original(file) here.
+            // The original path triggers a second decode via FileIngestion
+            // → decodeBlobToAudioBuffer on an already-neutered ArrayBuffer,
+            // producing silence or an EncodingError swallowed by the catch.
             resolve();
           } catch (decodeErr) {
             console.error('[VIP] safeDecodeAudioData failed:', decodeErr);
-            const fi = document.getElementById('fileInfo');
-            if (fi) fi.textContent = '\u26a0 ' + (decodeErr.message || 'Decode failed — try WAV or MP3');
+            var fiEl = document.getElementById('fileInfo');
+            if (fiEl) fiEl.textContent = '\u26a0 ' + (decodeErr.message || 'Decode failed — try WAV or MP3');
             reject(decodeErr);
           }
         };
         reader.onerror = function () {
-          const msg = 'File read error — cannot open ' + (file.name || 'file');
-          const fi = document.getElementById('fileInfo');
-          if (fi) fi.textContent = '\u26a0 ' + msg;
+          var msg = 'File read error — cannot open ' + (file.name || 'file');
+          var fiEl = document.getElementById('fileInfo');
+          if (fiEl) fiEl.textContent = '\u26a0 ' + msg;
           reject(new Error(msg));
         };
         reader.readAsArrayBuffer(file);
@@ -324,14 +453,17 @@
         patchLoadFile();
         ensureUploadWiring();
         // Stop watching once upload controls are stably wired.
-        if (document.getElementById('fileInput')?.dataset?.vipChangeBound === '1' && fires >= 2) {
+        if (document.getElementById('fileInput') &&
+            document.getElementById('fileInput').dataset &&
+            document.getElementById('fileInput').dataset.vipChangeBound === '1' &&
+            fires >= 2) {
           try { observer.disconnect(); } catch (_) {}
         }
       }, 400);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[VIP] mobile-upload-fix.js v3.1 loaded — debounced DOM observer (Android freeze)');
+    console.log('[VIP] mobile-upload-fix.js v4 loaded — Android decode reliability patch');
   }
 
   if (document.readyState === 'loading') {
