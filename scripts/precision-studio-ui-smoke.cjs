@@ -79,7 +79,7 @@ function waitForServer(base, timeoutMs = 20000) {
     check(await page.locator('#processBtn').count() === 1, 'studio processBtn');
     check(await page.locator('#fileInput').count() === 1, 'studio fileInput');
     check(await page.locator('[data-hero-tier="creator"]').count() === 1, 'Quick tier pill');
-    await page.click('[data-hero-tier="creator"]').catch(() => {});
+await page.click('[data-hero-tier="creator"]', { timeout: 3000 });
     await page.waitForTimeout(200);
     const tier = await page.evaluate(() => document.getElementById('vipHero')?.dataset.workflowTier);
     check(tier === 'creator', `Quick maps to creator (got ${tier})`);
