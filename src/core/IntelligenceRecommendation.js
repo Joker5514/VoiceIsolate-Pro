@@ -45,7 +45,7 @@ export function recommendForGoal(snapshot, goal, context = {}) {
   const evidence = snapshot.evidenceRegions.filter((region) => (
     region.support === 'supported' && policy?.evidence.includes(region.detectionType)
   ));
-  const executable = policy && snapshot.freshness !== 'stale' && evidence.length > 0;
+  const executable = Boolean(policy && ['fresh', 'cached'].includes(snapshot.freshness) && evidence.length > 0);
   const evidenceRefs = evidence.map(({ id }) => id);
   const recommendationId = stableId('rec', [snapshot.contentFingerprint, snapshot.analysisVersion, goal, ...evidenceRefs]);
   const unsupported = !policy ? 'This goal is not supported by the current local analyzers and DSP operations.'
