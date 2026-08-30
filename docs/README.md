@@ -16,6 +16,7 @@ Single map of product, architecture, platform, and historical docs.
 | Setup + PR workflow | [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
 | Current system shape | [architecture/VoiceIsolate_Pro_Architecture_v26.md](architecture/VoiceIsolate_Pro_Architecture_v26.md) |
 | Product / cross-platform plan | [architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) |
+| Product strategy, MVP, and go-to-market priorities | [product/PRODUCT_STRATEGY.md](product/PRODUCT_STRATEGY.md) |
 | Download APK / Windows installer | [DOWNLOADS.md](DOWNLOADS.md) · [download page](https://voice-isolate-pro.vercel.app/download/) |
 | Android sideload / offline APK | [guides/ANDROID.md](guides/ANDROID.md) |
 
@@ -28,6 +29,12 @@ Single map of product, architecture, platform, and historical docs.
 | [architecture/VoiceIsolate_Pro_Architecture_v26.md](architecture/VoiceIsolate_Pro_Architecture_v26.md) | Unified architecture — current vs target, contracts, gaps |
 | [architecture/VoiceIsolate_Pro_Technical_Whitepaper.md](architecture/VoiceIsolate_Pro_Technical_Whitepaper.md) | Single-pass spectral, ORT, live-mix vs offline |
 | [architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) | Product blueprint (web · desktop · Android) |
+
+## Product strategy
+
+| Document | Description |
+|----------|-------------|
+| [product/PRODUCT_STRATEGY.md](product/PRODUCT_STRATEGY.md) | Improved product definition, required versus optional scope, strong MVP, technical approach, roadmap, risks, and measurable release gates |
 
 ---
 
@@ -105,4 +112,3 @@ docs/
 | [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-Audio Option B local worker |
 | [guides/PLATFORM_CAPABILITY_MATRIX.md](guides/PLATFORM_CAPABILITY_MATRIX.md) | Web / Android / Desktop matrix |
 | [audits/CROSS_PLATFORM_SAM_AUDIT_2026-08-05.md](audits/CROSS_PLATFORM_SAM_AUDIT_2026-08-05.md) | Full audit |
-
