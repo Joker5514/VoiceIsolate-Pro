@@ -392,6 +392,7 @@ android/             Capacitor Android project
 
 ## Unreleased changes
 
+- **Cross-platform finalization latency** — long output-safety limiting now runs in zero-copy cooperative chunks, keeping the shared Web, Android, and Electron renderer responsive through the final 98% stage.
 - **Engineer Mode control restoration** — all 66 range sliders mount in the shared Web / Android / Electron shell; each path is now live-mix, process-time, stereo post-stem, or export-only with a verified consumer.
 - **Control-path hardening** — fresh and durable ML results now share post-stem cleanup, DSP fallback invalidates stale stem pairs, Whisper Mode has reset/lock/persistence parity, and all processed WAV exports use the same encoder-only dither snapshot.
 - **Production static routing** — Vercel intentionally excludes `api/` and `api-routes/`; model rewrites remain active, while no serverless `/api` endpoint is advertised.

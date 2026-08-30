@@ -86,6 +86,11 @@ constraints every contributor must enforce:
 | **Electron security** | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, preload-only IPC. See `electron/main.cjs`. |
 | **UI shell parity** | **One Engineer Console** under `public/app/` (HTML + `engineer-console.js/css`) ships on Web, Capacitor Android, and Electron. `pnpm build` copies `public/` → `build/`; Android `cap sync` and electron-builder consume `build/`. Do not fork a separate mobile/desktop Engineer UI. |
 
+Renderer-thread post-ML work must remain cooperatively scheduled on every
+platform. Long per-sample finalization passes use `processInChunks()` from
+`src/pipeline/ui-yield.js`; typed-array `subarray()` views are preferred so
+responsiveness does not require full-channel copies or extra memory pressure.
+
 **Timelines (realistic):** Electron MVP 3–4 weeks (signing + auto-update); Android hardening 5–6 weeks.
 
 ### 1.3 Engineer Console UI (layout rules)
