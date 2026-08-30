@@ -25,6 +25,7 @@
   -->
 </head>
 <body class="ps-shell">
+  <a class="ps-skip-link" href="#workspace">Skip to audio workspace</a>
   <header class="titlebar ps-titlebar">
     <div class="titlebar-left ps-titlebar-left">
       <div class="logo-icon">
@@ -41,6 +42,24 @@
       <a href="/app/" class="eng-mode-link eng-mode-link--primary">Studio</a>
     </div>
   </header>
+
+  <nav class="ps-workflow-nav" aria-label="Audio workflow">
+    <a class="ps-workflow-nav__item ps-workflow-nav__item--active" href="#uploadPanel" aria-current="step">
+      <span class="ps-workflow-nav__number" aria-hidden="true">1</span>
+      <span><strong>Import</strong><small>Choose a source</small></span>
+    </a>
+    <span class="ps-workflow-nav__line" aria-hidden="true"></span>
+    <a class="ps-workflow-nav__item" href="#mixPanel">
+      <span class="ps-workflow-nav__number" aria-hidden="true">2</span>
+      <span><strong>Separate &amp; mix</strong><small>Review the result</small></span>
+    </a>
+    <span class="ps-workflow-nav__line" aria-hidden="true"></span>
+    <a class="ps-workflow-nav__item" href="#exportRow">
+      <span class="ps-workflow-nav__number" aria-hidden="true">3</span>
+      <span><strong>Export</strong><small>Save the clean stem</small></span>
+    </a>
+    <span class="ps-workflow-nav__privacy">Local session · audio stays here</span>
+  </nav>
 
   <!-- First-impression hero (conversion + trust) — does not alter pipeline IDs -->
   <section class="vip-hero ps-hero" aria-labelledby="heroTitle">
@@ -120,7 +139,7 @@
     </article>
   </section>
 
-  <main class="main-area">
+  <main class="main-area" id="workspace" tabindex="-1">
     <!-- ── STEP 1: Upload ──────────────────────────────────────────────── -->
     <section class="panel vip-card" id="uploadPanel" aria-labelledby="uploadLabel">
       <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
@@ -163,8 +182,11 @@
     </section>
 
     <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
-    <section class="panel vip-card" aria-labelledby="mixLabel">
-      <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
+    <section class="panel vip-card" id="mixPanel" aria-labelledby="mixLabel">
+      <div class="ps-section-heading">
+        <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
+        <span class="ps-availability" aria-hidden="true">Unlocks after separation</span>
+      </div>
       <p class="hint">Stems play through the Web Audio graph. Sliders rebalance gains instantly — the AI never re-runs.</p>
 
       <!--
