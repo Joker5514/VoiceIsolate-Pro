@@ -35,6 +35,8 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 
 Packaging rule: Web, Android, and Desktop **consume** `pnpm build` → `build/` when each surface is rebuilt from the same commit. Published Web / Android / Windows artifacts were rebuilt from `0b791c2` on 2026-08-24. Provenance: [releases/release-provenance.json](releases/release-provenance.json).
 
+The current source also time-slices the final output-safety limiter with zero-copy typed-array views. This responsiveness fix is shared automatically by Web, Android, and Desktop through the single `public/app/` shell; the published v25.0.2 native download assets remain pinned to the provenance above until the next artifact rebuild.
+
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 
 `build/`, `android/.../assets/public`, and `dist/*` binaries are **gitignored** — regenerate after pulling.

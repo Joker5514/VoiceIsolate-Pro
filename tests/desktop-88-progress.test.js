@@ -39,6 +39,15 @@ describe('desktop 88% progress semantics', () => {
     expect(appJs).toMatch(/_postMlChunkSamples/);
     expect(appJs).toMatch(/isDesktopShell\(\)\) return 48000/);
   });
+
+  test('long output-safety limiting is zero-copy and cooperatively chunked', () => {
+    const start = appJs.indexOf('async _applyOutputSafetyLimitAsync');
+    const end = appJs.indexOf('\n  // Yield to the event loop', start);
+    const body = appJs.slice(start, end);
+    expect(body).toMatch(/processInChunks\(\{/);
+    expect(body).toMatch(/out\.subarray\(start, end\)/);
+    expect(body).not.toMatch(/DSP\.truePeakLimit\(out, ceil\);\s*\/\/ Process in place/);
+  });
 });
 
 describe('cooperative post-ML utilities', () => {
