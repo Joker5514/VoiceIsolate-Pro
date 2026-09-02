@@ -19,6 +19,13 @@ const DEFAULT_COLORS = {
   overlap: '#f472b6',
 };
 
+const finiteNumber = (value, fallback) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
 export class TimelineRenderer {
   /**
    * @param {HTMLCanvasElement|HTMLElement} container
@@ -49,7 +56,7 @@ export class TimelineRenderer {
         c.style.width = '100%';
         c.style.height = '100%';
         c.style.display = 'block';
-        this.container.innerHTML = '';
+        this.container.replaceChildren();
         this.container.appendChild(c);
       }
       this._canvas = c;
@@ -63,17 +70,18 @@ export class TimelineRenderer {
    * @param {object} analysis
    */
   setAnalysis(analysis) {
-    this.duration = Math.max(0.01, analysis?.duration || 1);
-    this.layers = (analysis?.visualLayers || []).filter((L) => L.segments && L.segments.length);
+    this.duration = Math.max(0.01, finiteNumber(analysis?.duration, 1));
+    const visualLayers = Array.isArray(analysis?.visualLayers) ? analysis.visualLayers : [];
+    this.layers = visualLayers.filter((layer) => Array.isArray(layer?.segments) && layer.segments.length);
     // Always keep structure of all lanes for empty state
-    if (!this.layers.length && analysis?.visualLayers) {
-      this.layers = analysis.visualLayers;
+    if (!this.layers.length) {
+      this.layers = visualLayers;
     }
     this.draw();
   }
 
   setPlayhead(t) {
-    this.playhead = Math.max(0, t);
+    this.playhead = clamp(finiteNumber(t, 0), 0, this.duration);
     this.draw();
   }
 
@@ -98,7 +106,7 @@ export class TimelineRenderer {
     ctx.fillStyle = '#0b1220';
     ctx.fillRect(0, 0, cssW, cssH);
 
-    const trackW = cssW - labelW - 8;
+    const trackW = Math.max(1, cssW - labelW - 8);
     const layers = this.layers.length ? this.layers : [{ id: 'empty', label: 'No analysis yet', segments: [], color: '#334155' }];
 
     layers.forEach((layer, i) => {
@@ -113,7 +121,7 @@ export class TimelineRenderer {
       ctx.fillStyle = '#111827';
       ctx.fillRect(labelW, y + 4, trackW, laneH - 8);
 
-      const segs = layer.segments || [];
+      const segs = Array.isArray(layer.segments) ? layer.segments : [];
       if (!segs.length) {
         ctx.fillStyle = 'rgba(51,65,85,0.35)';
         ctx.fillRect(labelW, y + 4, trackW, laneH - 8);
@@ -124,9 +132,11 @@ export class TimelineRenderer {
       }
 
       for (const s of segs) {
-        const x0 = labelW + (s.start / this.duration) * trackW;
-        const x1 = labelW + (s.end / this.duration) * trackW;
-        const conf = s.confidence != null ? s.confidence : (layer.confidence ?? 0.5);
+        const start = clamp(finiteNumber(s?.start, 0), 0, this.duration);
+        const end = clamp(finiteNumber(s?.end, start), start, this.duration);
+        const x0 = labelW + (start / this.duration) * trackW;
+        const x1 = labelW + (end / this.duration) * trackW;
+        const conf = clamp(finiteNumber(s?.confidence, finiteNumber(layer.confidence, 0.5)), 0, 1);
         const col = layer.color || DEFAULT_COLORS[layer.id] || '#64748b';
         ctx.globalAlpha = 0.25 + conf * 0.7;
         ctx.fillStyle = col;
@@ -136,7 +146,7 @@ export class TimelineRenderer {
     });
 
     // playhead
-    const px = labelW + (this.playhead / this.duration) * trackW;
+    const px = labelW + (clamp(this.playhead, 0, this.duration) / this.duration) * trackW;
     ctx.strokeStyle = '#f8fafc';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -172,8 +182,13 @@ export class TimelineRenderer {
     const i = Math.floor((y - 4) / laneH);
     if (i < 0 || i >= layers.length) return null;
     const layer = layers[i];
-    const t = ((x - labelW) / trackW) * this.duration;
-    const segment = (layer.segments || []).find((s) => t >= s.start && t <= s.end) || null;
+    const t = clamp(((x - labelW) / trackW) * this.duration, 0, this.duration);
+    const segments = Array.isArray(layer.segments) ? layer.segments : [];
+    const segment = segments.find((s) => {
+      const start = finiteNumber(s?.start, -1);
+      const end = finiteNumber(s?.end, -1);
+      return t >= start && t <= end;
+    }) || null;
     return { layer, time: t, segment };
   }
 
@@ -186,8 +201,17 @@ export class TimelineRenderer {
       document.body.appendChild(this._tooltip);
     }
     const s = hit.segment;
-    const conf = s ? Math.round((s.confidence ?? 0) * 100) : 0;
-    this._tooltip.innerHTML = `<strong>${hit.layer.label}</strong><br>${s ? `${s.start.toFixed(2)}s – ${s.end.toFixed(2)}s` : hit.time.toFixed(2) + 's'}<br>Confidence: ${conf}%${s?.meta ? `<br>${s.meta}` : ''}`;
+    const conf = Math.round(clamp(finiteNumber(s?.confidence, 0), 0, 1) * 100);
+    const title = document.createElement('strong');
+    title.textContent = String(hit.layer.label || hit.layer.id || 'Timeline region');
+    const timing = s
+      ? `${finiteNumber(s.start, 0).toFixed(2)}s – ${finiteNumber(s.end, 0).toFixed(2)}s`
+      : `${finiteNumber(hit.time, 0).toFixed(2)}s`;
+    const lines = [title, document.createElement('br'), timing, document.createElement('br'), `Confidence: ${conf}%`];
+    if (s?.meta != null && String(s.meta)) {
+      lines.push(document.createElement('br'), String(s.meta));
+    }
+    this._tooltip.replaceChildren(...lines);
     this._tooltip.style.left = `${e.clientX + 12}px`;
     this._tooltip.style.top = `${e.clientY + 12}px`;
     this._tooltip.style.display = 'block';
