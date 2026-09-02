@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="/landing.css">
   <link rel="stylesheet" href="/ps-shell.css">
   <link rel="stylesheet" href="/transport-polish.css">
+  <link rel="stylesheet" href="/premium-refresh.css">
   <!--
     ARCHITECTURE NOTE (CLAUDE.md): this page contains NO inline scripts so it
     runs under the strict CSP (script-src 'self'). It is the reference
@@ -34,10 +35,11 @@
         </svg>
       </div>
       <span class="app-title">VoiceIsolate Pro</span>
-      <span class="arch-badge ps-chip ps-chip--process" id="archBadgeMount">STEM-SPLIT</span>
+      <span class="arch-badge ps-chip ps-chip--process" id="archBadgeMount">LOCAL AI STUDIO</span>
     </div>
     <div class="titlebar-right ps-titlebar-right">
-      <span class="ps-meta">Web / Android / Desktop<br>Local DSP · Private by design</span>
+      <span class="premium-status"><i aria-hidden="true"></i> Engine online</span>
+      <span class="ps-meta">Web · Android · Desktop<br>Private by design</span>
       <a href="/download/" class="eng-mode-link">Download</a>
       <a href="/app/" class="eng-mode-link eng-mode-link--primary">Studio</a>
     </div>
@@ -64,27 +66,31 @@
   <!-- First-impression hero (conversion + trust) — does not alter pipeline IDs -->
   <section class="vip-hero ps-hero" aria-labelledby="heroTitle">
     <div class="ps-hero-copy">
-      <p class="vip-hero__eyebrow ps-kicker">Private audio workstation</p>
-      <h1 id="heroTitle" class="vip-hero__title">Clean voice.<br>Keep the evidence.</h1>
+      <p class="vip-hero__eyebrow ps-kicker"><span>New</span> Private AI audio workstation</p>
+      <h1 id="heroTitle" class="vip-hero__title">Every voice,<br><em>crystal clear.</em><span class="visually-hidden"> Clean voice. Keep the evidence.</span></h1>
       <p class="vip-hero__sub">
-        Studio-grade local voice isolation with stem separation, Live-Mix, and export —
-        without uploading audio.
+        Separate speech from noise with studio-grade AI that runs entirely on your device.
+        Import, isolate, fine-tune, and export in one private workspace.
       </p>
       <div class="vip-hero__actions ps-actions">
         <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-btn--lg vip-hero__cta ps-btn ps-btn--process">Upload &amp; isolate</a>
         <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg ps-btn ps-btn--ghost">Engineer mode</a>
       </div>
       <ul class="vip-trust ps-trust" aria-label="Trust signals">
-        <li class="vip-trust__item ps-chip ps-chip--ok">100% local</li>
-        <li class="vip-trust__item ps-chip ps-chip--process">No mic</li>
-        <li class="vip-trust__item ps-chip">No telemetry</li>
-        <li class="vip-trust__item ps-chip ps-chip--live">ONNX / WebGPU</li>
+        <li class="vip-trust__item"><strong>100%</strong><span>on-device</span></li>
+        <li class="vip-trust__item"><strong>48 kHz</strong><span>studio audio</span></li>
+        <li class="vip-trust__item"><strong>0 bytes</strong><span>audio uploaded</span></li>
       </ul>
     </div>
     <aside class="ps-panel ps-signal" aria-label="Signal preview">
       <div class="ps-panel__head">
-        <span>Signal preview</span>
+        <span><i class="preview-live-dot" aria-hidden="true"></i> Signal workspace</span>
         <span id="signalPreviewState" class="ps-chip" data-state="idle">Idle</span>
+      </div>
+      <div class="premium-filebar" aria-hidden="true">
+        <span class="premium-file-icon">♪</span>
+        <span><strong>Your audio appears here</strong><small>Drop a file to begin local analysis</small></span>
+        <b>48 kHz</b>
       </div>
       <div class="vis-block">
         <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek after processing</span></div>
