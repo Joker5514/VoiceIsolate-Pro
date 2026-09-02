@@ -131,6 +131,7 @@ export class ExportOrchestrator {
       };
 
       worker.onerror = (err) => {
+        if (this._worker !== worker) return;
         const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
         this._resetWorker(worker, error);
         this._rejectInit?.(error);
