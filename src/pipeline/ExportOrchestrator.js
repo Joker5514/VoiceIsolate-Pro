@@ -261,8 +261,8 @@ export class ExportOrchestrator {
       } catch (error) {
         clearTimeout(timeout);
         this._pendingRequests.delete(requestId);
+        this._resetWorker(this._worker, error);
         reject(error);
-      }
     });
 
     onProgress(1, 'complete');
