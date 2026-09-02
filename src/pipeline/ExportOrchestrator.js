@@ -89,6 +89,12 @@ export class ExportOrchestrator {
         if (this._worker !== worker) return;
         this._resetWorker(worker, error);
         this._rejectInit?.(error);
+        callback();
+      };
+      const timeout = setTimeout(() => {
+        const error = new Error('[VIP][ExportOrchestrator] Worker initialization timeout.');
+        this._resetWorker(worker, error);
+        finishInit(() => reject(error));
       }, WORKER_INIT_TIMEOUT_MS);
 
       worker.onmessage = (e) => {
@@ -135,6 +141,9 @@ export class ExportOrchestrator {
         const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
         this._resetWorker(worker, error);
         this._rejectInit?.(error);
+        const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
+        this._resetWorker(worker, error);
+        finishInit(() => reject(error));
       };
     });
     return this._initPromise;
@@ -240,6 +249,8 @@ export class ExportOrchestrator {
           this._worker,
           new Error('[VIP][ExportOrchestrator] Encoding timeout.'),
         );
+        if (!this._pendingRequests.delete(requestId)) return;
+        reject(new Error('[VIP][ExportOrchestrator] Encoding timeout.'));
       }, ENCODE_TIMEOUT_MS);
       this._pendingRequests.set(requestId, {
         resolve,
@@ -354,6 +365,7 @@ export class ExportOrchestrator {
     const error = new Error('[VIP][ExportOrchestrator] Disposed during export.');
     this._resetWorker(this._worker, error);
     this._rejectInit?.(error);
+    this._initPromise = null;
   }
 }
 
