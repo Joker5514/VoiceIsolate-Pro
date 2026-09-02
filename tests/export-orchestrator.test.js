@@ -50,6 +50,7 @@ describe('ExportOrchestrator', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     delete global.Worker;
   });
 
@@ -372,6 +373,26 @@ describe('ExportOrchestrator', () => {
   });
 
   describe('worker failures', () => {
+    it('should reject initialization immediately when disposed before ready', async () => {
+      global.Worker.mockImplementationOnce(() => {
+        mockWorker = {
+          postMessage: jest.fn(),
+          terminate: jest.fn(),
+          onmessage: null,
+          onerror: null,
+        };
+        return mockWorker;
+      });
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await Promise.resolve();
+
+      orchestrator.dispose();
+
+      await expect(exportPromise).rejects.toThrow('Disposed during export');
+      expect(mockWorker.terminate).toHaveBeenCalled();
+    });
+
     it('should reject an in-flight export and reset after a fatal worker error', async () => {
       const orchestrator = new ExportOrchestrator(mockMixer);
       const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
@@ -406,6 +427,34 @@ describe('ExportOrchestrator', () => {
       }
 
       await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    });
+
+    it('should terminate a stalled encoder and reject its request on timeout', async () => {
+      jest.useFakeTimers();
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await jest.advanceTimersByTimeAsync(0);
+      const rejection = expect(exportPromise).rejects.toThrow('Encoding timeout');
+
+      await jest.advanceTimersByTimeAsync(120000);
+
+      await rejection;
+      expect(mockWorker.terminate).toHaveBeenCalled();
+      expect(orchestrator._worker).toBeNull();
+    });
+
+    it('should reject immediately when posting an encode request throws', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const init = orchestrator._initWorker();
+      await new Promise(resolve => setTimeout(resolve, 10));
+      await init;
+      mockWorker.postMessage.mockImplementationOnce(() => {
+        throw new Error('structured clone failed');
+      });
+
+      await expect(orchestrator.export({ stems: 'clean', format: 'wav' }))
+        .rejects.toThrow('structured clone failed');
+      expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
     });
   });
 });

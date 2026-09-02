@@ -57,6 +57,7 @@ export class ExportOrchestrator {
     this._worker = null;
     this._workerReady = false;
     this._initPromise = null;
+    this._rejectInit = null;
     this._pendingRequests = new Map();
     this._requestId = 0;
   }
@@ -79,6 +80,15 @@ export class ExportOrchestrator {
         settled = true;
         clearTimeout(timeout);
         this._initPromise = null;
+        this._rejectInit = null;
+        callback();
+      };
+      this._rejectInit = (error) => finishInit(() => reject(error));
+      const timeout = setTimeout(() => {
+        const error = new Error('[VIP][ExportOrchestrator] Worker initialization timeout.');
+        if (this._worker !== worker) return;
+        this._resetWorker(worker, error);
+        this._rejectInit?.(error);
         callback();
       };
       const timeout = setTimeout(() => {
@@ -127,6 +137,10 @@ export class ExportOrchestrator {
       };
 
       worker.onerror = (err) => {
+        if (this._worker !== worker) return;
+        const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
+        this._resetWorker(worker, error);
+        this._rejectInit?.(error);
         const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
         this._resetWorker(worker, error);
         finishInit(() => reject(error));
@@ -230,6 +244,11 @@ export class ExportOrchestrator {
     const requestId = this._requestId++;
     const { blob, format: resultFormat } = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        if (!this._pendingRequests.has(requestId)) return;
+        this._resetWorker(
+          this._worker,
+          new Error('[VIP][ExportOrchestrator] Encoding timeout.'),
+        );
         if (!this._pendingRequests.delete(requestId)) return;
         reject(new Error('[VIP][ExportOrchestrator] Encoding timeout.'));
       }, ENCODE_TIMEOUT_MS);
@@ -242,14 +261,20 @@ export class ExportOrchestrator {
       
       // Transfer channel data to worker (zero-copy)
       const transferList = channels.map(ch => ch.buffer);
-      this._worker.postMessage({
-        type: 'encode',
-        requestId,
-        channels,
-        sampleRate,
-        format,
-        bitrate,
-      }, transferList);
+      try {
+        this._worker.postMessage({
+          type: 'encode',
+          requestId,
+          channels,
+          sampleRate,
+          format,
+          bitrate,
+        }, transferList);
+      } catch (error) {
+        clearTimeout(timeout);
+        this._pendingRequests.delete(requestId);
+        this._resetWorker(this._worker, error);
+        reject(error);
     });
 
     onProgress(1, 'complete');
@@ -339,6 +364,7 @@ export class ExportOrchestrator {
   dispose() {
     const error = new Error('[VIP][ExportOrchestrator] Disposed during export.');
     this._resetWorker(this._worker, error);
+    this._rejectInit?.(error);
     this._initPromise = null;
   }
 }
