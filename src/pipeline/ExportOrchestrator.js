@@ -22,6 +22,9 @@
 
 import { debugLog } from '../core/debug.js';
 
+const WORKER_INIT_TIMEOUT_MS = 10000;
+const ENCODE_TIMEOUT_MS = 120000;
+
 /**
  * @typedef {object} ExportOptions
  * @property {'clean'|'noise'|'both'} [stems='clean'] - Which stems to export
@@ -53,6 +56,7 @@ export class ExportOrchestrator {
     this.mixer = mixer;
     this._worker = null;
     this._workerReady = false;
+    this._initPromise = null;
     this._pendingRequests = new Map();
     this._requestId = 0;
   }
@@ -63,23 +67,34 @@ export class ExportOrchestrator {
    */
   async _initWorker() {
     if (this._workerReady) return;
-    if (this._worker) return; // initialization in progress
+    if (this._initPromise) return this._initPromise;
 
-    this._worker = new Worker('/src/workers/AudioEncoderWorker.js', { type: 'module' });
-    
-    return new Promise((resolve, reject) => {
+    const worker = new Worker('/src/workers/AudioEncoderWorker.js', { type: 'module' });
+    this._worker = worker;
+
+    this._initPromise = new Promise((resolve, reject) => {
+      let settled = false;
+      const finishInit = (callback) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        this._initPromise = null;
+        callback();
+      };
       const timeout = setTimeout(() => {
-        reject(new Error('[VIP][ExportOrchestrator] Worker initialization timeout.'));
-      }, 10000);
+        const error = new Error('[VIP][ExportOrchestrator] Worker initialization timeout.');
+        this._resetWorker(worker, error);
+        finishInit(() => reject(error));
+      }, WORKER_INIT_TIMEOUT_MS);
 
-      this._worker.onmessage = (e) => {
+      worker.onmessage = (e) => {
         const { type, requestId, error, blob, format: resultFormat } = e.data;
 
         if (type === 'ready') {
-          clearTimeout(timeout);
+          if (this._worker !== worker) return;
           this._workerReady = true;
           debugLog('ExportOrchestrator', 'Encoder worker ready.');
-          resolve();
+          finishInit(resolve);
           return;
         }
 
@@ -87,6 +102,7 @@ export class ExportOrchestrator {
           const pending = this._pendingRequests.get(requestId);
           if (pending) {
             this._pendingRequests.delete(requestId);
+            clearTimeout(pending.timeout);
             pending.reject(new Error(error || 'Encoding failed.'));
           }
           return;
@@ -96,6 +112,7 @@ export class ExportOrchestrator {
           const pending = this._pendingRequests.get(requestId);
           if (pending) {
             this._pendingRequests.delete(requestId);
+            clearTimeout(pending.timeout);
             pending.resolve({ blob, format: resultFormat });
           }
           return;
@@ -109,11 +126,26 @@ export class ExportOrchestrator {
         }
       };
 
-      this._worker.onerror = (err) => {
-        clearTimeout(timeout);
-        reject(new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message}`));
+      worker.onerror = (err) => {
+        const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
+        this._resetWorker(worker, error);
+        finishInit(() => reject(error));
       };
     });
+    return this._initPromise;
+  }
+
+  _resetWorker(worker, error) {
+    if (worker && this._worker === worker) {
+      try { worker.terminate(); } catch { /* worker already stopped */ }
+      this._worker = null;
+      this._workerReady = false;
+    }
+    for (const pending of this._pendingRequests.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+    }
+    this._pendingRequests.clear();
   }
 
   /**
@@ -197,7 +229,16 @@ export class ExportOrchestrator {
     // Send to worker for encoding
     const requestId = this._requestId++;
     const { blob, format: resultFormat } = await new Promise((resolve, reject) => {
-      this._pendingRequests.set(requestId, { resolve, reject, onProgress: (p, s) => onProgress(0.3 + p * 0.7, s) });
+      const timeout = setTimeout(() => {
+        if (!this._pendingRequests.delete(requestId)) return;
+        reject(new Error('[VIP][ExportOrchestrator] Encoding timeout.'));
+      }, ENCODE_TIMEOUT_MS);
+      this._pendingRequests.set(requestId, {
+        resolve,
+        reject,
+        timeout,
+        onProgress: (p, s) => onProgress(0.3 + p * 0.7, s),
+      });
       
       // Transfer channel data to worker (zero-copy)
       const transferList = channels.map(ch => ch.buffer);
@@ -296,12 +337,9 @@ export class ExportOrchestrator {
    * Terminate the encoder worker and clean up resources.
    */
   dispose() {
-    if (this._worker) {
-      this._worker.terminate();
-      this._worker = null;
-      this._workerReady = false;
-    }
-    this._pendingRequests.clear();
+    const error = new Error('[VIP][ExportOrchestrator] Disposed during export.');
+    this._resetWorker(this._worker, error);
+    this._initPromise = null;
   }
 }
 
