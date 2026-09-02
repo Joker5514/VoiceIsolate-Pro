@@ -358,6 +358,55 @@ describe('ExportOrchestrator', () => {
       
       expect(mockWorker.terminate).toHaveBeenCalled();
     });
+
+    it('should reject an in-flight export instead of leaving it pending', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      orchestrator.dispose();
+
+      await expect(exportPromise).rejects.toThrow('Disposed during export');
+      expect(mockWorker.terminate).toHaveBeenCalled();
+    });
+  });
+
+  describe('worker failures', () => {
+    it('should reject an in-flight export and reset after a fatal worker error', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      mockWorker.onerror({ message: 'encoder crashed' });
+
+      await expect(exportPromise).rejects.toThrow('encoder crashed');
+      expect(mockWorker.terminate).toHaveBeenCalled();
+      expect(orchestrator._worker).toBeNull();
+      expect(orchestrator._workerReady).toBe(false);
+    });
+
+    it('should share initialization across concurrent exports', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const first = orchestrator.export({ stems: 'clean', format: 'wav' });
+      const second = orchestrator.export({ stems: 'noise', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(global.Worker).toHaveBeenCalledTimes(1);
+      const calls = mockWorker.postMessage.mock.calls;
+      expect(calls).toHaveLength(2);
+      for (const call of calls) {
+        mockWorker.onmessage({
+          data: {
+            type: 'result',
+            requestId: call[0].requestId,
+            blob: new Blob(['data'], { type: 'audio/wav' }),
+            format: 'wav',
+          },
+        });
+      }
+
+      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    });
   });
 });
 
