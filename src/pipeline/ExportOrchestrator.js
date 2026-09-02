@@ -86,6 +86,7 @@ export class ExportOrchestrator {
       this._rejectInit = (error) => finishInit(() => reject(error));
       const timeout = setTimeout(() => {
         const error = new Error('[VIP][ExportOrchestrator] Worker initialization timeout.');
+        if (this._worker !== worker) return;
         this._resetWorker(worker, error);
         this._rejectInit?.(error);
       }, WORKER_INIT_TIMEOUT_MS);
