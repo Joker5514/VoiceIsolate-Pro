@@ -1,8 +1,6 @@
 /**
- * Guardrails: download page + README point at real GitHub Release assets.
- * In-repo / intended `latest`: v25.0.2 (rebuild + release upload required for artifacts)
- *   - APK: VoiceIsolate-Pro-android-debug.apk
- *   - Windows: VoiceIsolate-Pro-${pkg.version}-win-x64.exe
+ * Static guardrails for download/release references.
+ * Live HTTP/GitHub metadata validation runs in scripts/validate-download-links.mjs.
  */
 'use strict';
 
@@ -10,70 +8,105 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const dl = fs.readFileSync(path.join(ROOT, 'public/download/index.html'), 'utf8');
-const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
-const dlDoc = fs.readFileSync(path.join(ROOT, 'download/README.md'), 'utf8');
-const downloadsMd = fs.readFileSync(path.join(ROOT, 'docs/DOWNLOADS.md'), 'utf8');
-const vercel = fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8');
-const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const pkg = JSON.parse(read('package.json'));
+const provenance = JSON.parse(read('docs/releases/release-provenance.json'));
 
+const VERSION = pkg.version;
+const TAG = `v${VERSION}`;
+const APK_NAME = 'VoiceIsolate-Pro-android-debug.apk';
+const EXE_NAME = `VoiceIsolate-Pro-${VERSION}-win-x64.exe`;
 const APK_LATEST =
-  'https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk';
+  `https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/${APK_NAME}`;
+const APK_PINNED =
+  `https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/${TAG}/${APK_NAME}`;
 const EXE_LATEST =
-  `https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-${pkg.version}-win-x64.exe`;
-const EXE_PINNED_V24 =
-  'https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe';
-const EXE_LEGACY_250 =
-  'https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe';
+  `https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/${EXE_NAME}`;
+const EXE_PINNED =
+  `https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/${TAG}/${EXE_NAME}`;
 
-describe('Download page links', () => {
-  test('Android APK latest direct download URL', () => {
-    expect(dl).toContain(APK_LATEST);
-    expect(dl).toContain('VoiceIsolate-Pro-android-debug.apk');
+const CURRENT_DOCS = [
+  'README.md',
+  'download/README.md',
+  'docs/DOWNLOADS.md',
+  'docs/guides/ANDROID.md',
+  'docs/guides/electron-desktop.md',
+  'docs/releases/PLATFORM_SYNC.md',
+  'public/download/index.html',
+];
+
+describe('current download references', () => {
+  test.each(CURRENT_DOCS)('%s does not foreground v24 direct downloads', (rel) => {
+    expect(read(rel)).not.toContain('/releases/download/v24.0.0/');
   });
 
-  test('Windows primary button uses published package-version asset', () => {
-    expect(dl).toContain(EXE_LATEST);
-    expect(dl).toContain(`VoiceIsolate-Pro-${pkg.version}-win-x64.exe`);
-    expect(dl).toContain(EXE_PINNED_V24);
-    // Stale 25.0.0 latest name must not be the primary target
-    expect(dl).not.toContain(EXE_LEGACY_250);
+  test('public download page uses latest + pinned current Android assets', () => {
+    const html = read('public/download/index.html');
+    expect(html).toContain(APK_LATEST);
+    expect(html).toContain(APK_PINNED);
+    expect(html).toContain(APK_NAME);
+    expect(html).toContain(VERSION);
   });
 
-  test('download page states product version', () => {
-    expect(dl).toContain(pkg.version);
+  test('public download page uses latest + pinned current Windows assets', () => {
+    const html = read('public/download/index.html');
+    expect(html).toContain(EXE_LATEST);
+    expect(html).toContain(EXE_PINNED);
+    expect(html).toContain(EXE_NAME);
+  });
+
+  test('README and canonical download docs expose current latest URLs', () => {
+    for (const rel of ['README.md', 'download/README.md', 'docs/DOWNLOADS.md']) {
+      const text = read(rel);
+      expect(text).toContain(APK_LATEST);
+      expect(text).toContain(EXE_LATEST);
+    }
   });
 });
 
-describe('README + download docs', () => {
-  test('README lists working APK and Windows asset URLs', () => {
-    expect(readme).toContain(APK_LATEST);
-    expect(readme).toContain(EXE_LATEST);
-    expect(readme).toContain(`VoiceIsolate-Pro-${pkg.version}-win-x64.exe`);
+describe('release provenance references', () => {
+  test('provenance version and tag match package.json', () => {
+    expect(provenance.productVersion).toBe(VERSION);
+    expect(provenance.tag).toBe(TAG);
   });
 
-  test('download/README.md + docs/DOWNLOADS.md document working assets', () => {
-    expect(dlDoc).toContain(APK_LATEST);
-    expect(dlDoc).toContain(EXE_LATEST);
-    expect(downloadsMd).toContain(EXE_LATEST);
-    expect(downloadsMd).toContain(`v${pkg.version}`);
+  test('native provenance points to current pinned asset names and URLs', () => {
+    const android = provenance.platforms.find((entry) => entry.platform === 'android');
+    const windows = provenance.platforms.find((entry) => entry.platform === 'windows');
+
+    expect(android.artifact.filename).toBe(APK_NAME);
+    expect(android.artifact.url).toBe(APK_PINNED);
+    expect(android.artifact.sizeBytes).toBeGreaterThan(0);
+    expect(android.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    expect(windows.artifact.filename).toBe(EXE_NAME);
+    expect(windows.artifact.url).toBe(EXE_PINNED);
+    expect(windows.artifact.sizeBytes).toBeGreaterThan(0);
+    expect(windows.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test('current docs do not claim published native artifacts are synchronized with current main', () => {
+    expect(provenance.claims.sameBuildAcrossWebAndroidWindowsMainAndTag).toBe(false);
+    expect(provenance.claims.synchronizedPublishedArtifacts).toBe(false);
+    expect(['stale', 'unknown']).toContain(
+      provenance.platforms.find((entry) => entry.platform === 'android').status,
+    );
+    expect(['stale', 'unknown']).toContain(
+      provenance.platforms.find((entry) => entry.platform === 'windows').status,
+    );
   });
 });
 
 describe('Vercel download redirects', () => {
-  test('redirects APK and EXE to GitHub Releases with working destinations', () => {
-    expect(vercel).toContain('VoiceIsolate-Pro-android-debug.apk');
-    expect(vercel).toContain('releases/latest/download/VoiceIsolate-Pro-android-debug.apk');
-    expect(vercel).toContain(`VoiceIsolate-Pro-${pkg.version}-win-x64.exe`);
-    expect(vercel).toContain(
-      `releases/latest/download/VoiceIsolate-Pro-${pkg.version}-win-x64.exe`
-    );
-    // Legacy 25.0.0 path must not destination-404; remap to current latest name
-    expect(vercel).toContain('VoiceIsolate-Pro-25.0.0-win-x64.exe');
-    expect(vercel).not.toContain(
-      'releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe'
-    );
-    expect(vercel).toContain('.apk');
-    expect(vercel).toContain('.exe');
+  test('current APK and EXE redirect routes point at release latest URLs', () => {
+    const vercel = JSON.parse(read('vercel.json'));
+    const redirects = vercel.redirects || [];
+    const android = redirects.find((entry) => entry.source === `/download/${APK_NAME}`);
+    const windows = redirects.find((entry) => entry.source === `/download/${EXE_NAME}`);
+
+    expect(android).toBeDefined();
+    expect(android.destination).toBe(APK_LATEST);
+    expect(windows).toBeDefined();
+    expect(windows.destination).toBe(EXE_LATEST);
   });
 });
