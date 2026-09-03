@@ -1,5 +1,6 @@
 /**
- * Tests for iOS/Capacitor configuration (v24.0.0 mobile support)
+ * Tests for iOS/Capacitor project scaffolding.
+ * iOS metadata remains version-aligned, but iOS is outside the supported v1.0 release scope.
  * Covers: Info.plist, Podfile, AppDelegate.swift, entitlements,
  *         asset catalogs, capacitor.config.json iOS settings,
  *         and cross-platform consistency.
@@ -85,13 +86,8 @@ describe('Info.plist — iOS app configuration', () => {
     expect(buildMatch[1]).toBe(String(maj * 10000 + min * 100 + pat));
   });
 
-  test('NSMicrophoneUsageDescription is present (App Store requirement)', () => {
-    expect(plist).toContain('<key>NSMicrophoneUsageDescription</key>');
-    const descMatch = plist.match(
-      /<key>NSMicrophoneUsageDescription<\/key>\s*<string>([^<]+)<\/string>/
-    );
-    expect(descMatch).not.toBeNull();
-    expect(descMatch[1].length).toBeGreaterThan(10);
+  test('does not declare microphone usage for the upload-only product', () => {
+    expect(plist).not.toContain('<key>NSMicrophoneUsageDescription</key>');
   });
 
   test('UIBackgroundModes includes audio', () => {
@@ -118,7 +114,6 @@ describe('Info.plist — iOS app configuration', () => {
 
   test('ITSAppUsesNonExemptEncryption is false (avoids export compliance dialog)', () => {
     expect(plist).toContain('<key>ITSAppUsesNonExemptEncryption</key>');
-    // The <false/> should follow the key
     const match = plist.match(
       /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/
     );
@@ -209,8 +204,8 @@ describe('VoiceIsolateProApp.entitlements — security and capabilities', () => 
     expect(entitlements).toContain('<plist version="1.0">');
   });
 
-  test('audio input entitlement is enabled', () => {
-    expect(entitlements).toContain('com.apple.security.device.audio-input');
+  test('audio input entitlement is absent for upload-only product', () => {
+    expect(entitlements).not.toContain('com.apple.security.device.audio-input');
   });
 
   test('file access entitlement is enabled', () => {
@@ -442,12 +437,10 @@ describe('Cross-platform consistency — Android & iOS', () => {
   });
 
   test('appId is consistent across platforms', () => {
-    // Check capacitor config appId
     expect(cfg.appId).toBe('com.voiceisolatepro.app');
   });
 
   test('user agent version is consistent between Android and iOS', () => {
-    // Version prefix matches; Android may append a platform tag (e.g. " Android").
     const ios = cfg.ios.appendUserAgent || '';
     const android = cfg.android.appendUserAgent || '';
     expect(ios).toMatch(/^VoiceIsolatePro\/\d+\.\d+/);
@@ -459,9 +452,9 @@ describe('Cross-platform consistency — Android & iOS', () => {
     expect(cfg.android.backgroundColor).toBe(cfg.ios.backgroundColor);
   });
 
-  test('webContentsDebuggingEnabled is platform-appropriate', () => {
-    // Android ships sideload debug APKs (chrome://inspect); iOS keeps production off.
-    expect(cfg.android.webContentsDebuggingEnabled).toBe(true);
+  test('WebView debugging defaults off in shared Capacitor config', () => {
+    // Android debug inspection is enabled natively only when BuildConfig.DEBUG is true.
+    expect(cfg.android.webContentsDebuggingEnabled).toBe(false);
     expect(cfg.ios.webContentsDebuggingEnabled).toBe(false);
   });
 
