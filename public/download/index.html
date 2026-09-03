@@ -4,38 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Download — VoiceIsolate Pro</title>
-  <meta name="description" content="Download VoiceIsolate Pro for Android, Windows desktop, or open the web app. 100% on-device voice isolation." />
+  <meta name="description" content="Download VoiceIsolate Pro v25.0.2 for Android or Windows, or open the local-first web app." />
   <link rel="icon" href="/icon.jpg" />
   <link rel="stylesheet" href="/landing.css" />
   <link rel="stylesheet" href="/ps-shell.css" />
   <style>
-    .dl-main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
-    .dl-card {
-      background: linear-gradient(165deg, rgba(220,38,38,.06), rgba(0,0,0,.28));
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: 14px;
-      padding: 20px 22px;
-      margin: 16px 0;
-    }
-    .dl-card h2 { margin: 0 0 8px; font-size: 1.05rem; color: #fca5a5; }
-    .dl-card p { margin: 0 0 12px; color: #a1a1b5; line-height: 1.5; font-size: 0.95rem; }
-    .dl-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-    .dl-meta { font: 500 11px/1.4 "JetBrains Mono", monospace; color: #6b6b80; margin-top: 10px; }
+    .dl-main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+    .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 24px 0; }
+    .dl-card { background: var(--surface-panel); border: 1px solid var(--border-subtle); border-radius: var(--radius-xl); padding: 20px 22px; }
+    .dl-card h2 { margin: 8px 0; font-size: 1.1rem; }
+    .dl-card p { color: var(--text-secondary); line-height: 1.55; }
+    .dl-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+    .dl-meta { font: 500 11px/1.55 var(--font-mono); color: var(--text-dim); overflow-wrap: anywhere; }
     .dl-nav { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-    .dl-nav a { color: #f87171; text-decoration: none; font-size: 0.9rem; }
+    .dl-nav a { color: var(--action-live); text-decoration: none; }
     .dl-nav a:hover { text-decoration: underline; }
-    .warn { color: #fcd34d; font-size: 0.85rem; }
-    .dl-ok { color: #86efac; font-size: 0.85rem; }
-    code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.85em; }
-    pre {
-      background: #0a0a10;
-      padding: 12px;
-      border-radius: 8px;
-      overflow: auto;
-      font-size: 12px;
-      color: #c4c4d0;
-      margin: 8px 0 0;
-    }
+    .dl-note { border-left: 3px solid var(--state-warning); padding-left: 14px; }
+    code { font-family: var(--font-mono); }
   </style>
 </head>
 <body class="ps-shell">
@@ -44,158 +29,94 @@
       <a class="ps-logo" href="/">VoiceIsolate Pro</a>
       <span class="ps-chip ps-chip--process">Download</span>
     </div>
-    <p class="ps-meta">Build v25.0.2<br>Local DSP · Private by design</p>
+    <p class="ps-meta">v25.0.2<br />Local processing · Private by design</p>
   </header>
-  <main class="dl-main" style="max-width:1280px;">
+
+  <main class="dl-main">
     <nav class="dl-nav" aria-label="Site">
       <a href="/">← Landing</a>
       <a href="/app/">Engineer Console</a>
-      <a href="https://github.com/Joker5514/VoiceIsolate-Pro" rel="noopener noreferrer" target="_blank">GitHub</a>
+      <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2" rel="noopener noreferrer" target="_blank">Release notes</a>
     </nav>
 
-    <p class="ps-kicker">One engine. Three surfaces.</p>
-    <h1>Run VoiceIsolate Pro anywhere.</h1>
-    <p class="hint">The same local-first audio stack on web, Android, and Windows. Processing stays on your device. Optional Google Drive open/save is user-initiated only.</p>
+    <p class="ps-kicker">One processing engine · shared product system</p>
+    <h1>Choose your VoiceIsolate Pro surface.</h1>
+    <p class="hint">Core voice isolation runs on-device. Optional Google Drive file I/O, update checks, and downloads require a network connection; audio is not sent to a server for processing or inference.</p>
 
-    <div class="ps-env" style="padding:0;margin:24px 0;">
-    <!-- ── Android ─────────────────────────────────────────────────────── -->
-    <section class="dl-card ps-card" aria-labelledby="android-dl">
-      <span class="ps-chip ps-chip--ok">APK</span>
-      <h2 id="android-dl">ANDROID</h2>
-      <p>Complete offline app — no network required after install.</p>
-      <h3 class="visually-hidden">Android (APK) — complete offline app</h3>
-      <p>
-        Full on-device studio: <strong>Landing + Engineer Console</strong> (same shell as web/desktop), BS-RNN isolation,
-        worklets, ONNX models, and the optional <strong>SAM 3 vision</strong> JS sidecar
-        (feature-flagged) — <strong>no network required</strong> after install.
-        Enable <strong>Install unknown apps</strong>, then open the file.
-      </p>
-      <div class="dl-actions">
-        <!-- Always GitHub Releases — never a same-origin SPA HTML path -->
-        <a class="btn" id="apkPrimary"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"
-           rel="noopener noreferrer"
-           target="_blank"
-           download="VoiceIsolate-Pro-android-debug.apk">
-          Download Android APK
-        </a>
-        <a class="btn btn-outline"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk"
-           rel="noopener noreferrer"
-           target="_blank"
-           download="VoiceIsolate-Pro-android-debug.apk">
-          v24.0.0 prior
-        </a>
-        <a class="btn btn-outline"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"
-           rel="noopener noreferrer"
-           target="_blank">
-          All releases
-        </a>
-      </div>
-      <p class="dl-meta dl-ok">
-        Offline app · Landing + Engineer Console · BSRNN/ORT · SAM3 vision modules (flag OFF) ·
-        SAM-Audio only if ONNX present
-      </p>
-      <p class="dl-meta warn">Debug/sideload build · not Play Store signed · GitHub Release <strong>v25.0.2</strong></p>
-      <p class="dl-meta">
-        Asset: <code>VoiceIsolate-Pro-android-debug.apk</code> · version <strong>v25.0.2</strong> (versionCode 250002)<br />
-        Latest:
-        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"
-           rel="noopener noreferrer" target="_blank" style="color:#f87171">
-          …/latest/download/VoiceIsolate-Pro-android-debug.apk
-        </a><br />
-        Pinned v24.0.0 (prior):
-        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk"
-           rel="noopener noreferrer" target="_blank" style="color:#f87171">
-          …/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk
-        </a>
-      </p>
-      <p class="dl-meta">Install: Settings → allow <strong>Install unknown apps</strong> for your browser/Files, then open the APK.</p>
-    </section>
+    <div class="dl-grid">
+      <section class="dl-card ps-card" aria-labelledby="android-dl">
+        <span class="ps-chip ps-chip--ok">ANDROID APK</span>
+        <h2 id="android-dl">Android sideload</h2>
+        <p>The v25.0.2 Capacitor package includes the same Landing and Engineer Console web shell plus packaged local model/runtime assets.</p>
+        <div class="dl-actions">
+          <a class="vip-btn vip-btn--primary ps-btn--process" id="apkPrimary"
+             href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"
+             rel="noopener noreferrer" target="_blank" download="VoiceIsolate-Pro-android-debug.apk">
+            Download Android APK
+          </a>
+          <a class="vip-btn vip-btn--ghost"
+             href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk"
+             rel="noopener noreferrer" target="_blank">
+            Pinned v25.0.2
+          </a>
+        </div>
+        <p class="dl-meta">
+          <strong>VoiceIsolate-Pro-android-debug.apk</strong><br />
+          101,365,796 bytes<br />
+          SHA-256: 5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b<br />
+          GitHub asset updated 2026-08-25T21:22:40Z
+        </p>
+        <p class="dl-meta dl-note">Sideload/debug artifact — not a Play Store production build. Enable “Install unknown apps” for your browser or Files app. WebView debugging is enabled only in debug builds; release builds keep it off.</p>
+      </section>
 
-    <!-- ── Desktop ─────────────────────────────────────────────────────── -->
-    <section class="dl-card ps-card" aria-labelledby="desktop-dl">
-      <span class="ps-chip ps-chip--process">EXE</span>
-      <h2 id="desktop-dl">WINDOWS</h2>
-      <p>Full desktop package. 100% offline after install.</p>
-      <p>
-        NSIS installer for Windows x64. Install once, then isolate with
-        <strong>no internet</strong>. UI, ORT WASM, default ONNX models
-        (BS-RNN + denoise + VAD), optional <strong>SAM-Audio</strong> local worker,
-        and <strong>SAM 3 vision</strong> modules (flag OFF) ship in the package layout.
-      </p>
-      <div class="dl-actions">
-        <a class="btn" id="desktopPrimary"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe"
-           rel="noopener noreferrer"
-           target="_blank"
-           download="VoiceIsolate-Pro-25.0.2-win-x64.exe">
-          Download Windows installer
-        </a>
-        <a class="btn btn-outline"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe"
-           rel="noopener noreferrer"
-           target="_blank"
-           download="VoiceIsolate-Pro-24.0.0-win-x64.exe">
-          Prior v24.0.0
-        </a>
-        <a class="btn btn-outline"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"
-           rel="noopener noreferrer"
-           target="_blank">
-          All releases
-        </a>
-      </div>
-      <p class="dl-meta dl-ok">NSIS · BSRNN + denoise + VAD · optional SAM-Audio worker · SAM3 vision JS · offline after install</p>
-      <p class="dl-meta warn">GitHub Release <strong>v25.0.2</strong> · unsigned builds may trigger SmartScreen — More info → Run anyway</p>
-      <p class="dl-meta">
-        Asset: <code>VoiceIsolate-Pro-25.0.2-win-x64.exe</code> · version <strong>v25.0.2</strong><br />
-        Latest:
-        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe"
-           rel="noopener noreferrer" target="_blank" style="color:#f87171">
-          …/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe
-        </a><br />
-        Prior v24.0.0:
-        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe"
-           rel="noopener noreferrer" target="_blank" style="color:#f87171">
-          …/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe
-        </a>
-      </p>
-      <p class="dl-meta">Build locally:</p>
-      <pre>cd VoiceIsolate-Pro
-pnpm install
-pnpm setup:electron
-pnpm build:electron        # NSIS → dist/electron/
-pnpm build:electron:dir    # portable win-unpacked/</pre>
-      <p class="dl-meta">See <code>docs/guides/electron-desktop.md</code> for signing and offline notes.</p>
-    </section>
+      <section class="dl-card ps-card" aria-labelledby="desktop-dl">
+        <span class="ps-chip ps-chip--process">WINDOWS X64</span>
+        <h2 id="desktop-dl">Windows installer</h2>
+        <p>The v25.0.2 Electron package uses the shared product shell and local inference/runtime assets for offline core isolation after install.</p>
+        <div class="dl-actions">
+          <a class="vip-btn vip-btn--primary ps-btn--process" id="desktopPrimary"
+             href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe"
+             rel="noopener noreferrer" target="_blank" download="VoiceIsolate-Pro-25.0.2-win-x64.exe">
+            Download Windows installer
+          </a>
+          <a class="vip-btn vip-btn--ghost"
+             href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe"
+             rel="noopener noreferrer" target="_blank">
+            Pinned v25.0.2
+          </a>
+        </div>
+        <p class="dl-meta">
+          <strong>VoiceIsolate-Pro-25.0.2-win-x64.exe</strong><br />
+          144,628,415 bytes<br />
+          SHA-256: 6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621<br />
+          GitHub asset updated 2026-08-24T17:20:22Z
+        </p>
+        <p class="dl-meta dl-note">A published installer may be unsigned. Microsoft SmartScreen can warn on unsigned builds; verify the release and checksum before installing.</p>
+      </section>
 
-    <!-- ── Web ─────────────────────────────────────────────────────────── -->
-    <section class="dl-card ps-card" aria-labelledby="web-dl">
-      <span class="ps-chip ps-chip--live">OPEN</span>
-      <h2 id="web-dl">WEB</h2>
-      <p>No installation. Browser WebGPU/WASM fallback.</p>
-      <p>
-        Run fully in the browser — Landing (stem-split / Live-Mix) or Engineer Console (studio rack + full DSP).
-        SAM 3 vision modules load from same-origin <code>/src/sam3_integration/</code> when enabled.
-      </p>
-      <div class="dl-actions">
-        <a class="btn" href="/">Open Landing</a>
-        <a class="btn btn-outline" href="/app/">Open Engineer Console</a>
-        <a class="btn btn-outline" href="https://github.com/Joker5514/VoiceIsolate-Pro" rel="noopener noreferrer" target="_blank">Source</a>
-      </div>
-      <p class="dl-meta">Docs: <code>docs/SAM3_TECHNICAL_DOCUMENTATION.md</code> · <code>docs/guides/SAM_AUDIO.md</code> · <code>docs/DOWNLOADS.md</code></p>
-    </section>
+      <section class="dl-card ps-card" aria-labelledby="web-dl">
+        <span class="ps-chip ps-chip--live">WEB</span>
+        <h2 id="web-dl">Browser</h2>
+        <p>No installation. Use the Landing workflow for straightforward isolation or open the shared Engineer Console for the full studio rack.</p>
+        <div class="dl-actions">
+          <a class="vip-btn vip-btn--primary ps-btn--process" href="/">Open Landing</a>
+          <a class="vip-btn vip-btn--ghost" href="/app/">Open Engineer Console</a>
+        </div>
+        <p class="dl-meta">Production: https://voice-isolate-pro.vercel.app/</p>
+      </section>
     </div>
-    <section class="ps-band" style="margin-top:8px;">
+
+    <section class="ps-band">
       <div>
-        <p class="ps-kicker" style="color:var(--state-warning)">Verify before installing</p>
-        <h2 style="margin:0 0 8px;font-size:1.35rem;">Release provenance and privacy should be visible, not buried.</h2>
-        <p class="hint">Show version · SHA256 · release notes · offline capability · SmartScreen/sideload guidance. Native APK/EXE pins are recorded in <code>docs/releases/release-provenance.json</code> — this page does not claim the three packages are byte-synchronized unless that record says so.</p>
+        <p class="ps-kicker" style="color:var(--state-warning)">Release provenance</p>
+        <h2 style="margin:0 0 8px;font-size:1.35rem;">Published binaries are release snapshots, not a claim about current main.</h2>
+        <p class="hint">The APK and EXE above are verified members of GitHub Release v25.0.2. Current source can move ahead of published native packages. Exact asset metadata and rebuild status are recorded in <code>docs/releases/release-provenance.json</code>.</p>
+        <div class="dl-actions">
+          <a class="vip-btn vip-btn--ghost" href="https://github.com/Joker5514/VoiceIsolate-Pro/releases" rel="noopener noreferrer" target="_blank">All releases / historical builds</a>
+          <a class="vip-btn vip-btn--ghost" href="https://github.com/Joker5514/VoiceIsolate-Pro/blob/main/docs/DOWNLOADS.md" rel="noopener noreferrer" target="_blank">Download documentation</a>
+        </div>
       </div>
     </section>
   </main>
 </body>
 </html>
-
