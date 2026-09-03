@@ -39,6 +39,11 @@ jobs:
       - name: Validate ONNX models
         run: node scripts/validate-onnx-models.js
 
+      - name: Validate published downloads
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm downloads:validate
+
       - name: Check DSP isolation
         run: node scripts/check-dsp-isolation.js
 
