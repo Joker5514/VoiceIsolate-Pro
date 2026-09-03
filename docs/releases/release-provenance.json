@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "productVersion": "25.0.2",
-  "generatedAt": "2026-08-24T17:21:00Z",
-  "reviewedMainSha": "0b791c2001d89f7005ea67d7b8ecefd68c8e82d3",
+  "generatedAt": "2026-09-03T14:47:00Z",
+  "reviewedMainSha": "d8514bad2f665b65b6489e200524d8800f5c800d",
   "tag": "v25.0.2",
   "platforms": [
     {
       "platform": "web",
-      "status": "current",
+      "status": "unknown",
       "version": "25.0.2",
-      "sourceSha": "0b791c2001d89f7005ea67d7b8ecefd68c8e82d3",
-      "builtAt": "2026-08-24T17:17:10Z",
+      "sourceSha": "d8514bad2f665b65b6489e200524d8800f5c800d",
+      "builtAt": null,
       "artifact": {
         "kind": "vercel-hosting",
         "filename": null,
@@ -20,35 +20,35 @@
       },
       "verification": {
         "method": "vercel-deployment",
-        "evidence": "GitHub Actions CI & Deploy production job succeeded for push of 0b791c2 to main (run 32755579053, completed 2026-08-24T17:17:10Z)."
+        "evidence": "Vercel commit status is successful for main d8514bad2f665b65b6489e200524d8800f5c800d, but this refresh does not independently record the production deployment timestamp or immutable deployment SHA."
       },
-      "notes": "Production Vercel deploy of main @ 0b791c2 after merge of #784."
+      "notes": "The public production URL is live, but this record intentionally does not infer byte-for-byte deployment identity from repository HEAD."
     },
     {
       "platform": "android",
-      "status": "current",
+      "status": "stale",
       "version": "25.0.2",
-      "sourceSha": "0b791c2001d89f7005ea67d7b8ecefd68c8e82d3",
-      "builtAt": "2026-08-24T17:20:19Z",
+      "sourceSha": null,
+      "builtAt": null,
       "artifact": {
         "kind": "github-release",
         "filename": "VoiceIsolate-Pro-android-debug.apk",
         "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk",
-        "sha256": "2655477943f76b20f03e6ede813e57cd87d6bea82775b5e90afd0317e80bad96",
-        "sizeBytes": 101347500
+        "sha256": "5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b",
+        "sizeBytes": 101365796
       },
       "verification": {
         "method": "github-release-asset",
-        "evidence": "gh release upload v25.0.2 --clobber of APK built by pnpm android:build:win from 0b791c2; digest sha256:2655477943f76b20f03e6ede813e57cd87d6bea82775b5e90afd0317e80bad96."
+        "evidence": "GitHub release v25.0.2 reports the APK asset uploaded 2026-08-25T21:22:36Z, updated 2026-08-25T21:22:40Z, size 101365796 bytes, digest sha256:5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b."
       },
-      "notes": "Debug APK rebuilt from main @ 0b791c2 (#784). Tag v25.0.2 was not moved."
+      "notes": "Published sideload/debug APK is valid, but it predates current main and its source commit was not independently proven by immutable build metadata during this refresh."
     },
     {
       "platform": "windows",
-      "status": "current",
+      "status": "stale",
       "version": "25.0.2",
-      "sourceSha": "0b791c2001d89f7005ea67d7b8ecefd68c8e82d3",
-      "builtAt": "2026-08-24T17:20:22Z",
+      "sourceSha": null,
+      "builtAt": null,
       "artifact": {
         "kind": "github-release",
         "filename": "VoiceIsolate-Pro-25.0.2-win-x64.exe",
@@ -58,19 +58,23 @@
       },
       "verification": {
         "method": "github-release-asset",
-        "evidence": "gh release upload v25.0.2 --clobber of NSIS installer built by pnpm build:electron from 0b791c2; digest sha256:6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621."
+        "evidence": "GitHub release v25.0.2 reports the Windows asset uploaded 2026-08-24T17:20:11Z, updated 2026-08-24T17:20:22Z, size 144628415 bytes, digest sha256:6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621."
       },
-      "notes": "Windows NSIS rebuilt from main @ 0b791c2 (#784). Tag v25.0.2 was not moved."
+      "notes": "Published Windows installer is valid, but it predates current main and its source commit was not independently proven by immutable build metadata during this refresh."
     }
   ],
   "claims": {
-    "sameBuildAcrossWebAndroidWindowsMainAndTag": true,
-    "synchronizedPublishedArtifacts": true,
+    "sameBuildAcrossWebAndroidWindowsMainAndTag": false,
+    "synchronizedPublishedArtifacts": false,
     "tagMoved": false
   },
   "rebuildRequired": {
-    "android": false,
-    "windows": false,
-    "commandsNotPerformed": []
+    "android": true,
+    "windows": true,
+    "commandsNotPerformed": [
+      "pnpm android:build:win",
+      "pnpm build:electron",
+      "gh release upload v25.0.2 <rebuilt-assets> --clobber"
+    ]
   }
 }
