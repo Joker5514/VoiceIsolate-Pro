@@ -68,7 +68,7 @@ describe('LandingVisualizer', () => {
     return c;
   }
 
-  test('loads stems and starts animation loop', () => {
+  test('loads stems and starts animation loop', async () => {
     const wave = makeCanvas('wave');
     const spec = makeCanvas('spec');
     const viz = new LandingVisualizer(mockMixer, wave, spec);
@@ -78,7 +78,7 @@ describe('LandingVisualizer', () => {
       clean[i] = Math.sin(i / 40) * 0.5;
       noise[i] = Math.cos(i / 60) * 0.2;
     }
-    viz.loadStems([clean], [noise], 1.0);
+    await viz.loadStems([clean], [noise], 1.0);
     expect(viz._envelope).not.toBeNull();
     expect(viz._duration).toBe(1.0);
     viz.dispose();
@@ -88,10 +88,9 @@ describe('LandingVisualizer', () => {
     const wave = makeCanvas('wave2');
     const spec = makeCanvas('spec2');
     const viz = new LandingVisualizer(mockMixer, wave, spec);
-    viz.loadStems([new Float32Array(1000)], [new Float32Array(1000)], 10);
+    await viz.loadStems([new Float32Array(1000)], [new Float32Array(1000)], 10);
     wave.getBoundingClientRect = () => ({ left: 0, width: 400, top: 0, height: 120 });
-    viz._onWaveClick({ clientX: 200 });
-    await Promise.resolve();
+    await viz._onWaveClick({ clientX: 200 });
     expect(mockMixer.seek).toHaveBeenCalledWith(5);
     viz.dispose();
   });
