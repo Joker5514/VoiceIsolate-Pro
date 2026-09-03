@@ -9,24 +9,35 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+          run_install: false
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm install --no-frozen-lockfile || npm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify canonical CI patches are synchronized
+        run: pnpm ci:check-patches
 
       - name: Validate project
         run: node scripts/validate.js
 
       - name: Validate ONNX models
         run: node scripts/validate-onnx-models.js
-        continue-on-error: true
 
       - name: Check DSP isolation
         run: node scripts/check-dsp-isolation.js
