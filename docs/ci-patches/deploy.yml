@@ -65,7 +65,7 @@ jobs:
           exit "$failed"
 
   smoke-test:
-    name: Live Browser Smoke Test
+    name: Browser & Engineer Smoke Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -84,11 +84,17 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - name: Validate ONNX model delivery URLs
         run: node scripts/validate-onnx-models.js
-        continue-on-error: true  # warn but don't block smoke test (models may not be uploaded yet in PR context)
+        continue-on-error: true  # strict validation runs in validate-models below
       - name: Install Playwright Chromium
         run: pnpm exec playwright install chromium --with-deps
-      - name: Run live browser smoke test
-        run: pnpm test:live
+      - name: Run live DSP pipeline smoke
+        run: node scripts/live-smoke.cjs
+      - name: Run Engineer real-time control smoke
+        run: node scripts/engineer-rt-smoke.cjs
+      - name: Run Engineer upload/decode smoke
+        run: node scripts/engineer-upload-smoke.cjs
+      - name: Run desktop/mobile UI shell smoke
+        run: node scripts/precision-studio-ui-smoke.cjs
 
   validate:
     name: Validate Structure
