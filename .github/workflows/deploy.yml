@@ -1,25 +1,19 @@
 name: CI & Deploy
 
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-
-
-
 # Restrict GITHUB_TOKEN permissions to minimum required
 permissions:
   contents: read
-
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 
 jobs:
   lint-test:
@@ -39,12 +33,34 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Run ESLint
+        id: lint
+        continue-on-error: true
         run: pnpm run lint
       - name: Run tests
+        id: tests
+        continue-on-error: true
         run: pnpm run test
       - name: Run validation
+        id: validation
+        continue-on-error: true
         run: pnpm run validate
-
+      - name: Enforce quality gates
+        if: always()
+        run: |
+          failed=0
+          if [ "${{ steps.lint.outcome }}" != "success" ]; then
+            echo "::error::ESLint failed"
+            failed=1
+          fi
+          if [ "${{ steps.tests.outcome }}" != "success" ]; then
+            echo "::error::Tests failed"
+            failed=1
+          fi
+          if [ "${{ steps.validation.outcome }}" != "success" ]; then
+            echo "::error::Validation failed"
+            failed=1
+          fi
+          exit "$failed"
 
   smoke-test:
     name: Live Browser Smoke Test
@@ -69,7 +85,6 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
       - name: Run live browser smoke test
         run: pnpm test:live
-
 
   validate:
     name: Validate Structure
@@ -102,7 +117,6 @@ jobs:
           echo "app.js: ${APP_SIZE} bytes"
           [ "$APP_SIZE" -gt 1000 ] && echo "✓ app.js has content" || (echo "✗ app.js too small" && exit 1)
 
-
   validate-models:
     name: Validate ONNX Model Delivery URLs
     runs-on: ubuntu-latest
@@ -114,7 +128,6 @@ jobs:
           node-version: '24'
       - name: Check ONNX model delivery assets are real binaries
         run: node scripts/validate-onnx-models.js
-
 
   deploy-preview:
     name: Deploy Preview
@@ -143,7 +156,6 @@ jobs:
       - name: Skip deploy (no VERCEL_TOKEN configured)
         if: env.VERCEL_TOKEN == ''
         run: echo "⚠️  Skipping Vercel preview deploy — VERCEL_TOKEN secret not configured. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub repository secrets to enable deployments."
-
 
   deploy-production:
     name: Deploy Production
