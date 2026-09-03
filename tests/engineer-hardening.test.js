@@ -5,6 +5,7 @@ const getAppCode = require('./helpers/get-app-code');
 const APP_JS = getAppCode();
 const VIP_FIXES = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', 'vip-fixes.js'), 'utf8');
 const VISUALS_BOOT = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', 'visuals-bootstrap.js'), 'utf8');
+const PREMIUM_VISUALS = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', 'premium-visuals.js'), 'utf8');
 const STEM_SEP = fs.readFileSync(path.join(__dirname, '..', 'src', 'pipeline', 'StemSeparation.js'), 'utf8');
 const DIAR_TIMELINE = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', 'diarization-timeline.js'), 'utf8');
 
@@ -58,6 +59,10 @@ describe('Engineer Mode hardening', () => {
     expect(VISUALS_BOOT).toContain('paintPlayheads');
     expect(VISUALS_BOOT).not.toMatch(/function _loop[\s\S]*_drawPlayhead\(\$\('waveCanvas'\)/);
     expect(VISUALS_BOOT).not.toMatch(/dispatchEvent\(new CustomEvent\('vip:fileLoaded'\)\)/);
+  });
+
+  test('premium static spectrogram aborts stale async STFT work', () => {
+    expect(PREMIUM_VISUALS).toMatch(/forwardSTFTAsync[\s\S]*shouldAbort:\s*\(\)\s*=>\s*!isCurrent\(\)/);
   });
 
   test('diarization-timeline debounces ResizeObserver', () => {
