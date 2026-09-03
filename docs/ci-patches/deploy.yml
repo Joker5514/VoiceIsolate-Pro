@@ -1,25 +1,19 @@
 name: CI & Deploy
 
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-
-
-
 # Restrict GITHUB_TOKEN permissions to minimum required
 permissions:
   contents: read
-
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 
 jobs:
   lint-test:
@@ -41,12 +35,34 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - name: Run ESLint
+        id: lint
+        continue-on-error: true
         run: pnpm run lint
       - name: Run tests
+        id: tests
+        continue-on-error: true
         run: pnpm run test
       - name: Run validation
+        id: validation
+        continue-on-error: true
         run: pnpm run validate
-
+      - name: Enforce quality gates
+        if: always()
+        run: |
+          failed=0
+          if [ "${{ steps.lint.outcome }}" != "success" ]; then
+            echo "::error::ESLint failed"
+            failed=1
+          fi
+          if [ "${{ steps.tests.outcome }}" != "success" ]; then
+            echo "::error::Tests failed"
+            failed=1
+          fi
+          if [ "${{ steps.validation.outcome }}" != "success" ]; then
+            echo "::error::Validation failed"
+            failed=1
+          fi
+          exit "$failed"
 
   smoke-test:
     name: Live Browser Smoke Test
@@ -74,7 +90,6 @@ jobs:
       - name: Run live browser smoke test
         run: pnpm test:live
 
-
   validate:
     name: Validate Structure
     runs-on: ubuntu-latest
@@ -87,13 +102,13 @@ jobs:
       - name: Check critical files exist
         run: |
           for f in public/index.html public/app/index.html public/app/style.css public/app/app.js public/blueprint/index.html vercel.json; do
-            [ -f "$f" ] && echo "Γ£ô $f" || (echo "Γ£ù MISSING: $f" && exit 1)
+            [ -f "$f" ] && echo "✓ $f" || (echo "✗ MISSING: $f" && exit 1)
           done
       - name: Validate HTML structure
         run: |
           # Check app.js has all slider groups
           for group in gate nr eq; do
-            grep -q "$group:" public/app/app.js && echo "Γ£ô Slider group: $group" || echo "ΓÜá Missing slider group: $group"
+            grep -q "$group:" public/app/app.js && echo "✓ Slider group: $group" || echo "⚠ Missing slider group: $group"
           done
       - name: Check single-pass spectral architecture
         run: |
@@ -104,8 +119,7 @@ jobs:
         run: |
           APP_SIZE=$(wc -c < public/app/app.js)
           echo "app.js: ${APP_SIZE} bytes"
-          [ "$APP_SIZE" -gt 1000 ] && echo "Γ£ô app.js has content" || (echo "Γ£ù app.js too small" && exit 1)
-
+          [ "$APP_SIZE" -gt 1000 ] && echo "✓ app.js has content" || (echo "✗ app.js too small" && exit 1)
 
   validate-models:
     name: Validate ONNX Model Delivery URLs
@@ -119,8 +133,7 @@ jobs:
       - name: Check ONNX model delivery assets are real binaries
         run: node scripts/validate-onnx-models.js
 
-
-  # NOTE: Do not use `secrets.*` in job-level `if:` ΓÇö GitHub can fail the whole
+  # NOTE: Do not use `secrets.*` in job-level `if:` — GitHub can fail the whole
   # workflow with "workflow file issue" and zero jobs. Gate on event/ref only;
   # skip inside steps when VERCEL_TOKEN is empty (Vercel Git integration still deploys).
   deploy-preview:
@@ -147,8 +160,7 @@ jobs:
         run: vercel deploy --token=$VERCEL_TOKEN
       - name: Skip deploy (no VERCEL_TOKEN configured)
         if: env.VERCEL_TOKEN == ''
-        run: echo "ΓÜá∩╕Å  Skipping Vercel CLI preview ΓÇö VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."
-
+        run: echo "⚠️  Skipping Vercel CLI preview — VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."
 
   deploy-production:
     name: Deploy Production
@@ -174,4 +186,4 @@ jobs:
         run: vercel deploy --prod --token=$VERCEL_TOKEN
       - name: Skip deploy (no VERCEL_TOKEN configured)
         if: env.VERCEL_TOKEN == ''
-        run: echo "ΓÜá∩╕Å  Skipping Vercel CLI production ΓÇö VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."
+        run: echo "⚠️  Skipping Vercel CLI production — VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."

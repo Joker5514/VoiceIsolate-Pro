@@ -1,25 +1,19 @@
 name: CI & Deploy
 
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-
-
-
 # Restrict GITHUB_TOKEN permissions to minimum required
 permissions:
   contents: read
-
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 
 jobs:
   lint-test:
@@ -38,13 +32,37 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - name: Run ESLint
+        id: lint
+        continue-on-error: true
         run: pnpm run lint
       - name: Run tests
+        id: tests
+        continue-on-error: true
         run: pnpm run test
       - name: Run validation
+        id: validation
+        continue-on-error: true
         run: pnpm run validate
-
+      - name: Enforce quality gates
+        if: always()
+        run: |
+          failed=0
+          if [ "${{ steps.lint.outcome }}" != "success" ]; then
+            echo "::error::ESLint failed"
+            failed=1
+          fi
+          if [ "${{ steps.tests.outcome }}" != "success" ]; then
+            echo "::error::Tests failed"
+            failed=1
+          fi
+          if [ "${{ steps.validation.outcome }}" != "success" ]; then
+            echo "::error::Validation failed"
+            failed=1
+          fi
+          exit "$failed"
 
   smoke-test:
     name: Live Browser Smoke Test
@@ -62,6 +80,8 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - name: Validate ONNX model delivery URLs
         run: node scripts/validate-onnx-models.js
         continue-on-error: true  # warn but don't block smoke test (models may not be uploaded yet in PR context)
@@ -69,7 +89,6 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
       - name: Run live browser smoke test
         run: pnpm test:live
-
 
   validate:
     name: Validate Structure
@@ -102,7 +121,6 @@ jobs:
           echo "app.js: ${APP_SIZE} bytes"
           [ "$APP_SIZE" -gt 1000 ] && echo "✓ app.js has content" || (echo "✗ app.js too small" && exit 1)
 
-
   validate-models:
     name: Validate ONNX Model Delivery URLs
     runs-on: ubuntu-latest
@@ -115,13 +133,12 @@ jobs:
       - name: Check ONNX model delivery assets are real binaries
         run: node scripts/validate-onnx-models.js
 
-
+  # NOTE: Do not use `secrets.*` in job-level `if:` — GitHub can fail the whole
+  # workflow with "workflow file issue" and zero jobs. Gate on event/ref only;
+  # skip inside steps when VERCEL_TOKEN is empty (Vercel Git integration still deploys).
   deploy-preview:
     name: Deploy Preview
     needs: [lint-test, validate, smoke-test, validate-models]
-    # GitHub does not allow the secrets context in a job-level condition. Keep
-    # the PR gate here and let the token-guarded steps below report a skipped
-    # deploy when the optional Vercel secret is not configured.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
@@ -133,6 +150,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install Vercel CLI
+        if: env.VERCEL_TOKEN != ''
         run: npm install -g vercel
       - name: Pull Vercel Environment
         if: env.VERCEL_TOKEN != ''
@@ -142,14 +160,11 @@ jobs:
         run: vercel deploy --token=$VERCEL_TOKEN
       - name: Skip deploy (no VERCEL_TOKEN configured)
         if: env.VERCEL_TOKEN == ''
-        run: echo "⚠️  Skipping Vercel preview deploy — VERCEL_TOKEN secret not configured. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub repository secrets to enable deployments."
-
+        run: echo "⚠️  Skipping Vercel CLI preview — VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."
 
   deploy-production:
     name: Deploy Production
     needs: [lint-test, validate, smoke-test, validate-models]
-    # See deploy-preview: optional deployment credentials are handled at the
-    # step level because job-level conditions cannot reference secrets.
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
@@ -161,6 +176,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install Vercel CLI
+        if: env.VERCEL_TOKEN != ''
         run: npm install -g vercel
       - name: Pull Vercel Environment
         if: env.VERCEL_TOKEN != ''
@@ -170,4 +186,4 @@ jobs:
         run: vercel deploy --prod --token=$VERCEL_TOKEN
       - name: Skip deploy (no VERCEL_TOKEN configured)
         if: env.VERCEL_TOKEN == ''
-        run: echo "⚠️  Skipping Vercel production deploy — VERCEL_TOKEN secret not configured. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub repository secrets to enable deployments."
+        run: echo "⚠️  Skipping Vercel CLI production — VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."
