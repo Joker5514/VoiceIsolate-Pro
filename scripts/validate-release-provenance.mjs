@@ -44,18 +44,25 @@ function hasUnsupportedSameBuildClaim(text) {
   const sentences = String(text || '').split(/(?<=[.!?])\s+/);
   return sentences.some((sentence) => {
     const plain = String(sentence || '').replace(/\*+/g, '');
-    const claim = /same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(plain);
+    const artifactNoun = '(build|commit|binar(?:y|ies)|artifacts?|sha)';
+    const claim = new RegExp(`same ${artifactNoun}\\b`, 'i').test(plain);
     if (!claim) return false;
     if (!(/web/i.test(plain) && /android/i.test(plain) && /windows/i.test(plain))) {
       return false;
     }
-    if (
-      /^\s*do(?:es)? not claim that\b/i.test(plain)
-      || /\bnot a claim that\b/i.test(plain)
-      || /\b(?:do(?:es)?\s+)?not(?:\s+currently)?\s+(?:share|contain|have)(?:s|ed)?\s+(?:the\s+)?same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(plain)
-    ) {
-      return false;
-    }
+
+    // Explicitly negative policy/documentation statements are evidence that a
+    // same-build claim is being prohibited, not asserted. Keep these narrowly
+    // scoped to a denial verb + the same artifact phrase so unrelated uses of
+    // "not" do not suppress a real positive claim later in the sentence.
+    const explicitDenials = [
+      /^\s*do(?:es)? not claim that\b/i,
+      /\bnot a claim that\b/i,
+      new RegExp(`\\b(?:do(?:es)?|must|should|may)\\s+not\\s+(?:claim|describe|state|report|represent|assert|say|call|label)[^.?!]*\\bsame ${artifactNoun}\\b`, 'i'),
+      new RegExp(`\\bcannot\\s+(?:claim|describe|state|report|represent|assert|say|call|label)[^.?!]*\\bsame ${artifactNoun}\\b`, 'i'),
+      new RegExp(`\\b(?:do(?:es)?\\s+)?not(?:\\s+currently)?\\s+(?:share|contain|have)(?:s|ed)?\\s+(?:the\\s+)?same ${artifactNoun}\\b`, 'i'),
+    ];
+    if (explicitDenials.some((pattern) => pattern.test(plain))) return false;
     return true;
   });
 }
