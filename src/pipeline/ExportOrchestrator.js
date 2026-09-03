@@ -75,25 +75,22 @@ export class ExportOrchestrator {
 
     this._initPromise = new Promise((resolve, reject) => {
       let settled = false;
+      let timeout = null;
       const finishInit = (callback) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timeout);
+        if (timeout) clearTimeout(timeout);
         this._initPromise = null;
         this._rejectInit = null;
         callback();
       };
+
       this._rejectInit = (error) => finishInit(() => reject(error));
-      const timeout = setTimeout(() => {
+      timeout = setTimeout(() => {
         const error = new Error('[VIP][ExportOrchestrator] Worker initialization timeout.');
-        if (this._worker !== worker) return;
-        this._resetWorker(worker, error);
-        this._rejectInit?.(error);
-        callback();
-      };
-      const timeout = setTimeout(() => {
-        const error = new Error('[VIP][ExportOrchestrator] Worker initialization timeout.');
-        this._resetWorker(worker, error);
+        if (this._worker === worker) {
+          this._resetWorker(worker, error);
+        }
         finishInit(() => reject(error));
       }, WORKER_INIT_TIMEOUT_MS);
 
@@ -138,9 +135,6 @@ export class ExportOrchestrator {
 
       worker.onerror = (err) => {
         if (this._worker !== worker) return;
-        const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
-        this._resetWorker(worker, error);
-        this._rejectInit?.(error);
         const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
         this._resetWorker(worker, error);
         finishInit(() => reject(error));
@@ -205,9 +199,8 @@ export class ExportOrchestrator {
         this._exportStem('noise', format, bitrate, `${filename}-noise`, false, (p, s) => onProgress(0.5 + p * 0.5, s)),
       ]);
       return [cleanResult, noiseResult];
-    } else {
-      return this._exportStem(stems, format, bitrate, filename, applySpeakerAutomation, onProgress);
     }
+    return this._exportStem(stems, format, bitrate, filename, applySpeakerAutomation, onProgress);
   }
 
   /**
@@ -226,7 +219,7 @@ export class ExportOrchestrator {
 
     // Get the source buffer
     const sourceBuffer = stem === 'clean' ? this.mixer.cleanBuffer : this.mixer.noiseBuffer;
-    
+
     // Extract channel data
     let channels = this._extractChannels(sourceBuffer);
     const sampleRate = sourceBuffer.sampleRate;
@@ -249,18 +242,17 @@ export class ExportOrchestrator {
           this._worker,
           new Error('[VIP][ExportOrchestrator] Encoding timeout.'),
         );
-        if (!this._pendingRequests.delete(requestId)) return;
-        reject(new Error('[VIP][ExportOrchestrator] Encoding timeout.'));
       }, ENCODE_TIMEOUT_MS);
+
       this._pendingRequests.set(requestId, {
         resolve,
         reject,
         timeout,
         onProgress: (p, s) => onProgress(0.3 + p * 0.7, s),
       });
-      
+
       // Transfer channel data to worker (zero-copy)
-      const transferList = channels.map(ch => ch.buffer);
+      const transferList = channels.map((ch) => ch.buffer);
       try {
         this._worker.postMessage({
           type: 'encode',
@@ -275,6 +267,7 @@ export class ExportOrchestrator {
         this._pendingRequests.delete(requestId);
         this._resetWorker(this._worker, error);
         reject(error);
+      }
     });
 
     onProgress(1, 'complete');
@@ -320,7 +313,7 @@ export class ExportOrchestrator {
     }
 
     const length = channels[0].length;
-    const output = channels.map(ch => new Float32Array(ch)); // Copy channels
+    const output = channels.map((ch) => new Float32Array(ch)); // Copy channels
 
     // Build a gain envelope from the speaker segments
     const gainEnvelope = new Float32Array(length);
@@ -330,13 +323,13 @@ export class ExportOrchestrator {
       const startSample = Math.floor(seg.start * sampleRate);
       const endSample = Math.floor(seg.end * sampleRate);
       const speakerState = this.mixer.getSpeakerState(seg.speakerId);
-      
+
       if (!speakerState) continue;
 
       // Calculate effective gain (respects mute and solo)
       let gain = speakerState.volume / 100; // Convert percentage to linear
       if (speakerState.muted) gain = 0;
-      
+
       const soloSpeaker = this.mixer.getSoloSpeaker();
       if (soloSpeaker && soloSpeaker !== seg.speakerId) {
         gain = 0; // Mute non-solo speakers
