@@ -35,13 +35,18 @@ function assert(condition, message) {
   if (!condition) fail(message);
 }
 
-function headers(extra = {}) {
+function requestHeaders(url, extra = {}) {
+  const target = new URL(url);
   const out = {
     'User-Agent': 'VoiceIsolate-Pro-download-validator',
-    Accept: 'application/vnd.github+json',
     ...extra,
   };
-  if (process.env.GITHUB_TOKEN) out.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  if (target.hostname === 'api.github.com') {
+    out.Accept = out.Accept || 'application/vnd.github+json';
+    if (process.env.GITHUB_TOKEN) {
+      out.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
+  }
   return out;
 }
 
@@ -51,7 +56,7 @@ async function request(url, options = {}, label = url) {
     try {
       const response = await fetch(url, {
         ...options,
-        headers: headers(options.headers || {}),
+        headers: requestHeaders(url, options.headers || {}),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       return response;
