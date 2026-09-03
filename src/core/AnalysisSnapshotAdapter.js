@@ -29,6 +29,18 @@ function safeTime(value, fallback = 0) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+function assertRequiredInputMetadata(rawAnalysis) {
+  if (!Number.isFinite(rawAnalysis.sampleRate) || rawAnalysis.sampleRate <= 0) {
+    throw new TypeError('[VIP][AnalysisSnapshotAdapter] rawAnalysis.sampleRate must be a positive finite number');
+  }
+  if (!Number.isInteger(rawAnalysis.channels) || rawAnalysis.channels <= 0) {
+    throw new TypeError('[VIP][AnalysisSnapshotAdapter] rawAnalysis.channels must be a positive integer');
+  }
+  if (!Number.isFinite(rawAnalysis.duration) || rawAnalysis.duration < 0) {
+    throw new TypeError('[VIP][AnalysisSnapshotAdapter] rawAnalysis.duration must be a non-negative finite number');
+  }
+}
+
 function regionId(type, index, startTime, endTime) {
   const startMs = Math.round(safeTime(startTime) * 1000);
   const endMs = Math.round(safeTime(endTime, startTime) * 1000);
@@ -163,6 +175,7 @@ export function adaptFullAnalysisToSnapshot(rawAnalysis, context = {}) {
   if (!rawAnalysis || typeof rawAnalysis !== 'object' || Array.isArray(rawAnalysis)) {
     throw new TypeError('[VIP][AnalysisSnapshotAdapter] rawAnalysis must be an object');
   }
+  assertRequiredInputMetadata(rawAnalysis);
 
   const sessionId = context.sessionId || nextLocalSessionId();
   const analysisVersion = context.analysisVersion || FULL_ANALYSIS_SNAPSHOT_VERSION;
