@@ -1,7 +1,7 @@
 /**
  * VoiceIsolate Pro — Landing Page Visualizer (Layer 4: Presentation)
  *
- * Two wired graphs, both driven by one requestAnimationFrame loop:
+ * Two wired graphs driven by one adaptive render loop:
  *
  *   1. Stem waveform overview — min/max envelope of the Clean stem (accent)
  *      over the Noise stem (gray), with a live playhead. Click to seek.
@@ -13,6 +13,8 @@
  */
 'use strict';
 
+import { createYieldBudget } from '../pipeline/ui-yield.js';
+
 const ACCENT = '#ef4444';
 const NOISE_COLOR = 'rgba(154, 154, 164, 0.55)';
 const GRID = 'rgba(80, 80, 90, 0.5)';
@@ -20,6 +22,7 @@ const PLAYHEAD = '#34d399';
 const CROP_FILL = 'rgba(52, 211, 153, 0.14)';
 const CROP_EDGE = 'rgba(52, 211, 153, 0.75)';
 const LOOP_COLOR = 'rgba(239, 68, 68, 0.35)';
+const IDLE_FRAME_MS = 250;
 
 export class LandingVisualizer {
   /**
@@ -34,6 +37,8 @@ export class LandingVisualizer {
     this.waveCtx = waveCanvas.getContext('2d');
     this.specCtx = specCanvas.getContext('2d');
     this._rafId = null;
+    this._idleTimer = null;
+    this._running = false;
     this._freqData = null;
     /** Smoothed bar heights + peak-hold for fluid spectrum animation */
     this._barSmooth = null;
@@ -41,6 +46,10 @@ export class LandingVisualizer {
     /** Precomputed envelopes: { clean: {min,max}, noise: {min,max}, columns } */
     this._envelope = null;
     this._duration = 0;
+    /** Cancels stale async envelope work when a newer file arrives. */
+    this._loadGeneration = 0;
+    this._waveDirty = true;
+    this._spectrumDirty = true;
 
     this._onResize = () => this._resize();
     window.addEventListener('resize', this._onResize);
@@ -73,47 +82,112 @@ export class LandingVisualizer {
       canvas.height = h * dpr;
       canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-    if (this._envelope) this._drawWave();
+    this._waveDirty = true;
+    this._spectrumDirty = true;
+    if (this._envelope && !this._running) this._drawWave();
   }
 
   /**
-   * Precompute per-pixel-column min/max envelopes of both stems.
-   * Called once per processed file — O(samples), then drawing is O(width).
+   * Mark presentation state dirty without forcing an always-on render loop.
+   */
+  invalidate() {
+    this._waveDirty = true;
+    this._spectrumDirty = true;
+    if (!this._running) {
+      this._drawWave();
+      this._drawSpectrum();
+    }
+  }
+
+  /**
+   * Precompute per-pixel-column min/max envelopes cooperatively. Long clips
+   * yield to the browser instead of doing two full-file scans in one task.
+   * Stale work is abandoned when a newer file is loaded.
+   *
    * @param {Float32Array[]} cleanChannels
    * @param {Float32Array[]} noiseChannels
    * @param {number} duration seconds
+   * @returns {Promise<boolean>} true when this generation became active
    */
-  invalidate() {
-    this._drawWave();
-  }
+  async loadStems(cleanChannels, noiseChannels, duration) {
+    const cleanSamples = cleanChannels?.[0];
+    const noiseSamples = noiseChannels?.[0];
+    if (!cleanSamples?.length || !noiseSamples?.length) return false;
 
-  loadStems(cleanChannels, noiseChannels, duration) {
-    const columns = Math.max(200, this.waveCanvas.clientWidth || 600);
-    this._envelope = {
-      clean: envelopeOf(cleanChannels[0], columns),
-      noise: envelopeOf(noiseChannels[0], columns),
-      columns,
-    };
-    this._duration = duration;
+    const generation = ++this._loadGeneration;
+    const columns = Math.max(200, Math.ceil(this.waveCanvas.clientWidth || 600));
+    const maybeYield = createYieldBudget();
+    const isCurrent = () => generation === this._loadGeneration;
+
+    const clean = await envelopeOfAsync(cleanSamples, columns, { maybeYield, isCurrent });
+    if (!clean || !isCurrent()) return false;
+    const noise = await envelopeOfAsync(noiseSamples, columns, { maybeYield, isCurrent });
+    if (!noise || !isCurrent()) return false;
+
+    this._envelope = { clean, noise, columns };
+    this._duration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
+    this._waveDirty = true;
+    this._spectrumDirty = true;
     this.start();
+    return true;
   }
 
   start() {
-    if (this._rafId !== null) return;
-    const loop = () => {
-      this._rafId = requestAnimationFrame(loop);
-      this._drawWave();
-      this._drawSpectrum();
+    if (this._running) return;
+    this._running = true;
+    this._scheduleNextFrame(0);
+  }
+
+  _scheduleNextFrame(delayMs) {
+    if (!this._running || this._rafId !== null || this._idleTimer !== null) return;
+    const request = () => {
+      if (!this._running) return;
+      this._rafId = requestAnimationFrame(() => {
+        this._rafId = null;
+        this._renderTick();
+      });
     };
-    this._rafId = requestAnimationFrame(loop);
+    if (delayMs > 0) {
+      this._idleTimer = setTimeout(() => {
+        this._idleTimer = null;
+        request();
+      }, delayMs);
+    } else {
+      request();
+    }
+  }
+
+  _renderTick() {
+    if (!this._running) return;
+    const hidden = typeof document !== 'undefined' && document.hidden;
+    const playing = !hidden && Boolean(this.mixer.isPlaying?.());
+
+    if (!hidden) {
+      if (playing || this._waveDirty) {
+        this._drawWave();
+        this._waveDirty = false;
+      }
+      if (playing || this._spectrumDirty) {
+        this._drawSpectrum();
+        this._spectrumDirty = false;
+      }
+    }
+
+    // Full-rate only while playback is active. Paused/hidden pages fall back
+    // to a 4 Hz wake-up so they do not continuously repaint canvases.
+    this._scheduleNextFrame(playing ? 0 : IDLE_FRAME_MS);
   }
 
   stop() {
+    this._running = false;
     if (this._rafId !== null) cancelAnimationFrame(this._rafId);
+    if (this._idleTimer !== null) clearTimeout(this._idleTimer);
     this._rafId = null;
+    this._idleTimer = null;
   }
 
   dispose() {
+    ++this._loadGeneration;
     this.stop();
     window.removeEventListener('resize', this._onResize);
     this.waveCanvas.removeEventListener('click', this._onWaveClick);
@@ -200,7 +274,7 @@ export class LandingVisualizer {
     analyser.getByteFrequencyData(this._freqData);
 
     const bars = 96;
-    const step = Math.floor(bins / bars);
+    const step = Math.max(1, Math.floor(bins / bars));
     const barW = W / bars - 1;
     if (!this._barSmooth || this._barSmooth.length !== bars) {
       this._barSmooth = new Float32Array(bars);
@@ -208,7 +282,7 @@ export class LandingVisualizer {
     }
     for (let i = 0; i < bars; i++) {
       let sum = 0;
-      for (let k = 0; k < step; k++) sum += this._freqData[i * step + k];
+      for (let k = 0; k < step; k++) sum += this._freqData[i * step + k] || 0;
       const raw = sum / step / 255;
       this._barSmooth[i] = this._barSmooth[i] * 0.72 + raw * 0.28;
       this._barPeak[i] = Math.max(this._barSmooth[i], this._barPeak[i] * 0.94);
@@ -230,15 +304,33 @@ export class LandingVisualizer {
   }
 }
 
-/** Min/max envelope of one channel, downsampled to `columns` buckets. */
-function envelopeOf(samples, columns) {
-  const min = new Float32Array(columns);
-  const max = new Float32Array(columns);
-  const bucket = Math.max(1, Math.floor(samples.length / columns));
-  for (let c = 0; c < columns; c++) {
-    let lo = 0, hi = 0;
-    const start = c * bucket;
-    const end = Math.min(samples.length, start + bucket);
+/**
+ * Min/max envelope of one channel, downsampled to `columns` buckets.
+ * Uses proportional bucket boundaries so the tail is never dropped and yields
+ * periodically on long recordings.
+ *
+ * @param {Float32Array} samples
+ * @param {number} columns
+ * @param {{ maybeYield?: () => Promise<void>, isCurrent?: () => boolean }} [opts]
+ * @returns {Promise<{min: Float32Array, max: Float32Array}|null>}
+ */
+export async function envelopeOfAsync(samples, columns, opts = {}) {
+  const nColumns = Math.max(1, Math.floor(columns) || 1);
+  const min = new Float32Array(nColumns);
+  const max = new Float32Array(nColumns);
+  const maybeYield = opts.maybeYield || (async () => {});
+  const isCurrent = opts.isCurrent || (() => true);
+  const length = samples?.length || 0;
+
+  if (!length) return { min, max };
+
+  for (let c = 0; c < nColumns; c++) {
+    if (!isCurrent()) return null;
+    let lo = 0;
+    let hi = 0;
+    const start = Math.min(length - 1, Math.floor((c * length) / nColumns));
+    const proportionalEnd = Math.floor(((c + 1) * length) / nColumns);
+    const end = Math.min(length, Math.max(start + 1, proportionalEnd));
     for (let i = start; i < end; i++) {
       const v = samples[i];
       if (v < lo) lo = v;
@@ -246,6 +338,7 @@ function envelopeOf(samples, columns) {
     }
     min[c] = Math.max(-1, lo);
     max[c] = Math.min(1, hi);
+    await maybeYield();
   }
   return { min, max };
 }
