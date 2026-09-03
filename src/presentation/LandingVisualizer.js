@@ -115,6 +115,12 @@ export class LandingVisualizer {
     if (!cleanSamples?.length || !noiseSamples?.length) return false;
 
     const generation = ++this._loadGeneration;
+    // Publish seek/crop state before the first cooperative await. Callers can
+    // remain non-blocking while the expensive waveform envelope finishes.
+    this._duration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
+    this._waveDirty = true;
+    this._spectrumDirty = true;
+
     const columns = Math.max(200, Math.ceil(this.waveCanvas.clientWidth || 600));
     const maybeYield = createYieldBudget();
     const isCurrent = () => generation === this._loadGeneration;
@@ -125,7 +131,6 @@ export class LandingVisualizer {
     if (!noise || !isCurrent()) return false;
 
     this._envelope = { clean, noise, columns };
-    this._duration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
     this._waveDirty = true;
     this._spectrumDirty = true;
     this.start();
