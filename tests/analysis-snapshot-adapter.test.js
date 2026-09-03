@@ -135,7 +135,11 @@ describe('AnalysisSnapshotAdapter', () => {
     expect(snapshot.warnings.join(' ')).toMatch(/must not be reused as a durable cache identity/i);
   });
 
-  test('rejects malformed raw analysis rather than fabricating a snapshot', () => {
+  test('rejects malformed or incomplete raw analysis rather than fabricating a ready snapshot', () => {
     expect(() => adaptFullAnalysisToSnapshot(null)).toThrow(/rawAnalysis must be an object/);
+    expect(() => adaptFullAnalysisToSnapshot({})).toThrow(/sampleRate/);
+    expect(() => adaptFullAnalysisToSnapshot(rawFixture({ sampleRate: 0 }))).toThrow(/sampleRate/);
+    expect(() => adaptFullAnalysisToSnapshot(rawFixture({ channels: 0 }))).toThrow(/channels/);
+    expect(() => adaptFullAnalysisToSnapshot(rawFixture({ duration: Number.NaN }))).toThrow(/duration/);
   });
 });
