@@ -257,7 +257,6 @@
     function tick() {
       if (!running) return;
       analyser.getByteTimeDomainData(dataArray);
-
       let sum = 0;
       for (let i = 0; i < bufferLength; i++) {
         sum += Math.abs(dataArray[i] - 128);
@@ -329,7 +328,10 @@
 
     try {
       spec = typeof dsp.forwardSTFTAsync === 'function'
-        ? await dsp.forwardSTFTAsync(data, fftSize, hopSize, { yieldEvery: 8 })
+        ? await dsp.forwardSTFTAsync(data, fftSize, hopSize, {
+            yieldEvery: 8,
+            shouldAbort: () => !isCurrent(),
+          })
         : dsp.forwardSTFT(data, fftSize, hopSize);
     } catch (_) {
       return false;
