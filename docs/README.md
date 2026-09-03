@@ -1,114 +1,105 @@
 # VoiceIsolate Pro — Documentation
 
-Single map of product, architecture, platform, and historical docs.
+This index separates **current implementation/release truth** from historical audits and archived design material.
 
-**Contributor contract (source of truth for code):** [`../CLAUDE.md`](../CLAUDE.md)  
-**How to contribute:** [`../CONTRIBUTING.md`](../CONTRIBUTING.md)  
-**User-facing product summary:** [`../README.md`](../README.md)
+- **Contributor source of truth:** [`../CLAUDE.md`](../CLAUDE.md)
+- **User/product overview:** [`../README.md`](../README.md)
+- **Contributor workflow:** [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
+- **Current download truth:** [`DOWNLOADS.md`](DOWNLOADS.md)
+- **Machine-readable release evidence:** [`releases/release-provenance.json`](releases/release-provenance.json)
 
----
+> Dated audits, old PDFs, `LEGACY.md`, and `docs/archive/` are point-in-time records. Do not rewrite them to look current; do not treat them as implementation truth for `main`.
 
 ## Start here
 
-| If you need… | Read |
-|--------------|------|
-| Architecture rules while coding | [`CLAUDE.md`](../CLAUDE.md) |
-| Setup + PR workflow | [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
-| Current system shape | [architecture/VoiceIsolate_Pro_Architecture_v26.md](architecture/VoiceIsolate_Pro_Architecture_v26.md) |
-| Product / cross-platform plan | [architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) |
-| Product strategy, MVP, and go-to-market priorities | [product/PRODUCT_STRATEGY.md](product/PRODUCT_STRATEGY.md) |
-| Download APK / Windows installer | [DOWNLOADS.md](DOWNLOADS.md) · [download page](https://voice-isolate-pro.vercel.app/download/) |
-| Android sideload / offline APK | [guides/ANDROID.md](guides/ANDROID.md) |
+| Need | Document |
+|---|---|
+| Architecture rules while coding | [`../CLAUDE.md`](../CLAUDE.md) |
+| Setup / testing / PR workflow | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) |
+| Current architecture overview | [`architecture/VoiceIsolate_Pro_Architecture_v26.md`](architecture/VoiceIsolate_Pro_Architecture_v26.md) |
+| Cross-platform product blueprint | [`architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`](architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) |
+| Product strategy | [`product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) |
+| Current downloads and checksums | [`DOWNLOADS.md`](DOWNLOADS.md) |
+| Published-vs-source platform state | [`releases/PLATFORM_SYNC.md`](releases/PLATFORM_SYNC.md) |
+| Android | [`guides/ANDROID.md`](guides/ANDROID.md) |
+| Windows / Electron | [`guides/electron-desktop.md`](guides/electron-desktop.md) |
 
----
+## Current architecture and product docs
 
-## Architecture (current)
+| Document | Purpose |
+|---|---|
+| [`architecture/VoiceIsolate_Pro_Architecture_v26.md`](architecture/VoiceIsolate_Pro_Architecture_v26.md) | Current/target architecture contracts and gaps |
+| [`architecture/VoiceIsolate_Pro_Technical_Whitepaper.md`](architecture/VoiceIsolate_Pro_Technical_Whitepaper.md) | Technical architecture background |
+| [`architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`](architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) | Web + Electron + Android mandate; iOS deferred from v1.0 scope |
+| [`PRODUCTION_PIPELINE.md`](PRODUCTION_PIPELINE.md) | Shipping processing path and Engineer Console integration |
+| [`product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) | Product definition, roadmap, risks, and release gates |
 
-| Document | Description |
-|----------|-------------|
-| [architecture/VoiceIsolate_Pro_Architecture_v26.md](architecture/VoiceIsolate_Pro_Architecture_v26.md) | Unified architecture — current vs target, contracts, gaps |
-| [architecture/VoiceIsolate_Pro_Technical_Whitepaper.md](architecture/VoiceIsolate_Pro_Technical_Whitepaper.md) | Single-pass spectral, ORT, live-mix vs offline |
-| [architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) | Product blueprint (web · desktop · Android) |
+## Current guides
 
-## Product strategy
+| Document | Purpose |
+|---|---|
+| [`guides/ANALYSIS_WORKSPACE.md`](guides/ANALYSIS_WORKSPACE.md) | Full-audio analysis workspace |
+| [`guides/PROCESS_PROGRESS.md`](guides/PROCESS_PROGRESS.md) | Processing progress/cancellation contract |
+| [`guides/WORKLETS.md`](guides/WORKLETS.md) | AudioWorklet packaging across shipped surfaces |
+| [`guides/MODEL_DELIVERY.md`](guides/MODEL_DELIVERY.md) | Model delivery/integrity/offline packaging |
+| [`guides/DSP_SLIDERS.md`](guides/DSP_SLIDERS.md) | Engineer control registry and interaction rules |
+| [`guides/ANDROID.md`](guides/ANDROID.md) | Android build, security, sideload, troubleshooting |
+| [`guides/electron-desktop.md`](guides/electron-desktop.md) | Electron shell, packaging, IPC, release guidance |
+| [`guides/GOOGLE_DRIVE.md`](guides/GOOGLE_DRIVE.md) | Optional user-initiated Drive file I/O |
+| [`guides/REVENUECAT_ISOLATION.md`](guides/REVENUECAT_ISOLATION.md) | Billing boundary; never part of DSP |
+| [`guides/SAM_AUDIO.md`](guides/SAM_AUDIO.md) | Optional SAM-Audio integration status |
+| [`guides/PLATFORM_CAPABILITY_MATRIX.md`](guides/PLATFORM_CAPABILITY_MATRIX.md) | Web / Android / Desktop capability matrix |
+| [`SAM3_TECHNICAL_DOCUMENTATION.md`](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM 3 vision/video sidecar status; not core voice isolation |
 
-| Document | Description |
-|----------|-------------|
-| [product/PRODUCT_STRATEGY.md](product/PRODUCT_STRATEGY.md) | Improved product definition, required versus optional scope, strong MVP, technical approach, roadmap, risks, and measurable release gates |
+## Releases
 
----
+| Document | Status |
+|---|---|
+| [`DOWNLOADS.md`](DOWNLOADS.md) | **Current canonical download URLs and observed hashes** |
+| [`releases/PLATFORM_SYNC.md`](releases/PLATFORM_SYNC.md) | **Current source-vs-published artifact status** |
+| [`releases/release-provenance.json`](releases/release-provenance.json) | **Machine-readable evidence** |
+| [`releases/VoiceIsolate_Pro_v25_Current_State.pdf`](releases/VoiceIsolate_Pro_v25_Current_State.pdf) | Historical v25 snapshot; not authoritative over current source/provenance |
+| [`releases/VoiceIsolate_Pro_v24_Latest.pdf`](releases/VoiceIsolate_Pro_v24_Latest.pdf) | Historical v24 release PDF |
+| [`../CHANGELOG.md`](../CHANGELOG.md) | Release/change history |
 
-## Guides (how-to)
+Run `pnpm downloads:validate` to validate live release URLs and `pnpm provenance:validate` to validate provenance schema/claims.
 
-| Document | Description |
-|----------|-------------|
-| [guides/ANALYSIS_WORKSPACE.md](guides/ANALYSIS_WORKSPACE.md) | Full-audio analysis, Analyzer↔WhisperHunter joint map, deferred decode |
-| [releases/VoiceIsolate_Pro_v25_Current_State.pdf](releases/VoiceIsolate_Pro_v25_Current_State.pdf) | Historical v25.0.0 product snapshot; current published release is v25.0.2 |
-| [releases/VoiceIsolate_Pro_v24_Latest.pdf](releases/VoiceIsolate_Pro_v24_Latest.pdf) | Prior v24 release notes PDF |
-| [guides/WORKLETS.md](guides/WORKLETS.md) | AudioWorklet packaging (web, Android, desktop) |
-| [guides/MODEL_DELIVERY.md](guides/MODEL_DELIVERY.md) | ONNX delivery, integrity, offline packaging |
-| [guides/electron-desktop.md](guides/electron-desktop.md) | Electron shell, offline installer, IPC |
-| [guides/ANDROID.md](guides/ANDROID.md) | Capacitor Android build, sideload, WebView notes |
-| [guides/DSP_SLIDERS.md](guides/DSP_SLIDERS.md) | Engineer DSP slider registry, keyboard, lock, search, a11y |
-| [audits/DEEP_AUDIT_2026-08-17.md](audits/DEEP_AUDIT_2026-08-17.md) | Deep audit (2026-08-17) — CONDITIONAL GO |
-| [audits/DEEP_AUDIT_2026-08-19.md](audits/DEEP_AUDIT_2026-08-19.md) | Deep audit (2026-08-19) — CONDITIONAL GO, native rebuild @ aa72a21 |
-| [guides/PROCESS_PROGRESS.md](guides/PROCESS_PROGRESS.md) | Process stage progress, cancel, worker terminal contract |
-| [guides/REVENUECAT_ISOLATION.md](guides/REVENUECAT_ISOLATION.md) | IAP boundary — never leak into DSP |
-| [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-**Audio** (sound separation) — Desktop worker / optional ONNX |
-| [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM **3** (vision/video) — sidecar brief, flags, `src/sam3_integration/` status |
-| [DOWNLOADS.md](DOWNLOADS.md) | Canonical GitHub Release download URLs |
-| [../CHANGELOG.md](../CHANGELOG.md) | Keep a Changelog release history |
-| [audits/CI-FIX-PENDING-WORKFLOW-SCOPE.md](audits/CI-FIX-PENDING-WORKFLOW-SCOPE.md) · `pnpm ci:apply-patches` | Apply deploy/Android workflow patches (needs OAuth `workflow` scope) |
+## Decisions
 
----
+| Document | Purpose |
+|---|---|
+| [`adr/001-firebase-exception.md`](adr/001-firebase-exception.md) | Superseded Firebase auth/billing proposal; retained as decision history |
+| [`adr/002-google-drive-file-io.md`](adr/002-google-drive-file-io.md) | Optional, user-initiated Drive import/export boundary |
 
-## Decisions & audits
+## Audits — historical evidence
 
-| Document | Description |
-|----------|-------------|
-| [adr/001-firebase-exception.md](adr/001-firebase-exception.md) | Superseded Firebase auth/billing proposal; current Firebase use is Drive OAuth only |
-| [adr/002-google-drive-file-io.md](adr/002-google-drive-file-io.md) | Optional user-initiated Google Drive import/export |
-| [guides/GOOGLE_DRIVE.md](guides/GOOGLE_DRIVE.md) | Drive setup (scopes, origins, privacy copy) |
-| [audits/README.md](audits/README.md) | Point-in-time audit index |
-| [audits/REMEDIATION-CLICKS-AUDIT-2026-08-12.md](audits/REMEDIATION-CLICKS-AUDIT-2026-08-12.md) | Click/pop remediation + Clear Local Data + target-speaker honesty |
-| [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md) | Shipping ML fused single-STFT path, Engineer Console, Clear Local Data |
-| [guides/ANDROID.md](guides/ANDROID.md) · [guides/electron-desktop.md](guides/electron-desktop.md) | Offline packaging — **same Engineer Console shell** as web |
-| [audits/AUDIT-REPORT-2026-06-21.md](audits/AUDIT-REPORT-2026-06-21.md) | Comprehensive audit (historical) |
-| [audits/AUDIT-REPORT-2026-05-30.md](audits/AUDIT-REPORT-2026-05-30.md) | Superseded baseline |
+See [`audits/README.md`](audits/README.md).
 
----
+Audit reports describe the repository at their recorded date/SHA. Old failing checks, release SHAs, version numbers, and remediation notes should not be silently modernized; newer audits or current CI supersede them operationally.
 
-## Archive (historical only)
+## Archive
 
-Superseded specs and one-off fix notes: **[archive/README.md](archive/README.md)**.
+Superseded specs and one-off historical fix notes live in [`archive/`](archive/). Stub/redirect documents at the top of `docs/` may point into the current architecture folders for compatibility.
 
-Do not treat archive docs as implementation truth for `main`.
+## Public static docs
 
----
+| Path | Purpose |
+|---|---|
+| [`../public/docs/TECHNICAL_GUIDE.md`](../public/docs/TECHNICAL_GUIDE.md) | Static technical guide served with the application |
+| [`../public/docs/claude-guide.html`](../public/docs/claude-guide.html) | Static contributor guide |
+| [`../public/blueprint/`](../public/blueprint/) | Lightweight blueprint surface |
 
-## Public site docs (served under `/docs/`)
+## Directory layout
 
-| Path | Notes |
-|------|-------|
-| [`public/docs/TECHNICAL_GUIDE.md`](../public/docs/TECHNICAL_GUIDE.md) | HTML-facing technical guide |
-| [`public/docs/claude-guide.html`](../public/docs/claude-guide.html) | Contributor guide (static HTML) |
-| [`public/blueprint/`](../public/blueprint/) | Lightweight blueprint landing |
-
----
-
-## Layout
-
-```
+```text
 docs/
-  README.md                 ← you are here
+  README.md
   DOWNLOADS.md
-  architecture/             current design + blueprint
-  guides/                   platform & feature how-tos
-  adr/                      architecture decision records
-  audits/                   dated audit reports
-  archive/                  historical / superseded material
+  architecture/   current architecture + blueprint
+  product/        current product strategy
+  guides/         platform/feature guidance
+  releases/       current evidence + historical release snapshots
+  adr/            architecture decisions
+  audits/         dated point-in-time audit evidence
+  archive/        superseded material
 ```
-
-| [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-Audio Option B local worker |
-| [guides/PLATFORM_CAPABILITY_MATRIX.md](guides/PLATFORM_CAPABILITY_MATRIX.md) | Web / Android / Desktop matrix |
-| [audits/CROSS_PLATFORM_SAM_AUDIT_2026-08-05.md](audits/CROSS_PLATFORM_SAM_AUDIT_2026-08-05.md) | Full audit |
