@@ -10,7 +10,7 @@
   },
   "android": {
     "allowMixedContent": false,
-    "webContentsDebuggingEnabled": true,
+    "webContentsDebuggingEnabled": false,
     "captureInput": true,
     "appendUserAgent": "VoiceIsolatePro/25.0.2 Android",
     "backgroundColor": "#0a0a0f"

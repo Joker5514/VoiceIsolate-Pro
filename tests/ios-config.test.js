@@ -459,9 +459,9 @@ describe('Cross-platform consistency — Android & iOS', () => {
     expect(cfg.android.backgroundColor).toBe(cfg.ios.backgroundColor);
   });
 
-  test('webContentsDebuggingEnabled is platform-appropriate', () => {
-    // Android ships sideload debug APKs (chrome://inspect); iOS keeps production off.
-    expect(cfg.android.webContentsDebuggingEnabled).toBe(true);
+  test('WebView debugging defaults off in shared Capacitor config', () => {
+    // Android debug inspection is enabled natively only when BuildConfig.DEBUG is true.
+    expect(cfg.android.webContentsDebuggingEnabled).toBe(false);
     expect(cfg.ios.webContentsDebuggingEnabled).toBe(false);
   });
 

@@ -66,9 +66,9 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.android.allowMixedContent).toBe(false);
   });
 
-  test('android.webContentsDebuggingEnabled is enabled for sideload debug APKs', () => {
-    // Sideload debug APKs need chrome://inspect; release AAB can flip this off later.
-    expect(cfg.android.webContentsDebuggingEnabled).toBe(true);
+  test('android.webContentsDebuggingEnabled defaults false for release safety', () => {
+    // MainActivity selectively enables chrome://inspect only when BuildConfig.DEBUG is true.
+    expect(cfg.android.webContentsDebuggingEnabled).toBe(false);
   });
 
   test('android.captureInput is true (required for audio input capture)', () => {
