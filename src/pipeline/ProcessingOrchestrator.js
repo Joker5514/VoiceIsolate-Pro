@@ -7,16 +7,13 @@
 'use strict';
 
 import { ingestFile } from './FileIngestion.js';
-import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { debugLog } from '../core/debug.js';
-import { createMLWorker } from './MLWorkerHost.js';
+import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 import {
   CancellationError,
   isCancellationError,
   throwIfAborted,
 } from './JobController.js';
-
-const MANIFEST_ARRAY = Object.values(MODEL_MANIFEST);
 
 /** Soft in-memory stem cache (session only, no telemetry). */
 const _stemCache = new Map();
@@ -142,7 +139,7 @@ export class ProcessingOrchestrator {
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
     try {
-      worker.postMessage({ type: 'init', manifest: MANIFEST_ARRAY });
+      initMLWorker(worker);
     } catch (error) {
       rejectInit(error, true);
     }

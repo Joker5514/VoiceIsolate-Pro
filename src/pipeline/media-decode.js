@@ -413,7 +413,7 @@ async function _decodeWithAudioData(blob, onProgress, externalCtx = null, option
   onProgress(50);
 
   // Reuse the caller's context when available — avoids context limit exhaustion.
-  const ctx = externalCtx || getSharedAudioContext(Ctx, 'primary');
+  const ctx = externalCtx || getSharedAudioContext(Ctx, 'primary', { sampleRate: SAMPLE_RATE });
   onProgress(55);
   const decoded = await decodeAudioBufferSafe(ctx, arrayBuffer, {
     timeoutMs: options.decodeTimeoutMs,

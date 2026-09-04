@@ -176,7 +176,7 @@ describe('FullAnalysisHost worker lifecycle', () => {
     expect(workers[0].terminate).toHaveBeenCalledTimes(1);
   });
 
-  test('does not false-kill a synchronous worker at the default stall deadline', async () => {
+  test('ignores stallMs unless cooperative heartbeats are explicitly enabled', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(0);
     const host = makeHost();
@@ -191,6 +191,24 @@ describe('FullAnalysisHost worker lifecycle', () => {
       data: { type: 'result', requestId, analysis: { completed: true } },
     });
     await expect(pending).resolves.toEqual({ completed: true });
+  });
+
+  test('terminates a silent cooperative worker at its explicit stall deadline', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+    const host = makeHost();
+    const { pending } = await beginAnalysis(host, {
+      expectHeartbeats: true,
+      stallMs: 1000,
+      timeoutMs: 10000,
+    });
+    const rejection = expect(pending).rejects.toThrow('stalled');
+
+    jest.setSystemTime(2001);
+    await jest.advanceTimersByTimeAsync(2000);
+
+    await rejection;
+    expect(workers[0].terminate).toHaveBeenCalledTimes(1);
   });
 
   test('terminates a silent worker at the hard deadline', async () => {

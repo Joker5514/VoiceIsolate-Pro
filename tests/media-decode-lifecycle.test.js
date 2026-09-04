@@ -194,6 +194,7 @@ describe('media decode lifecycle', () => {
     await decodeBlobToAudioBuffer(namedBlob('two.wav'));
 
     expect(AudioContext).toHaveBeenCalledTimes(1);
+    expect(AudioContext).toHaveBeenCalledWith({ sampleRate: 48000 });
     expect(context.decodeAudioData).toHaveBeenCalledTimes(2);
     disposeSharedDecodeContexts();
     expect(context.close).toHaveBeenCalledTimes(1);

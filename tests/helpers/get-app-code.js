@@ -170,7 +170,7 @@ async function decodeBlobToAudioBuffer(file, hooks) {
   onProgress(50);
   const ab = await file.arrayBuffer();
   const abCopy = ab.slice(0);
-  const ctx = hooks && hooks.audioContext;
+  const ctx = (hooks && hooks.audioContext) || this.ctx;
   if (!ctx || typeof ctx.decodeAudioData !== 'function') {
     throw new Error('AudioContext decode unavailable');
   }

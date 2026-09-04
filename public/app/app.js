@@ -1247,7 +1247,8 @@ class VoiceIsolatePro {
   updatePipelineProgress(stageIndex, detail, pct, opts = {}) {
     const pipelineJobId = this._activePipelineJobId || null;
     const activeJobId = globalThis.__VIP_JOBS__?.getCurrentJobId?.() || null;
-    if (pipelineJobId && activeJobId !== pipelineJobId) return false;
+    const forcedTerminalReset = opts.force && !activeJobId;
+    if (pipelineJobId && activeJobId !== pipelineJobId && !forcedTerminalReset) return false;
     const fill = this.dom.pipeFill || $('pipeFill');
     const bar = this.dom.pipeBar || $('pipeBar');
     const detailEl = this.dom.pipeDetail || $('pipeDetail');

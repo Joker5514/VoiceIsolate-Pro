@@ -13,6 +13,7 @@ let _worker = null;
 let _ready = null;
 let _rejectReady = null;
 let _seq = 0;
+const _pendingRequests = new Map();
 
 function createAbortError() {
   return typeof DOMException !== 'undefined'
@@ -20,8 +21,14 @@ function createAbortError() {
     : Object.assign(new Error('VAD cancelled'), { name: 'AbortError', code: 'ABORT_ERR' });
 }
 
-function recycleWorker(worker = _worker) {
+function recycleWorker(worker = _worker, error = new Error('[VIP][VadAnalysis] MLWorker reset')) {
   if (!worker || _worker !== worker) return;
+  const pending = [..._pendingRequests.entries()];
+  for (const [requestId, request] of pending) {
+    if (request.worker !== worker) continue;
+    _pendingRequests.delete(requestId);
+    try { request.reject(error); } catch { /* request already settled */ }
+  }
   try { worker.terminate(); } catch { /* worker already stopped */ }
   _worker = null;
   _ready = null;
@@ -166,7 +173,12 @@ export async function runSileroVad(samples, sampleRate, opts = {}) {
       w.removeEventListener('error', onError);
       w.removeEventListener('messageerror', onMessageError);
       signal?.removeEventListener?.('abort', onAbort);
+      if (_pendingRequests.get(requestId)?.reject === rejectForRecycle) {
+        _pendingRequests.delete(requestId);
+      }
     };
+    const rejectForRecycle = (error) => finish(() => reject(error));
+    _pendingRequests.set(requestId, { worker: w, reject: rejectForRecycle });
     w.addEventListener('message', onMsg);
     w.addEventListener('error', onError);
     w.addEventListener('messageerror', onMessageError);

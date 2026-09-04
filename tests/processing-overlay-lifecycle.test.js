@@ -107,6 +107,18 @@ describe('processing overlay lifecycle', () => {
     expect(overlay.update).toHaveBeenLastCalledWith('current', 50, 16);
   });
 
+  test('ownerless cleanup hides an orphaned overlay only after the current job clears', () => {
+    const { vip, jobs, overlay } = loadOverlay(jest.fn().mockResolvedValue(undefined));
+    vip.beginGlobalJob('pipeline');
+
+    expect(vip.hideProcessingOverlay()).toBe(false);
+    expect(overlay.hide).not.toHaveBeenCalled();
+
+    jobs.cancelCurrent('forced cleanup');
+    expect(vip.hideProcessingOverlay()).toBe(true);
+    expect(overlay.hide).toHaveBeenCalledTimes(1);
+  });
+
   test('a superseded pipeline releases its run guard without hiding the successor', async () => {
     let finishPipeline;
     const { vip, overlay } = loadOverlay(jest.fn(() => new Promise((resolve) => {

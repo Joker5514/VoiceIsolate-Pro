@@ -970,7 +970,8 @@
 
     vip.hideProcessingOverlay = function (ownerJobId) {
       if (ownerJobId && this._activeOverlayOwnerId !== ownerJobId) return false;
-      if (!ownerJobId && this._activeOverlayOwnerId) return false;
+      if (!ownerJobId && this._activeOverlayOwnerId
+        && global.__VIP_JOBS__?.getCurrentJobId?.()) return false;
       if (global.VIPOverlay) global.VIPOverlay.hide();
       this._activeOverlayOwnerId = null;
       return true;

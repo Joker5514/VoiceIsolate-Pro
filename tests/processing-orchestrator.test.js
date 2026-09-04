@@ -66,10 +66,33 @@ describe('ProcessingOrchestrator', () => {
 
       await orchestrator.initialize();
 
-      expect(mockMLWorker.postMessage).toHaveBeenCalledWith({
+      expect(mockMLWorker.postMessage).toHaveBeenCalledWith(expect.objectContaining({
         type: 'init',
         manifest: expect.any(Array),
-      });
+        useDesktopCache: false,
+      }));
+    });
+
+    test('enables filesystem model caching in the desktop shell', async () => {
+      const previousDesktopFlag = globalThis.__VIP_DESKTOP__;
+      globalThis.__VIP_DESKTOP__ = true;
+      try {
+        const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+        setTimeout(() => {
+          const handler = mockMLWorker.addEventListener.mock.calls[0][1];
+          handler({ data: { type: 'ready', backend: 'wasm' } });
+        }, 10);
+
+        await orchestrator.initialize();
+
+        expect(mockMLWorker.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+          type: 'init',
+          useDesktopCache: true,
+        }));
+      } finally {
+        if (previousDesktopFlag === undefined) delete globalThis.__VIP_DESKTOP__;
+        else globalThis.__VIP_DESKTOP__ = previousDesktopFlag;
+      }
     });
 
     test('Sets initialized flag on success', async () => {
