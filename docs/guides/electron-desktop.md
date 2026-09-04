@@ -1,162 +1,151 @@
-# VoiceIsolate Pro — Electron Desktop MVP
+# VoiceIsolate Pro — Electron desktop
 
-Master Blueprint v2.1 §IV / §VIII. Desktop path reuses the **same web renderer** as Vercel/Android: Landing + **Engineer Console** (`public/app/engineer-console.*`) from `build/` after `pnpm build`.
+The Electron desktop path reuses the same renderer produced by `pnpm build`: Landing + the shared Engineer Console under `public/app/`. Desktop-specific behavior is limited to the native shell, filesystem/cache integration, dialogs, update plumbing, and approved preload IPC.
 
-## Security Model
+## Security model
 
-| Setting | Value | Rationale |
-|---------|-------|-----------|
-| `contextIsolation` | `true` | Renderer cannot access Node/Electron internals |
-| `nodeIntegration` | `false` | No `require()` in renderer |
-| `sandbox` | `true` | Process isolation |
-| `preload` | `electron/preload.cjs` | Whitelisted IPC via `contextBridge` only |
+| Setting | Required value |
+|---|---|
+| `contextIsolation` | `true` |
+| `nodeIntegration` | `false` |
+| `sandbox` | `true` |
+| Renderer preload | `electron/preload.cjs` with a narrow `contextBridge` API |
+| Insecure content | disabled |
 
-Renderer API surface: `window.vipDesktop` (see `electron/preload.cjs`).
+Renderer code must never regain arbitrary Node access.
 
-## IPC Channels
+## Preload API
 
-| Channel | Direction | Purpose |
-|---------|-----------|---------|
-| `vip:platform` | invoke | `win32` / `darwin` / `linux` |
-| `vip:app-version` | invoke | Semver from `package.json` |
-| `vip:open-file` | invoke | Native open dialog → `ArrayBuffer` |
-| `vip:save-file` | invoke | Native save dialog |
-| `vip:model-cache-path` | invoke | Filesystem model cache directory |
-| `vip:read-model-cache` | invoke | Read cached ONNX by relative path |
-| `vip:write-model-cache` | invoke | Write ONNX blob to filesystem cache |
-| `vip:update-check` | invoke | Check GitHub Releases for updates |
-| `vip:update-download` | invoke | Download available update |
-| `vip:update-install` | invoke | Quit and install downloaded update |
-| `vip:update-status` | event | Auto-update progress (main → renderer) |
+`window.vipDesktop` exposes the allowlisted desktop bridge. Current responsibilities include:
 
-## Persistence (synced with browser / Android)
+- platform/app version discovery
+- native open/save dialogs
+- filesystem-backed model cache reads/writes
+- update check/download/install status
+- optional desktop-specific worker/service integration where explicitly implemented
 
-Desktop uses the same renderer FileLibrary stack as the web app:
+See `electron/preload.cjs`, `src/core/DesktopBridge.js`, `src/core/DesktopModelCache.js`, and `src/core/ModelCacheBridge.js` for the actual contract.
 
-| Feature | Behavior |
-|---------|----------|
-| Source library | OPFS when available; IndexedDB blob fallback |
-| Model cache | Filesystem-first via ipDesktop + IDB v3 key-value |
-| Boot restore | Lazy hydrate — no giant File copy on startup |
-| Project packs | Export/import .vippack for Android/web handoff |
+## Current Windows download
 
-Rebuild after web/Engineer Console changes: `pnpm build && pnpm build:electron:dir` (or `pnpm build:electron`) so NSIS packages the updated `build/app/engineer-console.*` assets.
+- Latest: https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe
+- Pinned `v25.0.2`: https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe
+- All releases: https://github.com/Joker5514/VoiceIsolate-Pro/releases
+- Download hub: https://voice-isolate-pro.vercel.app/download/
+
+Published `v25.0.2` Windows asset:
+
+- File: `VoiceIsolate-Pro-25.0.2-win-x64.exe`
+- Size: `144628415` bytes
+- SHA-256: `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621`
+- GitHub asset updated: `2026-08-24T17:20:22Z`
+
+The published installer is a release snapshot and predates current `main`. Its source SHA is not independently proven by immutable build metadata in the refreshed provenance record.
 
 ## Development
 
 ```bash
-# First-time only — downloads the Electron platform binary if missing
+pnpm install --frozen-lockfile
 pnpm setup:electron
 
-# Terminal 1 — web dev server (COOP/COEP for SharedArrayBuffer)
+# Terminal 1
 pnpm dev
 
-# Terminal 2 — Electron shell loading localhost:3000
+# Terminal 2
 pnpm electron:dev
 ```
 
-Optional: `VIP_ELECTRON_DEVTOOLS=1 pnpm electron:dev` opens DevTools.
+Set `VIP_ELECTRON_DEVTOOLS=1` during development when DevTools are intentionally needed.
 
-## Production Build (downloadable + 100% offline)
+## Production build
 
 ```bash
-pnpm setup:electron        # once — download Electron binary
-pnpm build:electron        # NSIS installer (Windows)
-pnpm build:electron:dir    # portable unpacked folder (no installer)
+pnpm setup:electron
+pnpm build:electron        # Windows NSIS installer
+pnpm build:electron:dir    # unpacked smoke-test directory
 ```
 
-Output: `dist/electron/`.
+Output is under `dist/electron/` and is not committed to git.
 
-| Artifact | Path | Use |
-|----------|------|-----|
-| Windows installer | `dist/electron/VoiceIsolate-Pro-*-win-x64.exe` | Download + install for end users |
-| Portable | `dist/electron/win-unpacked/VoiceIsolate Pro.exe` | Smoke test / USB portable |
+| Artifact | Typical path |
+|---|---|
+| Windows installer | `dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe` |
+| Unpacked executable | `dist/electron/win-unpacked/VoiceIsolate Pro.exe` |
 
-### Offline guarantees (packaged app)
+After any shared Landing/Engineer/runtime change, rebuild the desktop package before claiming the published installer contains the fix.
 
-| Capability | How |
-|------------|-----|
-| UI + workers + ORT wasm | Shipped under `build/` inside the app |
-| Default isolation models | `bsrnn_vocals`, `rnnoise`, Silero VAD bundled in `build/app/models/` |
-| Model load without network | Custom **`vip://`** protocol (not `file://`) + first-launch seed into `{userData}/models/` |
-| COOP / COEP | Set on every `vip://` response → SharedArrayBuffer worklets work offline |
-| Auto-update | Optional; skipped when offline; never required to isolate audio |
+## Offline behavior
 
-Huge optional weights (`demucs_v4_fp32.onnx`) are **excluded** from the installer to keep size reasonable. Default chain is BS-RNN only (~4 MB).
+Core isolation can run locally after the packaged renderer, runtime, and required models are available. Optional network features—including Google Drive file I/O, update checks/downloads, and release navigation—require connectivity.
 
-Publish installer to GitHub Releases; the web download page links there:
+| Capability | Desktop behavior |
+|---|---|
+| UI / workers / ORT assets | packaged from `build/` |
+| Core models | packaged/seeded according to the Electron build configuration |
+| Model cache | filesystem-first under the app data directory with shared fallback abstractions |
+| File open/save | native dialog via preload bridge |
+| Audio processing | local; user audio is not sent to a server for inference |
+| Auto-update | optional GitHub Releases channel; not required to process audio |
 
-| Channel | URL |
-|---------|-----|
-| Web download page | https://voice-isolate-pro.vercel.app/download/ |
-| Latest Windows installer | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
-| Pinned v25.0.2 | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
-| Prior v24.0.0 | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| Approx. size | 144,628,415 bytes (BS-RNN + denoise + VAD offline; Demucs not in installer) |
-| Last release upload | 2026-08-24T17:20Z (v25.0.2 — `0b791c2` #784; tag not moved) |
+Large optional model families may be excluded from the standard installer when package size or memory constraints make them unsuitable.
 
-## Model Cache (Desktop)
+## Persistence
 
-Unlike web (IndexedDB), desktop uses filesystem storage under:
+Desktop shares the same logical FileLibrary/project-pack concepts as the browser/Android renderer while using desktop-capable storage adapters where available.
 
+- Source/project library: renderer FileLibrary abstraction
+- Model cache: filesystem-first through `window.vipDesktop`, with supported fallback storage
+- Startup: lazy hydration; avoid copying/decoding large media on boot
+- Cross-platform handoff: `.vippack`
+
+## Auto-update
+
+Packaged builds can use `electron-updater` with GitHub Releases. Renderer actions are exposed through the preload allowlist rather than direct Node access.
+
+Set `VIP_SKIP_AUTO_UPDATE=1` to disable startup update checks. Development mode must not behave like a production updater.
+
+## Code signing
+
+The repository contains signing/notarization hooks. **Configuration is not proof that a particular published artifact is signed.** Verify the actual binary before making a signed-release claim.
+
+| Platform | Typical credentials/config |
+|---|---|
+| Windows Authenticode | `CSC_LINK` / `WIN_CSC_LINK`, `CSC_KEY_PASSWORD` |
+| macOS signing | certificate credentials + `APPLE_TEAM_ID` |
+| Apple notarization | `APPLE_ID`, app-specific password, team ID |
+
+Local Windows builds commonly disable automatic certificate discovery and may be unsigned. An unsigned installer can trigger Microsoft SmartScreen.
+
+No macOS or Linux binaries are currently published in GitHub Release `v25.0.2`.
+
+## Live/processing architecture
+
+Desktop does not get a separate audio product architecture. It consumes the same upload-only Stem-Split & Live-Mix system and Engineer Console contracts described in `CLAUDE.md`. Process-time ML remains explicit; sliders must not trigger ML inference.
+
+## Validation before publishing
+
+```bash
+pnpm version:check
+pnpm lint
+pnpm test:ci
+pnpm validate
+pnpm build
+pnpm downloads:validate
+pnpm build:electron
 ```
-{userData}/models/
+
+After upload, refresh `docs/releases/release-provenance.json` from the actual GitHub Release asset metadata and run:
+
+```bash
+pnpm provenance:validate
+pnpm downloads:validate
 ```
 
-On first launch the main process copies bundled offline ONNX files into this
-cache so MLWorker never needs a network fetch.
+Only use `pnpm provenance:validate:strict` when every supported published surface has verified current provenance.
 
-`src/core/DesktopModelCache.js` implements filesystem-first caching with IndexedDB
-fallback. `src/core/ModelCacheBridge.js` proxies MLWorker cache I/O to the main
-thread (workers cannot call `vipDesktop` directly). All MLWorker hosts use
-`src/pipeline/MLWorkerHost.js` which attaches the bridge automatically.
+## Related docs
 
-## File I/O Integration (Done)
-
-| Layer | Module | Desktop path |
-|-------|--------|--------------|
-| Core | `src/core/DesktopBridge.js` | `pickAudioFile()`, `saveExportBlob()` |
-| Pipeline | `src/pipeline/FileIngestion.js` | `pickAndIngestFile()` |
-| Presentation | `src/presentation/ExportControls.js` | `_deliverBlob()` → native save |
-| Landing | `public/landing.js` | Upload zone uses native picker when `isDesktopShell()` |
-
-## Auto-Update (GitHub Releases)
-
-Packaged builds check for updates on launch (`electron-updater` + `publish: github`
-in `electron/electron-builder.yml`). Renderer API:
-
-```js
-await window.vipDesktop.checkForUpdates();
-const off = window.vipDesktop.onUpdateStatus((s) => console.log(s.state));
-await window.vipDesktop.downloadUpdate();
-await window.vipDesktop.installUpdate();
-```
-
-Set `VIP_SKIP_AUTO_UPDATE=1` to disable the startup check. Dev mode (`VIP_ELECTRON_DEV=1`)
-never checks for updates.
-
-## Code Signing
-
-| Platform | Env vars | Notes |
-|----------|----------|-------|
-| Windows Authenticode | `CSC_LINK` or `WIN_CSC_LINK`, `CSC_KEY_PASSWORD` | `signAndEditExecutable: true` in builder config |
-| macOS | `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_TEAM_ID` | `hardenedRuntime` + `electron/entitlements.mac.plist` |
-| Apple notarization | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | `electron/notarize.cjs` afterSign hook |
-
-Local unsigned Windows builds use `pnpm build:electron` which sets
-`CSC_IDENTITY_AUTO_DISCOVERY=false`.
-
-## Live-Mode Pipeline
-
-`src/pipeline/LivePipeline.js` integrates `QuantumHopBridge` for hop-aligned FFT
-windows in live mode (Blueprint v2.1 §III). It accepts AudioWorklet quanta via
-`pushQuantum()` or drains a ring buffer via `drainRingBuffer()`.
-
-## Phase 1 Desktop MVP — Complete
-
-- [x] Wire `FileIngestion` to `vipDesktop.openFile()` in desktop shell
-- [x] Wire `ExportOrchestrator` / `ExportControls` to `vipDesktop.saveFile()`
-- [x] Desktop model loader adapter (filesystem-first, IndexedDB fallback)
-- [x] Code signing (Windows Authenticode, Apple notarization)
-- [x] `electron-updater` auto-update channel (GitHub Releases)
-- [x] Live-mode pipeline integration with `QuantumHopBridge`
+- [`../DOWNLOADS.md`](../DOWNLOADS.md)
+- [`../releases/PLATFORM_SYNC.md`](../releases/PLATFORM_SYNC.md)
+- [`../releases/release-provenance.json`](../releases/release-provenance.json)
+- [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md)

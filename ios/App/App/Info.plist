@@ -47,8 +47,6 @@
 	<true/>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>VoiceIsolate Pro needs microphone access to record and process audio in real-time.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>

@@ -257,7 +257,6 @@
     function tick() {
       if (!running) return;
       analyser.getByteTimeDomainData(dataArray);
-
       let sum = 0;
       for (let i = 0; i < bufferLength; i++) {
         sum += Math.abs(dataArray[i] - 128);
@@ -296,9 +295,114 @@
     };
   }
 
+  // visuals.js is intentionally maintenance-frozen, but it exposes a legacy
+  // synchronous static-spectrogram helper. This file loads immediately after
+  // visuals.js, so replace only that presentation helper with a cooperative
+  // implementation. No audio-processing output is changed.
+  let staticSpectrogramGeneration = 0;
+
+  function yieldVisualWork() {
+    if (global.scheduler && typeof global.scheduler.yield === 'function') {
+      return global.scheduler.yield();
+    }
+    return new Promise((resolve) => {
+      const finish = () => global.setTimeout(resolve, 0);
+      if (typeof global.requestAnimationFrame === 'function') global.requestAnimationFrame(finish);
+      else finish();
+    });
+  }
+
+  async function drawStaticSpectrogramCooperative(canvas, audioBuf) {
+    if (!canvas || !audioBuf || typeof audioBuf.getChannelData !== 'function') return false;
+    const dsp = global.DSP || global.DSPCore;
+    if (!dsp || (typeof dsp.forwardSTFTAsync !== 'function' && typeof dsp.forwardSTFT !== 'function')) {
+      return false;
+    }
+
+    const generation = ++staticSpectrogramGeneration;
+    const isCurrent = () => generation === staticSpectrogramGeneration;
+    const data = audioBuf.getChannelData(0);
+    const fftSize = 1024;
+    const hopSize = 256;
+    let spec;
+
+    try {
+      spec = typeof dsp.forwardSTFTAsync === 'function'
+        ? await dsp.forwardSTFTAsync(data, fftSize, hopSize, {
+            yieldEvery: 8,
+            shouldAbort: () => !isCurrent(),
+          })
+        : dsp.forwardSTFT(data, fftSize, hopSize);
+    } catch (_) {
+      return false;
+    }
+    if (!isCurrent() || !spec?.mag?.length) return false;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    const rect = canvas.getBoundingClientRect();
+    const cssH = parseInt(global.getComputedStyle(canvas).height, 10) || 0;
+    const w = Math.floor(rect.width > 0 ? rect.width : (canvas.offsetWidth || 800));
+    const h = Math.floor(rect.height > 0 ? rect.height : (cssH || canvas.offsetHeight || 240));
+    if (w < 2 || h < 2) return false;
+    canvas.width = w;
+    canvas.height = h;
+
+    const frames = spec.mag.length;
+    const bins = spec.mag[0].length;
+    const img = ctx.createImageData(w, h);
+    const lut = global.VIP_INFERNO_LUT;
+    if (!lut) return false;
+
+    let maxMag = 1e-9;
+    for (let f = 0; f < frames; f++) {
+      const frame = spec.mag[f];
+      for (let b = 0; b < bins; b++) {
+        if (frame[b] > maxMag) maxMag = frame[b];
+      }
+      if ((f & 15) === 15) {
+        if (!isCurrent()) return false;
+        await yieldVisualWork();
+      }
+    }
+
+    for (let x = 0; x < w; x++) {
+      const frameIndex = Math.min(frames - 1, Math.floor((x / w) * frames));
+      const frame = spec.mag[frameIndex];
+      for (let y = 0; y < h; y++) {
+        const t = 1 - (y / h);
+        const bin = Math.min(bins - 1, Math.floor(Math.pow(t, 2.0) * (bins - 1)));
+        const v = Math.min(1, frame[bin] / maxMag);
+        const li = Math.min(255, Math.floor(v * 255)) * 3;
+        const px = (y * w + x) * 4;
+        img.data[px] = lut[li];
+        img.data[px + 1] = lut[li + 1];
+        img.data[px + 2] = lut[li + 2];
+        img.data[px + 3] = 255;
+      }
+      if ((x & 15) === 15) {
+        if (!isCurrent()) return false;
+        await yieldVisualWork();
+      }
+    }
+
+    if (!isCurrent()) return false;
+    ctx.putImageData(img, 0, 0);
+
+    // visuals-bootstrap historically mirrors 2D → 3D immediately. Because the
+    // cooperative path is async, mirror again after the final frame is ready.
+    const mirror = global.document?.getElementById?.('spectroCanvas');
+    if (mirror && mirror !== canvas && mirror.width > 0 && mirror.height > 0) {
+      const mirrorCtx = mirror.getContext('2d');
+      if (mirrorCtx) mirrorCtx.drawImage(canvas, 0, 0, mirror.width, mirror.height);
+    }
+    return true;
+  }
+
   global.VIP_initPulsingAura = initPulsingAura;
   global.VIP_initTopographic3D = initTopographic3D;
   global.VIP_initParticleSwarm = initParticleSwarm;
   global.VIP_initLiquidWaves = initLiquidWaves;
+  global.VIP_drawStaticSpectrogram = drawStaticSpectrogramCooperative;
 
 })(typeof window !== 'undefined' ? window : this);

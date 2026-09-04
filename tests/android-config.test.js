@@ -71,7 +71,8 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.android.webContentsDebuggingEnabled).toBe(false);
   });
 
-  test('android.captureInput is true (required for audio input capture)', () => {
+  test('android.captureInput remains enabled for native file-input handling', () => {
+    // This setting does not grant RECORD_AUDIO; the upload-only manifest forbids microphone capture.
     expect(cfg.android.captureInput).toBe(true);
   });
 
@@ -549,6 +550,10 @@ describe('MainActivity.java — WebView isolation and upload-only permission flo
   test('injects COOP/COEP headers for crossOriginIsolated', () => {
     expect(mainActivity).toContain('Cross-Origin-Opener-Policy');
     expect(mainActivity).toContain('Cross-Origin-Embedder-Policy');
+  });
+
+  test('WebView debugging is gated by BuildConfig.DEBUG', () => {
+    expect(mainActivity).toContain('WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)');
   });
 
   test('does not request RECORD_AUDIO at boot (upload-only — avoids startup jank)', () => {

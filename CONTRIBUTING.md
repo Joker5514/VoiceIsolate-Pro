@@ -1,74 +1,128 @@
 # Contributing to VoiceIsolate Pro
 
-Thank you for your interest in contributing. This project enforces a strict
-four-layer architecture — read [`CLAUDE.md`](CLAUDE.md) before opening a PR.
+Read [`CLAUDE.md`](CLAUDE.md) before changing code. It is the implementation source of truth for architecture, privacy, platform scope, and layering rules.
 
-## Prerequisites
+## Toolchain
 
-- **Node.js** ≥ 22
-- **pnpm** ≥ 10 (npm/yarn lockfiles are not used)
+- **Node.js:** 22+; CI currently runs Node 24
+- **pnpm:** `11.3.0` (declared by `packageManager` and used by CI)
+- **Package lock:** `pnpm-lock.yaml` only; do not add `package-lock.json` or a Yarn lockfile
 
 ```bash
-pnpm install
-pnpm sync:src    # copies src/ → public/src/ for local /src/ imports
-pnpm dev         # http://localhost:3000
+corepack enable
+pnpm install --frozen-lockfile
+pnpm sync:src
+pnpm dev
 ```
 
 ## Development workflow
 
-1. Create a feature branch from `main`.
-2. Make focused changes — one concern per commit.
-3. Run the full validation gate before pushing:
+1. Branch from current `main`.
+2. Keep changes focused and preserve the architecture in `CLAUDE.md`.
+3. Search the repository before claiming a capability/file is missing.
+4. Add regression coverage for a real bug fix.
+5. Run the relevant quality gates before opening or merging a PR.
+
+Baseline gate:
 
 ```bash
-pnpm validate           # structural integrity (required)
-pnpm worklets:verify    # AudioWorklet packaging
-pnpm lint               # ESLint
-pnpm test               # Jest (2150+ tests)
+pnpm ci:check-patches
+pnpm version:check
+pnpm worklets:verify
+pnpm lint
+pnpm test:ci
+pnpm validate
+pnpm check:privacy
+pnpm downloads:validate
 ```
 
-4. Open a PR with a clear summary, test results, and screenshots for UI changes.
+For shared UI/runtime changes, also run the browser/Engineer smoke tests and rebuild affected native packages before claiming a published native artifact contains the change.
 
-## Architecture rules (summary)
+## Architecture summary
 
 | Layer | Path | Responsibility |
-|-------|------|----------------|
-| 1 Core | `src/core/` | Pure DSP primitives, constants, manifests |
-| 2 Workers | `src/workers/` | Web Workers & AudioWorklets |
-| 3 Pipeline | `src/pipeline/` | Orchestration (ingest → infer → mix → export) |
-| 4 Presentation | `src/presentation/` | DOM bindings only |
+|---|---|---|
+| 1 Core | `src/core/` | Pure DSP/data primitives and contracts |
+| 2 Workers | `src/workers/` | Web Workers and approved AudioWorklets |
+| 3 Pipeline | `src/pipeline/` | Ingest, analysis/process orchestration, playback, export |
+| 4 Presentation | `src/presentation/` | DOM/presentation adapters |
 
-**Do not:**
-- Add live-microphone ingestion
-- Load libraries from CDNs
-- Put business logic in `public/app/` (Engineer Mode is maintenance-frozen)
-- Commit large ONNX models (use Vercel Blob — see `docs/guides/MODEL_DELIVERY.md`)
+A layer may depend only on layers below it. New feature/business logic belongs in `src/`, not in the legacy `public/app/` implementation surface.
+
+## Non-negotiable product rules
+
+Do not:
+
+- add live microphone ingestion (`getUserMedia` is forbidden)
+- send user audio to a server for processing/inference
+- re-run ML inference from slider events
+- load runtime libraries from third-party CDNs
+- hardcode secrets or dev-bypass credentials
+- weaken Electron isolation (`contextIsolation`, sandbox, no Node integration)
+- enable Android WebView debugging for release builds
+- weaken CI to hide failures or reintroduce Jest `--forceExit` in the main suite
+- commit generated installers, APKs, `build/`, dependency directories, or foreign lockfiles
+
+`public/app/` remains a shipped compatibility surface; targeted bug/security/parity fixes are allowed, but new architecture belongs in the four-layer `src/` system.
+
+## Shared product surfaces
+
+| Route | Source | Purpose |
+|---|---|---|
+| `/` | `public/index.html` + shared `src` presentation/pipeline modules | Landing / standard workflow |
+| `/app/` | `public/app/index.html` + shared Engineer bridge/modules | Engineer Console |
+| `/download/` | `public/download/index.html` | Current release downloads |
+
+Web, Android, and Electron consume the same product shell when rebuilt from the same source. Do not claim published native packages are synchronized with current Web/`main` unless `docs/releases/release-provenance.json` proves it.
+
+## Upload behavior
+
+The product is upload-only. Browse controls, drop zones, and native file pickers must remain compatible with audio/video file selection. Avoid positioning file inputs far off-screen; browser file-picker behavior can reject synthetic clicks on hidden/off-viewport inputs.
+
+## Worklets and models
+
+- Worklet packaging is governed by `scripts/worklet-manifest.json` and `pnpm worklets:verify`.
+- Runtime/model integrity is governed by the model manifest and validation scripts.
+- Do not commit large optional model binaries simply to make a local build pass.
+- Keep local-processing/privacy guarantees intact when changing model delivery.
+
+## UI changes
+
+Preserve public IDs/data bindings used by tests and adapters. The shared design-system semantic tokens live in `public/app/ds-tokens.css`; surface-specific styles may extend presentation but must not redefine process/live/status semantics inconsistently.
+
+For UI changes, include desktop and mobile smoke coverage where practical and respect reduced-motion/coarse-pointer behavior.
+
+## Release/download changes
+
+Current release truth is documented in:
+
+- [`docs/DOWNLOADS.md`](docs/DOWNLOADS.md)
+- [`docs/releases/PLATFORM_SYNC.md`](docs/releases/PLATFORM_SYNC.md)
+- [`docs/releases/release-provenance.json`](docs/releases/release-provenance.json)
+
+When changing release assets or download URLs:
+
+```bash
+pnpm downloads:validate
+pnpm provenance:validate
+```
+
+Use strict provenance validation only when every supported published surface has current, independently verified provenance:
+
+```bash
+pnpm provenance:validate:strict
+```
+
+Do not edit dated audits or historical release PDFs merely to make them look current; add newer evidence instead.
 
 ## Documentation map
 
-| Topic | Doc |
-|-------|-----|
-| Full index | [`docs/README.md`](docs/README.md) |
-| Architecture | [`docs/architecture/`](docs/architecture/) |
-| How-tos (Android, worklets, desktop, analysis) | [`docs/guides/`](docs/guides/) |
-| Downloads | [`docs/DOWNLOADS.md`](docs/DOWNLOADS.md) |
-| Historical only | [`docs/archive/`](docs/archive/) |
-
-## Pages
-
-| URL | File | Notes |
-|-----|------|-------|
-| `/` | `public/index.html` | Landing — Stem-Split (ML separation, upload-only) |
-| `/app/` | `public/app/index.html` | Engineer Mode v24 — 67-slider DSP + visualization suite |
-
-Upload wiring is shared via `src/presentation/UploadWiring.js` (imported by `public/landing.js` and `public/app/app.js`). Browse buttons use `<label for="fileInput">`; do not position file inputs off-screen (`left:-9999px`) — Chromium 120+ blocks the native picker.
+See [`docs/README.md`](docs/README.md). Current implementation docs are separate from `docs/audits/`, `docs/archive/`, old release PDFs, and `LEGACY.md`.
 
 ## Debug logging
 
-Append `?debug=1` to the URL or set `localStorage.vip_debug = '1'` to enable
-gated `[VIP]` console output in pipeline modules.
+Append `?debug=1` or set `localStorage.vip_debug = '1'` for gated `[VIP]` diagnostics where supported.
 
-## Questions
+## Security reports
 
-Open a GitHub issue with the **bug** or **feature** template. For security
-concerns, do not file public issues — contact the maintainer directly.
+Do not publish secrets or sensitive security details in a public issue. Use the repository's documented maintainer/security contact path for private reports.

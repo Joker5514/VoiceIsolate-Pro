@@ -21,6 +21,10 @@ describe('Slider preserve + lock', () => {
     ctx.onSlider = jest.fn();
     ctx._applySliderToWorklet = jest.fn();
     ctx._setWhisperMode = jest.fn();
+    // Preset helpers can schedule a production persistence debounce. Stub it in
+    // this prototype-only harness so no timer survives the completed test and
+    // later executes against stripped module imports.
+    ctx._scheduleSessionPersist = jest.fn();
   });
 
   test('_shouldPreserveSlider respects lock and user touch', () => {
@@ -41,6 +45,7 @@ describe('Slider preserve + lock', () => {
     const touchedIds = ctx._setSliderUi.mock.calls.map((c) => c[0]);
     expect(touchedIds).not.toContain('gateThresh');
     expect(touchedIds.length).toBeGreaterThan(0);
+    expect(ctx._scheduleSessionPersist).toHaveBeenCalled();
   });
 
   test('_applyPresetValues respects user-touched sliders during auto-calibrate', () => {

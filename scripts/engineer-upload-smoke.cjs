@@ -129,11 +129,15 @@ function makeWav() {
     await ensureAppReady(page);
     await ingestWav(page, wavPath);
 
-    // Deferred decode: source file + enabled Process is the success criterion.
-    // Decode happens on Process / Analyze (ensureDecoded), not at upload.
+    // Upload may remain deferred as _sourceFile or may already be decoded into
+    // input/origBuffer. Either state is Process-ready when the button is enabled.
     try {
       await page.waitForFunction(
-        () => Boolean(window._vipApp?._sourceFile) && !document.getElementById('processBtn')?.disabled,
+        () => {
+          const app = window._vipApp;
+          const hasInput = Boolean(app?._sourceFile || app?.inputBuffer?.length || app?.origBuffer?.length);
+          return hasInput && !document.getElementById('processBtn')?.disabled;
+        },
         null,
         { timeout: 15000 },
       );
@@ -185,7 +189,7 @@ function makeWav() {
     if (!state.hasOut && state.status !== 'DONE') fails.push('no processed output after Process');
     if (state.status === 'ERROR') fails.push('pipeline ended in ERROR');
 
-    console.log('  ✓ audio upload accepted (deferred decode)');
+    console.log('  ✓ audio upload accepted (deferred or eager decode)');
     console.log('  ✓ Process enabled after upload');
     console.log(`  ✓ Process completed — status=${state.status} ml=${state.mlOk} out=${state.hasOut}`);
     console.log(`  ✓ fileInfo: ${state.fileInfo}`);

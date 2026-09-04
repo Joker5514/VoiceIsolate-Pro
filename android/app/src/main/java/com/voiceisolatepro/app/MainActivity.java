@@ -157,9 +157,10 @@ public class MainActivity extends BridgeActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(false);
         }
-        // Debug sideload builds: chrome://inspect for WebView.
+        // Keep chrome://inspect available for debug/sideload builds only. A signed
+        // production AAB must not expose the live WebView debugging endpoint.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            WebView.setWebContentsDebuggingEnabled(true);
+            WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         }
 
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
