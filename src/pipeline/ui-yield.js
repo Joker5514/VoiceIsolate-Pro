@@ -81,12 +81,18 @@ function isMobileShell() {
  * Prefer this over bare setTimeout(0) during multi-second DSP.
  * @returns {Promise<void>}
  */
-export function yieldToBrowser() {
-  // Chromium: cooperative scheduling (best for not freezing tabs).
+export async function yieldToBrowser() {
+  // Chromium: scheduler.yield() continuations can outrank an already queued
+  // timer. Follow it with a macrotask checkpoint so Cancel/input/timers run
+  // before a long chunk loop resumes.
   if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
-    return scheduler.yield();
+    await scheduler.yield();
+    if (typeof setTimeout === 'function') {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return;
   }
-  return new Promise((resolve) => {
+  await new Promise((resolve) => {
     const done = () => {
       if (typeof setTimeout === 'function') setTimeout(resolve, 0);
       else resolve();

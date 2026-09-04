@@ -592,8 +592,15 @@ export function installAnalysisWorkspace(app) {
     if (jobs?.beginJob) {
       job = jobs.beginJob('Full analysis', { kind: 'analysis' });
     }
+    const signal = job?.controller?.signal || jobs?.getCurrentSignal?.() || null;
+    const superseded = () => {
+      const activeJobId = jobs?.getCurrentJobId?.() || null;
+      return job?.cancelReason === 'superseded'
+        || signal?.reason === 'superseded'
+        || Boolean(activeJobId && job && activeJobId !== job.id);
+    };
     if (typeof app.showProcessingOverlay === 'function') {
-      app.showProcessingOverlay('Analyzing…', 0, 'analyzing');
+      app.showProcessingOverlay('Analyzing…', 0, 'analyzing', job?.id || null);
     }
     try {
       // Restore durable analysis when available (same library file after reload).
@@ -603,8 +610,10 @@ export function installAnalysisWorkspace(app) {
           const { loadAnalysisDurable } = await import('/src/core/storage/DerivedCache.js');
           const cached = await loadAnalysisDurable(libId);
           if (cached && typeof cached === 'object') {
+            if (signal?.aborted || superseded()) return null;
             let analysis = collaborateWithHunter(cached, buf);
             await ensureAuditionBuffers(analysis);
+            if (signal?.aborted || superseded()) return null;
             renderAnalysis(analysis);
             if (typeof app.setStatus === 'function') {
               app.setStatus('Analysis restored from local cache');
@@ -626,30 +635,27 @@ export function installAnalysisWorkspace(app) {
       }
       // Use mono mix for speed on long files — still multi-channel aware via count
       const mono = downmixToMono(channels);
-      const signal = job?.controller?.signal || jobs?.getCurrentSignal?.() || null;
       const prevProgress = host.onProgress;
-      host.onProgress = (pct, stage) => {
+      const reportProgress = (pct, stage) => {
         try { prevProgress?.(pct, stage); } catch { /* ignore */ }
+        if (signal?.aborted || superseded()) return;
         if (job && jobs?.updateJob) jobs.updateJob(job.id, stage || 'analysis', pct);
         if (typeof app.updateProcessingOverlay === 'function') {
-          app.updateProcessingOverlay(stage || 'Analyzing…', pct, 8);
+          app.updateProcessingOverlay(stage || 'Analyzing…', pct, 8, job?.id || null);
         }
         if (els.progressLabel) els.progressLabel.textContent = `${stage || 'analysis'} · ${Math.round(pct || 0)}%`;
       };
       let analysis;
-      try {
-        analysis = await host.analyze([mono], buf.sampleRate, {
-          platformHints: {
-            lowMemory: /Android/i.test(navigator.userAgent || ''),
-          },
-          signal,
-        });
-      } finally {
-        host.onProgress = prevProgress;
-      }
-      if (cancelled || signal?.aborted) {
+      analysis = await host.analyze([mono], buf.sampleRate, {
+        platformHints: {
+          lowMemory: /Android/i.test(navigator.userAgent || ''),
+        },
+        signal,
+        onProgress: reportProgress,
+      });
+      if (cancelled || signal?.aborted || superseded()) {
         if (job && jobs?.endJob) jobs.endJob(job.id, 'cancelled');
-        showError('Analysis cancelled');
+        if (!superseded()) showError('Analysis cancelled');
         return null;
       }
       // Analyzer → WhisperHunter env fuse (protect voices, suppress horns/music/etc.)
@@ -665,7 +671,9 @@ export function installAnalysisWorkspace(app) {
           console.warn('[VIP] analysis cache save failed', saveErr?.message);
         }
       }
+      if (signal?.aborted || superseded()) return null;
       await ensureAuditionBuffers(analysis);
+      if (signal?.aborted || superseded()) return null;
       renderAnalysis(analysis);
       const preset = analysis.recommendedPreset || analysis.jointPlan?.recommendedPreset;
       if (typeof app.setStatus === 'function') {
@@ -681,6 +689,7 @@ export function installAnalysisWorkspace(app) {
       }
       void runUsmBackend({ mode: 'auto', numSources: 6 })
         .then(() => {
+          if (signal?.aborted || superseded()) return;
           const n = usmNode.getSourceLabels?.()?.length || usmNode.sources?.length || 0;
           if (els.progressLabel && n) {
             els.progressLabel.textContent = `Ready — ${n} source chip${n === 1 ? '' : 's'}`;
@@ -690,6 +699,7 @@ export function installAnalysisWorkspace(app) {
       if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
       return analysis;
     } catch (err) {
+      if (superseded()) return null;
       const cancelledErr = jobs?.isCancellationError?.(err)
         || /cancell?ed|aborted/i.test(String(err?.message || err));
       if (cancelledErr) {
@@ -702,10 +712,20 @@ export function installAnalysisWorkspace(app) {
       if (els.root) els.root.dataset.state = cancelledErr ? 'idle' : 'error';
       return null;
     } finally {
-      setBusy(false);
-      if (els.progress) els.progress.hidden = true;
-      if (typeof app.hideProcessingOverlay === 'function') {
-        try { app.hideProcessingOverlay(); } catch { /* ignore */ }
+      const activeJob = jobs?.getCurrentJob?.() || null;
+      const newerAnalysisOwnsWorkspace = Boolean(
+        activeJob
+        && activeJob.id !== job?.id
+        && activeJob.status === 'running'
+        && activeJob.meta?.kind === 'analysis'
+      );
+      if (!newerAnalysisOwnsWorkspace) {
+        setBusy(false);
+        if (els.progress) els.progress.hidden = true;
+        if (els.root?.dataset.state === 'running') els.root.dataset.state = 'idle';
+        if (typeof app.hideProcessingOverlay === 'function') {
+          try { app.hideProcessingOverlay(job?.id || null); } catch { /* ignore */ }
+        }
       }
     }
   }

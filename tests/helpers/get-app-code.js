@@ -159,15 +159,22 @@ async function processInChunks({ total, runChunk, onProgress }) {
 
 function buildMediaDecodeShim() {
   return `
+async function runBoundedOperation(operation) {
+  return operation();
+}
+async function resumeAudioContext(ctx) {
+  if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') await ctx.resume();
+}
 async function decodeBlobToAudioBuffer(file, hooks) {
   const onProgress = (hooks && hooks.onProgress) || (() => {});
   onProgress(50);
   const ab = await file.arrayBuffer();
   const abCopy = ab.slice(0);
-  if (!this.ctx || typeof this.ctx.decodeAudioData !== 'function') {
+  const ctx = (hooks && hooks.audioContext) || this.ctx;
+  if (!ctx || typeof ctx.decodeAudioData !== 'function') {
     throw new Error('AudioContext decode unavailable');
   }
-  const decoded = await this.ctx.decodeAudioData(abCopy);
+  const decoded = await ctx.decodeAudioData(abCopy);
   onProgress(100);
   return decoded;
 }

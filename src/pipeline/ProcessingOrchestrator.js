@@ -7,15 +7,13 @@
 'use strict';
 
 import { ingestFile } from './FileIngestion.js';
-import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { debugLog } from '../core/debug.js';
+import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 import {
   CancellationError,
   isCancellationError,
   throwIfAborted,
 } from './JobController.js';
-
-const MANIFEST_ARRAY = Object.values(MODEL_MANIFEST);
 
 /** Soft in-memory stem cache (session only, no telemetry). */
 const _stemCache = new Map();
@@ -33,17 +31,36 @@ function fileCacheKey(file, options = {}) {
 }
 
 export class ProcessingOrchestrator {
-  constructor(options) {
-    if (!options.mlWorker) {
+  constructor(options = {}) {
+    if (!options.mlWorker && !options.mlWorkerFactory) {
       throw new TypeError('[VIP][ProcessingOrchestrator] mlWorker is required');
     }
-    this.mlWorker = options.mlWorker;
+    this.mlWorker = options.mlWorker || null;
+    this._workerFactory = options.mlWorkerFactory || createMLWorker;
+    this._ownsWorker = !options.mlWorker;
     this.onProgress = options.onProgress || (() => {});
     this._initialized = false;
     this._initPromise = null;
+    this._rejectInit = null;
     this._requestSeq = 0;
     this._activeRequestId = null;
+    this._activeSettlement = null;
     this._timings = [];
+  }
+
+  _ensureWorker() {
+    if (this.mlWorker) return this.mlWorker;
+    this.mlWorker = this._workerFactory();
+    this._ownsWorker = true;
+    return this.mlWorker;
+  }
+
+  _recycleWorker(worker = this.mlWorker) {
+    if (!worker || this.mlWorker !== worker) return;
+    try { worker.terminate(); } catch { /* worker already stopped */ }
+    this.mlWorker = null;
+    this._ownsWorker = false;
+    this._initialized = false;
   }
 
   async initialize(signal) {
@@ -55,51 +72,79 @@ export class ProcessingOrchestrator {
       return;
     }
 
-    this._initPromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.mlWorker.removeEventListener('message', handler);
-        this._initPromise = null;
-        reject(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'));
-      }, 30000);
-
-      const onAbort = () => {
-        clearTimeout(timeout);
-        this.mlWorker.removeEventListener('message', handler);
-        this._initPromise = null;
-        reject(new CancellationError('Cancelled during ML init'));
-      };
-      if (signal) {
-        if (signal.aborted) {
-          onAbort();
-          return;
-        }
-        signal.addEventListener('abort', onAbort, { once: true });
-      }
-
-      const handler = (event) => {
-        const msg = event.data || {};
-        if (msg.type === 'ready') {
-          clearTimeout(timeout);
-          signal?.removeEventListener?.('abort', onAbort);
-          this.mlWorker.removeEventListener('message', handler);
-          this._initialized = true;
-          this._initPromise = null;
-          debugLog('ProcessingOrchestrator', `MLWorker ready (${msg.backend})`);
-          resolve();
-        } else if (msg.type === 'error') {
-          clearTimeout(timeout);
-          signal?.removeEventListener?.('abort', onAbort);
-          this.mlWorker.removeEventListener('message', handler);
-          this._initPromise = null;
-          reject(new Error(msg.message || 'MLWorker init error'));
-        }
-      };
-
-      this.mlWorker.addEventListener('message', handler);
-      this.mlWorker.postMessage({ type: 'init', manifest: MANIFEST_ARRAY });
+    const worker = this._ensureWorker();
+    let resolveInit;
+    let rejectInitPromise;
+    const initPromise = new Promise((resolve, reject) => {
+      resolveInit = resolve;
+      rejectInitPromise = reject;
     });
+    const initToken = {};
+    this._initPromise = initPromise;
+    this._initToken = initToken;
 
-    await this._initPromise;
+    let settled = false;
+    let timeout = null;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener?.('abort', onAbort);
+      worker.removeEventListener('message', handler);
+      worker.removeEventListener('error', onWorkerError);
+      worker.removeEventListener('messageerror', onMessageError);
+    };
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (this._initToken === initToken) {
+        this._initPromise = null;
+        this._initToken = null;
+        this._rejectInit = null;
+      }
+      callback();
+    };
+    const rejectInit = (error, recycle = false) => settle(() => {
+      if (recycle) this._recycleWorker(worker);
+      rejectInitPromise(error);
+    });
+    const onAbort = () => rejectInit(new CancellationError('Cancelled during ML init'));
+    const onWorkerError = (event) => rejectInit(new Error(
+      `[VIP][ProcessingOrchestrator] MLWorker initialization failed: ${event?.message || 'worker error'}`,
+    ), true);
+    const onMessageError = () => rejectInit(new Error(
+      '[VIP][ProcessingOrchestrator] MLWorker initialization message could not be deserialized',
+    ), true);
+    const handler = (event) => {
+      const msg = event?.data;
+      if (!msg || typeof msg !== 'object') {
+        rejectInit(new Error('[VIP][ProcessingOrchestrator] Malformed MLWorker initialization message'), true);
+        return;
+      }
+      if (msg.type === 'ready') {
+        this._initialized = true;
+        debugLog('ProcessingOrchestrator', `MLWorker ready (${msg.backend})`);
+        settle(resolveInit);
+      } else if (msg.type === 'error') {
+        rejectInit(new Error(msg.message || 'MLWorker init error'), true);
+      }
+    };
+
+    this._rejectInit = rejectInit;
+    timeout = setTimeout(() => {
+      rejectInit(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'), true);
+    }, 30000);
+    worker.addEventListener('message', handler);
+    worker.addEventListener('error', onWorkerError);
+    worker.addEventListener('messageerror', onMessageError);
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+
+    try {
+      initMLWorker(worker);
+    } catch (error) {
+      rejectInit(error, true);
+    }
+
+    await initPromise;
   }
 
   /**
@@ -135,7 +180,7 @@ export class ProcessingOrchestrator {
 
     this.onProgress(0, 'ingesting');
     const tIngest0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const ingested = await ingestFile(file, { isolationMode });
+    const ingested = await ingestFile(file, { isolationMode, signal });
     throwIfAborted(signal, options.jobId);
     this._noteTiming('ingest', tIngest0);
 
@@ -277,32 +322,49 @@ export class ProcessingOrchestrator {
       let lastProgressAt = Date.now();
       let settled = false;
       let handler = null;
-      const worker = this.mlWorker;
+      let onWorkerError = null;
+      let onMessageError = null;
+      let timeout = null;
+      let stallWatch = null;
+      const worker = this._ensureWorker();
       function cleanup() {
         clearTimeout(timeout);
         clearInterval(stallWatch);
         signal?.removeEventListener?.('abort', onAbort);
         if (handler) worker.removeEventListener('message', handler);
+        if (onWorkerError) worker.removeEventListener('error', onWorkerError);
+        if (onMessageError) worker.removeEventListener('messageerror', onMessageError);
+        if (this._activeSettlement?.requestId === requestId) this._activeSettlement = null;
+        if (this._activeRequestId === requestId) this._activeRequestId = null;
       }
       const settle = (callback) => {
         if (settled) return;
         settled = true;
-        cleanup();
+        cleanup.call(this);
         callback();
       };
-      const timeout = setTimeout(() => {
-        try { this.mlWorker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
-        settle(() => reject(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout')));
+      const failWorker = (error) => settle(() => {
+        this._recycleWorker(worker);
+        reject(error);
+      });
+      this._activeRequestId = requestId;
+      this._activeSettlement = {
+        requestId,
+        reject: (error) => settle(() => reject(error)),
+      };
+      timeout = setTimeout(() => {
+        try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
+        failWorker(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout'));
       }, 300000);
-      const stallWatch = setInterval(() => {
+      stallWatch = setInterval(() => {
         if (Date.now() - lastProgressAt < 45000) return;
-        try { this.mlWorker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
-        settle(() => reject(new Error('[VIP][ProcessingOrchestrator] processing stalled')));
+        try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
+        failWorker(new Error('[VIP][ProcessingOrchestrator] processing stalled'));
       }, 5000);
 
       const onAbort = () => {
         try {
-          this.mlWorker.postMessage({ type: 'cancel', requestId });
+          worker.postMessage({ type: 'cancel', requestId });
         } catch { /* ignore */ }
         settle(() => reject(new CancellationError('Cancelled')));
       };
@@ -316,12 +378,15 @@ export class ProcessingOrchestrator {
       }
 
       handler = (event) => {
-        const msg = event.data || {};
-        if (msg.requestId != null && msg.requestId !== requestId) return;
+        const msg = event?.data;
+        if (!msg || typeof msg !== 'object' || msg.requestId !== requestId) return;
 
         if (msg.type === 'progress') {
           lastProgressAt = Date.now();
-          this.onProgress(0.2 + (msg.percent / 100) * 0.8, 'processing');
+          const percent = Number.isFinite(msg.percent) ? Math.max(0, Math.min(100, msg.percent)) : 0;
+          try {
+            this.onProgress(0.2 + (percent / 100) * 0.8, 'processing');
+          } catch { /* UI callbacks must not strand worker settlement */ }
         } else if (msg.type === 'stems') {
           settle(() => resolve({
             clean: msg.clean,
@@ -335,24 +400,43 @@ export class ProcessingOrchestrator {
         }
       };
 
-      this.mlWorker.addEventListener('message', handler);
+      onWorkerError = (event) => {
+        failWorker(new Error(
+          `[VIP][ProcessingOrchestrator] MLWorker failed: ${event?.message || 'worker error'}`,
+        ));
+      };
+      onMessageError = () => {
+        failWorker(new Error(
+          '[VIP][ProcessingOrchestrator] MLWorker message could not be deserialized',
+        ));
+      };
+
+      worker.addEventListener('message', handler);
+      worker.addEventListener('error', onWorkerError);
+      worker.addEventListener('messageerror', onMessageError);
       const transfers = channelData.map((c) => c.buffer);
-      this.mlWorker.postMessage({
-        type: 'process',
-        requestId,
-        modelIds,
-        channelData,
-        sampleRate,
-      }, transfers);
+      try {
+        worker.postMessage({
+          type: 'process',
+          requestId,
+          modelIds,
+          channelData,
+          sampleRate,
+        }, transfers);
+      } catch (error) {
+        failWorker(error);
+      }
     });
   }
 
   /** Best-effort cancel of in-flight ML process. */
-  cancelActive() {
+  cancelActive(reason = 'Cancelled') {
     if (this._activeRequestId == null) return;
+    const requestId = this._activeRequestId;
     try {
-      this.mlWorker.postMessage({ type: 'cancel', requestId: this._activeRequestId });
+      this.mlWorker?.postMessage({ type: 'cancel', requestId });
     } catch { /* ignore */ }
+    this._activeSettlement?.reject(new CancellationError(reason));
   }
 
   _mixToMono(channelData) {
@@ -372,9 +456,14 @@ export class ProcessingOrchestrator {
   }
 
   dispose() {
-    this.cancelActive();
+    this._rejectInit?.(new CancellationError('Disposed during ML init'));
+    this.cancelActive('Disposed during processing');
     this._initialized = false;
     this._initPromise = null;
+    this._initToken = null;
+    if (this._ownsWorker && this.mlWorker) {
+      this._recycleWorker(this.mlWorker);
+    }
   }
 }
 

@@ -37,6 +37,18 @@ const ACCEPTED_TYPES = ['audio/', 'video/'];
 
 /** No practical upload size cap — whole files are decoded on-device. */
 const MAX_FILE_BYTES = Number.MAX_SAFE_INTEGER;
+const RESAMPLE_MIN_TIMEOUT_MS = 30_000;
+const RESAMPLE_MAX_TIMEOUT_MS = 180_000;
+
+function createAbortError() {
+  return typeof DOMException !== 'undefined'
+    ? new DOMException('Ingestion cancelled', 'AbortError')
+    : Object.assign(new Error('Ingestion cancelled'), { name: 'AbortError', code: 'ABORT_ERR' });
+}
+
+function throwIfCancelled(signal) {
+  if (signal?.aborted) throw createAbortError();
+}
 
 /**
  * Map isolation mode to model IDs array for MLWorker.
@@ -135,9 +147,10 @@ export function assertIngestible(blob) {
  * Async validation that also sniffs magic bytes when MIME/extension are useless.
  * Prefer this over assertIngestible for user-facing upload paths.
  * @param {Blob} blob
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [options]
  * @returns {Promise<'audio'|'video'>}
  */
-export async function assertIngestibleAsync(blob) {
+export async function assertIngestibleAsync(blob, options = {}) {
   assertIngestible(blob);
   let kind = inferMediaKind(blob);
   if (kind === 'midi') {
@@ -146,7 +159,7 @@ export async function assertIngestibleAsync(blob) {
     );
   }
   if (!kind) {
-    kind = await resolveMediaKind(blob);
+    kind = await resolveMediaKind(blob, options);
   }
   if (kind !== 'audio' && kind !== 'video') {
     // Still allow empty/generic types into the decoder — many valid files sniff poorly.
@@ -164,9 +177,14 @@ export async function assertIngestibleAsync(blob) {
  * Resample an AudioBuffer to SAMPLE_RATE via OfflineAudioContext.
  * Returns the input untouched when it is already canonical.
  * @param {AudioBuffer} buffer
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal]
+ * @param {number} [options.timeoutMs]
  * @returns {Promise<AudioBuffer>}
  */
-export async function resampleToCanonical(buffer) {
+export async function resampleToCanonical(buffer, options = {}) {
+  const signal = options.signal || null;
+  throwIfCancelled(signal);
   if (buffer.sampleRate === SAMPLE_RATE) return buffer;
 
   const channels = Math.min(buffer.numberOfChannels, MAX_CHANNELS);
@@ -181,7 +199,64 @@ export async function resampleToCanonical(buffer) {
   source.buffer = buffer;
   source.connect(offline.destination);
   source.start(0);
-  return offline.startRendering();
+  const durationMs = Math.ceil((buffer.duration || (buffer.length / buffer.sampleRate) || 0) * 1000);
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? Number(options.timeoutMs)
+    : Math.min(RESAMPLE_MAX_TIMEOUT_MS, Math.max(RESAMPLE_MIN_TIMEOUT_MS, 30_000 + durationMs));
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener?.('abort', onAbort);
+      try { source.disconnect?.(); } catch { /* already disconnected */ }
+    };
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const stopRendering = () => {
+      try { source.stop?.(0); } catch { /* source may already be stopped */ }
+      try { source.disconnect?.(); } catch { /* already disconnected */ }
+      try {
+        const suspendAt = Math.max(0, Number(offline.currentTime) || 0) + (1 / SAMPLE_RATE);
+        const stopping = offline.suspend?.(suspendAt);
+        stopping?.catch?.(() => {});
+      } catch { /* best effort */ }
+    };
+    const onAbort = () => {
+      stopRendering();
+      settle(() => reject(createAbortError()));
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+    timer = setTimeout(() => {
+      stopRendering();
+      const error = new Error('[VIP][FileIngestion] Resampling timeout');
+      error.name = 'TimeoutError';
+      error.code = 'RESAMPLE_TIMEOUT';
+      settle(() => reject(error));
+    }, timeoutMs);
+
+    let rendering;
+    try {
+      rendering = offline.startRendering();
+    } catch (error) {
+      settle(() => reject(error));
+      return;
+    }
+    Promise.resolve(rendering).then(
+      (result) => settle(() => resolve(result)),
+      (error) => settle(() => reject(error)),
+    );
+  });
 }
 
 /**
@@ -227,22 +302,44 @@ export async function pickAndIngestFile(hooks = {}) {
 }
 
 export async function ingestFile(file, hooks = {}) {
-  const { onProgress = () => {}, isolationMode } = hooks;
+  const { onProgress = () => {}, isolationMode, signal = null, audioContext = null } = hooks;
+  throwIfCancelled(signal);
   // Magic-byte sniff for Windows octet-stream / extensionless renames.
-  await assertIngestibleAsync(file);
+  await assertIngestibleAsync(file, {
+    signal,
+    timeoutMs: hooks.validationTimeoutMs,
+  });
+  throwIfCancelled(signal);
 
   onProgress('decoding', 5);
   stageStart('decode');
-  const decoded = await decodeBlobToAudioBuffer(file, {
-    onProgress: (pct) => onProgress('decoding', pct),
-  });
-  stageEnd('decode');
+  let decoded;
+  try {
+    decoded = await decodeBlobToAudioBuffer(file, {
+      onProgress: (pct) => onProgress('decoding', pct),
+      audioContext,
+      signal,
+      decodeTimeoutMs: hooks.decodeTimeoutMs,
+      readTimeoutMs: hooks.readTimeoutMs,
+    });
+    throwIfCancelled(signal);
+  } finally {
+    stageEnd('decode');
+  }
   onProgress('decoding', 100);
 
   onProgress('resampling', 10);
   stageStart('resample');
-  const canonical = await resampleToCanonical(decoded);
-  stageEnd('resample');
+  let canonical;
+  try {
+    canonical = await resampleToCanonical(decoded, {
+      signal,
+      timeoutMs: hooks.resampleTimeoutMs,
+    });
+    throwIfCancelled(signal);
+  } finally {
+    stageEnd('resample');
+  }
   onProgress('resampling', 100);
 
   onProgress('done', 100);

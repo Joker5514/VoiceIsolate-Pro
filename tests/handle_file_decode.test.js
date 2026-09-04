@@ -8,6 +8,8 @@ describe('VoiceIsolatePro handleFile() and ensureDecoded()', () => {
   let originalDocument;
   let originalWindow;
   let originalURL;
+  let sandbox;
+  let sandboxTimers;
 
   beforeAll(() => {
     originalDocument = global.document;
@@ -28,7 +30,21 @@ describe('VoiceIsolatePro handleFile() and ensureDecoded()', () => {
 
     const appJs = getAppCode();
 
-    const sandbox = {
+    sandboxTimers = new Set();
+    const sandboxSetTimeout = (callback, delay, ...args) => {
+      const handle = setTimeout(() => {
+        sandboxTimers.delete(handle);
+        callback(...args);
+      }, delay);
+      sandboxTimers.add(handle);
+      return handle;
+    };
+    const sandboxClearTimeout = (handle) => {
+      sandboxTimers.delete(handle);
+      clearTimeout(handle);
+    };
+
+    sandbox = {
       document: global.document,
       window: global.window,
       module: { exports: {} },
@@ -37,10 +53,17 @@ describe('VoiceIsolatePro handleFile() and ensureDecoded()', () => {
       console: { error: jest.fn(), warn: jest.fn(), log: jest.fn() },
       parseFloat: parseFloat,
       URL: global.URL,
-      setTimeout: setTimeout,
-      clearTimeout: clearTimeout,
+      setTimeout: sandboxSetTimeout,
+      clearTimeout: sandboxClearTimeout,
       Promise: Promise,
-      requestAnimationFrame: (cb) => setTimeout(cb, 0),
+      requestAnimationFrame: (cb) => sandboxSetTimeout(cb, 0),
+      FileLibrary: {
+        setSessionState: jest.fn().mockResolvedValue(undefined),
+        updateFileMeta: jest.fn().mockResolvedValue(undefined),
+      },
+      refreshLibraryList: jest.fn().mockResolvedValue(undefined),
+      scheduleSaveTrackState: jest.fn(),
+      WorkflowTier: { getConfig: jest.fn(() => ({})) },
       // Shims for functions stripped from /src/ imports that handleFile/ensureDecoded use
       resetFileInput: jest.fn(),
       yieldToBrowser: jest.fn().mockResolvedValue(undefined),
@@ -59,6 +82,9 @@ describe('VoiceIsolatePro handleFile() and ensureDecoded()', () => {
 
   afterEach(() => {
     jest.clearAllTimers();
+    for (const handle of sandboxTimers) clearTimeout(handle);
+    sandboxTimers.clear();
+    delete sandbox.__VIP_JOBS__;
   });
 
   // ── handleFile() — asserts file acceptance without immediate decode ────────
@@ -316,5 +342,133 @@ describe('VoiceIsolatePro handleFile() and ensureDecoded()', () => {
     expect(decodeCallCount).toBe(1);
     expect(r1).toBe(r2);
     expect(mockVip._decodeReady).toBe(true);
+  });
+
+  it('_clearFile() aborts an active decode and invalidates its generation', () => {
+    const abort = jest.fn();
+    const mockVip = {
+      _fileSeq: 7,
+      _decodeAbortController: { abort },
+      _sourceName: 'active.wav',
+      _sourceFile: {},
+      _decodePromise: Promise.resolve(),
+      _resetCollaborationState: jest.fn(),
+      stop: jest.fn(),
+      _clearVideoElement: jest.fn(),
+      _updateSaveButtonLabels: jest.fn(),
+      setStatus: jest.fn(),
+      dom: {},
+    };
+
+    VoiceIsolatePro.prototype._clearFile.call(mockVip);
+
+    expect(abort).toHaveBeenCalledWith('file cleared');
+    expect(mockVip._decodeAbortController).toBeNull();
+    expect(mockVip._fileSeq).toBe(8);
+    expect(mockVip.inputBuffer).toBeNull();
+    expect(mockVip.origBuffer).toBeNull();
+  });
+
+  it('legacy decodeViaVideoElement uses the instance AudioContext in the VM shim', async () => {
+    const decoded = { length: 48000, duration: 1, sampleRate: 48000, numberOfChannels: 1 };
+    const mockVip = {
+      ctx: {
+        decodeAudioData: jest.fn().mockResolvedValue(decoded),
+      },
+    };
+    const file = {
+      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
+    };
+
+    await expect(VoiceIsolatePro.prototype.decodeViaVideoElement.call(mockVip, file))
+      .resolves.toBe(decoded);
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a forced pipeline reset after cancellation clears the current job', () => {
+    let currentJobId = 'newer-job';
+    sandbox.__VIP_JOBS__ = {
+      getCurrentJobId: jest.fn(() => currentJobId),
+    };
+    const originalGetElementById = sandbox.document.getElementById.getMockImplementation();
+    sandbox.document.getElementById.mockImplementation(() => null);
+    const fill = { style: { width: '70%' } };
+    const bar = { setAttribute: jest.fn() };
+    const detail = { textContent: 'Processing' };
+    const mockVip = {
+      _activePipelineJobId: 'cancelled-job',
+      _pipelinePct: 70,
+      dom: { pipeFill: fill, pipeBar: bar, pipeDetail: detail },
+      updateProcessingOverlay: jest.fn(),
+    };
+    try {
+      expect(VoiceIsolatePro.prototype.updatePipelineProgress.call(
+        mockVip, 0, 'Cancelled', 0, { force: true },
+      )).toBe(false);
+      expect(fill.style.width).toBe('70%');
+
+      currentJobId = null;
+      expect(VoiceIsolatePro.prototype.updatePipelineProgress.call(
+        mockVip, 0, 'Cancelled', 0, { force: true },
+      )).toBe(true);
+      expect(fill.style.width).toBe('0%');
+      expect(detail.textContent).toBe('Cancelled');
+    } finally {
+      sandbox.document.getElementById.mockImplementation(originalGetElementById);
+    }
+  });
+
+  it('decode job reaches 100 only after the buffer is installed', async () => {
+    const progress = [];
+    let currentJobId = null;
+    sandbox.__VIP_JOBS__ = {
+      beginJob: jest.fn(() => {
+        currentJobId = 'decode-1';
+        return { id: currentJobId, controller: new AbortController() };
+      }),
+      getCurrentJobId: jest.fn(() => currentJobId),
+      getCurrentSignal: jest.fn(() => null),
+      updateJob: jest.fn((jobId, stage, percent) => {
+        progress.push({ jobId, stage, percent });
+        return true;
+      }),
+      endJob: jest.fn(() => { currentJobId = null; }),
+      isCancellationError: jest.fn(() => false),
+    };
+    const decoded = { length: 48000, duration: 1, sampleRate: 48000, numberOfChannels: 1 };
+    const mockVip = {
+      _fileSeq: 1,
+      _sourceFile: {
+        name: 'progress.wav',
+        type: 'audio/wav',
+        arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
+      },
+      origBuffer: null,
+      inputBuffer: null,
+      _decodeReady: false,
+      _decodePromise: null,
+      isProcessing: false,
+      setStatus: jest.fn(),
+      showNotification: jest.fn(),
+      _showFileLoading: jest.fn(),
+      _hideFileLoading: jest.fn(),
+      showProcessingOverlay: jest.fn(),
+      updateProcessingOverlay: jest.fn(),
+      hideProcessingOverlay: jest.fn(),
+      ensureCtx: jest.fn().mockResolvedValue(undefined),
+      onAudioLoaded: jest.fn(function () {
+        expect(this.inputBuffer).toBe(decoded);
+        expect(progress.some((entry) => entry.percent === 100)).toBe(false);
+      }),
+      ctx: {
+        state: 'running',
+        decodeAudioData: jest.fn().mockResolvedValue(decoded),
+      },
+    };
+
+    await VoiceIsolatePro.prototype.ensureDecoded.call(mockVip, 1);
+
+    expect(progress.map((entry) => entry.percent)).toEqual(expect.arrayContaining([40, 80, 85, 100]));
+    expect(progress.at(-1)).toMatchObject({ stage: 'Audio ready', percent: 100 });
   });
 });

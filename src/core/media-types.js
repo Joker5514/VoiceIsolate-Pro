@@ -15,6 +15,59 @@ export const AMBIGUOUS_MEDIA_EXTENSIONS = /\.(webm)$/i;
 export const MIDI_EXTENSIONS = /\.(mid|midi)$/i;
 
 const MIDI_MIMES = new Set(['audio/midi', 'audio/x-midi', 'audio/mid']);
+const MEDIA_SNIFF_TIMEOUT_MS = 5000;
+
+function createSniffAbortError() {
+  return typeof DOMException !== 'undefined'
+    ? new DOMException('Media validation cancelled', 'AbortError')
+    : Object.assign(new Error('Media validation cancelled'), { name: 'AbortError', code: 'ABORT_ERR' });
+}
+
+function readBlobHead(blob, options = {}) {
+  const signal = options.signal || null;
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? Number(options.timeoutMs)
+    : MEDIA_SNIFF_TIMEOUT_MS;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      if (timer != null) clearTimeout(timer);
+      signal?.removeEventListener?.('abort', onAbort);
+    };
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const onAbort = () => settle(() => reject(createSniffAbortError()));
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+    timer = setTimeout(() => {
+      const error = new Error('Media signature read timed out');
+      error.name = 'TimeoutError';
+      error.code = 'MEDIA_SNIFF_TIMEOUT';
+      settle(() => reject(error));
+    }, timeoutMs);
+
+    let pending;
+    try {
+      pending = blob.slice(0, 32).arrayBuffer();
+    } catch (error) {
+      settle(() => reject(error));
+      return;
+    }
+    Promise.resolve(pending).then(
+      (value) => settle(() => resolve(value)),
+      (error) => settle(() => reject(error)),
+    );
+  });
+}
 
 /** Explicit MIME list for <input type="file" accept="…"> (desktop / mobile web). */
 export const FILE_INPUT_ACCEPT = [
@@ -135,12 +188,13 @@ export function inferMediaKind(blob) {
  * (e.g. `application/octet-stream` with no extension — common on Windows).
  *
  * @param {Blob|File} blob
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [options]
  * @returns {Promise<'audio'|'video'|null>}
  */
-export async function sniffMediaKind(blob) {
+export async function sniffMediaKind(blob, options = {}) {
   if (!blob || typeof blob.slice !== 'function') return null;
   try {
-    const head = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
+    const head = new Uint8Array(await readBlobHead(blob, options));
     if (head.length < 4) return null;
 
     // RIFF....WAVE / AVI / WEBP
@@ -185,7 +239,8 @@ export async function sniffMediaKind(blob) {
     }
 
     return null;
-  } catch {
+  } catch (error) {
+    if (error?.name === 'AbortError' || error?.code === 'MEDIA_SNIFF_TIMEOUT') throw error;
     return null;
   }
 }
@@ -193,16 +248,17 @@ export async function sniffMediaKind(blob) {
 /**
  * Resolve media kind: MIME/extension first, then magic-byte sniff for generic types.
  * @param {Blob|File} blob
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [options]
  * @returns {Promise<'audio'|'video'|'midi'|null>}
  */
-export async function resolveMediaKind(blob) {
+export async function resolveMediaKind(blob, options = {}) {
   const quick = inferMediaKind(blob);
   if (quick) return quick;
   if (!isGenericMimeType(blob?.type) && blob?.type) {
     // Explicit non-media MIME without a recognized extension — reject.
     return null;
   }
-  return sniffMediaKind(blob);
+  return sniffMediaKind(blob, options);
 }
 
 /**

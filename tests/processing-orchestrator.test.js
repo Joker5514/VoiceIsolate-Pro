@@ -66,10 +66,33 @@ describe('ProcessingOrchestrator', () => {
 
       await orchestrator.initialize();
 
-      expect(mockMLWorker.postMessage).toHaveBeenCalledWith({
+      expect(mockMLWorker.postMessage).toHaveBeenCalledWith(expect.objectContaining({
         type: 'init',
         manifest: expect.any(Array),
-      });
+        useDesktopCache: false,
+      }));
+    });
+
+    test('enables filesystem model caching in the desktop shell', async () => {
+      const previousDesktopBridge = globalThis.vipDesktop;
+      globalThis.vipDesktop = { readModelCache: jest.fn() };
+      try {
+        const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+        setTimeout(() => {
+          const handler = mockMLWorker.addEventListener.mock.calls[0][1];
+          handler({ data: { type: 'ready', backend: 'wasm' } });
+        }, 10);
+
+        await orchestrator.initialize();
+
+        expect(mockMLWorker.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+          type: 'init',
+          useDesktopCache: true,
+        }));
+      } finally {
+        if (previousDesktopBridge === undefined) delete globalThis.vipDesktop;
+        else globalThis.vipDesktop = previousDesktopBridge;
+      }
     });
 
     test('Sets initialized flag on success', async () => {
@@ -111,11 +134,59 @@ describe('ProcessingOrchestrator', () => {
     });
 
     test('Rejects on timeout', async () => {
+      jest.useFakeTimers();
+      try {
+        const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+        const pending = orchestrator.initialize();
+        const rejection = expect(pending).rejects.toThrow('timeout');
+
+        await jest.advanceTimersByTimeAsync(30000);
+        await rejection;
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test('Rejects immediately on worker error and permits initialization retry', async () => {
+      const replacement = {
+        postMessage: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        terminate: jest.fn(),
+      };
+      const factory = jest.fn(() => replacement);
+      const orchestrator = new ProcessingOrchestrator({
+        mlWorker: mockMLWorker,
+        mlWorkerFactory: factory,
+      });
+      const first = orchestrator.initialize();
+      const errorHandler = mockMLWorker.addEventListener.mock.calls
+        .find(([type]) => type === 'error')[1];
+      errorHandler({ message: 'worker crashed' });
+
+      await expect(first).rejects.toThrow('worker crashed');
+      expect(orchestrator._initPromise).toBeNull();
+      expect(mockMLWorker.terminate).toHaveBeenCalledTimes(1);
+
+      const retry = orchestrator.initialize();
+      const messageHandlers = replacement.addEventListener.mock.calls
+        .filter(([type]) => type === 'message');
+      messageHandlers.at(-1)[1]({ data: { type: 'ready', backend: 'wasm' } });
+      await expect(retry).resolves.toBeUndefined();
+      expect(factory).toHaveBeenCalledTimes(1);
+      expect(replacement.postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    test('Cleans up when posting the init message throws', async () => {
+      mockMLWorker.postMessage.mockImplementationOnce(() => {
+        throw new Error('init clone failed');
+      });
       const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
 
-      // Don't send response - let it timeout
-      await expect(orchestrator.initialize()).rejects.toThrow('timeout');
-    }, 35000);
+      await expect(orchestrator.initialize()).rejects.toThrow('init clone failed');
+      expect(orchestrator._initPromise).toBeNull();
+      expect(mockMLWorker.removeEventListener).toHaveBeenCalledWith('message', expect.any(Function));
+    });
   });
 
   describe('Mode selection integration', () => {
@@ -198,6 +269,69 @@ describe('ProcessingOrchestrator', () => {
 
       await expect(pending).resolves.toMatchObject({ clean: [], noise: [] });
     });
+
+    test('a throwing progress callback cannot strand worker completion', async () => {
+      const orchestrator = new ProcessingOrchestrator({
+        mlWorker: mockMLWorker,
+        onProgress: () => { throw new Error('render callback failed'); },
+      });
+      const pending = orchestrator._processWithMLWorker(
+        [new Float32Array(1)], 48000, ['demucs'], 12
+      );
+      const handler = mockMLWorker.addEventListener.mock.calls
+        .find(([type]) => type === 'message')[1];
+
+      expect(() => handler({ data: { type: 'progress', requestId: 12, percent: 20 } }))
+        .not.toThrow();
+      handler({ data: { type: 'stems', requestId: 12, clean: [], noise: [] } });
+
+      await expect(pending).resolves.toMatchObject({ clean: [], noise: [] });
+    });
+
+    test('ignores unscoped terminal messages from other worker activity', async () => {
+      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+      const pending = orchestrator._processWithMLWorker(
+        [new Float32Array(1)], 48000, ['demucs'], 9
+      );
+      const handler = mockMLWorker.addEventListener.mock.calls
+        .find(([type]) => type === 'message')[1];
+
+      handler({ data: { type: 'stems', clean: ['stale'], noise: ['stale'] } });
+      handler({ data: { type: 'stems', requestId: 9, clean: [], noise: [] } });
+
+      await expect(pending).resolves.toMatchObject({ clean: [], noise: [] });
+    });
+
+    test.each([
+      ['error', { message: 'worker crashed' }, 'worker crashed'],
+      ['messageerror', {}, 'could not be deserialized'],
+    ])('rejects an active job on worker %s', async (eventType, event, message) => {
+      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+      const pending = orchestrator._processWithMLWorker(
+        [new Float32Array(1)], 48000, ['demucs'], 10
+      );
+      const eventHandler = mockMLWorker.addEventListener.mock.calls
+        .find(([type]) => type === eventType)[1];
+
+      eventHandler(event);
+
+      await expect(pending).rejects.toThrow(message);
+      expect(orchestrator._activeRequestId).toBeNull();
+      expect(mockMLWorker.terminate).toHaveBeenCalledTimes(1);
+      expect(orchestrator.mlWorker).toBeNull();
+    });
+
+    test('cleans up when posting a process message throws', async () => {
+      mockMLWorker.postMessage.mockImplementationOnce(() => {
+        throw new Error('process clone failed');
+      });
+      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+
+      await expect(orchestrator._processWithMLWorker(
+        [new Float32Array(1)], 48000, ['demucs'], 11
+      )).rejects.toThrow('process clone failed');
+      expect(orchestrator._activeRequestId).toBeNull();
+    });
   });
 
 
@@ -213,6 +347,18 @@ describe('ProcessingOrchestrator', () => {
     test('Does not terminate MLWorker (owned by caller)', () => {
       const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
       orchestrator.dispose();
+      expect(mockMLWorker.terminate).not.toHaveBeenCalled();
+    });
+
+    test('Rejects an in-flight process instead of leaving it pending', async () => {
+      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+      const pending = orchestrator._processWithMLWorker(
+        [new Float32Array(1)], 48000, ['demucs'], 12
+      );
+
+      orchestrator.dispose();
+
+      await expect(pending).rejects.toThrow('Disposed during processing');
       expect(mockMLWorker.terminate).not.toHaveBeenCalled();
     });
   });

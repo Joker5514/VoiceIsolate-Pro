@@ -43,13 +43,21 @@ export async function registerSW() {
     const reg = await navigator.serviceWorker.register('/app/sw.js', { scope: '/' });
     if (navigator.serviceWorker.controller) return reg;
     await new Promise((resolve) => {
-      const onCtrl = () => {
+      let settled = false;
+      let timer = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (timer != null) clearTimeout(timer);
         navigator.serviceWorker.removeEventListener('controllerchange', onCtrl);
         resolve();
       };
+      const onCtrl = () => {
+        finish();
+      };
       navigator.serviceWorker.addEventListener('controllerchange', onCtrl);
       // safety timeout — don't block boot if SW takes too long
-      setTimeout(resolve, 3000);
+      timer = setTimeout(finish, 3000);
     });
     return reg;
   } catch (err) {

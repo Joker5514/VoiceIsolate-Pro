@@ -66,9 +66,10 @@ describe('Android complete app pipeline', () => {
     expect(cap.server?.androidScheme).toBe('https');
   });
 
-  test('download page describes complete offline APK', () => {
-    expect(dl).toMatch(/complete offline app/i);
-    expect(dl).toMatch(/no network required/i);
+  test('download page distinguishes packaged local processing from optional network features', () => {
+    expect(dl).toMatch(/packaged local model\/runtime assets/i);
+    expect(dl).toMatch(/Core voice isolation runs on-device/i);
+    expect(dl).toMatch(/Optional Google Drive file I\/O, update checks, and downloads require a network connection/i);
   });
 
   test('verify script requires landing + rejects Google Fonts + missing models', () => {

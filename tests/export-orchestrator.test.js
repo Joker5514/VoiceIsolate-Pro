@@ -15,21 +15,23 @@ describe('ExportOrchestrator', () => {
   beforeEach(async () => {
     // Mock Worker
     global.Worker = jest.fn().mockImplementation((path, options) => {
-      mockWorker = {
+      const worker = {
         postMessage: jest.fn(),
         terminate: jest.fn(),
         onmessage: null,
         onerror: null,
+        onmessageerror: null,
       };
+      mockWorker = worker;
       
       // Simulate worker ready message after a tick
       setTimeout(() => {
-        if (mockWorker.onmessage) {
-          mockWorker.onmessage({ data: { type: 'ready' } });
+        if (worker.onmessage) {
+          worker.onmessage({ data: { type: 'ready' } });
         }
       }, 0);
       
-      return mockWorker;
+      return worker;
     });
 
     // Import modules
@@ -373,6 +375,48 @@ describe('ExportOrchestrator', () => {
   });
 
   describe('worker failures', () => {
+    it('rejects an unknown initialization message immediately', async () => {
+      global.Worker.mockImplementationOnce(() => {
+        mockWorker = {
+          postMessage: jest.fn(),
+          terminate: jest.fn(),
+          onmessage: null,
+          onerror: null,
+          onmessageerror: null,
+        };
+        return mockWorker;
+      });
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await Promise.resolve();
+
+      mockWorker.onmessage({ data: { type: 'mystery-init-message' } });
+
+      await expect(exportPromise).rejects.toThrow('Unknown worker message type');
+      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an explicit worker initialization error without waiting for timeout', async () => {
+      global.Worker.mockImplementationOnce(() => {
+        mockWorker = {
+          postMessage: jest.fn(),
+          terminate: jest.fn(),
+          onmessage: null,
+          onerror: null,
+          onmessageerror: null,
+        };
+        return mockWorker;
+      });
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await Promise.resolve();
+
+      mockWorker.onmessage({ data: { type: 'error', error: 'encoder init failed' } });
+
+      await expect(exportPromise).rejects.toThrow('encoder init failed');
+      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+    });
+
     it('should reject initialization immediately when disposed before ready', async () => {
       global.Worker.mockImplementationOnce(() => {
         mockWorker = {
@@ -380,6 +424,7 @@ describe('ExportOrchestrator', () => {
           terminate: jest.fn(),
           onmessage: null,
           onerror: null,
+          onmessageerror: null,
         };
         return mockWorker;
       });
@@ -455,6 +500,81 @@ describe('ExportOrchestrator', () => {
       await expect(orchestrator.export({ stems: 'clean', format: 'wav' }))
         .rejects.toThrow('structured clone failed');
       expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
+    });
+
+    it('should reject pending exports when a worker message cannot be deserialized', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      mockWorker.onmessageerror({ data: null });
+
+      await expect(exportPromise).rejects.toThrow('could not be deserialized');
+      expect(mockWorker.terminate).toHaveBeenCalled();
+      expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
+    });
+
+    it('rejects instead of hanging when a progress observer throws', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({
+        stems: 'clean',
+        format: 'wav',
+        onProgress: (progress) => {
+          if (progress > 0.3) throw new Error('progress UI failed');
+        },
+      });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const requestId = mockWorker.postMessage.mock.calls[0][0].requestId;
+
+      mockWorker.onmessage({
+        data: { type: 'progress', requestId, progress: 0.5, stage: 'encoding' },
+      });
+
+      await expect(exportPromise).rejects.toThrow('progress UI failed');
+      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+      expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
+    });
+
+    it('rejects malformed non-finite progress and recycles the worker', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const requestId = mockWorker.postMessage.mock.calls[0][0].requestId;
+
+      mockWorker.onmessage({
+        data: { type: 'progress', requestId, progress: Number.NaN, stage: 'encoding' },
+      });
+
+      await expect(exportPromise).rejects.toThrow('Malformed worker progress');
+      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+      expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
+    });
+
+    it('should reject malformed messages and allow a clean worker retry', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const failedExport = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const failedWorker = mockWorker;
+
+      failedWorker.onmessage({ data: null });
+      await expect(failedExport).rejects.toThrow('Malformed worker message');
+      expect(failedWorker.terminate).toHaveBeenCalled();
+
+      const retriedExport = orchestrator.export({ stems: 'noise', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(global.Worker).toHaveBeenCalledTimes(2);
+      expect(mockWorker).not.toBe(failedWorker);
+
+      const requestId = mockWorker.postMessage.mock.calls[0][0].requestId;
+      mockWorker.onmessage({
+        data: {
+          type: 'result',
+          requestId,
+          blob: new Blob(['data'], { type: 'audio/wav' }),
+          format: 'wav',
+        },
+      });
+      await expect(retriedExport).resolves.toMatchObject({ format: 'wav' });
     });
   });
 });

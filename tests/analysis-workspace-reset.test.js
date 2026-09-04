@@ -31,4 +31,11 @@ describe('analysis collaboration reset wiring', () => {
     expect(workspaceJs).toContain("if (els.root) els.root.dataset.state = 'idle';");
     expect(workspaceJs).toContain('clearState,');
   });
+
+  test('superseded analysis releases local busy state unless another analysis owns it', () => {
+    expect(workspaceJs).toContain("activeJob.meta?.kind === 'analysis'");
+    expect(workspaceJs).toMatch(/if \(!newerAnalysisOwnsWorkspace\)\s*\{[\s\S]*?setBusy\(false\)/);
+    expect(workspaceJs).toContain("if (els.root?.dataset.state === 'running') els.root.dataset.state = 'idle';");
+    expect(workspaceJs).toContain("app.hideProcessingOverlay(job?.id || null)");
+  });
 });

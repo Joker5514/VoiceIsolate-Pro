@@ -43,9 +43,9 @@ describe('M4A decode fallback — media-decode.js', () => {
     expect(mdjs).not.toContain('offline.startRendering()');
   });
 
-  test('ended listener is armed before awaiting play()', () => {
+  test('ended listener is armed before bounded play()', () => {
     expect(mdjs).toMatch(/media\.addEventListener\('ended'/);
-    expect(mdjs).toContain('await media.play()');
+    expect(mdjs).toContain('runBounded(() => media.play()');
     expect(mdjs).toContain('finishCapture');
   });
 

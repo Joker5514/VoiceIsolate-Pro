@@ -5,6 +5,11 @@ import { inferMediaKind } from '../core/media-types.js';
 
 /** Minimum capture timeout — long files scale beyond this. */
 const MEDIA_DECODE_MIN_TIMEOUT_MS = 120_000;
+const AUDIO_DATA_DECODE_MIN_TIMEOUT_MS = 60_000;
+const AUDIO_DATA_DECODE_MAX_TIMEOUT_MS = 180_000;
+const FILE_READ_MIN_TIMEOUT_MS = 30_000;
+const MEDIA_PLAY_TIMEOUT_MS = 15_000;
+const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 10_000;
 /** Below 64 MiB a single arrayBuffer() read is faster than streaming chunks. */
 const FAST_READ_BYTES = 64 * 1024 * 1024;
 /** Yield during streaming reads at most every N bytes. */
@@ -13,6 +18,132 @@ const STREAM_YIELD_BYTES = 8 * 1024 * 1024;
 const MAX_CAPTURE_PLAYBACK_RATE = 16;
 // ScriptProcessorNode block size — must be a power-of-two 256–16384.
 const SPN_BLOCK_SIZE = 8192;
+let sharedPrimaryContext = null;
+let sharedRetryContext = null;
+let sharedContextCleanupHooked = false;
+
+function createAbortError() {
+  return typeof DOMException !== 'undefined'
+    ? new DOMException('Decode cancelled', 'AbortError')
+    : Object.assign(new Error('Decode cancelled'), { name: 'AbortError', code: 'ABORT_ERR' });
+}
+
+function createTimeoutError(message, code) {
+  const error = new Error(message);
+  error.name = 'TimeoutError';
+  error.code = code;
+  return error;
+}
+
+function adaptiveTimeout(blob, override, minimum) {
+  if (Number.isFinite(override) && override > 0) return Number(override);
+  const sizeMiB = Math.max(0, Number(blob?.size || 0) / (1024 * 1024));
+  return Math.min(
+    AUDIO_DATA_DECODE_MAX_TIMEOUT_MS,
+    Math.max(minimum, minimum + Math.ceil(sizeMiB) * 1000),
+  );
+}
+
+function isTerminalOperationError(error) {
+  return error?.name === 'AbortError'
+    || error?.code === 'ABORT_ERR'
+    || /_TIMEOUT$/.test(String(error?.code || ''));
+}
+
+/** Settle exactly once and detach timer/signal hooks even if the browser API never returns. */
+export function runBounded(operation, { timeoutMs, timeoutMessage, timeoutCode, signal, onStop } = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      if (timer != null) clearTimeout(timer);
+      signal?.removeEventListener?.('abort', onAbort);
+    };
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const stop = () => {
+      try { onStop?.(); } catch { /* best-effort cancellation */ }
+    };
+    const onAbort = () => {
+      stop();
+      settle(() => reject(createAbortError()));
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+    timer = setTimeout(() => {
+      stop();
+      settle(() => reject(createTimeoutError(timeoutMessage, timeoutCode)));
+    }, timeoutMs);
+
+    let pending;
+    try {
+      pending = operation();
+    } catch (error) {
+      settle(() => reject(error));
+      return;
+    }
+    Promise.resolve(pending).then(
+      (value) => settle(() => resolve(value)),
+      (error) => settle(() => reject(error)),
+    );
+  });
+}
+
+export async function resumeAudioContext(ctx, signal) {
+  if (!ctx || ctx.state !== 'suspended') return;
+  await runBounded(() => ctx.resume(), {
+    timeoutMs: AUDIO_CONTEXT_RESUME_TIMEOUT_MS,
+    timeoutMessage: '[VIP][FileIngestion] AudioContext resume timeout',
+    timeoutCode: 'AUDIO_CONTEXT_RESUME_TIMEOUT',
+    signal,
+  });
+}
+
+function closeOwnedAudioContext(ctx) {
+  try {
+    const closing = ctx?.close?.();
+    closing?.catch?.(() => {});
+  } catch { /* already closed */ }
+}
+
+/** Keep at most two module-owned contexts, avoiding Chrome's context cap even if close() hangs. */
+function getSharedAudioContext(Ctx, slot, options) {
+  let ctx = slot === 'retry' ? sharedRetryContext : sharedPrimaryContext;
+  if (!ctx || ctx.state === 'closed') {
+    ctx = options ? new Ctx(options) : new Ctx();
+    if (slot === 'retry') sharedRetryContext = ctx;
+    else sharedPrimaryContext = ctx;
+  }
+  if (!sharedContextCleanupHooked && typeof globalThis.addEventListener === 'function') {
+    sharedContextCleanupHooked = true;
+    globalThis.addEventListener('pagehide', onSharedContextPageHide);
+  }
+  return ctx;
+}
+
+function onSharedContextPageHide(event) {
+  if (event?.persisted) return;
+  disposeSharedDecodeContexts();
+}
+
+export function disposeSharedDecodeContexts() {
+  const contexts = new Set([sharedPrimaryContext, sharedRetryContext].filter(Boolean));
+  sharedPrimaryContext = null;
+  sharedRetryContext = null;
+  if (sharedContextCleanupHooked && typeof globalThis.removeEventListener === 'function') {
+    globalThis.removeEventListener('pagehide', onSharedContextPageHide);
+  }
+  sharedContextCleanupHooked = false;
+  for (const ctx of contexts) closeOwnedAudioContext(ctx);
+}
 
 /**
  * Decode any supported blob to an AudioBuffer.
@@ -30,34 +161,57 @@ const SPN_BLOCK_SIZE = 8192;
  * @param {(percent: number) => void} [hooks.onProgress] 0–100 during decode
  * @param {AudioContext} [hooks.audioContext] Optional existing AudioContext to
  *   reuse — prevents browser AudioContext limit exhaustion on rapid re-uploads.
+ * @param {AbortSignal} [hooks.signal] Cooperative cancellation signal.
+ * @param {number} [hooks.decodeTimeoutMs] Optional decode deadline override.
+ * @param {number} [hooks.readTimeoutMs] Optional file-read deadline override.
  * @returns {Promise<AudioBuffer>}
  */
 export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
-  const { onProgress = () => {}, audioContext = null } = hooks;
+  const {
+    onProgress = () => {},
+    audioContext = null,
+    signal = null,
+    decodeTimeoutMs: decodeTimeoutOverride,
+    readTimeoutMs: readTimeoutOverride,
+  } = hooks;
   const kind = inferMediaKind(blob) || 'audio';
+  const decodeTimeoutMs = adaptiveTimeout(blob, decodeTimeoutOverride, AUDIO_DATA_DECODE_MIN_TIMEOUT_MS);
+  const readTimeoutMs = adaptiveTimeout(blob, readTimeoutOverride, FILE_READ_MIN_TIMEOUT_MS);
+  if (signal?.aborted) throw createAbortError();
 
   if (kind === 'video') {
     try {
-      const fast = await _decodeWithAudioData(blob, onProgress, audioContext);
+      const fast = await _decodeWithAudioData(blob, onProgress, audioContext, {
+        decodeTimeoutMs,
+        readTimeoutMs,
+        signal,
+      });
       if (!_likelyTruncatedDecode(blob, fast)) return fast;
-    } catch {
+    } catch (error) {
+      if (isTerminalOperationError(error)) throw error;
       /* fall through to media-element capture */
     }
-    return _decodeViaMediaElement(blob, kind, onProgress, audioContext);
+    return _decodeViaMediaElement(blob, kind, onProgress, audioContext, signal);
   }
 
   let primaryErr = null;
   try {
-    return await _decodeWithAudioData(blob, onProgress, audioContext);
+    return await _decodeWithAudioData(blob, onProgress, audioContext, {
+      decodeTimeoutMs,
+      readTimeoutMs,
+      signal,
+    });
   } catch (err) {
+    if (isTerminalOperationError(err)) throw err;
     primaryErr = err;
   }
 
   try {
     // Must await — otherwise rejections bypass this catch and surface as
     // unhandled rejections, leaving upload UI stuck mid-decode.
-    return await _decodeViaMediaElement(blob, kind, onProgress, audioContext);
+    return await _decodeViaMediaElement(blob, kind, onProgress, audioContext, signal);
   } catch (fallbackErr) {
+    if (isTerminalOperationError(fallbackErr)) throw fallbackErr;
     throw new Error(
       `[VIP][FileIngestion] Could not decode '${blob.name || 'file'}'. ` +
       `(Web Audio: ${primaryErr?.message ?? primaryErr}; ` +
@@ -69,37 +223,52 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
 // ---------------------------------------------------------------------------
 // Blob read with progress (avoids a silent stall on large files)
 // ---------------------------------------------------------------------------
-async function readBlobWithProgress(blob, onProgress) {
+async function readBlobWithProgress(blob, onProgress, { timeoutMs, signal } = {}) {
   const total = blob.size || 1;
   if (total <= FAST_READ_BYTES || typeof blob.stream !== 'function') {
     onProgress(15);
-    const buf = await blob.arrayBuffer();
+    const buf = await runBounded(() => blob.arrayBuffer(), {
+      timeoutMs,
+      timeoutMessage: '[VIP][FileIngestion] File read timeout',
+      timeoutCode: 'FILE_READ_TIMEOUT',
+      signal,
+    });
     onProgress(45);
     return buf;
   }
 
   const reader = blob.stream().getReader();
-  const parts = [];
+  const out = new Uint8Array(total);
   let received = 0;
-  onProgress(8);
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value);
-    received += value.byteLength;
-    onProgress(Math.min(44, 8 + Math.round((received / total) * 36)));
-    if (received % STREAM_YIELD_BYTES < value.byteLength) await yieldToMain();
-  }
-
-  const out = new Uint8Array(received);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.byteLength;
+  try {
+    await runBounded(async () => {
+      onProgress(8);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (received + value.byteLength > out.byteLength) {
+          throw new Error('[VIP][FileIngestion] File stream exceeded its declared size');
+        }
+        out.set(value, received);
+        received += value.byteLength;
+        onProgress(Math.min(44, 8 + Math.round((received / total) * 36)));
+        if (received % STREAM_YIELD_BYTES < value.byteLength) await yieldToMain();
+      }
+    }, {
+      timeoutMs,
+      timeoutMessage: '[VIP][FileIngestion] File read timeout',
+      timeoutCode: 'FILE_READ_TIMEOUT',
+      signal,
+      onStop: () => {
+        const cancelled = reader.cancel?.();
+        cancelled?.catch?.(() => {});
+      },
+    });
+  } finally {
+    try { reader.releaseLock?.(); } catch { /* ignore */ }
   }
   onProgress(45);
-  return out.buffer;
+  return received === out.byteLength ? out.buffer : out.slice(0, received).buffer;
 }
 
 function yieldToMain() {
@@ -113,40 +282,54 @@ function yieldToMain() {
  * Cross-browser decodeAudioData — iOS callback API, Android resume/retry.
  * Uses window.safeDecodeAudioData when mobile-upload-fix.js is loaded (Engineer).
  */
-async function decodeAudioBufferSafe(ctx, arrayBuffer) {
+async function decodeAudioBufferSafe(ctx, arrayBuffer, { timeoutMs, signal } = {}) {
   const shim = globalThis.safeDecodeAudioData;
   if (typeof shim === 'function') {
-    return shim(ctx, arrayBuffer);
+    return runBounded(() => shim(ctx, arrayBuffer), {
+      timeoutMs,
+      timeoutMessage: '[VIP][FileIngestion] decodeAudioData timeout',
+      timeoutCode: 'DECODE_TIMEOUT',
+      signal,
+    });
   }
-  if (ctx.state === 'suspended') {
-    try { await ctx.resume(); } catch { /* best-effort */ }
-  }
-  const decodeOnce = (context, buf) => new Promise((resolve, reject) => {
-    const onOk = (decoded) => resolve(decoded);
-    const onErr = (err) => reject(err || new Error('decodeAudioData failed'));
-    try {
-      const ret = context.decodeAudioData(buf, onOk, onErr);
-      if (ret && typeof ret.then === 'function') ret.then(resolve, reject);
-    } catch (err) {
-      reject(err);
-    }
+  await resumeAudioContext(ctx, signal);
+  // Keep one compressed-input copy for the Android/Chromium retry. Some
+  // decodeAudioData implementations detach the buffer even when decode fails.
+  let retryBuffer = null;
+  try { retryBuffer = arrayBuffer.slice(0); } catch { /* retry unavailable */ }
+  const decodeOnce = (context, buf) => runBounded(() => new Promise((resolve, reject) => {
+    let callbackSettled = false;
+    const onOk = (decoded) => {
+      if (callbackSettled) return;
+      callbackSettled = true;
+      resolve(decoded);
+    };
+    const onErr = (err) => {
+      if (callbackSettled) return;
+      callbackSettled = true;
+      reject(err || new Error('decodeAudioData failed'));
+    };
+    const ret = context.decodeAudioData(buf, onOk, onErr);
+    if (ret && typeof ret.then === 'function') ret.then(onOk, onErr);
+  }), {
+    timeoutMs,
+    timeoutMessage: '[VIP][FileIngestion] decodeAudioData timeout',
+    timeoutCode: 'DECODE_TIMEOUT',
+    signal,
   });
   try {
     return await decodeOnce(ctx, arrayBuffer);
   } catch (firstErr) {
+    if (isTerminalOperationError(firstErr)) throw firstErr;
     const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
-    if (!Ctx) throw firstErr;
-    const fresh = new Ctx();
+    if (!Ctx || !retryBuffer?.byteLength) throw firstErr;
+    const fresh = getSharedAudioContext(Ctx, 'retry');
     try {
-      if (fresh.state === 'suspended') await fresh.resume();
-      // .slice(0) clones the buffer — Chromium neuters (detaches) the original
-      // ArrayBuffer after decodeAudioData, breaking any retry that reuses it.
-      const retryBuf = arrayBuffer.byteLength > 0 ? arrayBuffer.slice(0) : arrayBuffer;
-      return await decodeOnce(fresh, retryBuf);
-    } catch {
+      await resumeAudioContext(fresh, signal);
+      return await decodeOnce(fresh, retryBuffer);
+    } catch (retryError) {
+      if (isTerminalOperationError(retryError)) throw retryError;
       throw firstErr;
-    } finally {
-      try { await fresh.close(); } catch { /* ignore */ }
     }
   }
 }
@@ -217,30 +400,27 @@ function createGrowingChannel() {
 // instead of spawning a new one on every upload. Chrome enforces a ~6-context
 // cap; exceeding it causes decodeAudioData to return null/empty silently.
 // ---------------------------------------------------------------------------
-async function _decodeWithAudioData(blob, onProgress, externalCtx = null) {
+async function _decodeWithAudioData(blob, onProgress, externalCtx = null, options = {}) {
   const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (!Ctx) throw new Error('Web Audio API is not available.');
 
   onProgress(5);
-  const arrayBuffer = await readBlobWithProgress(blob, onProgress);
+  const arrayBuffer = await readBlobWithProgress(blob, onProgress, {
+    timeoutMs: options.readTimeoutMs,
+    signal: options.signal,
+  });
 
   onProgress(50);
 
   // Reuse the caller's context when available — avoids context limit exhaustion.
-  const isOwned = !externalCtx;
-  const ctx = externalCtx || new Ctx();
-  try {
-    if (ctx.state === 'suspended') await ctx.resume();
-    onProgress(55);
-    const decoded = await decodeAudioBufferSafe(ctx, arrayBuffer);
-    onProgress(100);
-    return decoded;
-  } finally {
-    // Only close contexts we created — never close the app's main AudioContext.
-    if (isOwned) {
-      try { await ctx.close(); } catch { /* already closed */ }
-    }
-  }
+  const ctx = externalCtx || getSharedAudioContext(Ctx, 'primary', { sampleRate: SAMPLE_RATE });
+  onProgress(55);
+  const decoded = await decodeAudioBufferSafe(ctx, arrayBuffer, {
+    timeoutMs: options.decodeTimeoutMs,
+    signal: options.signal,
+  });
+  onProgress(100);
+  return decoded;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +432,7 @@ async function _decodeWithAudioData(blob, onProgress, externalCtx = null) {
 // unlock has been recorded. Set muted=true for the capture element; the
 // ScriptProcessorNode captures PCM from the graph regardless of muted state.
 // ---------------------------------------------------------------------------
-async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null) {
+async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null, signal = null) {
   const doc = globalThis.document;
   if (!doc?.createElement || !doc.body) {
     throw new Error('Media element decode requires a browser document.');
@@ -275,13 +455,17 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
   doc.body.appendChild(media);
   media.src = url;
 
-  // Reuse the app's AudioContext when provided — avoids context cap exhaustion.
-  const isOwnedCtx = !externalCtx;
+  // Reuse the app's AudioContext when viable — a closed context cannot create nodes.
+  const reusableCtx = externalCtx?.state === 'closed' ? null : externalCtx;
   let ctx = null;
+  let source = null;
+  let spn = null;
+  let silentGain = null;
   let timeoutHandle = null;
+  let captureAbortHandler = null;
   try {
     onProgress(5);
-    await _waitForMetadata(media);
+    await _waitForMetadata(media, signal);
     onProgress(12);
 
     let duration = media.duration;
@@ -298,9 +482,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     let captureSettled = false;
     let progressScheduled = false;
     let resolveCapture = null;
-    /** @type {ScriptProcessorNode|null} */
-    let spn = null;
-
+    let rejectCapture = null;
     const flushTailMs = Math.ceil((SPN_BLOCK_SIZE / SAMPLE_RATE) * 1000) + 50;
     const estimatedFrames = Math.max(1, Math.ceil(duration * SAMPLE_RATE));
 
@@ -314,7 +496,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
         progressScheduled = false;
         if (captureDone) return;
         const pct = Math.min(99, Math.round((writeOffset / estimatedFrames) * 100));
-        onProgress(Math.max(15, pct));
+        try { onProgress(Math.max(15, pct)); } catch { /* UI callback only */ }
       });
     };
 
@@ -327,28 +509,42 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       if (captureSettled) return;
       captureSettled = true;
       captureDone = true;
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle != null) clearTimeout(timeoutHandle);
       if (spn) spn.onaudioprocess = null;
       setTimeout(() => {
-        onProgress(100);
         resolveCapture?.();
       }, flushTailMs);
     };
 
+    const failCapture = (error) => {
+      if (captureSettled) return;
+      captureSettled = true;
+      captureDone = true;
+      if (timeoutHandle != null) clearTimeout(timeoutHandle);
+      if (spn) spn.onaudioprocess = null;
+      rejectCapture?.(error);
+    };
+
     const capturePromise = new Promise((resolve, reject) => {
       resolveCapture = resolve;
+      rejectCapture = reject;
       media.addEventListener('error', () => {
-        if (captureSettled) return;
-        captureSettled = true;
-        captureDone = true;
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        if (spn) spn.onaudioprocess = null;
-        reject(new Error(media.error?.message || 'Media playback failed'));
+        failCapture(new Error(media.error?.message || 'Media playback failed'));
       }, { once: true });
     });
+    // The capture can fail while media.play() is still pending. Attach a handler
+    // immediately so that early media/abort failures cannot become unhandled.
+    void capturePromise.catch(() => {});
+
+    captureAbortHandler = () => {
+      try { media.pause(); } catch { /* ignore */ }
+      failCapture(createAbortError());
+    };
+    if (signal?.aborted) captureAbortHandler();
+    else signal?.addEventListener?.('abort', captureAbortHandler, { once: true });
 
     const resetCaptureTimeout = () => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (timeoutHandle != null) clearTimeout(timeoutHandle);
       const realtimeMs = Math.ceil(duration * 1000);
       const captureTimeoutMs = Math.max(
         MEDIA_DECODE_MIN_TIMEOUT_MS,
@@ -356,17 +552,20 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       );
       timeoutHandle = setTimeout(() => {
         try { media.pause(); } catch { /* ignore */ }
-        finishCapture();
+        failCapture(createTimeoutError(
+          '[VIP][FileIngestion] Media capture timeout',
+          'MEDIA_CAPTURE_TIMEOUT',
+        ));
       }, captureTimeoutMs);
     };
 
-    ctx = externalCtx || new Ctx({ sampleRate: SAMPLE_RATE });
-    if (ctx.state === 'suspended') await ctx.resume();
-    const source = ctx.createMediaElementSource(media);
+    ctx = reusableCtx || getSharedAudioContext(Ctx, 'primary', { sampleRate: SAMPLE_RATE });
+    await resumeAudioContext(ctx, signal);
+    source = ctx.createMediaElementSource(media);
     spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
     // Zero-gain sink: SPN must stay connected for onaudioprocess to fire, but
     // we must not blast 16×-rate audio through the speakers during decode.
-    const silentGain = ctx.createGain();
+    silentGain = ctx.createGain();
     silentGain.gain.value = 0;
     source.connect(spn);
     spn.connect(silentGain);
@@ -395,8 +594,16 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     onProgress(15);
 
     try {
-      await media.play();
+      await runBounded(() => media.play(), {
+        timeoutMs: MEDIA_PLAY_TIMEOUT_MS,
+        timeoutMessage: '[VIP][FileIngestion] Media playback start timeout',
+        timeoutCode: 'MEDIA_PLAY_TIMEOUT',
+        signal,
+        onStop: () => media.pause(),
+      });
     } catch (playErr) {
+      failCapture(playErr);
+      if (isTerminalOperationError(playErr)) throw playErr;
       // NotAllowedError = autoplay policy (should not reach here after the
       // muted=true fix above, but guard in case the browser is strict).
       const isAutoplayBlock = playErr?.name === 'NotAllowedError'
@@ -438,52 +645,63 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       channels[ch].copyInto(result.getChannelData(ch), outFrames);
     }
 
+    try { onProgress(100); } catch { /* UI callback only */ }
     return result;
   } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (timeoutHandle != null) clearTimeout(timeoutHandle);
+    signal?.removeEventListener?.('abort', captureAbortHandler);
+    if (spn) spn.onaudioprocess = null;
+    try { source?.disconnect?.(); } catch { /* already disconnected */ }
+    try { spn?.disconnect?.(); } catch { /* already disconnected */ }
+    try { silentGain?.disconnect?.(); } catch { /* already disconnected */ }
     try { media.pause(); } catch { /* ignore */ }
     try { media.removeAttribute('src'); media.load(); media.remove(); } catch { /* ignore */ }
     URL.revokeObjectURL(url);
-    // Only close contexts we created — never close the app's main AudioContext.
-    if (ctx && isOwnedCtx) {
-      try { await ctx.close(); } catch { /* already closed */ }
-    }
   }
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function _waitForMetadata(media) {
+function _waitForMetadata(media, signal = null) {
   return new Promise((resolve, reject) => {
     const HAVE_METADATA = globalThis.HTMLMediaElement?.HAVE_METADATA ?? 1;
     let settled = false;
-    const timer = setTimeout(
-      () => {
-        if (settled) return;
-        settled = true;
-        reject(new Error('Media metadata load timeout — file may be corrupt or unsupported.'));
-      },
-      MEDIA_DECODE_MIN_TIMEOUT_MS,
-    );
-    const done = () => {
+    let timer = null;
+    const cleanup = () => {
+      clearTimeout(timer);
+      media.removeEventListener?.('loadedmetadata', done);
+      media.removeEventListener?.('canplay', done);
+      media.removeEventListener?.('error', fail);
+      signal?.removeEventListener?.('abort', onAbort);
+    };
+    const settle = (callback) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      resolve();
+      cleanup();
+      callback();
+    };
+    const done = () => {
+      settle(resolve);
     };
     const fail = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
       const code = media.error?.code;
       const msg  = media.error?.message || 'Media element failed to load';
-      reject(new Error(`${msg}${code ? ` (code ${code})` : ''}`));
+      settle(() => reject(new Error(`${msg}${code ? ` (code ${code})` : ''}`)));
     };
+    const onAbort = () => settle(() => reject(createAbortError()));
+    timer = setTimeout(() => {
+      settle(() => reject(createTimeoutError(
+        'Media metadata load timeout — file may be corrupt or unsupported.',
+        'MEDIA_METADATA_TIMEOUT',
+      )));
+    }, MEDIA_DECODE_MIN_TIMEOUT_MS);
     if (media.readyState >= HAVE_METADATA) { done(); return; }
     media.addEventListener('loadedmetadata', done, { once: true });
     media.addEventListener('canplay', done, { once: true });
     media.addEventListener('error', fail, { once: true });
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener?.('abort', onAbort, { once: true });
   });
 }
 

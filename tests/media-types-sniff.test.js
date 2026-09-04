@@ -56,6 +56,10 @@ describe('file input accept helpers', () => {
 });
 
 describe('media-types sniff + generic MIME', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('isGenericMimeType covers Windows octet-stream', () => {
     expect(mediaTypes.isGenericMimeType('')).toBe(true);
     expect(mediaTypes.isGenericMimeType('application/octet-stream')).toBe(true);
@@ -91,5 +95,37 @@ describe('media-types sniff + generic MIME', () => {
     head.write('M4A ', 8);
     const file = new File([head], 'voice', { type: 'application/octet-stream' });
     await expect(mediaTypes.sniffMediaKind(file)).resolves.toBe('audio');
+  });
+
+  test('sniffMediaKind aborts a hung Blob head read', async () => {
+    const controller = new AbortController();
+    const blob = {
+      slice: jest.fn(() => ({ arrayBuffer: () => new Promise(() => {}) })),
+    };
+    const pending = mediaTypes.sniffMediaKind(blob, {
+      signal: controller.signal,
+      timeoutMs: 1000,
+    });
+
+    controller.abort('user');
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  test('sniffMediaKind times out a hung Blob head read', async () => {
+    jest.useFakeTimers();
+    const blob = {
+      slice: jest.fn(() => ({ arrayBuffer: () => new Promise(() => {}) })),
+    };
+    const pending = mediaTypes.sniffMediaKind(blob, { timeoutMs: 25 });
+    const rejection = expect(pending).rejects.toMatchObject({
+      name: 'TimeoutError',
+      code: 'MEDIA_SNIFF_TIMEOUT',
+    });
+
+    await jest.advanceTimersByTimeAsync(25);
+
+    await rejection;
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

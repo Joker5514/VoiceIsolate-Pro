@@ -37,10 +37,22 @@ describe('JobController', () => {
     expect(job.percent).toBe(50);
   });
 
+  test('updateJob clamps progress and never regresses within a job', () => {
+    const job = JC.beginJob('Monotonic');
+    JC.updateJob(job.id, 'decode', 62);
+    JC.updateJob(job.id, 'decode', 41);
+    expect(job.percent).toBe(62);
+    JC.updateJob(job.id, 'finalize', 140);
+    expect(job.percent).toBe(100);
+    JC.updateJob(job.id, 'invalid', Number.NaN);
+    expect(job.percent).toBe(100);
+  });
+
   test('beginJob supersedes previous running job', () => {
     const a = JC.beginJob('A');
     const b = JC.beginJob('B');
     expect(a.controller.signal.aborted).toBe(true);
+    expect(a.cancelReason).toBe('superseded');
     expect(JC.getCurrentJobId()).toBe(b.id);
   });
 
