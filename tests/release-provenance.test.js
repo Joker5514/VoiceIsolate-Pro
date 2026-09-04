@@ -99,11 +99,13 @@ describe('release provenance validator', () => {
     expect(result.strictFailures.length).toBeGreaterThan(0);
   });
 
-  test('checked-in synchronized provenance passes strict mode', () => {
+  test('checked-in provenance intentionally fails strict mode until native artifacts are rebuilt', () => {
     const file = path.join(__dirname, '../docs/releases/release-provenance.json');
     const result = provenance.validateProvenanceFile(file, { strict: true });
     expect(result.errors).toEqual([]);
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.strictFailures.some((e) => /android status stale/.test(e.message))).toBe(true);
+    expect(result.strictFailures.some((e) => /windows status stale/.test(e.message))).toBe(true);
   });
 
   test('rejects duplicate platform records', () => {
@@ -198,8 +200,9 @@ describe('release provenance validator', () => {
     const doc = validDoc();
     const result = provenance.validateProvenance(doc, {
       docs: {
-        'CLAUDE.md': 'Web, Android, and Windows does **not** share the same build.',
-        'docs/DOWNLOADS.md': 'Web, Android and Windows do not share the same build.',
+        'CLAUDE.md': 'Do not claim Web, Android, and Windows are the same build as main.',
+        'docs/DOWNLOADS.md': 'Do not describe Web, Android and Windows as the same build unless strict provenance passes.',
+        'docs/releases/PLATFORM_SYNC.md': 'Web, Android and Windows do not share the same build.',
       },
     });
     expect(result.errors.filter((e) => String(e.path).startsWith('docs:'))).toEqual([]);
@@ -256,9 +259,9 @@ describe('release provenance validator', () => {
     expect(code).toBe(0);
   });
 
-  test('CLI strict mode exits 0 for the checked-in synchronized file', async () => {
+  test('CLI strict mode exits 1 while checked-in native artifacts are stale', async () => {
     const code = await provenance.main(['--strict']);
-    expect(code).toBe(0);
+    expect(code).toBe(1);
   });
 
   test('CLI rejects invalid JSON files', async () => {

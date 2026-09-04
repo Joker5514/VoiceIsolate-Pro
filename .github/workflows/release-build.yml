@@ -22,6 +22,10 @@ jobs:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # Android release does not need Electron binaries; postinstall download flakes CI.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      # Avoid optional desktop tooling side-effects during web/android asset build.
+      npm_config_ignore_scripts: ''
 
     steps:
       - name: Checkout
@@ -37,7 +41,8 @@ jobs:
       - name: Setup pnpm
         run: |
           corepack enable
-          corepack prepare pnpm@9.0.0 --activate
+          # Match packageManager in package.json (pnpm 11.x); avoid drift with 9.x
+          corepack prepare pnpm@11.3.0 --activate
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -46,7 +51,10 @@ jobs:
           java-version: 21
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          # electron postinstall still runs unless skip is set (set above)
 
       - name: Build web assets
         run: pnpm build

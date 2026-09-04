@@ -1,72 +1,75 @@
 # Android / desktop download artifacts
 
-This folder documents **where installers and APKs live**. Large binaries are **not** committed to git.
+Large installers are **not committed to git**. End-user binaries are published through [GitHub Releases](https://github.com/Joker5514/VoiceIsolate-Pro/releases), and the web download hub is https://voice-isolate-pro.vercel.app/download/.
 
-Canonical host for end users: **GitHub Releases**  
-https://github.com/Joker5514/VoiceIsolate-Pro/releases
+**Repository version:** `25.0.2` · native build number `250002`  
+**Latest published release:** `v25.0.2`  
+**Release metadata last updated:** `2026-08-25T21:22:40Z`
 
-Web download page: https://voice-isolate-pro.vercel.app/download/
-
-**In-repo version:** **25.0.2** · build **250002**  
-**Published GitHub Release (latest):** **v25.0.2**  
-**Last native rebuild:** **2026-08-24T17:20Z** (`0b791c2` — #784). Guide: `docs/guides/GOOGLE_DRIVE.md`.
-
-Local rebuild (artifacts under `dist/`, not committed):
-
-```bash
-pnpm run build
-pnpm android:build:win          # → dist/android/VoiceIsolate-Pro-android-debug.apk
-pnpm build:electron:dir         # → dist/electron/win-unpacked/
-pnpm build:electron             # → dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe
-```
-
----
+The current release assets are valid downloads, but they predate current `main`. See [`docs/releases/release-provenance.json`](../docs/releases/release-provenance.json) before making any cross-platform same-build claim.
 
 ## Android APK
 
-| Build | Command | Output |
-|-------|---------|--------|
-| Debug (Windows) | `pnpm android:build:win` | `dist/android/VoiceIsolate-Pro-android-debug.apk` |
-| Debug (Unix) | `pnpm android:build` | `android/app/build/outputs/apk/debug/app-debug.apk` |
-| Release AAB | `pnpm android:bundle` | `android/app/build/outputs/bundle/release/` |
-
-### Public download links
-
 | Channel | URL |
-|---------|-----|
-| **Latest APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
-| **Pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk |
-| **Prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
-| **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
+|---|---|
+| Latest | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
+| Pinned `v25.0.2` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk |
+| Historical releases | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
-Asset name: `VoiceIsolate-Pro-android-debug.apk` · complete offline app.  
-Gradle: `versionName "25.0.2"`, `versionCode 250002`.
+Published asset:
 
-### Publish Android (maintainers)
+- File: `VoiceIsolate-Pro-android-debug.apk`
+- Type: Android sideload/debug APK
+- Size: `101365796` bytes
+- SHA-256: `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b`
+- GitHub asset updated: `2026-08-25T21:22:40Z`
+
+Build locally:
 
 ```bash
-pnpm android:build:win
-gh release upload v25.0.2 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
+pnpm android:build:win     # Windows host → dist/android/VoiceIsolate-Pro-android-debug.apk
+pnpm android:build         # Unix host → debug APK under android/app/build/outputs/apk/debug/
+pnpm android:bundle        # release AAB under android/app/build/outputs/bundle/release/
 ```
 
----
+WebView debugging is controlled by `BuildConfig.DEBUG`; release builds must keep it disabled.
 
-## Desktop (Windows) — offline installer
+## Windows x64
 
-| Goal | Asset / command |
-|------|-----------------|
-| **Latest installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
-| **Pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
-| **Prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| Local build | `pnpm build:electron` → `dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe` |
-| Portable smoke | `pnpm build:electron:dir` → `dist/electron/win-unpacked/` |
+| Channel | URL |
+|---|---|
+| Latest | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| Pinned `v25.0.2` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| Historical releases | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
-### Publish desktop (maintainers)
+Published asset:
+
+- File: `VoiceIsolate-Pro-25.0.2-win-x64.exe`
+- Type: Windows x64 NSIS installer
+- Size: `144628415` bytes
+- SHA-256: `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621`
+- GitHub asset updated: `2026-08-24T17:20:22Z`
+
+Build locally:
 
 ```bash
 pnpm setup:electron
-pnpm build:electron
-gh release upload v25.0.2 dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe --clobber
+pnpm build:electron        # dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe
+pnpm build:electron:dir    # dist/electron/win-unpacked/
 ```
 
-See [docs/guides/electron-desktop.md](../docs/guides/electron-desktop.md) and [docs/DOWNLOADS.md](../docs/DOWNLOADS.md).
+A published Windows binary may be unsigned even though the build system contains signing hooks; verify the signature separately before claiming a signed release.
+
+## Validation
+
+```bash
+pnpm downloads:validate
+```
+
+This validates the current GitHub release, public web routes, direct download routes, repo documentation, redirects, and provenance metadata without downloading the large binaries.
+
+See also:
+
+- [`docs/DOWNLOADS.md`](../docs/DOWNLOADS.md)
+- [`docs/guides/ANDROID.md`](../docs/guides/ANDROID.md)
+- [`docs/guides/electron-desktop.md`](../docs/guides/electron-desktop.md)

@@ -300,14 +300,21 @@ and verifies Web/PWA, Electron, Android, API health metadata, and download-page
 asset naming (`versionCode` / `CFBundleVersion` = **250002**). Published GitHub
 Release **`latest` = v25.0.2**.
 
-**Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-24T17:20Z** from
-`main` @ `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` (#784) and clobber-uploaded to the
-**existing** tag v25.0.2 (tag was not moved). Web production was deployed from the
-same SHA (GitHub Actions Deploy Production run 32755579053). Machine-readable
-record: [docs/releases/release-provenance.json](docs/releases/release-provenance.json).
-Canonical pins: [docs/DOWNLOADS.md](docs/DOWNLOADS.md), [docs/releases/PLATFORM_SYNC.md](docs/releases/PLATFORM_SYNC.md).
-After later shell/UX or native WebView changes on `main`, re-run `pnpm android:build:win` +
-`pnpm build:electron` and `gh release upload v25.0.2 … --clobber`.
+**Release provenance is evidence-driven:** the current published APK and Windows
+NSIS are valid `v25.0.2` release assets, but they predate current `main` and their
+source SHAs are not independently proven by immutable build metadata in the
+refreshed provenance record. Do **not** claim Web, Android, Windows, `main`, and
+the release tag are the same build unless `pnpm provenance:validate:strict`
+passes. Machine-readable evidence:
+[docs/releases/release-provenance.json](docs/releases/release-provenance.json).
+Canonical download state: [docs/DOWNLOADS.md](docs/DOWNLOADS.md) and
+[docs/releases/PLATFORM_SYNC.md](docs/releases/PLATFORM_SYNC.md). Validate live
+routes/assets with `pnpm downloads:validate`.
+
+After shared shell/UX/runtime or native WebView changes on `main`, rebuild the
+affected native packages before claiming the published APK/EXE contains them:
+`pnpm android:build:win`, `pnpm build:electron`, then publish and regenerate
+provenance from the actual produced artifacts.
 
 **Engineer DSP sliders (desktop-first):** rows are built by
 `src/presentation/DspSlider.js` (`createDspSliderRow`) from `SLIDER_REGISTRY` in
@@ -327,21 +334,24 @@ Locks must block drag/keys/number/presets/reset. Guide:
 ## 6. Commands
 
 ```bash
-pnpm install          # deps + copy ORT/Three.js into public/lib/
+pnpm install --frozen-lockfile
 pnpm dev              # Express dev server → http://localhost:3000 (serves /src too)
 pnpm test             # Jest suites
 pnpm lint             # ESLint flat config
 pnpm validate         # scripts/validate.js structural checks (enforces this doc)
 pnpm build            # copy public/ + src/ → build/
+pnpm downloads:validate # live current-release/download contract
 pnpm electron:dev     # Electron shell → http://localhost:3000 (run pnpm dev first)
 pnpm build:electron   # production desktop installer (electron-builder)
 ```
 
-Requirements: Node.js ≥ 22, pnpm ≥ 11. Use **pnpm**, never npm/yarn.
+Requirements: Node.js ≥ 22; CI/package manager uses **pnpm 11.3.0**. Use pnpm,
+never npm/yarn.
 
 ```bash
-pnpm mobile:sync-version   # android versionName/versionCode + iOS CFBundle* from package.json
-pnpm test                  # Jest (node)
+pnpm mobile:sync-version   # Android/iOS metadata + Capacitor/PWA version sync
+pnpm version:check         # cross-file version contract
+pnpm provenance:validate  # provenance schema/claims; stale/unknown allowed
 pnpm test:live             # Playwright headless Engineer pipeline smoke
 ```
 
@@ -412,7 +422,7 @@ webPreferences: {
 - All IPC via `contextBridge` → `window.vipDesktop` only. No `require` in renderer.
 - File I/O and model cache: main process with native dialogs (`vip:open-file`, `vip:save-file`, `vip:model-cache-path`).
 - Stripe / payment keys: main process or server only — never exposed to renderer.
-- Packaging: `pnpm build:electron` → `electron-builder` with code signing (Phase 1 deliverable).
+- Packaging: `pnpm build:electron` → `electron-builder`; signing hooks may be configured, but verify the produced binary before claiming a signed artifact.
 
 Long-term: evaluate **Tauri 2** for unified desktop + Android (8–12 week pilot per roadmap).
 
@@ -422,9 +432,9 @@ Long-term: evaluate **Tauri 2** for unified desktop + Android (8–12 week pilot
 
 | Platform | Primary cache | Fallback / notes |
 |---|---|---|
-| **Web** | IndexedDB + SHA-256 verify | Cache API; warn users on iOS Safari ~50 MB origin quota |
+| **Web** | IndexedDB + SHA-256 verify | Cache API; browser quota varies by engine/device |
 | **Desktop (Electron)** | Filesystem (`app.getPath('userData')/models`) | Do not rely solely on IndexedDB |
-| **Android** | App-scoped / scoped storage | On-demand model download; quantized or ExecuTorch path |
+| **Android** | App-scoped / packaged storage | Keep standard package memory/size limits; optional weights only when explicitly supported |
 
 All platforms share `src/core/ModelManifest.js` as the canonical manifest.
 

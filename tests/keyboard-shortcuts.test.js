@@ -32,7 +32,7 @@ function makeEvent(key, opts = {}) {
 }
 
 function makeInst(overrides = {}) {
-  return Object.assign(Object.create(VoiceIsolatePro.prototype), {
+  const inst = Object.assign(Object.create(VoiceIsolatePro.prototype), {
     inputBuffer: { duration: 1 },
     outputBuffer: { duration: 1 },
     isProcessing: false,
@@ -43,6 +43,16 @@ function makeInst(overrides = {}) {
     stop: jest.fn(),
     toggleAB: jest.fn(),
   }, overrides);
+  // The production cancellation helper performs dynamic imports and worker
+  // teardown. This unit test only covers keyboard dispatch, so keep cancellation
+  // synchronous to avoid importing modules after the lightweight Jest harness
+  // has already been torn down.
+  if (!Object.prototype.hasOwnProperty.call(overrides, 'cancelActiveJobs')) {
+    inst.cancelActiveJobs = jest.fn(function cancelFromShortcut() {
+      this.abortFlag = true;
+    });
+  }
+  return inst;
 }
 
 describe('global keyboard shortcuts', () => {
@@ -86,9 +96,10 @@ describe('global keyboard shortcuts', () => {
     expect(e.defaultPrevented).toBe(false);
   });
 
-  it('Escape sets abortFlag while processing', () => {
+  it('Escape cancels active processing', () => {
     const inst = makeInst({ isProcessing: true });
     inst._handleGlobalKeydown(makeEvent('Escape'));
+    expect(inst.cancelActiveJobs).toHaveBeenCalledTimes(1);
     expect(inst.abortFlag).toBe(true);
     expect(inst.stop).not.toHaveBeenCalled();
   });

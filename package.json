@@ -2,7 +2,7 @@
   "name": "voiceisolate-pro",
   "version": "25.0.2",
   "type": "module",
-  "description": "Studio-grade voice isolation platform. Upload-only workflow — 32-stage Octa-Pass DSP with hybrid ML + classical spectral processing. Web, Electron desktop, and Capacitor Android.",
+  "description": "Upload-only local voice isolation and audio enhancement for Web, Electron Windows, and Capacitor Android.",
   "private": true,
   "main": "electron/main.cjs",
   "keywords": [
@@ -14,7 +14,7 @@
     "machine-learning",
     "mobile",
     "android",
-    "ios",
+    "electron",
     "capacitor"
   ],
   "author": "Randy Jordan <joker5514@users.noreply.github.com>",
@@ -41,13 +41,14 @@
     "build": "node scripts/build.mjs && node scripts/ensure-sam-in-build.mjs",
     "lint": "eslint public/app/app.js public/app/workflow-tier.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js public/app/vip-enhancements.js public/landing.js src server electron",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
-    "test:ci": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit",
+    "test:ci": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --watch",
     "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js public/app/vip-enhancements.js public/landing.js src server --fix",
     "validate": "node scripts/validate.js",
     "version:check": "node scripts/check-version-sync.cjs",
     "provenance:validate": "node scripts/validate-release-provenance.mjs",
     "provenance:validate:strict": "node scripts/validate-release-provenance.mjs --strict",
+    "downloads:validate": "node scripts/validate-download-links.mjs",
     "worklets:hash": "node scripts/hash-worklets.js",
     "worklets:verify": "node scripts/verify-worklets.js",
     "worklets:verify:build": "node scripts/verify-worklets.js --require-build",
@@ -149,7 +150,6 @@
       "api-routes/monetization.js",
       "api-routes/sync.js"
     ],
-    "forceExit": true,
     "openHandlesTimeout": 1000
   },
   "packageManager": "pnpm@11.3.0",

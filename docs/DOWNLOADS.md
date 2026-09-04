@@ -1,80 +1,111 @@
 # Downloads — VoiceIsolate Pro
 
-**In-repo version:** **25.0.2** (`package.json`)  
-**Android:** `versionName "25.0.2"` · `versionCode` **250002**  
-**iOS:** `CFBundleShortVersionString` **25.0.2** · `CFBundleVersion` **250002**  
-**Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**  
-**Release published:** **2026-08-13T06:28:53Z** · APK and Windows EXE assets last updated **2026-08-24T17:20Z** from `0b791c2`.
-Setup: [guides/GOOGLE_DRIVE.md](guides/GOOGLE_DRIVE.md).
+This is the canonical human-readable download record for the current product line.
+Machine-readable release evidence lives in [`releases/release-provenance.json`](releases/release-provenance.json).
 
-## Public URLs (verified)
+## Current product and release
 
-| Platform | Working URL | HTTP |
-|----------|-------------|------|
-| **Web download hub** | https://voice-isolate-pro.vercel.app/download/ | 200 |
-| **Web Landing** | https://voice-isolate-pro.vercel.app/ | 200 |
-| **Web Engineer** | https://voice-isolate-pro.vercel.app/app/ | 200 |
-| **Android APK (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk | 200 at audit |
-| **Windows installer (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe | 200 at audit |
-| **Android pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk | 200 at audit |
-| **Windows pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe | 200 at audit |
-| **Android prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk | 200 |
-| **Windows prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe | 200 |
-| **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases | 200 |
+- **Repository package version:** `25.0.2`
+- **Published GitHub release:** [`v25.0.2`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)
+- **Release published:** `2026-08-13T06:28:53Z`
+- **Release metadata last updated:** `2026-08-25T21:22:40Z`
+- **Published platforms:** Web, Android sideload APK, Windows x64 installer
+- **iOS:** project scaffolding/version metadata exists, but iOS is explicitly outside the v1.0 supported release scope and has no current published artifact.
+- **macOS / Linux:** Electron build targets may exist, but no `v25.0.2` GitHub Release artifacts are published.
 
-Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` to GitHub Releases.
+> The published Android and Windows binaries are release snapshots. They predate current `main` and the source SHA of those binaries is not independently proven by immutable build metadata in the current provenance record. Do not describe Web, Android, Windows, `main`, and the release tag as the same build unless strict provenance validation proves it.
 
-## Platform matrix
+## Current public URLs
 
-| Platform | Artifact | What’s included |
-|----------|----------|-----------------|
-| **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional. Production deploy verified from `0b791c2`. |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,347,500 bytes) | Capacitor WebView wrapping a `build/` shell. **Published** asset updated **2026-08-24T17:20:19Z** from `0b791c2`. |
-| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,628,415 bytes) | Electron loads a `build/` shell (+ Drive OAuth popups). **Published** asset updated **2026-08-24T17:20:22Z** from `0b791c2`. |
-| **macOS / Linux** | Build targets only | Electron config can produce `.dmg` / `.AppImage`; no v25.0.2 GitHub Release assets are published |
+| Surface | URL |
+|---|---|
+| Web Landing | https://voice-isolate-pro.vercel.app/ |
+| Engineer Console | https://voice-isolate-pro.vercel.app/app/ |
+| Download hub | https://voice-isolate-pro.vercel.app/download/ |
+| Android latest | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
+| Android pinned `v25.0.2` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk |
+| Windows latest | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| Windows pinned `v25.0.2` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| All releases / historical builds | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
-Packaging rule: Web, Android, and Desktop **consume** `pnpm build` → `build/` when each surface is rebuilt from the same commit. Published Web / Android / Windows artifacts were rebuilt from `0b791c2` on 2026-08-24. Provenance: [releases/release-provenance.json](releases/release-provenance.json).
+Historical release links belong on the GitHub Releases page and in historical release notes, not in the current primary download flow.
 
-The current source also time-slices the final output-safety limiter with zero-copy typed-array views. This responsiveness fix is shared automatically by Web, Android, and Desktop through the single `public/app/` shell; the published v25.0.2 native download assets remain pinned to the provenance above until the next artifact rebuild.
+## Published native assets — observed from GitHub Release API
 
-Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
+| Platform | Asset | Size | SHA-256 | Last updated |
+|---|---|---:|---|---|
+| Android | `VoiceIsolate-Pro-android-debug.apk` | 101,365,796 bytes | `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b` | `2026-08-25T21:22:40Z` |
+| Windows x64 | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | 144,628,415 bytes | `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621` | `2026-08-24T17:20:22Z` |
 
-`build/`, `android/.../assets/public`, and `dist/*` binaries are **gitignored** — regenerate after pulling.
+The Android artifact is a **debug/sideload APK**, not a Play Store production artifact. `MainActivity` enables WebView debugging only when `BuildConfig.DEBUG` is true; release builds keep it disabled.
 
-## Build & publish (maintainers)
+The Windows installer may be unsigned and can trigger Microsoft SmartScreen. Code-signing hooks exist in the Electron build configuration, but a signing hook is not proof that a particular published binary is signed.
+
+## Offline behavior
+
+Core voice isolation is local and can run without an internet connection after required application/model assets are installed or packaged. Optional network features—such as Google Drive import/export, update checks, and release downloads—require connectivity. Audio is not sent to a server for processing or inference.
+
+## Validate downloads
+
+Run the repository validator before release or after changing download/release documentation:
 
 ```bash
-pnpm install
-pnpm build
-pnpm mobile:sync-version
+pnpm downloads:validate
+```
+
+The validator checks:
+
+1. GitHub `releases/latest` resolves to `v25.0.2`.
+2. The expected Android and Windows assets exist and report non-zero sizes and SHA-256 digests.
+3. Canonical docs and the public download page use the current asset names and URLs.
+4. `release-provenance.json` matches observed release asset metadata.
+5. The public Landing, Engineer, and download routes respond.
+6. Vercel download redirects and GitHub direct-download routes resolve without downloading the binaries.
+
+Static Jest guardrails also live in `tests/download-links.test.js`.
+
+## Packaging and rebuild rule
+
+Web, Android, and Electron consume the shared web shell produced by `pnpm build`, but they only contain the same source when each package is actually rebuilt from the same verified commit.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm version:check
+pnpm lint
 pnpm test:ci
-pnpm check:cloud-audio
+pnpm validate
+pnpm build
+pnpm downloads:validate
 
-# Android
-pnpm android:build:win     # → dist/android/VoiceIsolate-Pro-android-debug.apk
+# Android sideload/debug artifact
+pnpm android:build:win
 
-# Desktop
+# Windows x64 installer
 pnpm setup:electron
-pnpm build:electron        # → dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe
+pnpm build:electron
+```
 
-# Publish / refresh assets on existing tag (clobber)
+Large generated binaries under `dist/`, native copied web assets, and `build/` are not committed to git.
+
+## Publishing
+
+Do not overwrite existing release assets until the exact source commit has passed the full release gates and provenance has been regenerated from the produced binaries.
+
+A typical refresh is:
+
+```bash
 gh release upload v25.0.2 \
   dist/android/VoiceIsolate-Pro-android-debug.apk \
   dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe \
   --clobber
 ```
 
-## SAM stack (all three platforms)
+After upload, refresh `docs/releases/release-provenance.json` from observed GitHub Release metadata and run `pnpm downloads:validate` again.
 
-| Component | Web | Android | Desktop |
-|-----------|-----|---------|---------|
-| **SAM-Audio** | optional loopback / ONNX | optional `sam_audio.onnx` | real worker via Electron IPC |
-| **SAM 3** (vision) | JS bundled; flag OFF | same in WebView | same + extraResources |
-| Default isolation | BSRNN / RNNoise / USM | same | same |
+## Related docs
 
-Enable SAM 3: `VIP_SAM3_ENABLED=1` or `localStorage.setItem('vip-sam3-enabled','1')`.  
-Docs: [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) · [SAM_AUDIO.md](guides/SAM_AUDIO.md)
-
-## Product snapshot PDF
-
-See [docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf](releases/VoiceIsolate_Pro_v25_Current_State.pdf).
+- [Android guide](guides/ANDROID.md)
+- [Electron desktop guide](guides/electron-desktop.md)
+- [Platform release status](releases/PLATFORM_SYNC.md)
+- [Google Drive optional file I/O](guides/GOOGLE_DRIVE.md)
+- [Documentation index](README.md)
