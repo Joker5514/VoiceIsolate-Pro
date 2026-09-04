@@ -74,8 +74,8 @@ describe('ProcessingOrchestrator', () => {
     });
 
     test('enables filesystem model caching in the desktop shell', async () => {
-      const previousDesktopFlag = globalThis.__VIP_DESKTOP__;
-      globalThis.__VIP_DESKTOP__ = true;
+      const previousDesktopBridge = globalThis.vipDesktop;
+      globalThis.vipDesktop = { readModelCache: jest.fn() };
       try {
         const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
         setTimeout(() => {
@@ -90,8 +90,8 @@ describe('ProcessingOrchestrator', () => {
           useDesktopCache: true,
         }));
       } finally {
-        if (previousDesktopFlag === undefined) delete globalThis.__VIP_DESKTOP__;
-        else globalThis.__VIP_DESKTOP__ = previousDesktopFlag;
+        if (previousDesktopBridge === undefined) delete globalThis.vipDesktop;
+        else globalThis.vipDesktop = previousDesktopBridge;
       }
     });
 
