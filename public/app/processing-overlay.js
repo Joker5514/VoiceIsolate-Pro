@@ -958,7 +958,8 @@
     if (vip._overlayPatched) return;
     vip._overlayPatched = true;
 
-    vip.showProcessingOverlay = function (stageName, pct, variant) {
+    vip.showProcessingOverlay = function (stageName, pct, variant, ownerJobId) {
+      this._activeOverlayOwnerId = ownerJobId || null;
       if (global.VIPOverlay) {
         global.VIPOverlay.show(stageName, pct);
         if (variant && global.VIPOverlay._el && global.VIPOverlay._el()) {
@@ -967,12 +968,19 @@
       }
     };
 
-    vip.hideProcessingOverlay = function () {
+    vip.hideProcessingOverlay = function (ownerJobId) {
+      if (ownerJobId && this._activeOverlayOwnerId !== ownerJobId) return false;
+      if (!ownerJobId && this._activeOverlayOwnerId) return false;
       if (global.VIPOverlay) global.VIPOverlay.hide();
+      this._activeOverlayOwnerId = null;
+      return true;
     };
 
-    vip.updateProcessingOverlay = function (stageName, pct, stageIndex) {
+    vip.updateProcessingOverlay = function (stageName, pct, stageIndex, ownerJobId) {
+      if (ownerJobId && this._activeOverlayOwnerId !== ownerJobId) return false;
+      if (!ownerJobId && this._activeOverlayOwnerId) return false;
       if (global.VIPOverlay) global.VIPOverlay.update(stageName, pct, stageIndex);
+      return true;
     };
 
     var origPip = vip.pip ? vip.pip.bind(vip) : null;
@@ -982,22 +990,29 @@
         var pct       = Math.round(((i + 1) / total) * 100);
         var stages    = this.STAGES || (global._vipApp && global._vipApp.STAGES);
         var stageName = (stages && stages[i]) ? stages[i] : ('Stage ' + (i + 1));
-        this.updateProcessingOverlay(stageName, pct, i);
+        this.updateProcessingOverlay(stageName, pct, i, this._activePipelineJobId || null);
         return origPip(i, t);
       };
     }
 
     var origRun = vip.runPipeline.bind(vip);
     vip.runPipeline = async function () {
+      if (this._pipelineRunPending || this.isProcessing) {
+        this.showNotification?.('Processing already in progress…', 'info');
+        return;
+      }
       var jobs = global.__VIP_JOBS__;
       var job = null;
       var runToken = {};
+      this._pipelineRunPending = true;
+      this._activePipelineRunToken = runToken;
       this._activeOverlayRunToken = runToken;
       if (jobs && typeof jobs.beginJob === 'function') {
         job = jobs.beginJob('Process · isolate', { kind: 'pipeline' });
         this._activeJobId = job.id;
+        this._activePipelineJobId = job.id;
       }
-      this.showProcessingOverlay('Preparing pipeline…', 0, 'analyzing');
+      this.showProcessingOverlay('Preparing pipeline…', 0, 'analyzing', job?.id || null);
       try {
         return await origRun.apply(this, arguments);
       } catch (err) {
@@ -1013,11 +1028,16 @@
         if (job && jobs.getCurrentJobId && jobs.getCurrentJobId() === job.id) {
           jobs.endJob(job.id, this.abortFlag ? 'cancelled' : 'completed');
         }
+        if (this._activePipelineRunToken === runToken) {
+          this._activePipelineRunToken = null;
+          this._pipelineRunPending = false;
+          if (!job || this._activePipelineJobId === job.id) this._activePipelineJobId = null;
+        }
         // A superseded job must never hide or clear the newer job's overlay.
         if (this._activeOverlayRunToken === runToken) {
           this._activeOverlayRunToken = null;
           if (!job || this._activeJobId === job.id) this._activeJobId = null;
-          this.hideProcessingOverlay();
+          this.hideProcessingOverlay(job?.id || null);
           var hint = document.getElementById('procCancelHint');
           if (hint) {
             hint.textContent = 'Processing runs entirely on-device · no audio leaves this browser';
@@ -1033,7 +1053,7 @@
       var job = jobs.beginJob(title, meta || {});
       this._activeJobId = job.id;
       this._activeOverlayRunToken = { globalJobId: job.id };
-      this.showProcessingOverlay(title || 'Working…', 0, 'analyzing');
+      this.showProcessingOverlay(title || 'Working…', 0, 'analyzing', job.id);
       return job;
     };
     vip.endGlobalJob = function (jobId, status, detail) {
@@ -1042,7 +1062,7 @@
       if (this._activeJobId !== jobId) return false;
       this._activeJobId = null;
       this._activeOverlayRunToken = null;
-      this.hideProcessingOverlay();
+      this.hideProcessingOverlay(jobId);
       return true;
     };
     var origCancelActiveJobs = typeof vip.cancelActiveJobs === 'function'

@@ -18,6 +18,9 @@ const STREAM_YIELD_BYTES = 8 * 1024 * 1024;
 const MAX_CAPTURE_PLAYBACK_RATE = 16;
 // ScriptProcessorNode block size — must be a power-of-two 256–16384.
 const SPN_BLOCK_SIZE = 8192;
+let sharedPrimaryContext = null;
+let sharedRetryContext = null;
+let sharedContextCleanupHooked = false;
 
 function createAbortError() {
   return typeof DOMException !== 'undefined'
@@ -48,7 +51,7 @@ function isTerminalOperationError(error) {
 }
 
 /** Settle exactly once and detach timer/signal hooks even if the browser API never returns. */
-function runBounded(operation, { timeoutMs, timeoutMessage, timeoutCode, signal, onStop } = {}) {
+export function runBounded(operation, { timeoutMs, timeoutMessage, timeoutCode, signal, onStop } = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let timer = null;
@@ -94,7 +97,7 @@ function runBounded(operation, { timeoutMs, timeoutMessage, timeoutCode, signal,
   });
 }
 
-async function resumeAudioContext(ctx, signal) {
+export async function resumeAudioContext(ctx, signal) {
   if (!ctx || ctx.state !== 'suspended') return;
   await runBounded(() => ctx.resume(), {
     timeoutMs: AUDIO_CONTEXT_RESUME_TIMEOUT_MS,
@@ -109,6 +112,37 @@ function closeOwnedAudioContext(ctx) {
     const closing = ctx?.close?.();
     closing?.catch?.(() => {});
   } catch { /* already closed */ }
+}
+
+/** Keep at most two module-owned contexts, avoiding Chrome's context cap even if close() hangs. */
+function getSharedAudioContext(Ctx, slot, options) {
+  let ctx = slot === 'retry' ? sharedRetryContext : sharedPrimaryContext;
+  if (!ctx || ctx.state === 'closed') {
+    ctx = options ? new Ctx(options) : new Ctx();
+    if (slot === 'retry') sharedRetryContext = ctx;
+    else sharedPrimaryContext = ctx;
+  }
+  if (!sharedContextCleanupHooked && typeof globalThis.addEventListener === 'function') {
+    sharedContextCleanupHooked = true;
+    globalThis.addEventListener('pagehide', onSharedContextPageHide);
+  }
+  return ctx;
+}
+
+function onSharedContextPageHide(event) {
+  if (event?.persisted) return;
+  disposeSharedDecodeContexts();
+}
+
+export function disposeSharedDecodeContexts() {
+  const contexts = new Set([sharedPrimaryContext, sharedRetryContext].filter(Boolean));
+  sharedPrimaryContext = null;
+  sharedRetryContext = null;
+  if (sharedContextCleanupHooked && typeof globalThis.removeEventListener === 'function') {
+    globalThis.removeEventListener('pagehide', onSharedContextPageHide);
+  }
+  sharedContextCleanupHooked = false;
+  for (const ctx of contexts) closeOwnedAudioContext(ctx);
 }
 
 /**
@@ -177,6 +211,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
     // unhandled rejections, leaving upload UI stuck mid-decode.
     return await _decodeViaMediaElement(blob, kind, onProgress, audioContext, signal);
   } catch (fallbackErr) {
+    if (isTerminalOperationError(fallbackErr)) throw fallbackErr;
     throw new Error(
       `[VIP][FileIngestion] Could not decode '${blob.name || 'file'}'. ` +
       `(Web Audio: ${primaryErr?.message ?? primaryErr}; ` +
@@ -288,15 +323,13 @@ async function decodeAudioBufferSafe(ctx, arrayBuffer, { timeoutMs, signal } = {
     if (isTerminalOperationError(firstErr)) throw firstErr;
     const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!Ctx || !retryBuffer?.byteLength) throw firstErr;
-    const fresh = new Ctx();
+    const fresh = getSharedAudioContext(Ctx, 'retry');
     try {
       await resumeAudioContext(fresh, signal);
       return await decodeOnce(fresh, retryBuffer);
     } catch (retryError) {
       if (isTerminalOperationError(retryError)) throw retryError;
       throw firstErr;
-    } finally {
-      closeOwnedAudioContext(fresh);
     }
   }
 }
@@ -380,20 +413,14 @@ async function _decodeWithAudioData(blob, onProgress, externalCtx = null, option
   onProgress(50);
 
   // Reuse the caller's context when available — avoids context limit exhaustion.
-  const isOwned = !externalCtx;
-  const ctx = externalCtx || new Ctx();
-  try {
-    onProgress(55);
-    const decoded = await decodeAudioBufferSafe(ctx, arrayBuffer, {
-      timeoutMs: options.decodeTimeoutMs,
-      signal: options.signal,
-    });
-    onProgress(100);
-    return decoded;
-  } finally {
-    // Only close contexts we created — never close the app's main AudioContext.
-    if (isOwned) closeOwnedAudioContext(ctx);
-  }
+  const ctx = externalCtx || getSharedAudioContext(Ctx, 'primary');
+  onProgress(55);
+  const decoded = await decodeAudioBufferSafe(ctx, arrayBuffer, {
+    timeoutMs: options.decodeTimeoutMs,
+    signal: options.signal,
+  });
+  onProgress(100);
+  return decoded;
 }
 
 // ---------------------------------------------------------------------------
@@ -430,7 +457,6 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
 
   // Reuse the app's AudioContext when viable — a closed context cannot create nodes.
   const reusableCtx = externalCtx?.state === 'closed' ? null : externalCtx;
-  const isOwnedCtx = !reusableCtx;
   let ctx = null;
   let source = null;
   let spn = null;
@@ -533,7 +559,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       }, captureTimeoutMs);
     };
 
-    ctx = reusableCtx || new Ctx({ sampleRate: SAMPLE_RATE });
+    ctx = reusableCtx || getSharedAudioContext(Ctx, 'primary', { sampleRate: SAMPLE_RATE });
     await resumeAudioContext(ctx, signal);
     source = ctx.createMediaElementSource(media);
     spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
@@ -631,8 +657,6 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     try { media.pause(); } catch { /* ignore */ }
     try { media.removeAttribute('src'); media.load(); media.remove(); } catch { /* ignore */ }
     URL.revokeObjectURL(url);
-    // Only close contexts we created — never close the app's main AudioContext.
-    if (ctx && isOwnedCtx) closeOwnedAudioContext(ctx);
   }
 }
 

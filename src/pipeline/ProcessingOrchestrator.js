@@ -9,6 +9,7 @@
 import { ingestFile } from './FileIngestion.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { debugLog } from '../core/debug.js';
+import { createMLWorker } from './MLWorkerHost.js';
 import {
   CancellationError,
   isCancellationError,
@@ -33,11 +34,13 @@ function fileCacheKey(file, options = {}) {
 }
 
 export class ProcessingOrchestrator {
-  constructor(options) {
-    if (!options.mlWorker) {
+  constructor(options = {}) {
+    if (!options.mlWorker && !options.mlWorkerFactory) {
       throw new TypeError('[VIP][ProcessingOrchestrator] mlWorker is required');
     }
-    this.mlWorker = options.mlWorker;
+    this.mlWorker = options.mlWorker || null;
+    this._workerFactory = options.mlWorkerFactory || createMLWorker;
+    this._ownsWorker = !options.mlWorker;
     this.onProgress = options.onProgress || (() => {});
     this._initialized = false;
     this._initPromise = null;
@@ -46,6 +49,21 @@ export class ProcessingOrchestrator {
     this._activeRequestId = null;
     this._activeSettlement = null;
     this._timings = [];
+  }
+
+  _ensureWorker() {
+    if (this.mlWorker) return this.mlWorker;
+    this.mlWorker = this._workerFactory();
+    this._ownsWorker = true;
+    return this.mlWorker;
+  }
+
+  _recycleWorker(worker = this.mlWorker) {
+    if (!worker || this.mlWorker !== worker) return;
+    try { worker.terminate(); } catch { /* worker already stopped */ }
+    this.mlWorker = null;
+    this._ownsWorker = false;
+    this._initialized = false;
   }
 
   async initialize(signal) {
@@ -57,6 +75,7 @@ export class ProcessingOrchestrator {
       return;
     }
 
+    const worker = this._ensureWorker();
     let resolveInit;
     let rejectInitPromise;
     const initPromise = new Promise((resolve, reject) => {
@@ -72,9 +91,9 @@ export class ProcessingOrchestrator {
     const cleanup = () => {
       clearTimeout(timeout);
       signal?.removeEventListener?.('abort', onAbort);
-      this.mlWorker.removeEventListener('message', handler);
-      this.mlWorker.removeEventListener('error', onWorkerError);
-      this.mlWorker.removeEventListener('messageerror', onMessageError);
+      worker.removeEventListener('message', handler);
+      worker.removeEventListener('error', onWorkerError);
+      worker.removeEventListener('messageerror', onMessageError);
     };
     const settle = (callback) => {
       if (settled) return;
@@ -87,18 +106,21 @@ export class ProcessingOrchestrator {
       }
       callback();
     };
-    const rejectInit = (error) => settle(() => rejectInitPromise(error));
+    const rejectInit = (error, recycle = false) => settle(() => {
+      if (recycle) this._recycleWorker(worker);
+      rejectInitPromise(error);
+    });
     const onAbort = () => rejectInit(new CancellationError('Cancelled during ML init'));
     const onWorkerError = (event) => rejectInit(new Error(
       `[VIP][ProcessingOrchestrator] MLWorker initialization failed: ${event?.message || 'worker error'}`,
-    ));
+    ), true);
     const onMessageError = () => rejectInit(new Error(
       '[VIP][ProcessingOrchestrator] MLWorker initialization message could not be deserialized',
-    ));
+    ), true);
     const handler = (event) => {
       const msg = event?.data;
       if (!msg || typeof msg !== 'object') {
-        rejectInit(new Error('[VIP][ProcessingOrchestrator] Malformed MLWorker initialization message'));
+        rejectInit(new Error('[VIP][ProcessingOrchestrator] Malformed MLWorker initialization message'), true);
         return;
       }
       if (msg.type === 'ready') {
@@ -106,23 +128,23 @@ export class ProcessingOrchestrator {
         debugLog('ProcessingOrchestrator', `MLWorker ready (${msg.backend})`);
         settle(resolveInit);
       } else if (msg.type === 'error') {
-        rejectInit(new Error(msg.message || 'MLWorker init error'));
+        rejectInit(new Error(msg.message || 'MLWorker init error'), true);
       }
     };
 
     this._rejectInit = rejectInit;
     timeout = setTimeout(() => {
-      rejectInit(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'));
+      rejectInit(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'), true);
     }, 30000);
-    this.mlWorker.addEventListener('message', handler);
-    this.mlWorker.addEventListener('error', onWorkerError);
-    this.mlWorker.addEventListener('messageerror', onMessageError);
+    worker.addEventListener('message', handler);
+    worker.addEventListener('error', onWorkerError);
+    worker.addEventListener('messageerror', onMessageError);
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
     try {
-      this.mlWorker.postMessage({ type: 'init', manifest: MANIFEST_ARRAY });
+      worker.postMessage({ type: 'init', manifest: MANIFEST_ARRAY });
     } catch (error) {
-      rejectInit(error);
+      rejectInit(error, true);
     }
 
     await initPromise;
@@ -307,7 +329,7 @@ export class ProcessingOrchestrator {
       let onMessageError = null;
       let timeout = null;
       let stallWatch = null;
-      const worker = this.mlWorker;
+      const worker = this._ensureWorker();
       function cleanup() {
         clearTimeout(timeout);
         clearInterval(stallWatch);
@@ -324,24 +346,28 @@ export class ProcessingOrchestrator {
         cleanup.call(this);
         callback();
       };
+      const failWorker = (error) => settle(() => {
+        this._recycleWorker(worker);
+        reject(error);
+      });
       this._activeRequestId = requestId;
       this._activeSettlement = {
         requestId,
         reject: (error) => settle(() => reject(error)),
       };
       timeout = setTimeout(() => {
-        try { this.mlWorker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
-        settle(() => reject(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout')));
+        try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
+        failWorker(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout'));
       }, 300000);
       stallWatch = setInterval(() => {
         if (Date.now() - lastProgressAt < 45000) return;
-        try { this.mlWorker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
-        settle(() => reject(new Error('[VIP][ProcessingOrchestrator] processing stalled')));
+        try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
+        failWorker(new Error('[VIP][ProcessingOrchestrator] processing stalled'));
       }, 5000);
 
       const onAbort = () => {
         try {
-          this.mlWorker.postMessage({ type: 'cancel', requestId });
+          worker.postMessage({ type: 'cancel', requestId });
         } catch { /* ignore */ }
         settle(() => reject(new CancellationError('Cancelled')));
       };
@@ -378,24 +404,22 @@ export class ProcessingOrchestrator {
       };
 
       onWorkerError = (event) => {
-        this._initialized = false;
-        settle(() => reject(new Error(
+        failWorker(new Error(
           `[VIP][ProcessingOrchestrator] MLWorker failed: ${event?.message || 'worker error'}`,
-        )));
+        ));
       };
       onMessageError = () => {
-        this._initialized = false;
-        settle(() => reject(new Error(
+        failWorker(new Error(
           '[VIP][ProcessingOrchestrator] MLWorker message could not be deserialized',
-        )));
+        ));
       };
 
-      this.mlWorker.addEventListener('message', handler);
-      this.mlWorker.addEventListener('error', onWorkerError);
-      this.mlWorker.addEventListener('messageerror', onMessageError);
+      worker.addEventListener('message', handler);
+      worker.addEventListener('error', onWorkerError);
+      worker.addEventListener('messageerror', onMessageError);
       const transfers = channelData.map((c) => c.buffer);
       try {
-        this.mlWorker.postMessage({
+        worker.postMessage({
           type: 'process',
           requestId,
           modelIds,
@@ -403,7 +427,7 @@ export class ProcessingOrchestrator {
           sampleRate,
         }, transfers);
       } catch (error) {
-        settle(() => reject(error));
+        failWorker(error);
       }
     });
   }
@@ -413,7 +437,7 @@ export class ProcessingOrchestrator {
     if (this._activeRequestId == null) return;
     const requestId = this._activeRequestId;
     try {
-      this.mlWorker.postMessage({ type: 'cancel', requestId });
+      this.mlWorker?.postMessage({ type: 'cancel', requestId });
     } catch { /* ignore */ }
     this._activeSettlement?.reject(new CancellationError(reason));
   }
@@ -440,6 +464,9 @@ export class ProcessingOrchestrator {
     this._initialized = false;
     this._initPromise = null;
     this._initToken = null;
+    if (this._ownsWorker && this.mlWorker) {
+      this._recycleWorker(this.mlWorker);
+    }
   }
 }
 

@@ -22,6 +22,7 @@ export class FullAnalysisHost {
     this._requestId = 0;
     this._useWorker = options.useWorker !== false && typeof Worker !== 'undefined';
     this._enableMlVad = options.enableMlVad !== false;
+    this._buildVadHints = options.buildVadHints || buildVadHints;
     this._activeRequestId = null;
     this._activeSettlement = null;
     this._analysisGeneration = 0;
@@ -60,7 +61,10 @@ export class FullAnalysisHost {
       });
       throwIfAborted(opts.signal);
       if (this._enableMlVad) {
-        const hints = await buildVadHints(mono, sampleRate, extraction);
+        const hints = await this._buildVadHints(mono, sampleRate, extraction, {
+          signal: opts.signal,
+          timeoutMs: opts.vadTimeoutMs,
+        });
         throwIfAborted(opts.signal);
         return {
           ...opts,
@@ -71,7 +75,10 @@ export class FullAnalysisHost {
         };
       }
     } catch (err) {
-      if (err instanceof CancellationError || err?.name === 'CancellationError') throw err;
+      if (err instanceof CancellationError
+        || err?.name === 'CancellationError'
+        || err?.name === 'AbortError'
+        || opts.signal?.aborted) throw err;
       debugLog('FullAnalysisHost', `VAD hints skipped: ${err.message || err}`);
     }
     return opts;
@@ -88,6 +95,9 @@ export class FullAnalysisHost {
     const generation = ++this._analysisGeneration;
     this._cancelWorkerRequest('Superseded by a newer analysis');
     const reportProgress = typeof opts.onProgress === 'function' ? opts.onProgress : this.onProgress;
+    const reportProgressSafely = (percent, stage) => {
+      try { reportProgress(percent, stage); } catch { /* UI callbacks must not stop analysis */ }
+    };
     throwIfAborted(signal);
     const enriched = await this._withVadHints(channels, sampleRate, opts);
     throwIfAborted(signal);
@@ -97,14 +107,14 @@ export class FullAnalysisHost {
 
     const worker = this._ensureWorker();
     if (!worker) {
-      reportProgress(20, 'features');
+      reportProgressSafely(20, 'features');
       throwIfAborted(signal);
       const analysis = analyzeAudio(channels, sampleRate, enriched);
       throwIfAborted(signal);
       if (generation !== this._analysisGeneration) {
         throw new CancellationError('Superseded by a newer analysis');
       }
-      reportProgress(100, 'complete');
+      reportProgressSafely(100, 'complete');
       return analysis;
     }
 
@@ -112,7 +122,11 @@ export class FullAnalysisHost {
     this._activeRequestId = requestId;
     return new Promise((resolve, reject) => {
       const timeoutMs = enriched.timeoutMs ?? 180000;
-      const stallMs = enriched.stallMs ?? 45000;
+      const stallMs = enriched.expectHeartbeats === true
+        && Number.isFinite(enriched.stallMs)
+        && enriched.stallMs > 0
+        ? enriched.stallMs
+        : null;
       let lastActivity = Date.now();
       let settled = false;
       const hardDeadline = Date.now() + timeoutMs;
@@ -176,12 +190,12 @@ export class FullAnalysisHost {
           onAbort();
           return;
         }
-        if (now - lastActivity > stallMs) {
-          try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
-          failWorker(new Error('Full analysis stalled (no worker heartbeat) — retry Analyze'));
-        } else if (now > hardDeadline) {
+        if (now > hardDeadline) {
           try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
           failWorker(new Error('Full analysis timed out'));
+        } else if (stallMs && now - lastActivity > stallMs) {
+          try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
+          failWorker(new Error('Full analysis stalled (no worker heartbeat) — retry Analyze'));
         }
       }, 2000);
 
@@ -219,7 +233,7 @@ export class FullAnalysisHost {
           return copy;
         });
 
-        reportProgress(15, 'dispatch');
+        reportProgressSafely(15, 'dispatch');
         worker.postMessage(
           {
             type: 'analyze',

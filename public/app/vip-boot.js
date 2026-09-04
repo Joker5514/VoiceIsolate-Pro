@@ -203,6 +203,10 @@
     var workletsSettled = false;
     var iv = null;
 
+    function onPillDriverPageHide(event) {
+      if (!event || !event.persisted) stopPillDriver();
+    }
+
     function stopPillDriver() {
       if (iv != null) {
         clearInterval(iv);
@@ -211,7 +215,7 @@
       if (typeof window !== 'undefined') {
         if (window._vipPillDriverIv) window._vipPillDriverIv = null;
         if (window._vipPillDriverCleanup === stopPillDriver) window._vipPillDriverCleanup = null;
-        window.removeEventListener?.('pagehide', stopPillDriver);
+        window.removeEventListener?.('pagehide', onPillDriverPageHide);
       }
     }
 
@@ -325,7 +329,9 @@
       // to cover late ensureCtx — never abandon GATE/DEESS as permanent "loading"
       // after 30s the way the old driver did.
       var mlSettled = providerLive || orchReady || window.VIP_ML_AVAILABLE === false;
-      var ctxSettled = !!(app && app.ctx && app.ctx.state !== 'closed');
+      // A closed context is terminal too; do not poll until MAX_TICKS for a state
+      // that cannot become ready without a new context.
+      var ctxSettled = !!(app && app.ctx && typeof app.ctx.state === 'string');
       if (ticks >= MAX_TICKS || (workletsSettled && mlSettled && ctxSettled && ticks > 40)) {
         stopPillDriver();
       }
@@ -334,7 +340,7 @@
     if (typeof window !== 'undefined') {
       window._vipPillDriverIv = iv;
       window._vipPillDriverCleanup = stopPillDriver;
-      window.addEventListener?.('pagehide', stopPillDriver, { once: true });
+      window.addEventListener?.('pagehide', onPillDriverPageHide);
     }
   }
 

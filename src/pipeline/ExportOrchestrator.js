@@ -139,7 +139,11 @@ export class ExportOrchestrator {
 
         if (type === 'progress') {
           const pending = this._pendingRequests.get(requestId);
-          if (pending && pending.onProgress && Number.isFinite(data.progress)) {
+          if (pending && !Number.isFinite(data.progress)) {
+            failWorker(new Error('[VIP][ExportOrchestrator] Malformed worker progress.'));
+            return;
+          }
+          if (pending && pending.onProgress) {
             try {
               pending.onProgress(Math.max(0, Math.min(1, data.progress)), data.stage);
             } catch (progressError) {
@@ -149,7 +153,7 @@ export class ExportOrchestrator {
           return;
         }
 
-        if (this._pendingRequests.has(requestId)) {
+        if (!this._workerReady || this._pendingRequests.has(requestId)) {
           failWorker(new Error(`[VIP][ExportOrchestrator] Unknown worker message type: ${String(type)}.`));
         }
       };

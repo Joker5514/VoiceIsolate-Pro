@@ -64,6 +64,10 @@ import {
   buildAriaValueText,
 } from '/src/presentation/DspSlider.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
+import {
+  runBounded as runBoundedOperation,
+  resumeAudioContext,
+} from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
 import {
   createYieldBudget,
@@ -1241,6 +1245,9 @@ class VoiceIsolatePro {
    * @param {{ force?: boolean }} [opts]
    */
   updatePipelineProgress(stageIndex, detail, pct, opts = {}) {
+    const pipelineJobId = this._activePipelineJobId || null;
+    const activeJobId = globalThis.__VIP_JOBS__?.getCurrentJobId?.() || null;
+    if (pipelineJobId && activeJobId !== pipelineJobId) return false;
     const fill = this.dom.pipeFill || $('pipeFill');
     const bar = this.dom.pipeBar || $('pipeBar');
     const detailEl = this.dom.pipeDetail || $('pipeDetail');
@@ -1269,9 +1276,10 @@ class VoiceIsolatePro {
     const stageFromPct = Math.max(0, Math.min(32, Math.round((p / 100) * 32)));
     const stage = Number.isFinite(stageIndex) && stageIndex > 0 ? stageIndex : stageFromPct;
     if (typeof this.updateProcessingOverlay === 'function') {
-      this.updateProcessingOverlay(detail || '', p, stage);
+      this.updateProcessingOverlay(detail || '', p, stage, pipelineJobId);
     }
     HeroExperience.onPipelineProgress(stage, detail, p);
+    return true;
   }
 
   /**
@@ -3698,7 +3706,7 @@ class VoiceIsolatePro {
       if (!nestUnderProcess && jobs?.beginJob) {
         decodeJob = jobs.beginJob('Decoding…', { kind: 'decode' });
         if (typeof this.showProcessingOverlay === 'function') {
-          this.showProcessingOverlay('Decoding…', 0, 'decoding');
+          this.showProcessingOverlay('Decoding…', 0, 'decoding', decodeJob.id);
         }
       }
       const parentSignal = decodeJob?.controller?.signal || jobs?.getCurrentSignal?.() || null;
@@ -3711,29 +3719,40 @@ class VoiceIsolatePro {
       const decodeSignal = decodeController?.signal || parentSignal;
       this._decodeAbortController = decodeController;
       try {
-        await this.ensureCtx();
-        if (this.ctx?.state === 'suspended') await this.ctx.resume();
+        await runBoundedOperation(() => this.ensureCtx(), {
+          timeoutMs: 10000,
+          timeoutMessage: 'Audio context initialization timed out',
+          timeoutCode: 'AUDIO_CONTEXT_INIT_TIMEOUT',
+          signal: decodeSignal,
+        });
+        await resumeAudioContext(this.ctx, decodeSignal);
         if (fileSeq !== this._fileSeq) {
           if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
           return null;
         }
 
         stageStart('decode');
-        const decoded = await decodeBlobToAudioBuffer(file, {
-          audioContext: this.ctx,
-          signal: decodeSignal,
-          onProgress: (pct) => {
-            if (fileSeq !== this._fileSeq) return;
-            const p = Math.round(pct);
-            const label = pct < 50 ? 'Reading file…' : pct < 100 ? 'Decoding audio…' : 'Decode complete';
-            this._showFileLoading(`${label} (${p}%)`);
-            if (decodeJob && jobs?.updateJob) jobs.updateJob(decodeJob.id, label, p);
-            if (decodeJob && typeof this.updateProcessingOverlay === 'function') {
-              this.updateProcessingOverlay(label, p, 2);
-            }
-          },
-        });
-        stageEnd('decode');
+        let decoded;
+        try {
+          decoded = await decodeBlobToAudioBuffer(file, {
+            audioContext: this.ctx,
+            signal: decodeSignal,
+            onProgress: (pct) => {
+              if (fileSeq !== this._fileSeq) return;
+              const rawPercent = Math.max(0, Math.min(100, Number(pct) || 0));
+              const displayPercent = Math.round(rawPercent);
+              const jobPercent = Math.min(80, Math.round(rawPercent * 0.8));
+              const label = rawPercent < 50 ? 'Reading file…' : rawPercent < 100 ? 'Decoding audio…' : 'Decode complete';
+              this._showFileLoading(`${label} (${displayPercent}%)`);
+              if (decodeJob && jobs?.updateJob) jobs.updateJob(decodeJob.id, label, jobPercent);
+              if (decodeJob && typeof this.updateProcessingOverlay === 'function') {
+                this.updateProcessingOverlay(label, jobPercent, 2, decodeJob.id);
+              }
+            },
+          });
+        } finally {
+          stageEnd('decode');
+        }
         await yieldToBrowser();
         if (fileSeq !== this._fileSeq) {
           if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
@@ -3742,8 +3761,15 @@ class VoiceIsolatePro {
 
         stageStart('resample');
         if (decodeJob && jobs?.updateJob) jobs.updateJob(decodeJob.id, 'Resampling…', 85);
-        const buffer = await resampleToCanonical(decoded, { signal: decodeSignal });
-        stageEnd('resample');
+        if (decodeJob && typeof this.updateProcessingOverlay === 'function') {
+          this.updateProcessingOverlay('Resampling…', 85, 3, decodeJob.id);
+        }
+        let buffer;
+        try {
+          buffer = await resampleToCanonical(decoded, { signal: decodeSignal });
+        } finally {
+          stageEnd('resample');
+        }
         await yieldToBrowser();
 
         if (!buffer || !buffer.length) {
@@ -3776,6 +3802,10 @@ class VoiceIsolatePro {
           });
         }
         this.onAudioLoaded(file.name, fileSeq);
+        if (decodeJob && jobs?.updateJob) jobs.updateJob(decodeJob.id, 'Audio ready', 100);
+        if (decodeJob && typeof this.updateProcessingOverlay === 'function') {
+          this.updateProcessingOverlay('Audio ready', 100, 4, decodeJob.id);
+        }
         if (decodeJob) jobs.endJob(decodeJob.id, 'completed');
         return buffer;
       } catch (decodeErr) {
@@ -3818,7 +3848,7 @@ class VoiceIsolatePro {
         const decodeStillOwnsUi = !activeJobId || activeJobId === decodeJob?.id;
         if (decodeJob && decodeStillOwnsUi && !this.isProcessing
           && typeof this.hideProcessingOverlay === 'function') {
-          try { this.hideProcessingOverlay(); } catch { /* ignore */ }
+          try { this.hideProcessingOverlay(decodeJob.id); } catch { /* ignore */ }
         }
       }
     })();
@@ -3940,7 +3970,7 @@ class VoiceIsolatePro {
     const job = jobs?.beginJob?.('Export processed', { kind: 'export' }) || null;
     const signal = job?.controller?.signal || jobs?.getCurrentSignal?.() || null;
     if (typeof this.showProcessingOverlay === 'function') {
-      this.showProcessingOverlay('Exporting…', 0, 'exporting');
+      this.showProcessingOverlay('Exporting…', 0, 'exporting', job?.id || null);
     }
     try {
       await this.ensureCtx();
@@ -3971,7 +4001,7 @@ class VoiceIsolatePro {
               const p = Math.round(pct);
               if (job && jobs?.updateJob) jobs.updateJob(job.id, 'Exporting video…', p);
               if (typeof this.updateProcessingOverlay === 'function') {
-                this.updateProcessingOverlay(`Exporting video… ${p}%`, p, 28);
+                this.updateProcessingOverlay(`Exporting video… ${p}%`, p, 28, job?.id || null);
               }
               this.updatePipelineProgress?.(p, `Exporting video… ${p}%`, 1);
             },
@@ -4012,7 +4042,7 @@ class VoiceIsolatePro {
         buf = sliceAudioBuffer(this.ctx, fullBuf, cropIn, cropOut);
       }
       if (typeof this.updateProcessingOverlay === 'function') {
-        this.updateProcessingOverlay('Writing WAV…', 90, 30);
+        this.updateProcessingOverlay('Writing WAV…', 90, 30, job?.id || null);
       }
       const ditherAmt = buildMlProcessingConfig(
         this.getEffectiveParams(window.VIP_PARAMS || {}),
@@ -4036,7 +4066,7 @@ class VoiceIsolatePro {
       const activeJobId = jobs?.getCurrentJobId?.() || null;
       const exportStillOwnsUi = !activeJobId || activeJobId === job?.id;
       if (exportStillOwnsUi && typeof this.hideProcessingOverlay === 'function') {
-        try { this.hideProcessingOverlay(); } catch { /* ignore */ }
+        try { this.hideProcessingOverlay(job?.id || null); } catch { /* ignore */ }
       }
     }
   }
@@ -4125,6 +4155,10 @@ class VoiceIsolatePro {
   }
 
   _clearFile() {
+    try { this._decodeAbortController?.abort('file cleared'); } catch { /* ignore */ }
+    this._decodeAbortController = null;
+    if (typeof this._fileSeq !== 'number' || !Number.isFinite(this._fileSeq)) this._fileSeq = 0;
+    this._fileSeq += 1;
     clearStemCache();
     this._sourceName = '';
     this._sourceFile = null;

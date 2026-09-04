@@ -147,9 +147,10 @@ export function assertIngestible(blob) {
  * Async validation that also sniffs magic bytes when MIME/extension are useless.
  * Prefer this over assertIngestible for user-facing upload paths.
  * @param {Blob} blob
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [options]
  * @returns {Promise<'audio'|'video'>}
  */
-export async function assertIngestibleAsync(blob) {
+export async function assertIngestibleAsync(blob, options = {}) {
   assertIngestible(blob);
   let kind = inferMediaKind(blob);
   if (kind === 'midi') {
@@ -158,7 +159,7 @@ export async function assertIngestibleAsync(blob) {
     );
   }
   if (!kind) {
-    kind = await resolveMediaKind(blob);
+    kind = await resolveMediaKind(blob, options);
   }
   if (kind !== 'audio' && kind !== 'video') {
     // Still allow empty/generic types into the decoder — many valid files sniff poorly.
@@ -209,6 +210,7 @@ export async function resampleToCanonical(buffer, options = {}) {
     const cleanup = () => {
       clearTimeout(timer);
       signal?.removeEventListener?.('abort', onAbort);
+      try { source.disconnect?.(); } catch { /* already disconnected */ }
     };
     const settle = (callback) => {
       if (settled) return;
@@ -217,8 +219,11 @@ export async function resampleToCanonical(buffer, options = {}) {
       callback();
     };
     const stopRendering = () => {
+      try { source.stop?.(0); } catch { /* source may already be stopped */ }
+      try { source.disconnect?.(); } catch { /* already disconnected */ }
       try {
-        const stopping = offline.suspend?.(0);
+        const suspendAt = Math.max(0, Number(offline.currentTime) || 0) + (1 / SAMPLE_RATE);
+        const stopping = offline.suspend?.(suspendAt);
         stopping?.catch?.(() => {});
       } catch { /* best effort */ }
     };
@@ -300,30 +305,41 @@ export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode, signal = null, audioContext = null } = hooks;
   throwIfCancelled(signal);
   // Magic-byte sniff for Windows octet-stream / extensionless renames.
-  await assertIngestibleAsync(file);
+  await assertIngestibleAsync(file, {
+    signal,
+    timeoutMs: hooks.validationTimeoutMs,
+  });
   throwIfCancelled(signal);
 
   onProgress('decoding', 5);
   stageStart('decode');
-  const decoded = await decodeBlobToAudioBuffer(file, {
-    onProgress: (pct) => onProgress('decoding', pct),
-    audioContext,
-    signal,
-    decodeTimeoutMs: hooks.decodeTimeoutMs,
-    readTimeoutMs: hooks.readTimeoutMs,
-  });
-  throwIfCancelled(signal);
-  stageEnd('decode');
+  let decoded;
+  try {
+    decoded = await decodeBlobToAudioBuffer(file, {
+      onProgress: (pct) => onProgress('decoding', pct),
+      audioContext,
+      signal,
+      decodeTimeoutMs: hooks.decodeTimeoutMs,
+      readTimeoutMs: hooks.readTimeoutMs,
+    });
+    throwIfCancelled(signal);
+  } finally {
+    stageEnd('decode');
+  }
   onProgress('decoding', 100);
 
   onProgress('resampling', 10);
   stageStart('resample');
-  const canonical = await resampleToCanonical(decoded, {
-    signal,
-    timeoutMs: hooks.resampleTimeoutMs,
-  });
-  throwIfCancelled(signal);
-  stageEnd('resample');
+  let canonical;
+  try {
+    canonical = await resampleToCanonical(decoded, {
+      signal,
+      timeoutMs: hooks.resampleTimeoutMs,
+    });
+    throwIfCancelled(signal);
+  } finally {
+    stageEnd('resample');
+  }
   onProgress('resampling', 100);
 
   onProgress('done', 100);

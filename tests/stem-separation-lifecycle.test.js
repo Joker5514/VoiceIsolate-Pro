@@ -52,6 +52,15 @@ describe('StemSeparation worker lifecycle', () => {
     return worker;
   }
 
+  async function waitForPost(worker, type) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const call = worker.postMessage.mock.calls.find(([message]) => message.type === type);
+      if (call) return call;
+      await Promise.resolve();
+    }
+    throw new Error(`Worker never posted ${type}`);
+  }
+
   test('recycles a failed init and permits a clean retry', async () => {
     const first = StemSeparation.default.ensureReady();
     const failedWorker = workers[0];
@@ -70,7 +79,7 @@ describe('StemSeparation worker lifecycle', () => {
     await readyWorker();
     const pending = StemSeparation.warmupModels(['test-model']);
     const rejection = expect(pending).rejects.toThrow('MLWorker reset');
-    await Promise.resolve();
+    await waitForPost(workers.at(-1), 'warmup');
 
     StemSeparation.resetStemSeparation();
 
@@ -97,8 +106,7 @@ describe('StemSeparation worker lifecycle', () => {
       48000,
       { transferOwned: true, sourceName: 'strict-id.wav' },
     );
-    await Promise.resolve();
-    const processCall = worker.postMessage.mock.calls.find(([message]) => message.type === 'process');
+    const processCall = await waitForPost(worker, 'process');
     const requestId = processCall[0].requestId;
 
     worker.dispatch('message', { data: { type: 'stems', clean: ['stale'], noise: ['stale'] } });
@@ -122,8 +130,7 @@ describe('StemSeparation worker lifecycle', () => {
       48000,
       { transferOwned: true, sourceName: 'cancel.wav' },
     );
-    await Promise.resolve();
-    const processCall = worker.postMessage.mock.calls.find(([message]) => message.type === 'process');
+    const processCall = await waitForPost(worker, 'process');
     const requestId = processCall[0].requestId;
 
     expect(StemSeparation.cancelStemSeparation()).toBe(true);
@@ -144,8 +151,7 @@ describe('StemSeparation worker lifecycle', () => {
         onProgress: () => { throw new Error('render callback failed'); },
       },
     );
-    await Promise.resolve();
-    const requestId = worker.postMessage.mock.calls.find(([message]) => message.type === 'process')[0].requestId;
+    const requestId = (await waitForPost(worker, 'process'))[0].requestId;
     worker.dispatch('message', { data: { type: 'progress', requestId, percent: 20 } });
     worker.dispatch('message', {
       data: {
@@ -170,11 +176,26 @@ describe('StemSeparation worker lifecycle', () => {
       48000,
       { transferOwned: true, sourceName: `${type}.wav` },
     );
-    await Promise.resolve();
+    await waitForPost(worker, 'process');
 
     worker.dispatch(type, event);
 
     await expect(pending).rejects.toThrow(expected);
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  test('reset rejects an active process immediately', async () => {
+    const worker = await readyWorker();
+    const pending = StemSeparation.separateStems(
+      [new Float32Array([0.3])],
+      48000,
+      { transferOwned: true, sourceName: 'reset-active.wav' },
+    );
+    await waitForPost(worker, 'process');
+
+    StemSeparation.resetStemSeparation();
+
+    await expect(pending).rejects.toThrow('MLWorker reset');
     expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 

@@ -72,7 +72,7 @@ function loadOverlay(originalRun, vipOverrides = {}) {
 }
 
 describe('processing overlay lifecycle', () => {
-  test('a superseded run cannot clear or hide the newer run', async () => {
+  test('a duplicate pipeline request cannot supersede the active run', async () => {
     const resolvers = [];
     const { vip, overlay } = loadOverlay(jest.fn(() => new Promise((resolve) => {
       resolvers.push(resolve);
@@ -81,18 +81,46 @@ describe('processing overlay lifecycle', () => {
     const first = vip.runPipeline();
     const firstJobId = vip._activeJobId;
     const second = vip.runPipeline();
-    const secondJobId = vip._activeJobId;
-    expect(secondJobId).not.toBe(firstJobId);
+    await expect(second).resolves.toBeUndefined();
+    expect(vip._activeJobId).toBe(firstJobId);
+    expect(resolvers).toHaveLength(1);
+    expect(overlay.show).toHaveBeenCalledTimes(1);
 
-    resolvers[0]('first');
-    await expect(first).resolves.toBe('first');
-    expect(vip._activeJobId).toBe(secondJobId);
-    expect(overlay.hide).not.toHaveBeenCalled();
-
-    resolvers[1]('second');
-    await expect(second).resolves.toBe('second');
+    resolvers[0]('done');
+    await expect(first).resolves.toBe('done');
     expect(vip._activeJobId).toBeNull();
     expect(overlay.hide).toHaveBeenCalledTimes(1);
+  });
+
+  test('stale job progress and hide calls cannot mutate a newer overlay', () => {
+    const { vip, overlay } = loadOverlay(jest.fn().mockResolvedValue(undefined));
+    const first = vip.beginGlobalJob('first');
+    const second = vip.beginGlobalJob('second');
+    const updateCount = overlay.update.mock.calls.length;
+
+    expect(vip.updateProcessingOverlay('stale', 90, 28, first.id)).toBe(false);
+    expect(vip.hideProcessingOverlay(first.id)).toBe(false);
+    expect(overlay.update).toHaveBeenCalledTimes(updateCount);
+    expect(overlay.hide).not.toHaveBeenCalled();
+
+    expect(vip.updateProcessingOverlay('current', 50, 16, second.id)).toBe(true);
+    expect(overlay.update).toHaveBeenLastCalledWith('current', 50, 16);
+  });
+
+  test('a superseded pipeline releases its run guard without hiding the successor', async () => {
+    let finishPipeline;
+    const { vip, overlay } = loadOverlay(jest.fn(() => new Promise((resolve) => {
+      finishPipeline = resolve;
+    })));
+    const pipeline = vip.runPipeline();
+    const successor = vip.beginGlobalJob('analysis', { kind: 'analysis' });
+
+    finishPipeline('cancelled');
+    await expect(pipeline).resolves.toBe('cancelled');
+
+    expect(vip._pipelineRunPending).toBe(false);
+    expect(vip._activeJobId).toBe(successor.id);
+    expect(overlay.hide).not.toHaveBeenCalled();
   });
 
   test('ending a stale global job leaves the current overlay visible', () => {
@@ -133,8 +161,42 @@ describe('processing overlay lifecycle', () => {
   });
 
   test('overlay progress is clamped and monotonic within one show cycle', () => {
-    expect(SOURCE).toMatch(/nextPct[\s\S]*Math\.max\(this\._lastProgress, nextPct\)/);
-    expect(SOURCE).toMatch(/this\._lastProgress = 0;[\s\S]*this\.update/);
+    const { context } = loadOverlay(jest.fn().mockResolvedValue(undefined));
+    const controller = context.__VIP_OVERLAY_TEST__.Overlay;
+    const bar = { style: {} };
+    const pct = { textContent: '' };
+    const element = {
+      classList: { add: jest.fn(), remove: jest.fn() },
+      setAttribute: jest.fn(),
+      querySelector: jest.fn(() => null),
+    };
+    context.document.activeElement = null;
+    context.document.body = { classList: { add: jest.fn(), remove: jest.fn() } };
+    controller._el = () => element;
+    controller._bar = () => bar;
+    controller._pct = () => pct;
+    controller._stageName = () => null;
+    controller._stageIndex = () => null;
+    controller._focus = () => null;
+    controller._mode = () => null;
+    controller._stageChip = () => null;
+    controller._phasePills = () => [];
+    controller._setBusyControls = jest.fn();
+    controller._initCanvases = jest.fn();
+    controller._startMessages = jest.fn();
+    controller._wireCancel = jest.fn();
+    controller._refreshOrtPill = jest.fn();
+    controller._tickElapsed = jest.fn();
+    controller._announce = jest.fn();
+
+    controller.show('first', 40);
+    controller.update('too low', 20, 2);
+    expect(bar.style.width).toBe('40%');
+    controller.update('too high', 140, 3);
+    expect(bar.style.width).toBe('100%');
+    controller.show('new cycle', 5);
+    expect(bar.style.width).toBe('5%');
+    controller.hide({ restoreFocus: false });
   });
 
   test('preserves the app worker-cancellation implementation', () => {

@@ -4,11 +4,15 @@
 'use strict';
 
 let decodeBlobToAudioBuffer;
+let disposeSharedDecodeContexts;
 let resampleToCanonical;
+let ingestFile;
+let getTimings;
 
 beforeAll(async () => {
-  ({ decodeBlobToAudioBuffer } = await import('../src/pipeline/media-decode.js'));
-  ({ resampleToCanonical } = await import('../src/pipeline/FileIngestion.js'));
+  ({ decodeBlobToAudioBuffer, disposeSharedDecodeContexts } = await import('../src/pipeline/media-decode.js'));
+  ({ resampleToCanonical, ingestFile } = await import('../src/pipeline/FileIngestion.js'));
+  ({ getTimings } = await import('../src/pipeline/PipelineTiming.js'));
 });
 
 describe('media decode lifecycle', () => {
@@ -30,6 +34,7 @@ describe('media decode lifecycle', () => {
   }
 
   afterEach(() => {
+    disposeSharedDecodeContexts();
     jest.useRealTimers();
     for (const [name, descriptor] of originals) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);
@@ -38,7 +43,7 @@ describe('media decode lifecycle', () => {
     originals.clear();
   });
 
-  test('a decodeAudioData hang times out, closes its owned context, and leaves no timer', async () => {
+  test('a decodeAudioData hang times out and explicit disposal closes the shared context', async () => {
     jest.useFakeTimers();
     const context = {
       state: 'running',
@@ -60,6 +65,8 @@ describe('media decode lifecycle', () => {
     await jest.advanceTimersByTimeAsync(100);
 
     await rejection;
+    expect(context.close).not.toHaveBeenCalled();
+    disposeSharedDecodeContexts();
     expect(context.close).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
   });
@@ -103,6 +110,8 @@ describe('media decode lifecycle', () => {
     controller.abort('user');
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(context.close).not.toHaveBeenCalled();
+    disposeSharedDecodeContexts();
     expect(context.close).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
   });
@@ -122,6 +131,8 @@ describe('media decode lifecycle', () => {
     await expect(decodeBlobToAudioBuffer(namedBlob('callback.wav'), {
       decodeTimeoutMs: 1000,
     })).resolves.toBe(decoded);
+    expect(context.close).not.toHaveBeenCalled();
+    disposeSharedDecodeContexts();
     expect(context.close).toHaveBeenCalledTimes(1);
   });
 
@@ -149,6 +160,7 @@ describe('media decode lifecycle', () => {
 
     await expect(decodeBlobToAudioBuffer(namedBlob('detached.wav'))).resolves.toBe(decoded);
     expect(retry.decodeAudioData).toHaveBeenCalledTimes(1);
+    disposeSharedDecodeContexts();
     expect(first.close).toHaveBeenCalledTimes(1);
     expect(retry.close).toHaveBeenCalledTimes(1);
   });
@@ -163,7 +175,79 @@ describe('media decode lifecycle', () => {
     replaceGlobal('AudioContext', jest.fn(() => context));
 
     await expect(decodeBlobToAudioBuffer(namedBlob('close-hang.wav'))).resolves.toBe(decoded);
+    expect(context.close).not.toHaveBeenCalled();
+    disposeSharedDecodeContexts();
     expect(context.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('reuses one owned primary context across repeated decodes', async () => {
+    const decoded = { duration: 1, sampleRate: 48000, length: 48000 };
+    const context = {
+      state: 'running',
+      decodeAudioData: jest.fn((buffer, onSuccess) => onSuccess(decoded)),
+      close: jest.fn(() => new Promise(() => {})),
+    };
+    const AudioContext = jest.fn(() => context);
+    replaceGlobal('AudioContext', AudioContext);
+
+    await decodeBlobToAudioBuffer(namedBlob('one.wav'));
+    await decodeBlobToAudioBuffer(namedBlob('two.wav'));
+
+    expect(AudioContext).toHaveBeenCalledTimes(1);
+    expect(context.decodeAudioData).toHaveBeenCalledTimes(2);
+    disposeSharedDecodeContexts();
+    expect(context.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('preserves AbortError from the media-element fallback', async () => {
+    const controller = new AbortController();
+    const media = {
+      readyState: 1,
+      duration: 1,
+      playbackRate: 1,
+      defaultPlaybackRate: 1,
+      style: {},
+      setAttribute: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      removeAttribute: jest.fn(),
+      load: jest.fn(),
+      remove: jest.fn(),
+      pause: jest.fn(),
+      play: jest.fn(() => {
+        controller.abort('user');
+        return new Promise(() => {});
+      }),
+    };
+    const node = { connect: jest.fn(), disconnect: jest.fn(), onaudioprocess: null };
+    const primary = {
+      state: 'running',
+      destination: {},
+      decodeAudioData: jest.fn((buffer, onSuccess, onError) => onError(new Error('primary failed'))),
+      createMediaElementSource: jest.fn(() => node),
+      createScriptProcessor: jest.fn(() => node),
+      createGain: jest.fn(() => ({ ...node, gain: { value: 1 } })),
+    };
+    const retry = {
+      state: 'running',
+      decodeAudioData: jest.fn((buffer, onSuccess, onError) => onError(new Error('retry failed'))),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    replaceGlobal('AudioContext', jest.fn(() => retry));
+    replaceGlobal('HTMLMediaElement', { HAVE_METADATA: 1 });
+    replaceGlobal('document', {
+      body: { appendChild: jest.fn() },
+      createElement: jest.fn(() => media),
+    });
+    replaceGlobal('URL', {
+      createObjectURL: jest.fn(() => 'blob:test'),
+      revokeObjectURL: jest.fn(),
+    });
+
+    await expect(decodeBlobToAudioBuffer(namedBlob('fallback.wav'), {
+      audioContext: primary,
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   test('a hung OfflineAudioContext render times out and attempts to stop', async () => {
@@ -173,10 +257,18 @@ describe('media decode lifecycle', () => {
       constructor() {
         offline = this;
         this.destination = {};
+        this.currentTime = 0;
         this.suspend = jest.fn().mockResolvedValue(undefined);
       }
       createBufferSource() {
-        return { connect: jest.fn(), start: jest.fn(), buffer: null };
+        this.source = {
+          connect: jest.fn(),
+          disconnect: jest.fn(),
+          start: jest.fn(),
+          stop: jest.fn(),
+          buffer: null,
+        };
+        return this.source;
       }
       startRendering() { return new Promise(() => {}); }
     }
@@ -188,7 +280,25 @@ describe('media decode lifecycle', () => {
     await jest.advanceTimersByTimeAsync(100);
 
     await rejection;
-    expect(offline.suspend).toHaveBeenCalledWith(0);
+    expect(offline.source.stop).toHaveBeenCalledWith(0);
+    expect(offline.source.disconnect).toHaveBeenCalled();
+    expect(offline.suspend.mock.calls[0][0]).toBeGreaterThan(0);
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test('finalizes decode timing when ingestion fails', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+    const audioContext = {
+      state: 'running',
+      decodeAudioData: jest.fn(() => Promise.reject(new Error('invalid audio'))),
+    };
+    const pending = ingestFile(namedBlob('broken.wav'), { audioContext });
+    await expect(pending).rejects.toThrow('Could not decode');
+    const finishedAt = getTimings().decode;
+
+    jest.setSystemTime(5000);
+
+    expect(getTimings().decode).toBe(finishedAt);
   });
 });

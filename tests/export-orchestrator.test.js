@@ -375,6 +375,27 @@ describe('ExportOrchestrator', () => {
   });
 
   describe('worker failures', () => {
+    it('rejects an unknown initialization message immediately', async () => {
+      global.Worker.mockImplementationOnce(() => {
+        mockWorker = {
+          postMessage: jest.fn(),
+          terminate: jest.fn(),
+          onmessage: null,
+          onerror: null,
+          onmessageerror: null,
+        };
+        return mockWorker;
+      });
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await Promise.resolve();
+
+      mockWorker.onmessage({ data: { type: 'mystery-init-message' } });
+
+      await expect(exportPromise).rejects.toThrow('Unknown worker message type');
+      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects an explicit worker initialization error without waiting for timeout', async () => {
       global.Worker.mockImplementationOnce(() => {
         mockWorker = {
@@ -510,6 +531,21 @@ describe('ExportOrchestrator', () => {
       });
 
       await expect(exportPromise).rejects.toThrow('progress UI failed');
+      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+      expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
+    });
+
+    it('rejects malformed non-finite progress and recycles the worker', async () => {
+      const orchestrator = new ExportOrchestrator(mockMixer);
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const requestId = mockWorker.postMessage.mock.calls[0][0].requestId;
+
+      mockWorker.onmessage({
+        data: { type: 'progress', requestId, progress: Number.NaN, stage: 'encoding' },
+      });
+
+      await expect(exportPromise).rejects.toThrow('Malformed worker progress');
       expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
       expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
     });

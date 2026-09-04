@@ -600,7 +600,7 @@ export function installAnalysisWorkspace(app) {
         || Boolean(activeJobId && job && activeJobId !== job.id);
     };
     if (typeof app.showProcessingOverlay === 'function') {
-      app.showProcessingOverlay('Analyzing…', 0, 'analyzing');
+      app.showProcessingOverlay('Analyzing…', 0, 'analyzing', job?.id || null);
     }
     try {
       // Restore durable analysis when available (same library file after reload).
@@ -641,7 +641,7 @@ export function installAnalysisWorkspace(app) {
         if (signal?.aborted || superseded()) return;
         if (job && jobs?.updateJob) jobs.updateJob(job.id, stage || 'analysis', pct);
         if (typeof app.updateProcessingOverlay === 'function') {
-          app.updateProcessingOverlay(stage || 'Analyzing…', pct, 8);
+          app.updateProcessingOverlay(stage || 'Analyzing…', pct, 8, job?.id || null);
         }
         if (els.progressLabel) els.progressLabel.textContent = `${stage || 'analysis'} · ${Math.round(pct || 0)}%`;
       };
@@ -712,11 +712,19 @@ export function installAnalysisWorkspace(app) {
       if (els.root) els.root.dataset.state = cancelledErr ? 'idle' : 'error';
       return null;
     } finally {
-      if (!superseded()) {
+      const activeJob = jobs?.getCurrentJob?.() || null;
+      const newerAnalysisOwnsWorkspace = Boolean(
+        activeJob
+        && activeJob.id !== job?.id
+        && activeJob.status === 'running'
+        && activeJob.meta?.kind === 'analysis'
+      );
+      if (!newerAnalysisOwnsWorkspace) {
         setBusy(false);
         if (els.progress) els.progress.hidden = true;
+        if (els.root?.dataset.state === 'running') els.root.dataset.state = 'idle';
         if (typeof app.hideProcessingOverlay === 'function') {
-          try { app.hideProcessingOverlay(); } catch { /* ignore */ }
+          try { app.hideProcessingOverlay(job?.id || null); } catch { /* ignore */ }
         }
       }
     }

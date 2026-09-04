@@ -29,15 +29,24 @@ describe('FullAnalysisHost worker lifecycle', () => {
     };
   }
 
+  async function waitForAnalyzePost() {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const worker = workers.at(-1);
+      const call = worker?.postMessage.mock.calls.find(([message]) => message.type === 'analyze');
+      if (call) return { worker, call };
+      await Promise.resolve();
+    }
+    throw new Error('Analysis worker was never dispatched');
+  }
+
   async function beginAnalysis(host, opts = {}) {
     const pending = host.analyze(
       [new Float32Array([0.1, -0.1])],
       48000,
       { skipVad: true, ...opts },
     );
-    await Promise.resolve();
-    await Promise.resolve();
-    return { pending };
+    const dispatched = await waitForAnalyzePost();
+    return { pending, ...dispatched };
   }
 
   beforeEach(() => {
@@ -129,7 +138,10 @@ describe('FullAnalysisHost worker lifecycle', () => {
 
     const first = host.analyze([new Float32Array([0.1])], 48000);
     const firstRejection = expect(first).rejects.toThrow('Superseded by a newer analysis');
-    await Promise.resolve();
+    for (let attempt = 0; attempt < 50 && typeof releaseFirst !== 'function'; attempt++) {
+      await Promise.resolve();
+    }
+    expect(typeof releaseFirst).toBe('function');
 
     const secondProgress = jest.fn();
     const second = host.analyze(
@@ -137,10 +149,8 @@ describe('FullAnalysisHost worker lifecycle', () => {
       48000,
       { onProgress: secondProgress },
     );
-    await Promise.resolve();
-    await Promise.resolve();
-    const worker = workers[0];
-    const requestId = worker.postMessage.mock.calls[0][0].requestId;
+    const { worker, call } = await waitForAnalyzePost();
+    const requestId = call[0].requestId;
     worker.dispatch('message', { data: { type: 'progress', requestId, percent: 40 } });
     worker.dispatch('message', { data: { type: 'result', requestId, analysis: { newest: true } } });
 
@@ -162,24 +172,75 @@ describe('FullAnalysisHost worker lifecycle', () => {
       48000,
       { skipVad: true },
     );
-    await Promise.resolve();
-    await Promise.resolve();
-
     await expect(pendingPromise).rejects.toThrow('analysis clone failed');
     expect(workers[0].terminate).toHaveBeenCalledTimes(1);
   });
 
-  test('stops a silent worker at the stall deadline', async () => {
+  test('does not false-kill a synchronous worker at the default stall deadline', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(0);
     const host = makeHost();
     const { pending } = await beginAnalysis(host, { stallMs: 1000, timeoutMs: 10000 });
-    const rejection = expect(pending).rejects.toThrow('stalled');
+
+    jest.setSystemTime(2001);
+    await jest.advanceTimersByTimeAsync(2000);
+
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+    const requestId = workers[0].postMessage.mock.calls[0][0].requestId;
+    workers[0].dispatch('message', {
+      data: { type: 'result', requestId, analysis: { completed: true } },
+    });
+    await expect(pending).resolves.toEqual({ completed: true });
+  });
+
+  test('terminates a silent worker at the hard deadline', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+    const host = makeHost();
+    const { pending } = await beginAnalysis(host, { timeoutMs: 1000 });
+    const rejection = expect(pending).rejects.toThrow('timed out');
 
     jest.setSystemTime(2001);
     await jest.advanceTimersByTimeAsync(2000);
 
     await rejection;
     expect(workers[0].terminate).toHaveBeenCalledTimes(1);
+  });
+
+  test('a throwing dispatch progress observer cannot fail analysis', async () => {
+    const host = makeHost();
+    const { pending, worker, call } = await beginAnalysis(host, {
+      onProgress: () => { throw new Error('render failed'); },
+    });
+    const requestId = call[0].requestId;
+
+    worker.dispatch('message', {
+      data: { type: 'result', requestId, analysis: { ok: true } },
+    });
+
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
+  test('passes cancellation into VAD preparation', async () => {
+    const controller = new AbortController();
+    const buildVadHints = jest.fn((mono, sampleRate, extraction, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        reject(Object.assign(new Error('VAD cancelled'), { name: 'AbortError' }));
+      }, { once: true });
+    }));
+    const host = makeHost({ enableMlVad: true, buildVadHints });
+    const pending = host.analyze(
+      [new Float32Array([0.1, -0.1])],
+      48000,
+      { signal: controller.signal },
+    );
+    for (let attempt = 0; attempt < 50 && !buildVadHints.mock.calls.length; attempt++) {
+      await Promise.resolve();
+    }
+
+    controller.abort('user');
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(buildVadHints.mock.calls[0][3].signal).toBe(controller.signal);
   });
 });

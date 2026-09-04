@@ -112,17 +112,30 @@ describe('ProcessingOrchestrator', () => {
 
     test('Rejects on timeout', async () => {
       jest.useFakeTimers();
-      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
-      const pending = orchestrator.initialize();
-      const rejection = expect(pending).rejects.toThrow('timeout');
+      try {
+        const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+        const pending = orchestrator.initialize();
+        const rejection = expect(pending).rejects.toThrow('timeout');
 
-      await jest.advanceTimersByTimeAsync(30000);
-      await rejection;
-      jest.useRealTimers();
+        await jest.advanceTimersByTimeAsync(30000);
+        await rejection;
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     test('Rejects immediately on worker error and permits initialization retry', async () => {
-      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+      const replacement = {
+        postMessage: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        terminate: jest.fn(),
+      };
+      const factory = jest.fn(() => replacement);
+      const orchestrator = new ProcessingOrchestrator({
+        mlWorker: mockMLWorker,
+        mlWorkerFactory: factory,
+      });
       const first = orchestrator.initialize();
       const errorHandler = mockMLWorker.addEventListener.mock.calls
         .find(([type]) => type === 'error')[1];
@@ -130,13 +143,15 @@ describe('ProcessingOrchestrator', () => {
 
       await expect(first).rejects.toThrow('worker crashed');
       expect(orchestrator._initPromise).toBeNull();
+      expect(mockMLWorker.terminate).toHaveBeenCalledTimes(1);
 
       const retry = orchestrator.initialize();
-      const messageHandlers = mockMLWorker.addEventListener.mock.calls
+      const messageHandlers = replacement.addEventListener.mock.calls
         .filter(([type]) => type === 'message');
       messageHandlers.at(-1)[1]({ data: { type: 'ready', backend: 'wasm' } });
       await expect(retry).resolves.toBeUndefined();
-      expect(mockMLWorker.postMessage).toHaveBeenCalledTimes(2);
+      expect(factory).toHaveBeenCalledTimes(1);
+      expect(replacement.postMessage).toHaveBeenCalledTimes(1);
     });
 
     test('Cleans up when posting the init message throws', async () => {
@@ -279,6 +294,8 @@ describe('ProcessingOrchestrator', () => {
 
       await expect(pending).rejects.toThrow(message);
       expect(orchestrator._activeRequestId).toBeNull();
+      expect(mockMLWorker.terminate).toHaveBeenCalledTimes(1);
+      expect(orchestrator.mlWorker).toBeNull();
     });
 
     test('cleans up when posting a process message throws', async () => {

@@ -93,6 +93,9 @@ describe('service-worker lifecycle', () => {
     const bootSource = fs.readFileSync(path.join(ROOT, 'public', 'app', 'vip-boot.js'), 'utf8');
     expect(bootSource).toMatch(/_vipPillDriverCleanup/);
     expect(bootSource).toMatch(/pagehide[\s\S]*stopPillDriver/);
+    expect(bootSource).toMatch(/if \(!event \|\| !event\.persisted\) stopPillDriver\(\)/);
+    expect(bootSource).not.toMatch(/addEventListener\?\.\('pagehide',[\s\S]{0,100}\{ once: true \}/);
+    expect(bootSource).toContain("typeof app.ctx.state === 'string'");
     expect(bootSource).toMatch(/MAX_DRIVER_MS\s*=\s*10\s*\*\s*60\s*\*\s*1000/);
   });
 

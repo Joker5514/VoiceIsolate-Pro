@@ -16,6 +16,7 @@ let _ready = null;
 let _seq = 0;
 let _activeRequestId = null;
 let _activeCancel = null;
+let _activeReject = null;
 /** @type {Set<string>} */
 const _warmedModels = new Set();
 /** @type {Array<{ resolve: Function, reject: Function, timer: *, ids: string[] }>} */
@@ -44,6 +45,12 @@ function rejectWarmupWaiters(error) {
 
 function recycleWorker(worker, error) {
   if (worker && _worker !== worker) return;
+  const resetError = error || new Error('[VIP][StemSeparation] MLWorker reset');
+  const rejectActive = _activeReject;
+  _activeReject = null;
+  if (typeof rejectActive === 'function') {
+    try { rejectActive(resetError); } catch { /* active request already settled */ }
+  }
   if (_worker) {
     try { _worker.terminate(); } catch { /* worker already stopped */ }
     _worker = null;
@@ -53,7 +60,7 @@ function recycleWorker(worker, error) {
   _activeCancel = null;
   _warmupHooked = false;
   _warmedModels.clear();
-  rejectWarmupWaiters(error || new Error('[VIP][StemSeparation] MLWorker reset'));
+  rejectWarmupWaiters(resetError);
 }
 
 function getWorker() {
@@ -81,7 +88,7 @@ function hookWarmupListener(w) {
     recycleWorker(w, new Error(ev?.message || '[VIP][StemSeparation] MLWorker error'));
   });
   w.addEventListener('messageerror', () => {
-    recycleWorker(w, new Error('[VIP][StemSeparation] worker message could not be deserialized'));
+    recycleWorker(w, new Error('[VIP][StemSeparation] worker message deserialize failed'));
   });
 }
 
@@ -352,9 +359,11 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       if (_activeRequestId === requestId) {
         _activeRequestId = null;
         _activeCancel = null;
+        _activeReject = null;
       }
     };
     _activeCancel = onAbort;
+    _activeReject = (error) => finish(() => reject(error));
     w.addEventListener('message', onMsg);
     w.addEventListener('error', onErr);
     w.addEventListener('messageerror', onMessageError);
