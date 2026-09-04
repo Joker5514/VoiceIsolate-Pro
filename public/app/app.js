@@ -95,7 +95,6 @@ import {
   getTrackState,
   scheduleSaveTrackState,
   flushTrackStateSaves,
-  saveTrackState,
 } from '/src/core/TrackState.js';
 import {
   mountFileLibraryUI,
@@ -823,6 +822,9 @@ class VoiceIsolatePro {
     this._stemProcessingRevision = null;
     /** @type {ReturnType<typeof setTimeout>|null} */
     this._sessionPersistTimer = null;
+    /** Lazily loaded shared stem module; retained so cancellation never starts a late import. */
+    this._stemSeparationModule = null;
+    this._stemSeparationModulePromise = null;
     /** @type {string|null} object URL currently assigned to #videoPlayer */
     this._videoObjectUrl = null;
 
@@ -1289,8 +1291,9 @@ class VoiceIsolatePro {
       const sig = jobs?.getCurrentSignal?.();
       if (sig) return sig;
     } catch { /* ignore */ }
+    const app = this;
     return {
-      get aborted() { return !!this.abortFlag; },
+      get aborted() { return !!app.abortFlag; },
     };
   }
 
@@ -3169,12 +3172,29 @@ class VoiceIsolatePro {
     }
   }
 
+  /** Lazily load the shared worker host once and retain it for synchronous cancellation. */
+  _loadStemSeparationModule() {
+    if (this._stemSeparationModule) return Promise.resolve(this._stemSeparationModule);
+    if (!this._stemSeparationModulePromise) {
+      this._stemSeparationModulePromise = import('/src/pipeline/StemSeparation.js')
+        .then((module) => {
+          this._stemSeparationModule = module;
+          return module;
+        })
+        .catch((error) => {
+          this._stemSeparationModulePromise = null;
+          throw error;
+        });
+    }
+    return this._stemSeparationModulePromise;
+  }
+
   /** Prefetch + compile ONNX sessions off the hot path (deduped). */
   async _warmupMLModels(modelIds = DEFAULT_ML_CHAIN) {
     if (this._mlWarmupDone) return;
     if (this._mlWarmupPromise) return this._mlWarmupPromise;
     this._mlWarmupPromise = (async () => {
-      const { warmupModels } = await import('/src/pipeline/StemSeparation.js');
+      const { warmupModels } = await this._loadStemSeparationModule();
       await warmupModels(modelIds);
       this._mlWarmupDone = true;
     })().catch((err) => {
@@ -3189,33 +3209,43 @@ class VoiceIsolatePro {
    * Crash-safe save: critical params → IndexedDB TrackState; light UI chrome → localStorage.
    * Debounced. Never stores binary audio.
    */
-  _scheduleSessionPersist() {
+  _persistSessionNow() {
     if (this._sessionPersistTimer) clearTimeout(this._sessionPersistTimer);
-    this._sessionPersistTimer = setTimeout(() => {
-      this._sessionPersistTimer = null;
-      try {
-        const presetName = this.dom?.presetSel?.value || this._activePresetName || null;
-        const params = this.params || window.VIP_PARAMS || {};
-        // Light fallback for non-critical UI continuity only
+    this._sessionPersistTimer = null;
+    const canPersistSession = typeof persistAppSession === 'function';
+    const canSaveTrackState = typeof scheduleSaveTrackState === 'function';
+    if (!canPersistSession && !canSaveTrackState) return;
+    try {
+      const presetName = this.dom?.presetSel?.value || this._activePresetName || null;
+      const params = this.params || window.VIP_PARAMS || {};
+      // Light fallback for non-critical UI continuity only
+      if (canPersistSession) {
         persistAppSession(params, { presetName, mode: 'engineer' });
-        // Canonical crash-safe state
-        if (this._libraryFileId) {
-          scheduleSaveTrackState(this._libraryFileId, {
-            params,
-            presetName,
-            status: this.outputBuffer || this.procBuffer
-              ? 'processed'
-              : (this.origBuffer || this.inputBuffer ? 'decoded' : 'imported'),
-            meta: {
-              abMode: this.abMode,
-              sourceName: this._sourceName || null,
-            },
-          });
-        }
-      } catch (err) {
-        structuredLog('warn', '[VIP] session persist failed', { err: err?.message });
       }
-    }, 400);
+      // Canonical crash-safe state
+      if (canSaveTrackState && this._libraryFileId) {
+        scheduleSaveTrackState(this._libraryFileId, {
+          params,
+          presetName,
+          status: this.outputBuffer || this.procBuffer
+            ? 'processed'
+            : (this.origBuffer || this.inputBuffer ? 'decoded' : 'imported'),
+          meta: {
+            abMode: this.abMode,
+            sourceName: this._sourceName || null,
+          },
+        });
+      }
+    } catch (err) {
+      structuredLog('warn', '[VIP] session persist failed', { err: err?.message });
+    }
+  }
+
+  _scheduleSessionPersist() {
+    if (typeof persistAppSession !== 'function'
+      && typeof scheduleSaveTrackState !== 'function') return;
+    if (this._sessionPersistTimer) clearTimeout(this._sessionPersistTimer);
+    this._sessionPersistTimer = setTimeout(() => this._persistSessionNow(), 400);
   }
 
   /** Flush pending TrackState + session on hide/unload (crash-safe). */
@@ -3224,18 +3254,14 @@ class VoiceIsolatePro {
     this._crashFlushBound = true;
     const flush = () => {
       try {
-        if (this._libraryFileId) {
-          const params = this.params || window.VIP_PARAMS || {};
-          void saveTrackState(this._libraryFileId, {
-            params,
-            presetName: this._activePresetName || this.dom?.presetSel?.value || null,
-            status: this.outputBuffer || this.procBuffer ? 'processed' : 'imported',
-          });
-        }
-        void flushTrackStateSaves();
+        this._persistSessionNow();
+        if (typeof flushTrackStateSaves === 'function') void flushTrackStateSaves();
       } catch { /* ignore */ }
     };
-    window.addEventListener('pagehide', flush);
+    window.addEventListener('pagehide', () => {
+      try { this.cancelActiveJobs(); } catch { /* page teardown is best-effort */ }
+      flush();
+    });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') flush();
     });
@@ -3416,6 +3442,8 @@ class VoiceIsolatePro {
    */
   async handleFile(file, options = {}) {
     if (!file) return;
+    try { this._decodeAbortController?.abort('source changed'); } catch { /* ignore */ }
+    this._decodeAbortController = null;
     if (typeof this._fileSeq !== 'number' || !Number.isFinite(this._fileSeq)) this._fileSeq = 0;
     const fileSeq = ++this._fileSeq;
     const skipPersist = Boolean(options.skipPersist);
@@ -3445,7 +3473,7 @@ class VoiceIsolatePro {
     if (this.isProcessing) {
       this.abortFlag = true;
       try {
-        const { resetStemSeparation } = await import('/src/pipeline/StemSeparation.js');
+        const { resetStemSeparation } = await this._loadStemSeparationModule();
         if (resetStemSeparation) resetStemSeparation();
       } catch (err) {
         structuredLog('warn', '[VIP] resetStemSeparation failed', { err: err?.message });
@@ -3673,6 +3701,15 @@ class VoiceIsolatePro {
           this.showProcessingOverlay('Decoding…', 0, 'decoding');
         }
       }
+      const parentSignal = decodeJob?.controller?.signal || jobs?.getCurrentSignal?.() || null;
+      const decodeController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const forwardAbort = () => {
+        try { decodeController?.abort(parentSignal?.reason || 'cancelled'); } catch { /* ignore */ }
+      };
+      if (parentSignal?.aborted) forwardAbort();
+      else parentSignal?.addEventListener?.('abort', forwardAbort, { once: true });
+      const decodeSignal = decodeController?.signal || parentSignal;
+      this._decodeAbortController = decodeController;
       try {
         await this.ensureCtx();
         if (this.ctx?.state === 'suspended') await this.ctx.resume();
@@ -3683,6 +3720,8 @@ class VoiceIsolatePro {
 
         stageStart('decode');
         const decoded = await decodeBlobToAudioBuffer(file, {
+          audioContext: this.ctx,
+          signal: decodeSignal,
           onProgress: (pct) => {
             if (fileSeq !== this._fileSeq) return;
             const p = Math.round(pct);
@@ -3703,7 +3742,7 @@ class VoiceIsolatePro {
 
         stageStart('resample');
         if (decodeJob && jobs?.updateJob) jobs.updateJob(decodeJob.id, 'Resampling…', 85);
-        const buffer = await resampleToCanonical(decoded);
+        const buffer = await resampleToCanonical(decoded, { signal: decodeSignal });
         stageEnd('resample');
         await yieldToBrowser();
 
@@ -3767,13 +3806,18 @@ class VoiceIsolatePro {
         HeroExperience.onDecodeError(msg);
         return null;
       } finally {
+        parentSignal?.removeEventListener?.('abort', forwardAbort);
+        if (this._decodeAbortController === decodeController) this._decodeAbortController = null;
         // Hide loading indicator when this decode completes/fails/is stale,
         // but only if a newer decode hasn't already taken ownership of the UI.
         if (decodeUiSeq === this._fileSeq) {
           this._hideFileLoading();
         }
         // Only hide overlay if we opened a standalone decode job (not nested under Process).
-        if (decodeJob && !this.isProcessing && typeof this.hideProcessingOverlay === 'function') {
+        const activeJobId = jobs?.getCurrentJobId?.() || null;
+        const decodeStillOwnsUi = !activeJobId || activeJobId === decodeJob?.id;
+        if (decodeJob && decodeStillOwnsUi && !this.isProcessing
+          && typeof this.hideProcessingOverlay === 'function') {
           try { this.hideProcessingOverlay(); } catch { /* ignore */ }
         }
       }
@@ -3989,7 +4033,9 @@ class VoiceIsolatePro {
       }
     } finally {
       this._exportInFlight = false;
-      if (typeof this.hideProcessingOverlay === 'function') {
+      const activeJobId = jobs?.getCurrentJobId?.() || null;
+      const exportStillOwnsUi = !activeJobId || activeJobId === job?.id;
+      if (exportStillOwnsUi && typeof this.hideProcessingOverlay === 'function') {
         try { this.hideProcessingOverlay(); } catch { /* ignore */ }
       }
     }
@@ -4203,12 +4249,11 @@ class VoiceIsolatePro {
     }
     if (this.isProcessing) {
       structuredLog('warn', '[VIP] Pipeline idle wait timed out — forcing reset.');
-      import('/src/pipeline/StemSeparation.js')
-        .then((m) => { if (m.resetStemSeparation) m.resetStemSeparation(); })
-        .catch(() => {});
+      try { this._stemSeparationModule?.resetStemSeparation?.(); } catch { /* ignore */ }
       this.isProcessing = false;
       this.abortFlag = false;
-      if (typeof this.hideProcessingOverlay === 'function') {
+      const activeJobId = globalThis.__VIP_JOBS__?.getCurrentJobId?.() || null;
+      if (!activeJobId && typeof this.hideProcessingOverlay === 'function') {
         try { this.hideProcessingOverlay(); } catch (_) {}
       }
       document.body.classList.remove('vip-processing-lock');
@@ -4219,24 +4264,15 @@ class VoiceIsolatePro {
   /** Cooperative cancel for Process / Analyze / MOPE (JobController + workers). */
   cancelActiveJobs() {
     this.abortFlag = true;
+    try { this._decodeAbortController?.abort('user'); } catch { /* ignore */ }
     this._logProgressDiag('cancel-requested', { abortReason: 'user', end: true });
     try {
       const jobs = globalThis.__VIP_JOBS__;
       if (jobs?.cancelCurrent) jobs.cancelCurrent('user');
     } catch { /* ignore */ }
-    try {
-      import('/src/pipeline/StemSeparation.js')
-        .then((m) => {
-          // Prefer cooperative cancel (terminal `cancelled`) then recycle host.
-          if (typeof m.cancelStemSeparation === 'function') m.cancelStemSeparation();
-          if (typeof m.resetStemSeparation === 'function') {
-            setTimeout(() => {
-              try { m.resetStemSeparation(); } catch { /* ignore */ }
-            }, 1600);
-          }
-        })
-        .catch(() => {});
-    } catch { /* ignore */ }
+    // If ML was loaded, its host owns the cancel grace timer and worker recycle.
+    // Never start a dynamic import from cancellation: it can resolve after page/test teardown.
+    try { this._stemSeparationModule?.cancelStemSeparation?.(); } catch { /* ignore */ }
   }
 
   // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
@@ -4529,9 +4565,10 @@ class VoiceIsolatePro {
       this._pausedForProcess = false;
       this._playheadBeforeProcess = null;
       this._updateProcessButtonsState();
-      // Highest-risk regression: stuck-open overlay. Always hide here too
-      // (processing-overlay.js also wraps runPipeline in try/finally).
-      if (typeof this.hideProcessingOverlay === 'function') {
+      // Let the overlay wrapper settle this job while one is active. Direct
+      // callers still release the overlay here when no newer job owns it.
+      const activeJobId = globalThis.__VIP_JOBS__?.getCurrentJobId?.() || null;
+      if (!activeJobId && typeof this.hideProcessingOverlay === 'function') {
         try { this.hideProcessingOverlay(); } catch (_) {}
       }
       if (this.dom.mobileProcessBtn) {
@@ -4860,7 +4897,7 @@ class VoiceIsolatePro {
         );
         if (durable?.clean?.length) {
           await this.ensureCtx();
-          const { stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
+          const { stemsToAudioBuffer } = await this._loadStemSeparationModule();
           // Durable cache stores immutable, pre-post-processing worker stems.
           // Clone before post-stem shaping/dewhistling so a cache hit equals a
           // fresh result and never mutates the retained cache backing.
@@ -4918,7 +4955,7 @@ class VoiceIsolatePro {
       // Warmup may already run from handleFile — keep it in flight but never block
       // pipeline start on full ONNX compile (can take 30–120s on first load).
       void this._warmupMLModels().catch(() => {});
-      const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
+      const { separateStems, stemsToAudioBuffer } = await this._loadStemSeparationModule();
       await yieldToBrowser();
       const plan = await this._mlChannelPlan(buf);
       await yieldToBrowser();

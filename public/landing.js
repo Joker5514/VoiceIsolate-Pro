@@ -1149,6 +1149,7 @@ async function ingestFrom(file) {
     // Overlap model prefetch with decode (bsrnn only ~4 MB).
     void warmupWorkerModels(modelIds).catch(() => {});
     const next = await ingestFile(file, {
+      signal: job.controller.signal,
       onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
         if (stage === 'decoding') {

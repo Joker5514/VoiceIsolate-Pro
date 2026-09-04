@@ -8,7 +8,8 @@
 //   2. Pre-cache all static app assets on install (app shell).
 //   3. Serve ONNX model files via cache-first strategy (large binaries — aggressive caching).
 //   4. Serve index.html via network-first strategy (always fresh).
-//   5. On activate: skipWaiting + clients.claim for zero-downtime updates.
+//   5. Activate updates only after existing clients release the old worker,
+//      preventing mixed-version app/worker/worklet graphs during processing.
 //
 // Privacy: 100% local processing — no fetch() calls to external APIs.
 //
@@ -101,14 +102,14 @@ self.addEventListener('install', (event) => {
           })
         )
       )
-    ).then(() => self.skipWaiting())
+    )
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
-      // Take immediate control of all open clients — no tab refresh needed.
+      // Claim clients only after the normal waiting lifecycle has completed.
       self.clients.claim(),
       // Remove stale cache versions.
       caches.keys().then((keys) =>

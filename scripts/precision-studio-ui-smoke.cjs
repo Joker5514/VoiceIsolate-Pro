@@ -69,6 +69,35 @@ function waitForServer(base, timeoutMs = 20000) {
     check(await page.locator('#waveCanvas').count() === 1, 'landing waveCanvas');
     check(await page.getByRole('heading', { name: /Clean voice/i }).count() >= 1, 'landing hero');
 
+    const responsiveness = await page.evaluate(async () => {
+      const { processInChunks } = await import('/src/pipeline/ui-yield.js');
+      const controller = new AbortController();
+      const startedAt = performance.now();
+      let chunks = 0;
+      setTimeout(() => controller.abort('responsiveness-smoke'), 0);
+      try {
+        await processInChunks({
+          total: 48_000 * 600,
+          chunkSize: 48_000,
+          signal: controller.signal,
+          runChunk: () => { chunks += 1; },
+        });
+        return { cancelled: false, elapsedMs: performance.now() - startedAt, chunks };
+      } catch (error) {
+        return {
+          cancelled: error?.name === 'AbortError',
+          elapsedMs: performance.now() - startedAt,
+          chunks,
+        };
+      }
+    });
+    check(
+      responsiveness.cancelled
+        && responsiveness.elapsedMs < 250
+        && responsiveness.chunks <= 2,
+      `cooperative cancellation <250 ms (${responsiveness.elapsedMs.toFixed(1)} ms, ${responsiveness.chunks} chunk)`,
+    );
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${BASE}/`, { waitUntil: 'load' });
     check(await page.locator('#processBtn').count() === 1, 'mobile landing processBtn');

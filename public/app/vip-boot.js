@@ -164,6 +164,9 @@
 
   // -- Pill driver: keeps ALL cockpit pills (CTX/WORKLET/GATE/DEESS/SAB/ML/ORT/NET) fresh --
   function startPillDriver() {
+    if (typeof window !== 'undefined' && typeof window._vipPillDriverCleanup === 'function') {
+      window._vipPillDriverCleanup();
+    }
     var awOk = hasAudioWorklet();
     var sabOk0 = hasSAB();
     setEnginePill('engSabPill', sabOk0 ? 'ready' : 'unavailable');
@@ -192,13 +195,27 @@
       return false;
     })();
     var POLL_MS = mobileShell ? 1000 : 250;
-    // Keep polling long enough that late ensureCtx()/worklet boot still paints pills.
-    // (~10 min). Stops early once every pill has left pending/loading where possible.
-    var MAX_TICKS = 2400;
+    // Keep polling for at most ten minutes, independent of desktop/mobile cadence.
+    // Stop earlier once the async audio + ML capabilities have reached terminal states.
+    var MAX_DRIVER_MS = 10 * 60 * 1000;
+    var MAX_TICKS = Math.ceil(MAX_DRIVER_MS / POLL_MS);
     var ticks = 0;
     var workletsSettled = false;
+    var iv = null;
 
-    var iv = setInterval(function () {
+    function stopPillDriver() {
+      if (iv != null) {
+        clearInterval(iv);
+        iv = null;
+      }
+      if (typeof window !== 'undefined') {
+        if (window._vipPillDriverIv) window._vipPillDriverIv = null;
+        if (window._vipPillDriverCleanup === stopPillDriver) window._vipPillDriverCleanup = null;
+        window.removeEventListener?.('pagehide', stopPillDriver);
+      }
+    }
+
+    iv = setInterval(function () {
       ticks += 1;
 
       // SAB — re-check isolation (headers can matter after nav). Never fatal.
@@ -307,15 +324,18 @@
       // Stop only when worklets settled (or API missing) and we have polled enough
       // to cover late ensureCtx — never abandon GATE/DEESS as permanent "loading"
       // after 30s the way the old driver did.
-      if (ticks >= MAX_TICKS) {
-        clearInterval(iv);
-      } else if (workletsSettled && ticks > 40) {
-        // Slow down after worklets are up (still refresh NET/SAB occasionally)
-        if (ticks % 8 !== 0) return;
+      var mlSettled = providerLive || orchReady || window.VIP_ML_AVAILABLE === false;
+      var ctxSettled = !!(app && app.ctx && app.ctx.state !== 'closed');
+      if (ticks >= MAX_TICKS || (workletsSettled && mlSettled && ctxSettled && ticks > 40)) {
+        stopPillDriver();
       }
     }, POLL_MS);
 
-    if (typeof window !== 'undefined') window._vipPillDriverIv = iv;
+    if (typeof window !== 'undefined') {
+      window._vipPillDriverIv = iv;
+      window._vipPillDriverCleanup = stopPillDriver;
+      window.addEventListener?.('pagehide', stopPillDriver, { once: true });
+    }
   }
 
   // -- VoiceIsolatePro alias (original boot logic) -------------------------
@@ -433,6 +453,7 @@
     window._vipBootTestHooks.resetProviderHealth = resetProviderHealth;
     window._vipBootTestHooks.applyNetworkState = applyNetworkState;
     window._vipBootTestHooks.startNetworkMonitor = startNetworkMonitor;
+    window._vipBootTestHooks.startPillDriver = startPillDriver;
   }
 
   // -- Boot sequence -------------------------------------------------------

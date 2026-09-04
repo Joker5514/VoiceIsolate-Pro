@@ -167,6 +167,7 @@
   }
 
   NeuralSpinner.prototype.start = function () {
+    if (this.running) return;
     this.running = true;
     this._loop();
   };
@@ -447,6 +448,7 @@
   }
 
   MiniSpectrograph.prototype.start = function () {
+    if (this.running) return;
     this.running = true;
     this._loop();
   };
@@ -646,6 +648,7 @@
     _currentGroupIdx: 0,
     _msgIdx:          0,
     _lastStageIndex:  0,
+    _lastProgress:    0,
     _startedAt:       0,
     _elapsedTimer:    null,
     _spinner:         null,
@@ -688,19 +691,16 @@
     },
 
     _initCanvases() {
-      if (this._spinner) return;
-
-      var spinCanvas = document.getElementById('procSpinnerCanvas');
-      var spectCanvas = document.getElementById('procSpectroCanvas');
-
-      if (spinCanvas) {
-        this._spinner = new NeuralSpinner(spinCanvas);
-        this._spinner.start();
+      if (!this._spinner) {
+        var spinCanvas = document.getElementById('procSpinnerCanvas');
+        if (spinCanvas) this._spinner = new NeuralSpinner(spinCanvas);
       }
-      if (spectCanvas) {
-        this._spectro = new MiniSpectrograph(spectCanvas, 48);
-        this._spectro.start();
+      if (!this._spectro) {
+        var spectCanvas = document.getElementById('procSpectroCanvas');
+        if (spectCanvas) this._spectro = new MiniSpectrograph(spectCanvas, 48);
       }
+      this._spinner?.start();
+      this._spectro?.start();
     },
 
     _tickElapsed() {
@@ -732,6 +732,7 @@
       if (!el) return;
       this._focusBefore = document.activeElement;
       this._startedAt = Date.now();
+      this._lastProgress = 0;
       this.update(stageName || 'Preparing pipeline…', pct || 0, 0);
       el.classList.add('active');
       el.setAttribute('aria-hidden', 'false');
@@ -767,6 +768,8 @@
       document.body.classList.remove('vip-processing-lock');
       this._setBusyControls(false);
       this._stopMessages();
+      this._spinner?.stop();
+      this._spectro?.stop();
       if (this._elapsedTimer) {
         clearInterval(this._elapsedTimer);
         this._elapsedTimer = null;
@@ -839,6 +842,9 @@
     },
 
     update(stageName, pct, stageIndex) {
+      var nextPct = Number.isFinite(pct) ? Math.max(0, Math.min(100, Number(pct))) : this._lastProgress;
+      pct = Math.max(this._lastProgress, nextPct);
+      this._lastProgress = pct;
       var group      = groupForStage(stageIndex);
       var groupIndex = STAGE_GROUPS.indexOf(group);
       this._lastStageIndex = Number.isFinite(stageIndex) ? stageIndex : this._lastStageIndex;
@@ -985,6 +991,8 @@
     vip.runPipeline = async function () {
       var jobs = global.__VIP_JOBS__;
       var job = null;
+      var runToken = {};
+      this._activeOverlayRunToken = runToken;
       if (jobs && typeof jobs.beginJob === 'function') {
         job = jobs.beginJob('Process · isolate', { kind: 'pipeline' });
         this._activeJobId = job.id;
@@ -1005,12 +1013,15 @@
         if (job && jobs.getCurrentJobId && jobs.getCurrentJobId() === job.id) {
           jobs.endJob(job.id, this.abortFlag ? 'cancelled' : 'completed');
         }
-        this._activeJobId = null;
-        // Always hide — covers success, failure, and user-abort.
-        this.hideProcessingOverlay();
-        var hint = document.getElementById('procCancelHint');
-        if (hint) {
-          hint.textContent = 'Processing runs entirely on-device · no audio leaves this browser';
+        // A superseded job must never hide or clear the newer job's overlay.
+        if (this._activeOverlayRunToken === runToken) {
+          this._activeOverlayRunToken = null;
+          if (!job || this._activeJobId === job.id) this._activeJobId = null;
+          this.hideProcessingOverlay();
+          var hint = document.getElementById('procCancelHint');
+          if (hint) {
+            hint.textContent = 'Processing runs entirely on-device · no audio leaves this browser';
+          }
         }
       }
     };
@@ -1021,16 +1032,24 @@
       if (!jobs) return null;
       var job = jobs.beginJob(title, meta || {});
       this._activeJobId = job.id;
+      this._activeOverlayRunToken = { globalJobId: job.id };
       this.showProcessingOverlay(title || 'Working…', 0, 'analyzing');
       return job;
     };
     vip.endGlobalJob = function (jobId, status, detail) {
       var jobs = global.__VIP_JOBS__;
       if (jobs && jobId) jobs.endJob(jobId, status || 'completed', detail);
-      if (this._activeJobId === jobId) this._activeJobId = null;
+      if (this._activeJobId !== jobId) return false;
+      this._activeJobId = null;
+      this._activeOverlayRunToken = null;
       this.hideProcessingOverlay();
+      return true;
     };
+    var origCancelActiveJobs = typeof vip.cancelActiveJobs === 'function'
+      ? vip.cancelActiveJobs.bind(vip)
+      : null;
     vip.cancelActiveJobs = function () {
+      if (origCancelActiveJobs) return origCancelActiveJobs();
       this.abortFlag = true;
       var jobs = global.__VIP_JOBS__;
       if (jobs) jobs.cancelCurrent('user');

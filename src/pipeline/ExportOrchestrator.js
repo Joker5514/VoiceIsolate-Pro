@@ -73,29 +73,39 @@ export class ExportOrchestrator {
     const worker = new Worker('/src/workers/AudioEncoderWorker.js', { type: 'module' });
     this._worker = worker;
 
-    this._initPromise = new Promise((resolve, reject) => {
+    const initPromise = new Promise((resolve, reject) => {
       let settled = false;
       let timeout = null;
+
       const finishInit = (callback) => {
         if (settled) return;
         settled = true;
-        if (timeout) clearTimeout(timeout);
-        this._initPromise = null;
+        clearTimeout(timeout);
+        if (this._initPromise === initPromise) this._initPromise = null;
         this._rejectInit = null;
         callback();
+      };
+
+      const failWorker = (error) => {
+        if (this._worker !== worker) return;
+        this._resetWorker(worker, error);
+        finishInit(() => reject(error));
       };
 
       this._rejectInit = (error) => finishInit(() => reject(error));
       timeout = setTimeout(() => {
         const error = new Error('[VIP][ExportOrchestrator] Worker initialization timeout.');
-        if (this._worker === worker) {
-          this._resetWorker(worker, error);
-        }
-        finishInit(() => reject(error));
+        failWorker(error);
       }, WORKER_INIT_TIMEOUT_MS);
 
       worker.onmessage = (e) => {
-        const { type, requestId, error, blob, format: resultFormat } = e.data;
+        const data = e?.data;
+        if (!data || typeof data !== 'object') {
+          failWorker(new Error('[VIP][ExportOrchestrator] Malformed worker message.'));
+          return;
+        }
+
+        const { type, requestId, error, blob, format: resultFormat } = data;
 
         if (type === 'ready') {
           if (this._worker !== worker) return;
@@ -111,6 +121,8 @@ export class ExportOrchestrator {
             this._pendingRequests.delete(requestId);
             clearTimeout(pending.timeout);
             pending.reject(new Error(error || 'Encoding failed.'));
+          } else if (!this._workerReady) {
+            failWorker(new Error(error || 'Encoder worker initialization failed.'));
           }
           return;
         }
@@ -127,24 +139,42 @@ export class ExportOrchestrator {
 
         if (type === 'progress') {
           const pending = this._pendingRequests.get(requestId);
-          if (pending && pending.onProgress) {
-            pending.onProgress(e.data.progress, e.data.stage);
+          if (pending && pending.onProgress && Number.isFinite(data.progress)) {
+            try {
+              pending.onProgress(Math.max(0, Math.min(1, data.progress)), data.stage);
+            } catch (progressError) {
+              failWorker(progressError);
+            }
           }
+          return;
+        }
+
+        if (this._pendingRequests.has(requestId)) {
+          failWorker(new Error(`[VIP][ExportOrchestrator] Unknown worker message type: ${String(type)}.`));
         }
       };
 
       worker.onerror = (err) => {
-        if (this._worker !== worker) return;
         const error = new Error(`[VIP][ExportOrchestrator] Worker error: ${err.message || 'unknown error'}`);
-        this._resetWorker(worker, error);
-        finishInit(() => reject(error));
+        failWorker(error);
+      };
+
+      worker.onmessageerror = () => {
+        failWorker(new Error('[VIP][ExportOrchestrator] Worker message could not be deserialized.'));
       };
     });
-    return this._initPromise;
+
+    this._initPromise = initPromise;
+    return initPromise;
   }
 
   _resetWorker(worker, error) {
+    if (worker && this._worker && this._worker !== worker) return;
+
     if (worker && this._worker === worker) {
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
       try { worker.terminate(); } catch { /* worker already stopped */ }
       this._worker = null;
       this._workerReady = false;
@@ -235,6 +265,7 @@ export class ExportOrchestrator {
 
     // Send to worker for encoding
     const requestId = this._requestId++;
+    const channelCount = channels.length;
     const { blob, format: resultFormat } = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!this._pendingRequests.has(requestId)) return;
@@ -263,10 +294,7 @@ export class ExportOrchestrator {
           bitrate,
         }, transferList);
       } catch (error) {
-        clearTimeout(timeout);
-        this._pendingRequests.delete(requestId);
         this._resetWorker(this._worker, error);
-        reject(error);
       }
     });
 
@@ -279,7 +307,7 @@ export class ExportOrchestrator {
       format: resultFormat,
       duration,
       sampleRate,
-      channels: channels.length,
+      channels: channelCount,
     };
   }
 

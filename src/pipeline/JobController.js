@@ -18,6 +18,7 @@
  * @property {AbortController} controller
  * @property {number} startedAt
  * @property {number} [endedAt]
+ * @property {string} [cancelReason]
  * @property {object} [meta]
  */
 
@@ -109,7 +110,8 @@ export function updateJob(jobId, stage, percent) {
   if (!_current || _current.id !== jobId || _current.status !== 'running') return false;
   if (stage != null) _current.stage = stage;
   if (Number.isFinite(percent)) {
-    _current.percent = Math.max(0, Math.min(100, Number(percent)));
+    const nextPercent = Math.max(0, Math.min(100, Number(percent)));
+    _current.percent = Math.max(_current.percent, nextPercent);
   }
   emit('progress', {
     jobId,
@@ -152,6 +154,7 @@ export function cancelCurrent(reason = 'user') {
     job.controller.abort?.(reason);
   } catch { /* ignore */ }
   job.status = 'cancelled';
+  job.cancelReason = reason;
   job.endedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   emit('cancel', { jobId: job.id, reason });
   emit('end', {

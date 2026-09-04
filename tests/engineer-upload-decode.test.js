@@ -35,7 +35,7 @@ describe('Engineer upload decode wiring', () => {
     expect(appJs).toMatch(/async ensureDecoded[\s\S]*decodeBlobToAudioBuffer\(/);
     expect(appJs).toMatch(/async ensureDecoded[\s\S]*resampleToCanonical\(/);
     expect(appJs).toContain('const decoded = await decodeBlobToAudioBuffer(file, {');
-    expect(appJs).toContain('const buffer = await resampleToCanonical(decoded);');
+    expect(appJs).toContain('const buffer = await resampleToCanonical(decoded, { signal: decodeSignal });');
   });
 
   test('Process stays enabled for deferred _sourceFile (no decoded buffer yet)', () => {
