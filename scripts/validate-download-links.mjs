@@ -130,9 +130,9 @@ function validateRepositoryReferences({ apk, exe }) {
   }
 
   const publicDownload = read('public/download/index.html');
-  assert(publicDownload.includes(String(apk.size)), 'Download page APK byte size does not match GitHub release');
+  assert(publicDownload.includes(apk.size.toLocaleString('en-US')), 'Download page APK byte size does not match GitHub release');
   assert(publicDownload.includes(apk.digest.slice('sha256:'.length)), 'Download page APK digest does not match GitHub release');
-  assert(publicDownload.includes(String(exe.size)), 'Download page Windows byte size does not match GitHub release');
+  assert(publicDownload.includes(exe.size.toLocaleString('en-US')), 'Download page Windows byte size does not match GitHub release');
   assert(publicDownload.includes(exe.digest.slice('sha256:'.length)), 'Download page Windows digest does not match GitHub release');
 
   const vercel = JSON.parse(read('vercel.json'));
