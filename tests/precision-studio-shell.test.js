@@ -49,10 +49,11 @@ describe('Precision Studio shell', () => {
     expect(js).toContain("defaultFilterMode: 'all'");
   });
 
-  test('download keeps offline claims and provenance caution', () => {
+  test('download scopes offline claims and preserves provenance caution', () => {
     const html = read('public/download/index.html');
-    expect(html).toMatch(/complete offline app/i);
-    expect(html).toMatch(/no network required/i);
+    expect(html).toMatch(/offline core isolation after install/i);
+    expect(html).toMatch(/downloads require a network connection/i);
+    expect(html).toMatch(/Current source can move ahead of published native packages/i);
     expect(html).toContain('VoiceIsolate-Pro-android-debug.apk');
     expect(html).toContain('release-provenance.json');
   });
