@@ -23,6 +23,24 @@
 const fs   = require('fs');
 const path = require('path');
 
+const bootWindows = new Set();
+
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
+afterEach(() => {
+  try {
+    for (const win of bootWindows) win._vipPillDriverCleanup?.();
+    // Complete delayed diagnostics, then catch any polling left by the fixture.
+    jest.runOnlyPendingTimers();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    bootWindows.clear();
+    jest.useRealTimers();
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,10 +77,6 @@ const appJsSrc = fs.readFileSync(
 
 const vipBootSrc = fs.readFileSync(
   path.join(__dirname, '../public/app/vip-boot.js'), 'utf8',
-);
-
-const indexHtmlSrc = fs.readFileSync(
-  path.join(__dirname, '../public/app/index.html'), 'utf8',
 );
 
 /**
@@ -370,8 +384,8 @@ describe('_vipBootstrap (app.js) — DOM still loading', () => {
  *
  * Provides sensible defaults for document, location, and fetch so that
  * runDiagnostics() does not interfere with the aliasOrCreate() tests.
- * All async diagnostics are intentionally allowed to run but we only await
- * them when the test needs to inspect their side-effects.
+ * Timers run on the suite's controlled clock; teardown disposes polling and
+ * executes the diagnostics grace period before returning to real timers.
  */
 function runVipBoot(overrides = {}) {
   const defaults = {
@@ -381,6 +395,7 @@ function runVipBoot(overrides = {}) {
     console,
   };
   const scope = { ...defaults, ...overrides };
+  bootWindows.add(scope.window);
   runInScope(vipBootSrc, scope);
   return scope;
 }
