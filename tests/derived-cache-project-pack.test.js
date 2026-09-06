@@ -76,6 +76,35 @@ describe('ProjectPack binary', () => {
     expect(files.get('sources/f1/a.wav')).toBeTruthy();
     expect(Array.from(files.get('sources/f1/a.wav'))).toEqual([1, 2, 3, 4, 5]);
   });
+
+  test.each([
+    ['header', new Uint8Array(4).buffer, 'truncated header'],
+    ['manifest', (() => {
+      const bytes = new Uint8Array(12);
+      const view = new DataView(bytes.buffer);
+      view.setUint32(0, 0x56505031, true);
+      view.setUint16(4, 1, true);
+      view.setUint32(8, 20, true);
+      return bytes.buffer;
+    })(), 'truncated manifest'],
+  ])('rejects a truncated %s without leaking a RangeError', async (_part, input, message) => {
+    const { parseProjectPack } = await import('../src/core/ProjectPack.js');
+    await expect(parseProjectPack(input)).rejects.toThrow(message);
+  });
+
+  test('rejects an entry whose declared payload exceeds the pack', async () => {
+    const { buildPackBlob, parseProjectPack } = await import('../src/core/ProjectPack.js');
+    const blob = buildPackBlob(
+      { format: 'vippack', version: 1, project: { name: 'Demo' }, files: [] },
+      [{ name: 'sources/a.wav', data: new Uint8Array([1]) }],
+    );
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const manifestLength = new DataView(bytes.buffer).getUint32(8, true);
+    const entryHeader = 12 + manifestLength;
+    new DataView(bytes.buffer).setUint32(entryHeader + 2, 1000, true);
+
+    await expect(parseProjectPack(bytes.buffer)).rejects.toThrow('truncated entry data');
+  });
 });
 
 describe('model IDB schema constants', () => {
