@@ -12,6 +12,10 @@ def hasReleaseSigningConfig = releaseStoreFile != null &&
 android {
     namespace "com.voiceisolatepro.app"
     compileSdkVersion rootProject.ext.compileSdkVersion
+    buildFeatures {
+        // MainActivity uses BuildConfig.DEBUG to disable inspection in release builds.
+        buildConfig true
+    }
     defaultConfig {
         applicationId "com.voiceisolatepro.app"
         // API 26 = Android 8.0 — minimum for Chrome 88+ WebView builds.
