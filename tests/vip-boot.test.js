@@ -20,6 +20,25 @@ const vipBootSrc = fs.readFileSync(
   'utf8'
 );
 
+const bootWindows = new Set();
+
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
+afterEach(() => {
+  try {
+    for (const win of bootWindows) win._vipPillDriverCleanup?.();
+    // Execute the finite diagnostics grace period, then prove cleanup left no
+    // recurring work. Do not clear all timers or force the Jest process to exit.
+    jest.runOnlyPendingTimers();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    bootWindows.clear();
+    jest.useRealTimers();
+  }
+});
+
 // ── Mock factories ────────────────────────────────────────────────────────────
 
 function makeDocument(readyState = 'complete') {
@@ -83,6 +102,7 @@ function runVipBoot({ readyState = 'complete', windowExtras = {}, VoiceIsolatePr
   const defaultFetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
 
   const win = Object.assign({ _vipApp: undefined, vip: undefined }, windowExtras);
+  bootWindows.add(win);
 
   const fn = new Function(
     'window',
@@ -148,7 +168,7 @@ describe('vip-boot.js — _callAuthInit()', () => {
     const VIP  = jest.fn().mockImplementation(function () {});
     const { con } = runAndBoot({ VoiceIsolatePro: VIP, Auth: auth });
 
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await Promise.resolve();
 
     expect(con.warn).toHaveBeenCalledWith(
       expect.stringContaining('[vip-boot] Auth.init error'),
@@ -354,5 +374,87 @@ describe('vip-boot.js — boot sequence DOMContentLoaded deferral', () => {
     const { win } = runVipBoot({ readyState: 'interactive', VoiceIsolatePro: VIP });
     expect(VIP).toHaveBeenCalledTimes(1);
     expect(win._vipApp).toBeInstanceOf(VIP);
+  });
+});
+
+describe('vip-boot.js — timer lifecycle', () => {
+  test('runs diagnostics after the two-second grace period', () => {
+    const { doc } = runAndBoot({ protocol: 'file:' });
+    const banner = { style: {} };
+    const message = {};
+    doc.getElementById.mockImplementation(id => {
+      if (id === 'vip-startup-banner') return banner;
+      if (id === 'vip-startup-msg') return message;
+      return null;
+    });
+
+    jest.advanceTimersByTime(1999);
+    expect(banner.style.display).toBeUndefined();
+    jest.advanceTimersByTime(1);
+    expect(banner.style.display).toBe('flex');
+    expect(message.innerHTML).toContain('No local server detected');
+  });
+
+  test('restarting polling replaces the previous interval', () => {
+    const { win } = runAndBoot();
+    const firstInterval = win._vipPillDriverIv;
+    expect(jest.getTimerCount()).toBe(2);
+
+    win._vipBootTestHooks.startPillDriver();
+
+    expect(win._vipPillDriverIv).not.toBe(firstInterval);
+    expect(jest.getTimerCount()).toBe(2);
+    jest.advanceTimersByTime(2000);
+    expect(jest.getTimerCount()).toBe(1);
+    win._vipPillDriverCleanup();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test('cleanup cancels recurring work and is idempotent', () => {
+    const { win } = runAndBoot();
+    const cleanup = win._vipPillDriverCleanup;
+    cleanup();
+    cleanup();
+
+    expect(win._vipPillDriverIv).toBeNull();
+    expect(win._vipPillDriverCleanup).toBeNull();
+    expect(jest.getTimerCount()).toBe(1);
+    jest.advanceTimersByTime(2000);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test('preserves polling in bfcache and disposes it on final pagehide', () => {
+    const listeners = new Map();
+    const { win } = runAndBoot({
+      windowExtras: {
+        addEventListener: jest.fn((event, callback) => listeners.set(event, callback)),
+        removeEventListener: jest.fn((event, callback) => {
+          if (listeners.get(event) === callback) listeners.delete(event);
+        }),
+      },
+    });
+    jest.advanceTimersByTime(2000);
+    const onPageHide = listeners.get('pagehide');
+
+    onPageHide({ persisted: true });
+    expect(jest.getTimerCount()).toBe(1);
+    expect(listeners.get('pagehide')).toBe(onPageHide);
+
+    onPageHide({ persisted: false });
+    expect(jest.getTimerCount()).toBe(0);
+    expect(listeners.has('pagehide')).toBe(false);
+    expect(win._vipPillDriverCleanup).toBeNull();
+  });
+
+  test.each([false, true])('caps pending polling at ten minutes (native=%s)', native => {
+    const { win } = runAndBoot({
+      windowExtras: { Capacitor: { isNativePlatform: () => native } },
+    });
+    jest.advanceTimersByTime(10 * 60 * 1000 - 1);
+    expect(jest.getTimerCount()).toBe(1);
+
+    jest.advanceTimersByTime(1);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(win._vipPillDriverCleanup).toBeNull();
   });
 });
