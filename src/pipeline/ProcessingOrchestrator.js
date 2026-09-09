@@ -56,15 +56,16 @@ export class ProcessingOrchestrator {
     }
 
     this._initPromise = new Promise((resolve, reject) => {
+      let handler = null;
       const timeout = setTimeout(() => {
-        this.mlWorker.removeEventListener('message', handler);
+        if (handler) this.mlWorker.removeEventListener('message', handler);
         this._initPromise = null;
         reject(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'));
       }, 30000);
 
       const onAbort = () => {
         clearTimeout(timeout);
-        this.mlWorker.removeEventListener('message', handler);
+        if (handler) this.mlWorker.removeEventListener('message', handler);
         this._initPromise = null;
         reject(new CancellationError('Cancelled during ML init'));
       };
@@ -76,7 +77,7 @@ export class ProcessingOrchestrator {
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
-      const handler = (event) => {
+      handler = (event) => {
         const msg = event.data || {};
         if (msg.type === 'ready') {
           clearTimeout(timeout);

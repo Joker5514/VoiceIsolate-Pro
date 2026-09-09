@@ -294,10 +294,23 @@ async function verifyIntegrity(entry, bytes) {
 
 // ─── Model loading ───────────────────────────────────────────────────────────
 
+const CACHE_REQUEST_TIMEOUT_MS = 30000;
+
 function cacheRequest(op, key, buffer) {
   return new Promise((resolve, reject) => {
     const requestId = ++_cacheReqId;
-    _cachePending.set(requestId, { resolve, reject });
+    // Guard: if the main-thread ModelCacheBridge handler stalls or crashes (e.g.
+    // Electron IPC pipe closed, worker re-created), the cache-response may never
+    // arrive. Without this timeout the 'process' request would freeze indefinitely.
+    const timer = setTimeout(() => {
+      if (!_cachePending.has(requestId)) return;
+      _cachePending.delete(requestId);
+      reject(new Error(`[VIP][MLWorker] cache-request '${op}' timed out after ${CACHE_REQUEST_TIMEOUT_MS / 1000}s`));
+    }, CACHE_REQUEST_TIMEOUT_MS);
+    _cachePending.set(requestId, {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
     const msg = { type: 'cache-request', requestId, op, key };
     if (buffer) {
       // NEVER transfer the caller's ArrayBuffer — ORT session compile and

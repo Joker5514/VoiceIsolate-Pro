@@ -1375,3 +1375,32 @@ a.vip-btn {
 @media (prefers-reduced-motion: reduce) {
   .quick-clean-compare *, #quickCleanStatus { animation: none !important; transition: none !important; }
 }
+
+/* ── Analysis Insights panel (#sourceConfidencePanel) ─────────────────── */
+#sourceConfidencePanel {
+  font: var(--fs-xs)/1.5 var(--font-ui);
+  color: var(--text-2);
+  padding: 10px 0 2px;
+  min-height: 1.5em;
+}
+#sourceConfidencePanel[data-state="pending"] { color: var(--text-dim); }
+#sourceConfidencePanel[data-state="failed"]  { color: var(--warn); }
+#sourceConfidencePanel[data-state="unavailable"] { color: var(--text-dim); }
+#sourceConfidencePanel[data-state="ready"] { color: var(--text); }
+
+.insight-sources { display: flex; flex-wrap: wrap; gap: 5px 6px; align-items: center; margin: 0 0 6px; }
+.insight-label { color: var(--text-dim); font-size: var(--fs-2xs); }
+.insight-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-strong);
+  font: var(--fw-medium) var(--fs-2xs)/1.4 var(--font-ui);
+  color: var(--text);
+  white-space: nowrap;
+}
+.insight-snr { margin: 0 0 5px; }
+.insight-recs { margin: 3px 0 0; padding: 0 0 0 1em; }
+.insight-rec  { margin: 0 0 3px; line-height: 1.4; color: var(--text-2); }

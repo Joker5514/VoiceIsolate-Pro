@@ -19,6 +19,7 @@ import { LANDING_PRESETS, RT_SLIDER_DEFAULTS } from '/src/core/MixCalibration.js
 import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { QuickCleanUI } from '/src/presentation/QuickCleanUI.js';
+import { AnalysisInsightsUI } from '/src/presentation/AnalysisInsightsUI.js';
 import { inspectQuickCleanDevice } from '/src/pipeline/QuickCleanPlan.js';
 import { QuickCleanReview } from '/src/pipeline/QuickCleanReview.js';
 import { measureAudioBuffer, encodeReviewedWav } from '/src/pipeline/AudioReview.js';
@@ -167,6 +168,15 @@ let review = null;
 let reviewInFlight = false;
 let preflightSeq = 0;
 const quickClean = new QuickCleanUI();
+/** Lazy-initialised analysis insights panel (post-stem, non-blocking). */
+let analysisInsights = null;
+function getAnalysisInsights() {
+  if (!analysisInsights) {
+    const container = document.getElementById('sourceConfidencePanel');
+    if (container) analysisInsights = new AnalysisInsightsUI(container);
+  }
+  return analysisInsights;
+}
 
 async function refreshPreflight() {
   const seq = ++preflightSeq;
@@ -1003,6 +1013,7 @@ async function ingestFrom(file) {
   ingested = null;
   hasProcessed = false;
   invalidateComparison();
+  getAnalysisInsights()?.reset();
   mixer?.stop();
   quickClean.setState('importing', 'Reading the recording on this device…');
   for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ...ui.mixSliders]) if (el) el.disabled = true;
@@ -1230,7 +1241,16 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   }
 
   if (!mixer) {
-    mixer = new PlaybackMixer();
+    try {
+      mixer = new PlaybackMixer();
+    } catch (err) {
+      // AudioContext may fail on first load if the browser requires a user gesture
+      // (autoplay policy) or if the Web Audio API is unavailable.
+      failProcessing(new Error(`Failed to initialise audio playback: ${err.message}. Tap Play after processing completes or try a different browser.`));
+      speakerControls?.clear();
+      ui.speakersPanel.hidden = true;
+      return;
+    }
     // Ensure gate/de-esser worklets finish loading (non-blocking for play).
     void mixer.workletsReady?.().then(() => {
       try {
@@ -1278,6 +1298,15 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
     : (cb) => setTimeout(cb, 0);
   scheduleIdle(() => { if (requestId === requestSeq && hasProcessed) void detectSpeakers(clean, sampleRate); });
+  // Off-critical-path: run classical analysis on the clean stem and surface
+  // detected sources + recommendations in the signal-preview panel.
+  // Runs cooperatively via FullAnalysisHost → FullAnalysisWorker. Non-blocking.
+  scheduleIdle(() => {
+    if (requestId !== requestSeq || !hasProcessed) return;
+    const fingerprint = ingested?._stemCacheKey || ingested?.sourceName || 'unknown';
+    const backend = quickClean.backend === 'webgpu' ? 'webgpu' : 'wasm';
+    void getAnalysisInsights()?.analyze(clean, sampleRate, { contentFingerprint: fingerprint, backend });
+  });
 }
 
 // ─── Stem mute toggles ───────────────────────────────────────────────────────
@@ -1522,4 +1551,4 @@ function wireClearLocalData() {
     }
   });
 }
-window.addEventListener('pagehide', () => { clearProcessWatch(); review?.clear(); worker?.terminate(); });
+window.addEventListener('pagehide', () => { clearProcessWatch(); review?.clear(); worker?.terminate(); analysisInsights?.dispose(); });
