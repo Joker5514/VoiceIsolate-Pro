@@ -1338,7 +1338,7 @@ a.vip-btn {
 /* ── 900px — tablet landscape / narrow desktop ──────────────────────── */
 @media (max-width: 900px) {
   .slider-grid--advanced { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
-  .ps-steps { grid-template-columns: repeat(2, 1fr); }
+  .ps-steps { display: grid; grid-template-columns: repeat(2, 1fr); }
   .vip-hero { padding-block: 36px 28px; }
 }
 
