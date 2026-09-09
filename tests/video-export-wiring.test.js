@@ -43,7 +43,9 @@ describe('Landing — processed download', () => {
     expect(landingJs).toContain('onDownloadProcessed');
     expect(landingJs).toContain('isVideoSource');
     expect(landingJs).toContain('sourceFile');
-    expect(landingJs).toMatch(/Download Processed Video/);
+    expect(landingHtml).toContain('id="downloadVideoBtn"');
+    expect(landingJs).toContain('onDownloadProcessed({ video: true })');
+    expect(landingJs).toContain('mixer.renderMix(');
   });
 });
 

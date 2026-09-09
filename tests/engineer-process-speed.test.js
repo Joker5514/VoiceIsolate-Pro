@@ -73,8 +73,11 @@ describe('Engineer processing speed path', () => {
     expect(appJs).toMatch(/async runPipeline\(/);
   });
 
-  test('MLWorker skips re-hash when cache key embeds sha256', () => {
-    expect(mlWorker).toMatch(/if \(entry\.sha256\) return cached/);
+  test('MLWorker always verifies cached bytes before use (integrity-first cache)', () => {
+    // Cached bytes are verified via verifyIntegrity before returning — the old
+    // early-return on sha256 presence was replaced by always-verify to match CLAUDE.md §3.
+    expect(mlWorker).toMatch(/await verifyIntegrity\(entry, cached\)/);
+    expect(mlWorker).toMatch(/return cached/);
   });
 
   test('MLWorker uses smaller WASM batches on constrained/Android devices', () => {

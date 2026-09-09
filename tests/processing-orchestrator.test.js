@@ -236,7 +236,10 @@ describe('ProcessingOrchestrator', () => {
   });
 
   describe('_processWithMLWorker()', () => {
-    afterEach(() => jest.useRealTimers());
+    afterEach(() => {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
 
     test('rejects a job after 45 seconds without worker progress', async () => {
       jest.useFakeTimers();

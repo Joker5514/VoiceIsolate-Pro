@@ -38,14 +38,16 @@ describe('Landing listen-first path', () => {
     'utf8',
   );
 
-  test('does not auto-process files longer than 180s', () => {
-    expect(landing).toMatch(/dur > 180/);
-    expect(landing).toMatch(/press .Separate Stems./);
+  test('does not auto-process: explicit Process button required', () => {
+    // The listen-first / auto-skip pattern was replaced by QuickClean explicit Process.
+    // Verify: no auto-process on ingest; the user must choose an outcome and press Process.
+    expect(landing).toMatch(/quickClean\.setState\('ready'/);
+    expect(landing).toMatch(/press Process locally/);
   });
 
-  test('loads stems for early play after decode', () => {
+  test('loads stems for A/B comparison after processing', () => {
     expect(landing).toMatch(/mixer\.loadStems/);
-    expect(landing).toMatch(/Ready to play/);
+    expect(landing).toMatch(/quickClean\.setState\('processed'|quickClean\.setState\('ready'/);
   });
 
   test('library import is idle / non-blocking', () => {

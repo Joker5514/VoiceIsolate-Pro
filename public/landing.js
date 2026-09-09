@@ -15,10 +15,14 @@ import { ingestFile, assertIngestible, isDesktopShell, pickAudioFile } from '/sr
 import { openFilePicker, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
-import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js';
+import { LANDING_PRESETS, RT_SLIDER_DEFAULTS } from '/src/core/MixCalibration.js';
 import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
-import { getModel } from '/src/core/ModelManifest.js';
+import { QuickCleanUI } from '/src/presentation/QuickCleanUI.js';
+import { AnalysisInsightsUI } from '/src/presentation/AnalysisInsightsUI.js';
+import { inspectQuickCleanDevice } from '/src/pipeline/QuickCleanPlan.js';
+import { QuickCleanReview } from '/src/pipeline/QuickCleanReview.js';
+import { measureAudioBuffer, encodeReviewedWav } from '/src/pipeline/AudioReview.js';
 import { isVideoSource, getFileInputAccept } from '/src/core/media-types.js';
 import { saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
 import {
@@ -27,7 +31,6 @@ import {
 } from '/src/pipeline/video-export.js';
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
-import { DEFAULT_ML_MODEL_IDS } from '/src/core/ml-defaults.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
 import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
@@ -42,6 +45,7 @@ import {
   cancelCurrent,
   getCurrentJobId,
   isCancellationError,
+  throwIfAborted,
 } from '/src/pipeline/JobController.js';
 
 const $ = (id) => document.getElementById(id);
@@ -156,6 +160,60 @@ let ingestSeq = 0;
 let ingestInFlight = false;
 let processingInFlight = false;
 let downloadInFlight = false;
+let hasProcessed = false;
+let processPlan = null;
+let processWatch = null;
+let lastProcessProgress = 0;
+let review = null;
+let reviewInFlight = false;
+let preflightSeq = 0;
+const quickClean = new QuickCleanUI();
+/** Lazy-initialised analysis insights panel (post-stem, non-blocking). */
+let analysisInsights = null;
+function getAnalysisInsights() {
+  if (!analysisInsights) {
+    const container = document.getElementById('sourceConfidencePanel');
+    if (container) analysisInsights = new AnalysisInsightsUI(container);
+  }
+  return analysisInsights;
+}
+
+async function refreshPreflight() {
+  const seq = ++preflightSeq;
+  const device = await inspectQuickCleanDevice();
+  if (seq !== preflightSeq) return;
+  const available = quickClean.preflight(device, ingested);
+  ui.modelSelect.disabled = !['wasm', 'webgpu'].includes(quickClean.backend) || processingInFlight || ingestInFlight;
+  ui.processBtn.disabled = (!available && worker !== null) || !ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight;
+}
+
+function clearProcessWatch() { clearInterval(processWatch); processWatch = null; }
+
+function invalidateComparison() {
+  review?.clear();
+  for (const id of ['compareOriginalBtn', 'compareCleanedBtn']) {
+    const button = $(id);
+    if (button) { button.disabled = true; button.setAttribute('aria-pressed', 'false'); }
+  }
+  if ($('prepareComparisonBtn')) $('prepareComparisonBtn').disabled = !hasProcessed || processingInFlight || downloadInFlight || reviewInFlight;
+}
+
+function failProcessing(error) {
+  clearProcessWatch();
+  processingInFlight = false;
+  hasProcessed = false;
+  const jobId = window.__vipLandingJobId;
+  if (jobId) endJob(jobId, 'error', error);
+  window.__vipLandingJobId = null;
+  hideSpinner();
+  quickClean.setState('error', `Processing failed: ${error.message || error}. Your source file is unchanged. Retry Process; if model loading fails, reconnect or clear the model cache.`);
+  setStatus('Processing failed — source unchanged; retry Process.', 'error');
+  ui.fileInput.disabled = false;
+  ui.modelSelect.disabled = false;
+  invalidateComparison();
+  updateDownloadButton();
+  void refreshPreflight();
+}
 
 let currentJobLabel = 'Separating stems…';
 /** Object URL backing the <video> preview; revoked when a new file loads. */
@@ -300,28 +358,24 @@ function setLandingCancelVisible(visible) {
 }
 
 function cancelLandingJob() {
+  quickClean.setState('cancelling', 'Stopping safely… Your source file is unchanged.');
   cancelCurrent('user');
-  // Stale-proof: bump seqs so in-flight decode / worker results are ignored.
   requestSeq += 1;
   ingestSeq += 1;
-  ingestInFlight = false;
-  if (worker) {
-    try { worker.postMessage({ type: 'cancel', requestId: requestSeq }); } catch { /* ignore */ }
-  }
+  if (worker && processingInFlight) { worker.terminate(); worker = null; quickClean.setBackend('probing'); }
+  clearProcessWatch();
   processingInFlight = false;
-  downloadInFlight = false;
+  ingestInFlight = false;
   hideSpinner();
-  setLandingCancelVisible(false);
-  if (ui.processBtn) ui.processBtn.disabled = !ingested;
-  if (ui.fileInput) ui.fileInput.disabled = false;
-  if (ui.modelSelect) ui.modelSelect.disabled = false;
-  setStatus('Cancelled', 'active');
-  if (ui.landingJobStatus) {
-    ui.landingJobStatus.hidden = false;
-    ui.landingJobStatus.textContent = 'Cancelled — ready when you are';
-  }
+  ui.fileInput.disabled = false;
+  ui.modelSelect.disabled = false;
   window.__vipLandingJobId = null;
+  setStatus('Cancelled — ready to retry', 'active');
+  quickClean.setState(hasProcessed ? 'processed' : ingested ? 'ready' : 'empty',
+    'Cancelled. Your source file is unchanged. Retry Process or choose another file.');
   updateDownloadButton();
+  if (!worker) { try { getWorker(); } catch (err) { failProcessing(err); } }
+  void refreshPreflight();
 }
 
 function _renderProcLoader() {
@@ -430,56 +484,24 @@ function clearVideo() {
 function hasVideo() { return Boolean(videoUrl) && ui.videoCard && !ui.videoCard.hidden; }
 
 function updateDownloadButton() {
-  const ready = Boolean(mixer?.cleanBuffer);
+  const ready = hasProcessed && Boolean(mixer?.cleanBuffer);
+  const busy = downloadInFlight || reviewInFlight || processingInFlight || ingestInFlight;
+  for (const control of [...ui.mixSliders, ui.presetSelect, ui.muteVoiceBtn, ui.muteNoiseBtn]) {
+    if (control) control.disabled = !ready || busy;
+  }
   if (ui.exportRow) ui.exportRow.hidden = !ready;
   if (ui.downloadBtn) {
-    ui.downloadBtn.disabled = !ready || downloadInFlight;
-    ui.downloadBtn.textContent = (sourceFile && isVideoFile(sourceFile))
-      ? 'Download Processed Video'
-      : 'Download Processed WAV';
+    ui.downloadBtn.disabled = !ready || downloadInFlight || reviewInFlight || processingInFlight;
+    ui.downloadBtn.textContent = 'Export mix as WAV';
+  }
+  const videoButton = $('downloadVideoBtn');
+  if (videoButton) {
+    videoButton.hidden = !sourceFile || !isVideoFile(sourceFile);
+    videoButton.disabled = !ready || downloadInFlight || processingInFlight || reviewInFlight;
   }
   if (ui.saveDriveBtn) {
-    ui.saveDriveBtn.disabled = !ready || downloadInFlight;
+    ui.saveDriveBtn.disabled = !ready || downloadInFlight || processingInFlight || reviewInFlight;
   }
-}
-
-/** Encode clean stem to a 16-bit stereo/mono WAV Blob. */
-function encodeCleanStemWav(audioBuffer) {
-  const numCh = Math.min(2, audioBuffer.numberOfChannels || 1);
-  const sr = audioBuffer.sampleRate;
-  const len = audioBuffer.length;
-  const bytesPerSample = 2;
-  const blockAlign = numCh * bytesPerSample;
-  const dataSize = len * blockAlign;
-  const buf = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buf);
-  const ws = (off, str) => {
-    for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
-  };
-  ws(0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
-  ws(8, 'WAVE');
-  ws(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numCh, true);
-  view.setUint32(24, sr, true);
-  view.setUint32(28, sr * blockAlign, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true);
-  ws(36, 'data');
-  view.setUint32(40, dataSize, true);
-  let offset = 44;
-  const channels = [];
-  for (let ch = 0; ch < numCh; ch++) channels.push(audioBuffer.getChannelData(ch));
-  for (let i = 0; i < len; i++) {
-    for (let ch = 0; ch < numCh; ch++) {
-      const s = Math.max(-1, Math.min(1, channels[ch][i]));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-      offset += 2;
-    }
-  }
-  return new Blob([buf], { type: 'audio/wav' });
 }
 
 function setDownloadHint(msg) {
@@ -507,164 +529,112 @@ async function onOpenFromDrive() {
   }
 }
 
-async function onSaveToDrive() {
-  if (!mixer?.cleanBuffer || downloadInFlight) return;
-  downloadInFlight = true;
-  updateDownloadButton();
-  try {
-    const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
-    if (!isDriveConfigured()) {
-      setStatus('Google Drive not configured — see docs/guides/GOOGLE_DRIVE.md', 'error');
-      return;
-    }
-    const wavBlob = encodeCleanStemWav(mixer.cleanBuffer);
-    const base = (sourceFile?.name || ingested?.sourceName || 'export')
-      .replace(/\.[^.]+$/, '')
-      .slice(0, 80) || 'export';
-    const filename = `${base}-processed.wav`;
-    setDownloadHint('Uploading to Google Drive…');
-    setStatus('Uploading to Google Drive…', 'warn');
-    const meta = await saveBlobToDrive({ blob: wavBlob, filename, mimeType: 'audio/wav' });
-    setDownloadHint(`Saved to Drive: ${meta?.name || filename}`);
-    setStatus(`Saved to Drive: ${meta?.name || filename}`, 'active');
-  } catch (err) {
-    if (err?.code === 'CANCELLED') {
-      setDownloadHint('Drive upload cancelled');
-      return;
-    }
-    console.error('[VIP][landing] Drive save failed:', err);
-    setDownloadHint(err?.message || 'Drive upload failed');
-    setStatus(err?.message || 'Drive upload failed', 'error');
-  } finally {
-    downloadInFlight = false;
-    updateDownloadButton();
-  }
-}
+async function onSaveToDrive() { await onDownloadProcessed({ drive: true }); }
 
-async function onDownloadProcessed() {
-  if (!mixer?.cleanBuffer || downloadInFlight) return;
+async function onDownloadProcessed({ video = false, drive = false } = {}) {
+  if (!hasProcessed || !mixer?.cleanBuffer || downloadInFlight || processingInFlight || reviewInFlight || ingestInFlight) return;
   downloadInFlight = true;
+  invalidateComparison();
   updateDownloadButton();
-  const setDl = (msg) => { if (ui.downloadStatus) ui.downloadStatus.textContent = msg || ''; };
+  ui.processBtn.disabled = true;
   const job = beginJob('Export processed', { kind: 'export' });
-  const signal = job?.controller?.signal;
-  setLandingCancelVisible(true);
-  setProcStage('export', 5, 'Exporting…');
-
+  const signal = job.controller.signal;
+  setProcStage('export', 5, 'Rendering current mix…');
+  quickClean.setState('exporting', 'Rendering and validating the current mix locally…');
   try {
-    let cropIn = 0;
-    let cropOut = mixer.cleanBuffer.duration;
-    if (mixer.hasCrop?.()) {
-      const region = mixer.getCropRegion();
-      cropIn = region.in;
-      cropOut = region.out;
-    }
-
-    const full = mixer.cleanBuffer;
-
-    if (sourceFile && isVideoFile(sourceFile)) {
-      setDl('Encoding video with processed audio…');
-      setStatus('Encoding processed video…', 'warn');
+    sliderUI?.flush();
+    const region = mixer.getCropRegion();
+    // Render full duration for video remux; its existing crop path trims audio and video together.
+    const full = await mixer.renderMix({ signal, ...(video ? {} : { startSec: region.in, endSec: region.out }) });
+    throwIfAborted(signal);
+    const stats = await measureAudioBuffer(full, { signal });
+    if (stats.clipped) throw new Error('The mix exceeds full scale. Lower Voice or Output Volume and export again.');
+    let result;
+    const base = (sourceFile?.name || ingested?.sourceName || 'export').replace(/\.[^.]+$/, '').slice(0, 80) || 'export';
+    if (video && sourceFile && isVideoFile(sourceFile)) {
       try {
-        const result = await exportVideoWithProcessedAudio(sourceFile, full, {
-          startSec: cropIn,
-          endSec: cropOut,
-          signal,
-          onProgress: (pct) => {
-            if (signal?.aborted) {
-              const e = new Error('Cancelled');
-              e.name = 'CancellationError';
-              e.code = 'CANCELLED';
-              throw e;
-            }
-            const p = Math.round(pct);
-            setDl(`Encoding video… ${p}%`);
-            setProcStage('export', p, `Encoding video… ${p}%`);
-          },
+        result = await exportVideoWithProcessedAudio(sourceFile, full, {
+          startSec: region.in, endSec: region.out, signal,
+          onProgress: (pct) => { throwIfAborted(signal); setProcStage('export', Math.round(pct), 'Encoding video…'); },
         });
-        if (isDesktopShell()) {
-          await saveExportBlob(result.blob, {
-            defaultName: result.filename,
-            filters: filtersForFilename(result.filename),
-          });
-        } else {
-          triggerBlobDownload(result.blob, result.filename);
-        }
-        setDl(`Saved ${result.filename}`);
-        setStatus(`Processed video ready — ${result.filename}`, 'active');
-        endJob(job.id, 'completed');
-        return;
       } catch (err) {
-        if (isCancellationError(err) || signal?.aborted) {
-          setDl('Export cancelled');
-          setStatus('Export cancelled', 'active');
-          endJob(job.id, 'cancelled', err);
-          return;
-        }
-        console.warn('[VIP][landing] video export failed, falling back to WAV:', err);
-        setDl('Video remux unavailable — saving WAV…');
+        if (isCancellationError(err)) throw err;
+        throw new Error(`Video export failed: ${err.message}. Use Export mix as WAV to save audio locally.`);
       }
-    }
-
-    if (signal?.aborted) {
-      setDl('Export cancelled');
-      setStatus('Export cancelled', 'active');
-      endJob(job.id, 'cancelled');
-      return;
-    }
-
-    // WAV path: materialize crop window into a new buffer.
-    const sr = full.sampleRate;
-    const start = Math.max(0, Math.floor(cropIn * sr));
-    const end = Math.min(full.length, Math.ceil(cropOut * sr));
-    const length = Math.max(1, end - start);
-    const channels = Math.min(2, full.numberOfChannels);
-    let exportBuf;
-    if (typeof AudioBuffer === 'function') {
-      try {
-        exportBuf = new AudioBuffer({ numberOfChannels: channels, length, sampleRate: sr });
-      } catch { exportBuf = null; }
-    }
-    if (!exportBuf) {
-      const Offline = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
-      const offline = new Offline(channels, length, sr);
-      exportBuf = offline.createBuffer(channels, length, sr);
-    }
-    for (let ch = 0; ch < channels; ch++) {
-      exportBuf.copyToChannel(full.getChannelData(ch).subarray(start, start + length), ch);
-    }
-
-    const wavBlob = encodeCleanStemWav(exportBuf);
-    const base = (sourceFile?.name || ingested?.sourceName || 'export')
-      .replace(/\.[^.]+$/, '')
-      .slice(0, 80) || 'export';
-    const filename = `${base}-processed.wav`;
-    if (isDesktopShell()) {
-      await saveExportBlob(wavBlob, {
-        defaultName: filename,
-        filters: filtersForFilename(filename),
-      });
     } else {
-      triggerBlobDownload(wavBlob, filename);
+      setProcStage('export', 70, 'Encoding WAV locally…');
+      result = { blob: await encodeReviewedWav(full, { signal }), filename: `${base}-processed.wav` };
     }
-    setDl(`Saved ${filename}`);
-    setStatus(`Processed audio ready — ${filename}`, 'active');
+    throwIfAborted(signal);
+    if (drive) {
+      const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
+      if (!isDriveConfigured()) throw new Error('Google Drive is not configured. Use Export mix as WAV.');
+      throwIfAborted(signal);
+      // Drive's API has no abort support: disable Cancel before the explicit external file transfer.
+      setLandingCancelVisible(false);
+      setDownloadHint('Uploading to Google Drive…');
+      await saveBlobToDrive({ blob: result.blob, filename: result.filename, mimeType: result.blob.type });
+    } else if (isDesktopShell()) {
+      const saved = await saveExportBlob(result.blob, { defaultName: result.filename, filters: filtersForFilename(result.filename) });
+      if (saved.canceled) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+    } else {
+      triggerBlobDownload(result.blob, result.filename);
+    }
+    throwIfAborted(signal);
+    const message = drive ? `Saved to Drive: ${result.filename}` : `Export prepared: ${result.filename}. Check your downloads or chosen folder.`;
+    setDownloadHint(message);
+    setStatus(message, 'active');
+    quickClean.setState('exported', message);
     endJob(job.id, 'completed');
   } catch (err) {
-    if (isCancellationError(err)) {
-      setDl('Export cancelled');
-      setStatus('Export cancelled', 'active');
-      endJob(job.id, 'cancelled', err);
-    } else {
-      console.error('[VIP][landing] download failed:', err);
-      setDl(err?.message || 'Download failed');
-      setStatus(err?.message || 'Download failed', 'error');
-      endJob(job.id, 'error', err);
-    }
+    const cancelled = isCancellationError(err) || signal.aborted;
+    const message = cancelled ? 'Export cancelled. Your source and mix are unchanged; export again when ready.'
+      : `Export failed: ${err.message}. Your source and mix are unchanged.`;
+    setDownloadHint(message);
+    setStatus(message, cancelled ? 'active' : 'error');
+    quickClean.setState(cancelled ? 'processed' : 'error', message);
+    endJob(job.id, cancelled ? 'cancelled' : 'error', err);
   } finally {
     downloadInFlight = false;
     hideSpinner();
     updateDownloadButton();
+    invalidateComparison();
+    void refreshPreflight();
+  }
+}
+
+async function prepareComparison() {
+  if (!hasProcessed || processingInFlight || downloadInFlight || reviewInFlight) return;
+  reviewInFlight = true;
+  invalidateComparison();
+  updateDownloadButton();
+  ui.processBtn.disabled = true;
+  const job = beginJob('Prepare comparison', { kind: 'review' });
+  const signal = job.controller.signal;
+  quickClean.setState('comparing', 'Preparing a level-matched comparison locally…');
+  setLandingCancelVisible(true);
+  try {
+    sliderUI?.flush();
+    review ||= new QuickCleanReview(mixer);
+    const gains = await review.prepare(ingested.channelData, { signal });
+    throwIfAborted(signal);
+    for (const id of ['compareOriginalBtn', 'compareCleanedBtn']) $(id).disabled = false;
+    $('comparisonStatus').textContent = gains.matched
+      ? 'Average level matched (RMS), with peak headroom. Original and Cleaned use the same timeline. This is not a LUFS measurement.'
+      : 'One side is silent or nearly silent; level matching is unavailable. Compare without normalization.';
+    quickClean.setState('processed', 'Comparison ready. Choose Original or Cleaned to listen.');
+    endJob(job.id, 'completed');
+  } catch (err) {
+    review?.clear();
+    $('comparisonStatus').textContent = isCancellationError(err) ? 'Comparison cancelled; prepare again when ready.' : `Comparison unavailable: ${err.message}. Your mix is unchanged.`;
+    quickClean.setState('processed', $('comparisonStatus').textContent);
+    endJob(job.id, isCancellationError(err) ? 'cancelled' : 'error', err);
+  } finally {
+    reviewInFlight = false;
+    setLandingCancelVisible(false);
+    $('prepareComparisonBtn').disabled = !hasProcessed;
+    updateDownloadButton();
+    void refreshPreflight();
   }
 }
 
@@ -691,63 +661,16 @@ function syncVideo() {
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
 
-const DEFAULT_WARMUP_CHAIN = DEFAULT_ML_MODEL_IDS;
-
-function resolveModelIds(selection) {
-  const chain = MODEL_CHAINS[selection];
-  if (chain) return chain;
-  return [getModel(selection).id];
-}
-
-/** @type {Set<string>} */
-const _warmedModels = new Set();
-/** @type {Array<{ resolve: Function, reject: Function, timer: *, ids: string[] }>} */
-let _warmupWaiters = [];
-let _warmupHooked = false;
-const WARMUP_TIMEOUT_MS = 120_000;
-
-function hookWarmupListener(w) {
-  if (_warmupHooked) return;
-  _warmupHooked = true;
-  w.addEventListener('message', (ev) => {
-    const msg = ev.data || {};
-    if (msg.type !== 'warmed') return;
-    for (const id of msg.modelIds || []) _warmedModels.add(id);
-    const pending = _warmupWaiters.splice(0);
-    for (const waiter of pending) {
-      clearTimeout(waiter.timer);
-      const stillMissing = waiter.ids.filter((id) => !_warmedModels.has(id));
-      if (stillMissing.length === 0) waiter.resolve(msg);
-      else _warmupWaiters.push(waiter);
-    }
-  });
-}
-
-/** Prefetch model bytes + compile ONNX sessions off the hot path. */
-async function warmupWorkerModels(modelIds) {
-  const ids = (Array.isArray(modelIds) ? modelIds : []).filter((id) => typeof id === 'string' && id);
-  const missing = ids.filter((id) => !_warmedModels.has(id));
-  if (missing.length === 0) return { modelIds: ids };
-  const w = getWorker();
-  hookWarmupListener(w);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const idx = _warmupWaiters.findIndex((x) => x.resolve === resolve);
-      if (idx >= 0) _warmupWaiters.splice(idx, 1);
-      reject(new Error('[VIP][landing] ML warmup timeout'));
-    }, WARMUP_TIMEOUT_MS);
-    _warmupWaiters.push({ resolve, reject, timer, ids: missing });
-    w.postMessage({ type: 'warmup', modelIds: missing });
-  });
-}
-
 function getWorker() {
   if (worker) return worker;
   worker = createMLWorker();
+  const ownedWorker = worker;
   initMLWorker(worker);
   worker.addEventListener('message', (event) => {
     const msg = event.data || {};
-    const stale = msg.requestId != null && msg.requestId !== requestSeq;
+    if (worker !== ownedWorker) return;
+    const stale = !processingInFlight || msg.requestId !== requestSeq;
+    if (!stale) lastProcessProgress = Date.now();
     switch (msg.type) {
       case 'ready': {
         let debugEnabled = false;
@@ -768,12 +691,14 @@ function getWorker() {
             backendLine.dataset.backend = String(msg.backend || 'wasm');
           }
         } catch (_) { /* ignore */ }
-        warmupWorkerModels(DEFAULT_WARMUP_CHAIN).catch(() => {});
+        quickClean.setBackend(msg.backend);
+        void refreshPreflight();
         break;
       }
       case 'stage':
         if (stale) break;
         if (msg.stage === 'load') {
+          quickClean.setState('downloading', 'Loading local models: checking cache, downloading if needed, and verifying integrity…');
           if ((msg.percent ?? 0) <= 1) stageStart('model_load');
           setProcStage(
             'load',
@@ -782,6 +707,7 @@ function getWorker() {
             { updateJobLabel: false },
           );
         } else if (msg.stage === 'separate') {
+          quickClean.setState('processing', 'Processing locally. Cancel leaves your source file unchanged.');
           stageEnd('model_load');
           stageStart('isolate');
           setProcStage('separate', msg.percent ?? 0, currentJobLabel);
@@ -795,6 +721,7 @@ function getWorker() {
         break;
       case 'cancelled':
         if (stale) break;
+        clearProcessWatch();
         stageEnd('isolate');
         stageEnd('model_load');
         processingInFlight = false;
@@ -811,30 +738,23 @@ function getWorker() {
         break;
       case 'error':
         if (stale) break;
-        stageEnd('isolate');
-        stageEnd('model_load');
-        processingInFlight = false;
-        setStatus(`Processing failed: ${msg.message}`, 'error');
-        hideSpinner();
-        {
-          const jid = window.__vipLandingJobId || getCurrentJobId();
-          if (jid) endJob(jid, 'error', msg);
-          window.__vipLandingJobId = null;
-        }
-        ui.processBtn.disabled = false;
-        ui.fileInput.disabled = false;
-        ui.modelSelect.disabled = false;
+        clearProcessWatch();
+        failProcessing(new Error(msg.message || 'Local worker failed'));
+        worker?.terminate();
+        worker = null;
+        quickClean.setBackend('probing');
         break;
       default:
         break;
     }
   });
   worker.addEventListener('error', (err) => {
-    setStatus(`Worker error: ${err.message || 'unknown'}`, 'error');
-    hideSpinner();
-    ui.processBtn.disabled = false;
-    ui.fileInput.disabled = false;
-    ui.modelSelect.disabled = false;
+    if (worker !== ownedWorker) return;
+    clearProcessWatch();
+    failProcessing(new Error(err.message || 'Local worker failed'));
+    worker.terminate();
+    worker = null;
+    quickClean.setBackend('probing');
   });
   return worker;
 }
@@ -911,6 +831,7 @@ async function ensureTargetSpeakerUi() {
         }
       },
       onIsolated: async (channels, sampleRate) => {
+        invalidateComparison();
         // Replace clean stem; preserve diarization (loadStems clears segments).
         const segs = mixer.getSpeakerSegments?.() || [];
         const noise = mixer.noiseBuffer
@@ -935,7 +856,7 @@ async function ensureTargetSpeakerUi() {
 // ─── Slider value readouts ───────────────────────────────────────────────────
 
 const READOUTS = [
-  ['noiseReductionSlider', 'noiseReductionVal', (v) => `${v}%`],
+  ['noiseReductionSlider', 'noiseReductionVal', (v) => `${100 - v}% retained`],
   ['voiceLevelSlider', 'voiceLevelVal', (v) => `${v}%`],
   ['volumeSlider', 'volumeVal', (v) => `${v}%`],
   ['eqLowSlider', 'eqLowVal', (v) => `${v} dB`],
@@ -1082,18 +1003,6 @@ function applyPreset(name, sliderMap = PRESETS[name]) {
   }
 }
 
-/** Auto-calibrate all real-time sliders from the clean stem loudness profile. */
-function autoCalibrateMix(clean, sampleRate) {
-  const { preset, level, rmsDb, sliders } = calibrateFromStems(clean, sampleRate);
-  applyPreset(preset, sliders);
-  if (ui.presetSelect) {
-    const hasOption = [...ui.presetSelect.options].some((o) => o.value === preset);
-    ui.presetSelect.value = hasOption ? preset : ui.presetSelect.value;
-  }
-  console.info(`[VIP][landing] Auto-calibrated (${level}, ${rmsDb.toFixed(1)} dBFS) → preset "${preset}"`);
-  return { preset, level, rmsDb };
-}
-
 // ─── Pipeline glue ───────────────────────────────────────────────────────────
 
 /**
@@ -1103,15 +1012,24 @@ function autoCalibrateMix(clean, sampleRate) {
  * same file can be re-selected after a failed decode.
  */
 async function ingestFrom(file) {
-  if (!file || ingestInFlight || processingInFlight) return;
+  if (!file || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
   try {
     assertIngestible(file);
   } catch (err) {
     setStatus(err.message, 'error');
+    quickClean.setState('error', `Invalid media: ${err.message}. Your source is unchanged. Choose a supported audio or video file.`);
     return;
   }
   const seq = ++ingestSeq;
+  requestSeq += 1;
   ingestInFlight = true;
+  ingested = null;
+  hasProcessed = false;
+  invalidateComparison();
+  getAnalysisInsights()?.reset();
+  mixer?.stop();
+  quickClean.setState('importing', 'Reading the recording on this device…');
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ...ui.mixSliders]) if (el) el.disabled = true;
   resetTimings();
   clearStemCache();
   sourceFile = file;
@@ -1138,16 +1056,6 @@ async function ingestFrom(file) {
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
-    // Prefer fast single-model default for auto-path; never auto-run Demucs.
-    let selection = ui.modelSelect?.value || 'bsrnn_vocals';
-    if (selection === 'demucs' || selection === 'studio_isolation') {
-      selection = 'bsrnn_vocals';
-      if (ui.modelSelect) ui.modelSelect.value = 'bsrnn_vocals';
-      setStatus('Using fast BS-RNN (Demucs disabled for auto-process)', 'warn');
-    }
-    const modelIds = resolveModelIds(selection);
-    // Overlap model prefetch with decode (bsrnn only ~4 MB).
-    void warmupWorkerModels(modelIds).catch(() => {});
     const next = await ingestFile(file, {
       signal: job.controller.signal,
       onProgress: (stage, percent = 0) => {
@@ -1164,7 +1072,7 @@ async function ingestFrom(file) {
     });
     if (seq !== ingestSeq) {
       endJob(job.id, 'cancelled');
-      window.__vipLandingJobId = null;
+      if (window.__vipLandingJobId === job.id) window.__vipLandingJobId = null;
       return;
     }
     ingested = next;
@@ -1176,40 +1084,12 @@ async function ingestFrom(file) {
       return;
     }
 
-    // CRITICAL UX: enable listen immediately after decode — do not force-wait on ML.
     hideSpinner();
     endJob(job.id, 'completed');
-    window.__vipLandingJobId = null;
-    ui.processBtn.disabled = false;
-    ui.fileInput.disabled = false;
-    setStatus(
-      `Ready to play — “${file.name}” decoded (${(next.duration || 0).toFixed?.(1) || '?'}s). Isolating…`,
-      'warn',
-    );
-    // Load raw mix into playback so user can listen while isolation runs.
-    try {
-      if (mixer && next.channelData) {
-        // Clean = full mix, noise = silence so user hears original immediately.
-        const silence = next.channelData.map((c) => new Float32Array(c.length));
-        mixer.loadStems(next.channelData, silence, next.sampleRate);
-        if (typeof mixer.setVoiceLevel === 'function') mixer.setVoiceLevel(100);
-        if (typeof mixer.setVolume === 'function') mixer.setVolume(100);
-      }
-    } catch (playPrepErr) {
-      console.warn('[VIP][landing] early play prep failed', playPrepErr);
-    }
-
-    // Long files: do not auto-run ML (can take many minutes). User hits Separate.
-    const dur = next.duration || (next.channelData?.[0]?.length || 0) / (next.sampleRate || 48000);
-    if (dur > 180) {
-      setStatus(
-        `Decoded ${(dur / 60).toFixed(1)} min — press “Separate Stems” to isolate (auto-skip for long files). You can play now.`,
-        'warn',
-      );
-      return;
-    }
-    // Short files: auto-isolate in background; playback already available.
-    onProcess();
+    if (window.__vipLandingJobId === job.id) window.__vipLandingJobId = null;
+    quickClean.setState('imported', `Imported “${file.name}”. Nothing has been processed yet.`);
+    setStatus('Imported — choose an outcome, then press Process locally.', 'active');
+    // Import never initiates inference. Every duration follows the same explicit Process boundary.
   } catch (err) {
     if (seq !== ingestSeq) {
       if (window.__vipLandingJobId === job.id) {
@@ -1222,6 +1102,7 @@ async function ingestFrom(file) {
     clearVideo(); // nothing to play — don't leave a dangling preview/object URL
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
+    quickClean.setState('error', `Import failed: ${err.message}. Your source file is unchanged. Choose a supported format and retry.`);
     endJob(job.id, 'error', err);
     window.__vipLandingJobId = null;
     ingested = null;
@@ -1229,12 +1110,13 @@ async function ingestFrom(file) {
     ui.processBtn.disabled = true;
     updateDownloadButton();
   } finally {
-    ingestInFlight = false;
-    // Keep input locked while ML isolation runs; onStems/error re-enables it.
-    if (!processingInFlight) {
+    if (seq === ingestSeq) {
+      ingestInFlight = false;
+      if (ingested) quickClean.setState('ready', 'Ready. Choose an outcome and press Process locally.');
+      void refreshPreflight();
       ui.fileInput.disabled = false;
+      ui.fileInput.value = '';
     }
-    ui.fileInput.value = '';
   }
 }
 
@@ -1296,69 +1178,58 @@ function warnIfNotServed() {
   }
 }
 
-// UI-level model chains: run several models in series for maximum isolation.
-// Keys are <select> values that are NOT single manifest entries; the worker
-// receives the resolved `modelIds` array (see MLWorker chain support).
-const MODEL_CHAINS = Object.freeze({
-  max_isolation: ['bsrnn_vocals', 'rnnoise'],
-  studio_isolation: ['demucs', 'rnnoise'],
-});
-
 function onProcess() {
-  if (!ingested || processingInFlight) return;
-  processingInFlight = true;
-  ui.fileInput.disabled = true;
-  const selection = ui.modelSelect.value;
-  const chain = MODEL_CHAINS[selection];
-  const modelIds = chain || [getModel(selection).id];
-  const cacheKey = stemCacheKey(
-    ingested.channelData,
-    ingested.sampleRate,
-    modelIds,
-    ingested.sourceName,
-  );
-  ui.processBtn.disabled = true;
-  ui.fileInput.disabled = true;
-  ui.modelSelect.disabled = true;
-  const job = beginJob(chain ? 'Maximum isolation' : 'Separate stems', { kind: 'separate' });
-  window.__vipLandingJobId = job.id;
-  currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
-  setProgress(0);
-  setProcStage('separate', 0, currentJobLabel);
-  setStatus(currentJobLabel, 'warn');
-
-  const cached = getCachedStems(cacheKey);
-  if (cached) {
-    currentJobLabel = 'Using cached stems…';
-    setStatus(currentJobLabel, 'warn');
-    stageStart('model_load');
-    stageEnd('model_load');
-    stageStart('isolate');
-    stageEnd('isolate');
-    onStems({
-      requestId: ++requestSeq,
-      clean: cached.clean.map((c) => new Float32Array(c)),
-      noise: cached.noise.map((c) => new Float32Array(c)),
-      sampleRate: cached.sampleRate,
-      passthrough: false,
-      _cacheKey: cacheKey,
-    });
+  if (!ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
+  if (!worker) {
+    try { getWorker(); setStatus('Checking local runtime — press Process when ready.', 'warn'); }
+    catch (err) { failProcessing(err); }
     return;
   }
-
-  stageStart('model_load');
-  ingested._stemCacheKey = cacheKey;
-
-  // Channel copies are transferred — keep our reference for re-processing.
-  const channelData = ingested.channelData.map((c) => c.slice());
-  const msg = { type: 'process', requestId: ++requestSeq, channelData, sampleRate: ingested.sampleRate };
-  if (chain) msg.modelIds = chain;
-  else msg.modelId = getModel(selection).id;
-  getWorker().postMessage(msg, channelData.map((c) => c.buffer));
+  try {
+    processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
+    processingInFlight = true;
+    hasProcessed = false;
+    invalidateComparison();
+    updateDownloadButton();
+    ui.processBtn.disabled = true;
+    ui.fileInput.disabled = true;
+    ui.modelSelect.disabled = true;
+    const modelIds = processPlan.modelIds;
+    const cacheKey = stemCacheKey(ingested.channelData, ingested.sampleRate, modelIds, ingested.sourceName);
+    const job = beginJob('Separate stems', { kind: 'separate' });
+    window.__vipLandingJobId = job.id;
+    currentJobLabel = `${processPlan.label} — processing locally…`;
+    quickClean.setState('processing', currentJobLabel);
+    setProcStage('separate', 0, currentJobLabel);
+    const id = ++requestSeq;
+    const cached = getCachedStems(cacheKey);
+    if (cached) {
+      onStems({ requestId: id, clean: cached.clean.map((c) => c.slice()),
+        noise: cached.noise.map((c) => c.slice()), sampleRate: cached.sampleRate,
+        passthrough: false, _cacheKey: cacheKey });
+      return;
+    }
+    ingested._stemCacheKey = cacheKey;
+    stageStart('model_load');
+    const channelData = ingested.channelData.map((channel) => channel.slice());
+    const startedAt = Date.now();
+    lastProcessProgress = startedAt;
+    clearProcessWatch();
+    processWatch = setInterval(() => {
+      if (Date.now() - lastProcessProgress < 45000 && Date.now() - startedAt < 300000) return;
+      requestSeq += 1;
+      worker?.terminate();
+      worker = null;
+      failProcessing(new Error('The worker stopped responding. Retry Process.'));
+    }, 5000);
+    getWorker().postMessage({ type: 'process', requestId: id, modelIds: [...modelIds],
+      channelData, sampleRate: processPlan.sampleRate }, channelData.map((channel) => channel.buffer));
+  } catch (err) { failProcessing(err); }
 }
 
 function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
-  if (requestId !== requestSeq) return; // stale response
+  if (!processingInFlight || requestId !== requestSeq) return; // stale response
+  clearProcessWatch();
   processingInFlight = false;
   stageEnd('isolate');
   stageEnd('model_load');
@@ -1377,14 +1248,23 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   ui.modelSelect.disabled = false;
 
   if (passthrough) {
-    setStatus('Isolation failed — models could not run. Check /app/models is being served (Demucs ~149 MB on first load).', 'error');
+    failProcessing(new Error('Models could not run; no cleaned result was produced.'));
     speakerControls?.clear();
     ui.speakersPanel.hidden = true;
     return;
   }
 
   if (!mixer) {
-    mixer = new PlaybackMixer();
+    try {
+      mixer = new PlaybackMixer();
+    } catch (err) {
+      // AudioContext may fail on first load if the browser requires a user gesture
+      // (autoplay policy) or if the Web Audio API is unavailable.
+      failProcessing(new Error(`Failed to initialise audio playback: ${err.message}. Tap Play after processing completes or try a different browser.`));
+      speakerControls?.clear();
+      ui.speakersPanel.hidden = true;
+      return;
+    }
     // Ensure gate/de-esser worklets finish loading (non-blocking for play).
     void mixer.workletsReady?.().then(() => {
       try {
@@ -1399,6 +1279,8 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     globalThis.__vipDiagnostics = { mixer, sliderUI, speakerControls, visualizer };
   }
   mixer.loadStems(clean, noise, sampleRate);
+  hasProcessed = true;
+  invalidateComparison();
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
   startOutputMeter();
@@ -1423,13 +1305,22 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     regionBar: ui.regionBar,
     onChange: () => visualizer?.invalidate?.(),
   });
-  const cal = autoCalibrateMix(clean, sampleRate);
-  const calLabel = ` · calibrated: ${cal.preset} (${cal.level})`;
-  setStatus(`Stems ready — press Play and mix in real time${calLabel}.`, 'active');
+  applyPreset('original', { ...RT_SLIDER_DEFAULTS, noiseReductionSlider: 100 - (processPlan?.background || 0) });
+  quickClean.setState('processed', 'Processing complete. Prepare matched A/B, adjust Voice and Background, then export the mix.');
+  setStatus('Stems ready — compare, listen and export.', 'active');
   const scheduleIdle = globalThis.requestIdleCallback
     ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
     : (cb) => setTimeout(cb, 0);
-  scheduleIdle(() => detectSpeakers(clean, sampleRate));
+  scheduleIdle(() => { if (requestId === requestSeq && hasProcessed) void detectSpeakers(clean, sampleRate); });
+  // Off-critical-path: run classical analysis on the clean stem and surface
+  // detected sources + recommendations in the signal-preview panel.
+  // Runs cooperatively via FullAnalysisHost → FullAnalysisWorker. Non-blocking.
+  scheduleIdle(() => {
+    if (requestId !== requestSeq || !hasProcessed) return;
+    const fingerprint = ingested?._stemCacheKey || ingested?.sourceName || 'unknown';
+    const backend = quickClean.backend === 'webgpu' ? 'webgpu' : 'wasm';
+    void getAnalysisInsights()?.analyze(clean, sampleRate, { contentFingerprint: fingerprint, backend });
+  });
 }
 
 // ─── Stem mute toggles ───────────────────────────────────────────────────────
@@ -1601,6 +1492,31 @@ window.addEventListener('unhandledrejection', (event) => {
   setStatus(`Upload failed: ${msg}`, 'error');
 });
 ui.processBtn.addEventListener('click', onProcess);
+ui.modelSelect.addEventListener('change', () => { void refreshPreflight(); });
+$('prepareComparisonBtn')?.addEventListener('click', () => { void prepareComparison(); });
+for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedBtn', 'cleaned']]) {
+  $(id)?.addEventListener('click', async () => {
+    try {
+      await review?.listen(which);
+      for (const buttonId of ['compareOriginalBtn', 'compareCleanedBtn']) $(buttonId).setAttribute('aria-pressed', String(buttonId === id));
+    } catch (err) { $('comparisonStatus').textContent = `Playback failed: ${err.message}. Try Play again.`; }
+  });
+}
+document.addEventListener('input', (event) => {
+  if (event.target.matches('input[type="range"]') && event.target.id !== 'seekSlider') {
+    invalidateComparison();
+    $('comparisonStatus').textContent = 'Mix changed. Prepare matched A/B again to compare this version.';
+  }
+  if (event.target.id === 'noiseReductionSlider') event.target.setAttribute('aria-valuetext', `${100 - Number(event.target.value)} percent background retained`);
+});
+for (const id of ['playBtn', 'pauseBtn', 'stopBtn', 'seekSlider']) {
+  $(id)?.addEventListener(id === 'seekSlider' ? 'input' : 'click', () => review?.stop());
+}
+for (const id of ['muteVoiceBtn', 'muteNoiseBtn', 'presetSelect', 'speakerCardsGrid']) {
+  $(id)?.addEventListener('click', invalidateComparison);
+  $(id)?.addEventListener('change', invalidateComparison);
+}
+$('downloadVideoBtn')?.addEventListener('click', () => { void onDownloadProcessed({ video: true }); });
 ui.cancelProcessBtn?.addEventListener('click', () => { cancelLandingJob(); });
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 ui.downloadBtn?.addEventListener('click', () => { onDownloadProcessed().catch(() => {}); });
@@ -1612,7 +1528,8 @@ wireTransport();
 wireMuteButtons();
 wireDragAndDrop();
 mountBadge();
-getWorker();
+try { getWorker(); } catch (err) { quickClean.setBackend('unavailable'); quickClean.setState('error', err.message); }
+void refreshPreflight();
 wireClearLocalData();
 setStatus('Idle — choose a file to begin', '');
 
@@ -1648,3 +1565,4 @@ function wireClearLocalData() {
     }
   });
 }
+window.addEventListener('pagehide', () => { clearProcessWatch(); review?.clear(); worker?.terminate(); analysisInsights?.dispose(); });
