@@ -30,12 +30,15 @@ describe('Upload race condition guard', () => {
   });
 
   test('ingestFrom() bails early when ingest or ML processing is in flight', () => {
-    expect(js).toMatch(/if\s*\(!file\s*\|\|\s*ingestInFlight\s*\|\|\s*processingInFlight\)/);
+    // Guard includes download and review flags added in the QuickClean architecture.
+    expect(js).toMatch(/if\s*\(!file\s*\|\|\s*ingestInFlight\s*\|\|\s*processingInFlight/);
   });
 
-  test('file input is re-enabled after decode unless ML isolation is still running', () => {
+  test('file input is re-enabled after decode (sequence-guarded against newer ingestion)', () => {
+    // The re-enable is sequence-guarded: only the most-recent ingestion re-enables the input,
+    // preventing races with a newer file selection that arrived while decode was running.
     expect(js).toContain('processingInFlight');
-    expect(js).toMatch(/if\s*\(!processingInFlight\)\s*\{[^}]*ui\.fileInput\.disabled\s*=\s*false/s);
+    expect(js).toMatch(/if\s*\(seq\s*===\s*ingestSeq\)[\s\S]*?ui\.fileInput\.disabled\s*=\s*false/s);
   });
 
   test('onFileChosen() delegates to ingestFrom()', () => {
