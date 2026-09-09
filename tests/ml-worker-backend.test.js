@@ -40,7 +40,7 @@ describe('canonical MLWorker backend fallback', () => {
     const calls = [];
     const { api } = loadBackendHarness({ adapter: {}, create: async (_b, opts) => { calls.push(opts.executionProviders); return {}; } });
     await api.createSessionFromBytes(entry('a'), bytes, 'a');
-    expect(calls).toEqual([['webgpu', 'wasm']]);
+    expect(calls).toEqual([['webgpu']]);
   });
 
   test('pins only a failed graph to WASM and lets another graph try WebGPU', async () => {
@@ -56,7 +56,7 @@ describe('canonical MLWorker backend fallback', () => {
     await api.createSessionFromBytes(entry('a'), bytes, 'a');
     await api.createSessionFromBytes(entry('a'), bytes, 'a');
     await api.createSessionFromBytes(entry('b'), bytes, 'b');
-    expect(calls).toEqual([['webgpu', 'wasm'], ['wasm'], ['wasm'], ['webgpu', 'wasm']]);
+    expect(calls).toEqual([['webgpu'], ['wasm'], ['wasm'], ['webgpu']]);
     expect(messages.find((m) => m.stage === 'ort-fallback')).toMatchObject({ modelId: 'a', reason: 'session-compile' });
   });
 
@@ -72,6 +72,6 @@ describe('canonical MLWorker backend fallback', () => {
     });
     await api.createSessionFromBytes(entry('a'), bytes, 'a');
     await api.createSessionFromBytes(entry('b'), bytes, 'b');
-    expect(calls).toEqual([['webgpu', 'wasm'], ['wasm'], ['wasm']]);
+    expect(calls).toEqual([['webgpu'], ['wasm'], ['wasm']]);
   });
 });

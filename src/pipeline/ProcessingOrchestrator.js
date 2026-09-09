@@ -85,10 +85,14 @@ export class ProcessingOrchestrator {
 
     let settled = false;
     let timeout = null;
+    // Hoist handler so onAbort can guard removeEventListener when signal.aborted
+    // is true on entry — otherwise the early-abort path calls removeEventListener
+    // on an undefined handler and the 30s init timeout leaks.
+    let handler = null;
     const cleanup = () => {
       clearTimeout(timeout);
       signal?.removeEventListener?.('abort', onAbort);
-      worker.removeEventListener('message', handler);
+      if (handler) this.mlWorker.removeEventListener('message', handler);
       worker.removeEventListener('error', onWorkerError);
       worker.removeEventListener('messageerror', onMessageError);
     };
@@ -107,14 +111,17 @@ export class ProcessingOrchestrator {
       if (recycle) this._recycleWorker(worker);
       rejectInitPromise(error);
     });
-    const onAbort = () => rejectInit(new CancellationError('Cancelled during ML init'));
+    const onAbort = () => {
+      if (handler) this.mlWorker.removeEventListener('message', handler);
+      rejectInit(new CancellationError('Cancelled during ML init'));
+    };
     const onWorkerError = (event) => rejectInit(new Error(
       `[VIP][ProcessingOrchestrator] MLWorker initialization failed: ${event?.message || 'worker error'}`,
     ), true);
     const onMessageError = () => rejectInit(new Error(
       '[VIP][ProcessingOrchestrator] MLWorker initialization message could not be deserialized',
     ), true);
-    const handler = (event) => {
+    handler = (event) => {
       const msg = event?.data;
       if (!msg || typeof msg !== 'object') {
         rejectInit(new Error('[VIP][ProcessingOrchestrator] Malformed MLWorker initialization message'), true);
@@ -131,6 +138,7 @@ export class ProcessingOrchestrator {
 
     this._rejectInit = rejectInit;
     timeout = setTimeout(() => {
+      if (handler) this.mlWorker.removeEventListener('message', handler);
       rejectInit(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'), true);
     }, 30000);
     worker.addEventListener('message', handler);

@@ -170,6 +170,10 @@
         <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Separate stems</button>
         <button id="cancelProcessBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled aria-label="Cancel processing">Cancel</button>
       </div>
+      <p id="outcomeHelp" class="hint">Choose the result you want, then press Process.</p>
+      <p id="quickCleanPreflight" class="hint" role="status">Checking local processing support…</p>
+      <p id="quickCleanModelDetails" class="hint" aria-live="polite"></p>
+
       <div class="status-row">
         <span id="statusPillMount" role="status" aria-live="polite">
           <span class="status-dot"></span>
@@ -255,6 +259,10 @@
         <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled
                 title="Download isolated voice (video with processed audio when the source is a video)">
           Download Processed
+        </button>
+        <button id="downloadVideoBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled
+                title="Download video with isolated audio track">
+          Download Video
         </button>
         <button id="saveDriveBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled
                 title="Upload processed export to Google Drive (optional — processing stays local)">

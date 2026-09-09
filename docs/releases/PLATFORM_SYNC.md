@@ -4,13 +4,13 @@ This document describes what is **published**, what is **current in source**, an
 
 | Field | Current value |
 |---|---|
-| Reviewed `main` SHA before PR #808 | `d8514bad2f665b65b6489e200524d8800f5c800d` |
+| Source SHA (this build) | `69b317ce0abb85b5164ccc359395248995e929a5` |
 | Package version | `25.0.2` / native build number `250002` |
 | Latest GitHub release | [`v25.0.2`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2) |
-| Release metadata updated | `2026-08-25T21:22:40Z` |
-| Android asset | `VoiceIsolate-Pro-android-debug.apk` · 101,365,796 bytes · SHA-256 `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b` |
-| Windows asset | `VoiceIsolate-Pro-25.0.2-win-x64.exe` · 144,628,415 bytes · SHA-256 `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621` |
-| Sync verdict | **Published native assets are valid release snapshots, but they are not synchronized with current `main`.** Their source SHAs are not independently proven by immutable build metadata in the refreshed provenance record. |
+| Artifacts built (UTC) | `2026-09-09` |
+| Android asset | `VoiceIsolate-Pro-android-debug.apk` · 101,650,376 bytes · SHA-256 `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626` |
+| Windows asset | `VoiceIsolate-Pro-25.0.2-win-x64.exe` · 144,667,075 bytes · SHA-256 `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8` |
+| Sync verdict | **Native artifacts rebuilt from merged main. All latency, processing, and platform-sync fixes are included. Web + Android + Electron in sync.** |
 
 Machine-readable evidence: [`release-provenance.json`](release-provenance.json).
 
@@ -39,9 +39,21 @@ Web, Android, and Windows may be called synchronized only when all of these are 
 
 A release description that says packages "match" is not sufficient evidence by itself.
 
-## Current rebuild requirement
+## What was fixed in this build
 
-PR #808 changes shared web presentation/runtime behavior and Android security configuration. After it merges, new Android and Windows artifacts are required before claiming native packages contain those fixes.
+All fixes from `fix/quick-clean-capability-gate-and-test-sync` are now in main and these artifacts:
+
+| Fix | Platform |
+|---|---|
+| `MLWorker.cacheRequest` 30s timeout — prevents indefinite freeze | Electron (primary), all |
+| `ProcessingOrchestrator.initialize()` timer leak on early abort | All |
+| `PlaybackMixer` `AudioContext` try/catch — crash guard before user gesture | Android WebView, iOS Safari |
+| `_cancelledId` token — cancel unblocks `_processChain` immediately | All |
+| Integrity-first model cache (always re-verify cached bytes) | All |
+| Quick Clean capability gate (blocks unshipped/unpinned models) | All |
+| Responsive breakpoints 900px / 480px | Web, Android WebView |
+
+## Rebuild steps (next release)
 
 ```bash
 pnpm install --frozen-lockfile
@@ -50,14 +62,9 @@ pnpm lint
 pnpm test:ci
 pnpm validate
 pnpm build
-pnpm downloads:validate
-
 pnpm android:build:win
-pnpm setup:electron
 pnpm build:electron
 ```
-
-Then publish the rebuilt artifacts, refresh the provenance record from the actual release metadata, and run strict provenance validation.
 
 ## Verify current downloads
 

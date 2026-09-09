@@ -116,6 +116,20 @@ let _webgpuDisabledReason = null;
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
 
+/**
+ * Most-recently cancelled request ID. processRequest / runFusedSpectralMaskChain /
+ * runVadRequest check this after every awaitable step so a cancellation unblocks
+ * _processChain immediately rather than after full inference completes.
+ */
+let _cancelledId = null;
+
+/** Throws a cancellation error if requestId has been cancelled. */
+function checkCancelled(requestId) {
+  if (_cancelledId === requestId) {
+    throw new Error(`[VIP][MLWorker] request ${requestId} cancelled`);
+  }
+}
+
 const SESSION_COMPILE_TIMEOUT_MS = 90000;
 
 function withTimeout(promise, ms, label) {
@@ -225,6 +239,9 @@ function classifyOrtFailure(err) {
   return 'other';
 }
 
+// Alias used by tests (ml-worker-backend.test.js) — do not remove.
+const classifyWebGpuFailure = classifyOrtFailure;
+
 function actualBackendsFor(chain) {
   const ids = Array.isArray(chain) ? chain : [];
   const map = Object.create(null);
@@ -329,10 +346,23 @@ async function verifyIntegrity(entry, bytes) {
 
 // ─── Model loading ───────────────────────────────────────────────────────────
 
+const CACHE_REQUEST_TIMEOUT_MS = 30000;
+
 function cacheRequest(op, key, buffer) {
   return new Promise((resolve, reject) => {
     const requestId = ++_cacheReqId;
-    _cachePending.set(requestId, { resolve, reject });
+    // Guard: if the main-thread ModelCacheBridge handler stalls or crashes (e.g.
+    // Electron IPC pipe closed, worker re-created), the cache-response may never
+    // arrive. Without this timeout the 'process' request would freeze indefinitely.
+    const timer = setTimeout(() => {
+      if (!_cachePending.has(requestId)) return;
+      _cachePending.delete(requestId);
+      reject(new Error(`[VIP][MLWorker] cache-request '${op}' timed out after ${CACHE_REQUEST_TIMEOUT_MS / 1000}s`));
+    }, CACHE_REQUEST_TIMEOUT_MS);
+    _cachePending.set(requestId, {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
     const msg = { type: 'cache-request', requestId, op, key };
     if (buffer) {
       // NEVER transfer the caller's ArrayBuffer — ORT session compile and
@@ -371,9 +401,8 @@ async function fetchModelBytes(entry) {
 
   const cached = await cacheGet(cacheKey);
   if (cached) {
-    // Cache key already embeds the pinned SHA-256. Re-hashing multi-MB models
-    // on every process adds 100–500ms+ of pure CPU — trust the key after put.
-    if (entry.sha256) return cached;
+    // The key identifies the expected hash; it is not evidence of byte integrity.
+    // Verify cached bytes before creating a new session, just like fetched bytes.
     try {
       await verifyIntegrity(entry, cached);
       return cached;
@@ -448,6 +477,8 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
     const kind = classifyOrtFailure(err);
     if (kind === 'other') throw err;
     const msg = String(err?.message || err || '');
+    // Normalise to the reason strings the branch tests and ort-fallback messages use.
+    const reason = kind === 'device-loss' ? 'device-loss' : 'session-compile';
     if (kind === 'device-loss') {
       disableWebGpu(msg);
     } else {
@@ -456,7 +487,7 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
     console.warn(
       '[VIP][MLWorker] WebGPU session failed; one local WASM retry for',
       key,
-      kind,
+      reason,
       msg,
     );
     self.postMessage({
@@ -467,8 +498,9 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
         ? 'WebGPU device lost — worker-wide WASM'
         : 'WebGPU failed — local WASM retry',
       backend: 'wasm',
+      modelId: entry.id,
       sessionKey: key,
-      reason: kind,
+      reason,
       detail: msg.slice(0, 240),
     });
     const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
@@ -1151,6 +1183,9 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   }
 
   ACTIVE_REQUEST_ID = requestId;
+  // Clear any stale cancel token from a previous request so a new request
+  // with a fresh ID is not accidentally short-circuited.
+  if (_cancelledId !== requestId) _cancelledId = null;
   resetStftCounters();
   let lastProgressSent = -1;
   const onProgress = (p) => {
@@ -1247,8 +1282,12 @@ self.onmessage = async (event) => {
   const msg = event.data || {};
   try {
     // Cooperative cancel — drop active request so progress/stems are ignored.
+    // Also set _cancelledId so processRequest / runFusedSpectralMaskChain /
+    // runVadRequest throw early at the next awaitable step, unblocking _processChain.
     if (msg.type === 'cancel') {
+      const targetId = msg.requestId ?? ACTIVE_REQUEST_ID;
       if (msg.requestId == null || msg.requestId === ACTIVE_REQUEST_ID) {
+        _cancelledId = targetId;
         ACTIVE_REQUEST_ID = null;
         self.postMessage({
           type: 'cancelled',
