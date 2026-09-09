@@ -95,6 +95,20 @@ let _webgpuDisabledReason = null;
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
 
+/**
+ * Most-recently cancelled request ID.  processRequest / runFusedSpectralMaskChain /
+ * runVadRequest check this after every awaitable step so a cancellation unblocks
+ * _processChain immediately rather than after full inference completes.
+ */
+let _cancelledId = null;
+
+/** Throws a cancellation error if requestId has been cancelled. */
+function checkCancelled(requestId) {
+  if (_cancelledId === requestId) {
+    throw new Error(`[VIP][MLWorker] request ${requestId} cancelled`);
+  }
+}
+
 const SESSION_COMPILE_TIMEOUT_MS = 90000;
 
 function withTimeout(promise, ms, label) {
@@ -582,6 +596,7 @@ async function runFusedSpectralMaskChain(
   onProgress,
   processingConfig = null,
   sampleRate = 48000,
+  requestId = null,
 ) {
   if (!heads?.length) throw new Error('[VIP][MLWorker] empty spectral head list');
   const entry0 = heads[0].entry;
@@ -658,6 +673,7 @@ async function runFusedSpectralMaskChain(
     } else {
       forwardStftBatch(cur, f0, count);
     }
+    if (requestId !== null) checkCancelled(requestId);
 
     const nextF0 = f0 + batchMax;
     const nextCount = nextF0 < totalFrames ? Math.min(batchMax, totalFrames - nextF0) : 0;
@@ -675,6 +691,7 @@ async function runFusedSpectralMaskChain(
         head.session,
         { [head.entry.io.input]: input },
       );
+      if (requestId !== null) checkCancelled(requestId);
       const mask = results[head.entry.io.output]?.data;
       if (!mask || mask.length < count * bins) {
         throw new Error(`[VIP][MLWorker] '${head.entry.id}' returned a malformed output tensor.`);
@@ -883,6 +900,7 @@ async function runVadRequest({ requestId, samples, sampleRate }) {
       state: stateTensor,
       sr: srTensor,
     });
+    checkCancelled(requestId);
     if (result.stateN?.data) _vadState = new Float32Array(result.stateN.data);
     const out = result.output?.data;
     scores[c] = out && out.length ? Number(out[0]) : 0;
@@ -934,7 +952,9 @@ async function runUniversalSeparate(msg) {
   }
 
   ACTIVE_REQUEST_ID = requestId;
+  if (_cancelledId !== requestId) _cancelledId = null;
   try {
+    checkCancelled(requestId);
     postStage('universal-separate', 5, { modelId: entry.id });
     let session;
     try {
@@ -1064,6 +1084,9 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   }
 
   ACTIVE_REQUEST_ID = requestId;
+  // Clear any stale cancel token from a previous request so a new request
+  // with a fresh ID is not accidentally short-circuited.
+  if (_cancelledId !== requestId) _cancelledId = null;
   resetStftCounters();
   let lastProgressSent = -1;
   const onProgress = (p) => {
@@ -1084,6 +1107,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   let clean;
 
   try {
+    checkCancelled(requestId);
     if (canFuseSpectralChain(entries)) {
       // ── Production shipping path: fused spectral-mask chain ───────────
       pipelineMode = 'fused-spectral-single-stft';
@@ -1091,10 +1115,11 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       const heads = [];
       for (const entry of entries) {
         heads.push({ entry, session: await getSession(entry, entry.id) });
+        checkCancelled(requestId);
       }
       clean = await Promise.all(channelData.map((samples, ch) => {
         const progress = (p) => onProgress((ch + p) / channelData.length);
-        return runFusedSpectralMaskChain(heads, samples, progress, processingConfig, sampleRate);
+        return runFusedSpectralMaskChain(heads, samples, progress, processingConfig, sampleRate, requestId);
       }));
     } else {
       // ── Mixed / waveform-only branch (not single-STFT invariant) ──────
@@ -1103,6 +1128,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       let stepBase = 0;
       let current = channelData;
       for (let ci = 0; ci < chain.length; ci++) {
+        checkCancelled(requestId);
         const id = chain[ci];
         const entry = MANIFEST[id];
         postStage('separate', Math.round((stepBase / totalSteps) * 100), {
@@ -1110,6 +1136,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
           branch: entry.strategy === 'waveform' ? 'waveform-only' : entry.strategy,
         });
         const session = await getSession(entry, entry.id);
+        checkCancelled(requestId);
         const next = await Promise.all(current.map(async (samples, ch) => {
           const step = stepBase + ch;
           const progress = (p) => onProgress((step + p) / totalSteps);
@@ -1160,8 +1187,12 @@ self.onmessage = async (event) => {
   const msg = event.data || {};
   try {
     // Cooperative cancel — drop active request so progress/stems are ignored.
+    // Also set _cancelledId so processRequest / runFusedSpectralMaskChain /
+    // runVadRequest throw early at the next awaitable step, unblocking _processChain.
     if (msg.type === 'cancel') {
+      const targetId = msg.requestId ?? ACTIVE_REQUEST_ID;
       if (msg.requestId == null || msg.requestId === ACTIVE_REQUEST_ID) {
+        _cancelledId = targetId;
         ACTIVE_REQUEST_ID = null;
         self.postMessage({
           type: 'cancelled',

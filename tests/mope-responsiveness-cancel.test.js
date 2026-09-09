@@ -36,6 +36,19 @@ describe('MOPE responsiveness + cancel plumbing', () => {
     expect(faWorker).toMatch(/msg\.type === ['"]cancel['"]/);
   });
 
+  test('MLWorker sets _cancelledId on cancel so _processChain unblocks immediately', () => {
+    // _cancelledId is set when cancel matches the active request.
+    expect(mlWorker).toMatch(/_cancelledId/);
+    // checkCancelled throws, causing the queued .then() to reject and unblock the chain.
+    expect(mlWorker).toMatch(/checkCancelled/);
+    // cancel handler assigns _cancelledId before nulling ACTIVE_REQUEST_ID.
+    expect(mlWorker).toMatch(/_cancelledId\s*=\s*targetId/);
+  });
+
+  test('processRequest clears stale _cancelledId on start so new requests are not blocked', () => {
+    expect(mlWorker).toMatch(/if\s*\(_cancelledId\s*!==\s*requestId\)\s*_cancelledId\s*=\s*null/);
+  });
+
   test('PromptedIsolation passes signal into provider isolate', () => {
     expect(prompt).toMatch(/signal:\s*opts\.signal/);
     expect(prompt).toMatch(/throwIfAborted/);
