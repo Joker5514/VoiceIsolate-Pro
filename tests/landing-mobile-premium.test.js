@@ -13,7 +13,7 @@ const css = fs.readFileSync(path.join(ROOT, 'public/landing.css'), 'utf8');
 describe('Landing first-impression / mobile premium', () => {
   test('hero communicates local/privacy value prop', () => {
     expect(html).toMatch(/vip-hero/);
-    expect(html).toMatch(/Clean voice\. Zero cloud audio\./i);
+    expect(html).toMatch(/Clean voice\.(?:\s|<[^>]+>)+Zero cloud audio\./i);
     expect(html).toMatch(/Zero telemetry/i);
     expect(html).toMatch(/Upload &amp; isolate|Upload & isolate/);
   });

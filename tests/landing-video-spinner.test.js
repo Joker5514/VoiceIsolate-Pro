@@ -77,11 +77,12 @@ describe('Landing page — realtime processing indicator (ProcessLoader)', () =>
     expect(js).not.toContain('ui.progress');
   });
 
-  test('models warm up off the hot path and separation auto-starts after ingest', () => {
-    expect(js).toContain("type: 'warmup'");
-    expect(js).toContain('warmupWorkerModels');
-    expect(js).toContain('onProcess()');
-    expect(js).toContain('requestIdleCallback');
+  test('import never starts inference or model downloads before explicit Process', () => {
+    const ingestion = js.slice(js.indexOf('async function ingestFrom('), js.indexOf('async function onFileChosen('));
+    expect(ingestion).not.toContain('onProcess()');
+    expect(ingestion).not.toContain('warmupWorkerModels');
+    expect(js).not.toContain("type: 'warmup'");
+    expect(js).toContain("ui.processBtn.addEventListener('click', onProcess)");
   });
 
   test('inference progress drives the ProcessLoader component', () => {

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "25.0.2",
+  "reviewedHead": "3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c",
+  "releaseTag": {
+    "name": "v25.0.2",
+    "sourceCommit": "1cb37fd495cb80eaac369e028ad2c1fcae0a63ea"
+  },
+  "platforms": [
+    {
+      "platform": "web",
+      "publicVersion": "25.0.2",
+      "sourceCommit": null,
+      "buildTimestamp": null,
+      "artifactFilename": null,
+      "artifactSha256": null,
+      "testSuite": "unknown for the currently deployed artifact",
+      "url": "https://voice-isolate-pro.vercel.app/",
+      "status": "unknown",
+      "notes": "The deployment URL does not expose immutable source/build provenance. Do not infer it from repository HEAD."
+    },
+    {
+      "platform": "android",
+      "publicVersion": "25.0.2",
+      "sourceCommit": "17692f98e1023ea7b18b7bd8a5c374291ccb67f8",
+      "buildTimestamp": "2026-08-21T10:04:08Z",
+      "artifactFilename": "VoiceIsolate-Pro-android-debug.apk",
+      "artifactSha256": null,
+      "testSuite": "pnpm test:ci; exact run result not retained with artifact",
+      "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk",
+      "status": "stale",
+      "notes": "Published native artifact predates reviewed main; SHA-256 is not published in repository metadata."
+    },
+    {
+      "platform": "windows",
+      "publicVersion": "25.0.2",
+      "sourceCommit": "17692f98e1023ea7b18b7bd8a5c374291ccb67f8",
+      "buildTimestamp": "2026-08-21T10:04:10Z",
+      "artifactFilename": "VoiceIsolate-Pro-25.0.2-win-x64.exe",
+      "artifactSha256": null,
+      "testSuite": "pnpm test:ci; exact run result not retained with artifact",
+      "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe",
+      "status": "stale",
+      "notes": "Published native artifact predates reviewed main; SHA-256 is not published in repository metadata."
+    }
+  ]
+}

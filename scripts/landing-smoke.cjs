@@ -194,7 +194,7 @@ async function main() {
     console.log('Page load:');
     await page.goto(`${BASE}/`, { waitUntil: 'load' });
     await waitForLandingBoot(page);
-    check(await page.title() === 'VoiceIsolate Pro — Stem-Split & Live-Mix', 'title correct');
+    check(await page.title() === 'VoiceIsolate Pro — Local voice isolation · Stem-Split & Live-Mix', 'title correct');
     for (const id of ['noiseReductionSlider', 'voiceLevelSlider', 'volumeSlider',
       'eqLowSlider', 'eqHighSlider', 'presetSelect', 'waveCanvas', 'specCanvas',
       'muteVoiceBtn', 'muteNoiseBtn', 'speakersPanel', 'speakerCardsGrid']) {
@@ -209,9 +209,12 @@ async function main() {
     );
 
     // ── Ingest + true inference ─────────────────────────────────────────────
-    // Landing auto-starts separation after decode (no separate "Ready:" gate).
+    // All uploads wait for explicit Process; inference never starts from import.
     console.log('\nIngestion & inference (real model, no passthrough):');
     await triggerFileIngest(page, wavPath);
+    await page.waitForFunction(() => document.querySelector('#uploadPanel').dataset.state === 'ready'
+      && !document.querySelector('#processBtn').disabled);
+    await page.click('#processBtn');
     await waitForPipelineStart(page, consoleErrors);
     check(true, 'file accepted and pipeline started');
 
@@ -225,7 +228,7 @@ async function main() {
     const statusAfter = await statusMsg();
     check(!statusAfter.includes('passthrough') && !statusAfter.includes('unavailable'),
       'REAL inference produced stems (not passthrough)');
-    check(statusAfter.includes('calibrated'), `auto-calibration applied (“${statusAfter}”)`);
+    check(await page.locator('#noiseReductionSlider').inputValue() === '100', 'Clean Speech begins with background removed');
     check(await page.evaluate(() => Boolean(globalThis.__vipDiagnostics?.mixer)), 'mixer + diagnostics exposed');
     check(
       await page.evaluate((ids) => ids.every((id) => !document.getElementById(id).disabled), mixSliderIds),

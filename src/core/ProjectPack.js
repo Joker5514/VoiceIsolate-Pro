@@ -16,10 +16,13 @@
 
 import * as FileLibrary from './FileLibrary.js';
 import * as ProjectStore from './ProjectStore.js';
-import { readSourceBlob, writeSourceBlob, blobToFile } from './storage/BlobStore.js';
+import { readSourceBlob, blobToFile } from './storage/BlobStore.js';
 
 const MAGIC = 0x56505031; // VPP1
 const VERSION = 1;
+const HEADER_BYTES = 12;
+const ENTRY_HEADER_BYTES = 6;
+const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 
 /**
  * @param {string} projectId
@@ -78,8 +81,11 @@ export async function exportProjectPack(projectId) {
  */
 export function buildPackBlob(manifest, entries) {
   const manBytes = new TextEncoder().encode(JSON.stringify(manifest));
+  if (manBytes.byteLength > MAX_MANIFEST_BYTES) {
+    throw new Error('[VIP][ProjectPack] manifest exceeds the 4 MiB safety limit');
+  }
   const parts = [];
-  const header = new ArrayBuffer(12);
+  const header = new ArrayBuffer(HEADER_BYTES);
   const hv = new DataView(header);
   hv.setUint32(0, MAGIC, true);
   hv.setUint16(4, VERSION, true);
@@ -89,7 +95,13 @@ export function buildPackBlob(manifest, entries) {
 
   for (const ent of entries) {
     const nameBytes = new TextEncoder().encode(ent.name);
-    const nh = new ArrayBuffer(6);
+    if (nameBytes.byteLength === 0 || nameBytes.byteLength > 0xffff) {
+      throw new Error('[VIP][ProjectPack] entry name must contain 1–65535 UTF-8 bytes');
+    }
+    if (!(ent.data instanceof Uint8Array) || ent.data.byteLength > 0xffffffff) {
+      throw new Error('[VIP][ProjectPack] entry data must be a Uint8Array no larger than 4 GiB');
+    }
+    const nh = new ArrayBuffer(ENTRY_HEADER_BYTES);
     const nv = new DataView(nh);
     nv.setUint16(0, nameBytes.byteLength, true);
     nv.setUint32(2, ent.data.byteLength, true);
@@ -105,6 +117,9 @@ export function buildPackBlob(manifest, entries) {
  */
 export async function parseProjectPack(input) {
   const ab = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
+  if (!(ab instanceof ArrayBuffer) || ab.byteLength < HEADER_BYTES) {
+    throw new Error('[VIP][ProjectPack] truncated header');
+  }
   const view = new DataView(ab);
   if (view.getUint32(0, true) !== MAGIC) {
     throw new Error('[VIP][ProjectPack] invalid magic — not a .vippack file');
@@ -114,18 +129,44 @@ export async function parseProjectPack(input) {
     throw new Error(`[VIP][ProjectPack] unsupported pack version ${version}`);
   }
   const manLen = view.getUint32(8, true);
-  let offset = 12;
+  if (manLen > MAX_MANIFEST_BYTES) {
+    throw new Error('[VIP][ProjectPack] manifest exceeds the 4 MiB safety limit');
+  }
+  let offset = HEADER_BYTES;
+  if (manLen > ab.byteLength - offset) {
+    throw new Error('[VIP][ProjectPack] truncated manifest');
+  }
   const manBytes = new Uint8Array(ab, offset, manLen);
   offset += manLen;
-  const manifest = JSON.parse(new TextDecoder().decode(manBytes));
+  let manifest;
+  try {
+    manifest = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(manBytes));
+  } catch {
+    throw new Error('[VIP][ProjectPack] invalid manifest JSON');
+  }
+  if (manifest?.format !== 'vippack' || manifest?.version !== VERSION || !manifest?.project) {
+    throw new Error('[VIP][ProjectPack] invalid manifest schema');
+  }
   /** @type {Map<string, Uint8Array>} */
   const files = new Map();
-  while (offset + 6 <= ab.byteLength) {
+  while (offset < ab.byteLength) {
+    if (ab.byteLength - offset < ENTRY_HEADER_BYTES) {
+      throw new Error('[VIP][ProjectPack] truncated entry header');
+    }
     const nameLen = view.getUint16(offset, true);
     const dataLen = view.getUint32(offset + 2, true);
-    offset += 6;
+    offset += ENTRY_HEADER_BYTES;
+    if (nameLen === 0 || nameLen > ab.byteLength - offset) {
+      throw new Error('[VIP][ProjectPack] invalid entry name length');
+    }
     const name = new TextDecoder().decode(new Uint8Array(ab, offset, nameLen));
     offset += nameLen;
+    if (dataLen > ab.byteLength - offset) {
+      throw new Error(`[VIP][ProjectPack] truncated entry data for ${name}`);
+    }
+    if (files.has(name)) {
+      throw new Error(`[VIP][ProjectPack] duplicate entry ${name}`);
+    }
     const data = new Uint8Array(ab, offset, dataLen);
     offset += dataLen;
     files.set(name, data.slice());

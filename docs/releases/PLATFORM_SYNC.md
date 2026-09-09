@@ -7,7 +7,10 @@
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
 | **Synced at (UTC)** | 2026-08-21T10:04Z |
 | **Artifacts** | APK ~96.9 MB (debug offline) · Windows NSIS ~138 MB |
-| **Notes** | Native = web: optional Google Drive import/export (#776), DSP/88% release (#774) |
+| **Reviewed main** | `3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c` |
+| **v25.0.2 tag source** | `1cb37fd495cb80eaac369e028ad2c1fcae0a63ea` |
+| **Status** | Native artifacts are stale relative to reviewed main; deployed Web source is unknown |
+| **Provenance** | [`release-provenance.json`](release-provenance.json) |
 
 ## Version sources of truth
 

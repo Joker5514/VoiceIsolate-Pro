@@ -135,15 +135,17 @@ export class SliderUI {
       : (cb) => setTimeout(cb, 16); // non-browser fallback (tests)
     this._rafId = raf(() => {
       this._rafId = null;
-      for (const [method, value] of this._pending) {
-        try {
-          this.mixer[method](value);
-        } catch (err) {
-          console.error(`[VIP][SliderUI] ${method}(${value}) failed:`, err);
-        }
-      }
-      this._pending.clear();
+      this.flush();
     });
+  }
+
+  /** Commit queued AudioParams before an explicit export/comparison snapshot. No inference. */
+  flush() {
+    for (const [method, value] of this._pending) {
+      try { this.mixer[method](value); }
+      catch (err) { console.error(`[VIP][SliderUI] ${method}(${value}) failed:`, err); }
+    }
+    this._pending.clear();
   }
 
   /** Detach all listeners and cancel any pending flush. */

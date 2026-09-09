@@ -1318,3 +1318,23 @@ a.vip-btn {
 /* Output-level meter row in the Live-Mix panel (hidden until stems load). */
 .output-meter { margin-top: 14px; }
 .output-meter[hidden] { display: none; }
+
+/* Quick Clean controls reuse the existing shell and its mobile breakpoints. */
+.quick-clean-compare { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.quick-clean-compare .hint { flex-basis: 100%; }
+.quick-clean-compare button,
+#downloadBtn, #downloadVideoBtn, #modelSelect { min-height: 44px; }
+.quick-clean-compare [aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+#quickCleanPreflight, #quickCleanStatus { overflow-wrap: anywhere; color: var(--text-primary, #f8f8fb); }
+#quickCleanStatus[data-state="error"] { border-left: 3px solid currentColor; padding-left: 12px; }
+.quick-clean-compare button:focus-visible, #quickCleanStatus:focus-visible,
+#modelSelect:focus-visible { outline: 2px solid var(--text-primary, #f8f8fb); outline-offset: 4px; }
+#downloadVideoBtn[hidden] { display: none; }
+@media (max-width: 560px) {
+  .quick-clean-compare button { flex: 1 1 140px; white-space: normal; }
+  #modelSelect { width: 100%; min-width: 0; }
+  .upload-row { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quick-clean-compare *, #quickCleanStatus { animation: none !important; transition: none !important; }
+}

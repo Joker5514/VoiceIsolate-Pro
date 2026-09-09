@@ -18,6 +18,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/landing.css">
   <link rel="stylesheet" href="/transport-polish.css">
+  <link rel="stylesheet" href="/premium-refresh.css">
   <!--
     ARCHITECTURE NOTE (CLAUDE.md): this page contains NO inline scripts so it
     runs under the strict CSP (script-src 'self'). It is the reference
@@ -36,66 +37,109 @@
         </svg>
       </div>
       <span class="app-title">VoiceIsolate Pro</span>
-      <span class="arch-badge" id="archBadgeMount">LOCAL · STEM-SPLIT</span>
+      <span class="arch-badge ps-chip ps-chip--process" id="archBadgeMount">LOCAL AI STUDIO</span>
     </div>
-    <div class="titlebar-right">
+    <div class="titlebar-right ps-titlebar-right">
+      <span class="premium-status"><i aria-hidden="true"></i> Local processing</span>
+      <span class="ps-meta">Web · Android · Desktop<br>Private by design</span>
       <a href="/download/" class="eng-mode-link">Download</a>
       <a href="/app/" class="eng-mode-link eng-mode-link--primary">Engineer</a>
     </div>
   </header>
 
   <!-- First-impression hero (conversion + trust) — does not alter pipeline IDs -->
-  <section class="vip-hero" aria-labelledby="heroTitle">
-    <p class="vip-hero__eyebrow">Privacy-first voice isolation</p>
-    <h1 id="heroTitle" class="vip-hero__title">Clean voice. Zero cloud audio.</h1>
-    <p class="vip-hero__sub">
-      Upload a noisy clip and isolate speech <strong>entirely on this device</strong> —
-      browser, Android, or desktop. No audio leaves your machine. No microphone. No telemetry.
-    </p>
-    <div class="vip-hero__actions">
-      <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-btn--lg vip-hero__cta">Upload &amp; isolate</a>
-      <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg">Open Engineer Mode</a>
+  <section class="vip-hero ps-hero" aria-labelledby="heroTitle">
+    <div class="ps-hero-copy">
+      <p class="vip-hero__eyebrow ps-kicker"><span>New</span> Private AI audio workstation</p>
+      <h1 id="heroTitle" class="vip-hero__title">Clean voice.<br><em>Zero cloud audio.</em></h1>
+      <p class="vip-hero__sub">
+        Separate speech from noise with studio-grade AI that runs entirely on your device.
+        Import, isolate, fine-tune, and export in one private workspace.
+      </p>
+      <div class="vip-hero__actions ps-actions">
+        <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-btn--lg vip-hero__cta ps-btn ps-btn--process">Upload &amp; isolate</a>
+        <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg ps-btn ps-btn--ghost">Engineer mode</a>
+      </div>
+      <ul class="vip-trust ps-trust" aria-label="Trust signals">
+        <li class="vip-trust__item"><strong>100% local ONNX</strong><span>Zero telemetry · no mic</span></li>
+        <li class="vip-trust__item"><strong>48 kHz</strong><span>studio audio</span></li>
+        <li class="vip-trust__item"><strong>Private</strong><span>Drive file I/O only when requested</span></li>
+      </ul>
     </div>
-    <ul class="vip-trust" aria-label="Trust signals">
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> 100% local ONNX</li>
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Zero cloud inference</li>
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Zero telemetry</li>
-      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Upload-only · no mic</li>
-    </ul>
+    <aside class="ps-panel ps-signal" aria-label="Signal preview">
+      <div class="ps-panel__head">
+        <span><i class="preview-live-dot" aria-hidden="true"></i> Signal workspace</span>
+        <span id="signalPreviewState" class="ps-chip" data-state="idle">Idle</span>
+      </div>
+      <div class="premium-filebar" aria-hidden="true">
+        <span class="premium-file-icon">♪</span>
+        <span><strong>Your audio appears here</strong><small>Drop a file to begin local analysis</small></span>
+        <b>48 kHz</b>
+      </div>
+      <div class="vis-block">
+        <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek after processing</span></div>
+        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
+        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to Live-Mix sliders in real time</span></div>
+        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
+      </div>
+      <div id="sourceConfidencePanel" class="ps-empty" data-state="unavailable" role="status">
+        Source confidence appears after on-device analysis. No placeholder measurements.
+      </div>
+    </aside>
+  </section>
+
+  <section class="ps-steps" aria-labelledby="workflowLabel">
+    <h2 id="workflowLabel" class="visually-hidden">Three-step workflow</h2>
+    <article class="ps-step">
+      <span class="ps-step__n" aria-hidden="true">01</span>
+      <h2>Upload</h2>
+      <p>Import a recording and choose an outcome. Inference stays on this device.</p>
+    </article>
+    <article class="ps-step">
+      <span class="ps-step__n" aria-hidden="true">02</span>
+      <h2>Separate</h2>
+      <p>Press Process to separate stems locally. Sliders do not re-run ML.</p>
+    </article>
+    <article class="ps-step ps-step--live">
+      <span class="ps-step__n" aria-hidden="true">03</span>
+      <h2>Live Mix</h2>
+      <p>Instant gain + EQ on stems, then export.</p>
+    </article>
   </section>
 
   <main class="main-area">
     <!-- ── STEP 1: Upload ──────────────────────────────────────────────── -->
     <section class="panel vip-card" id="uploadPanel" aria-labelledby="uploadLabel">
       <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
-      <p class="hint">Audio or video · decoded at 48&nbsp;kHz <strong>on your device</strong>. Nothing is uploaded to a server.</p>
+      <p class="hint">Audio or video · decoded at 48&nbsp;kHz <strong>on your device</strong>. Processing stays local. Drive import/export is optional file I/O.</p>
       <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
         <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <p class="upload-title">Drop audio or video here</p>
-        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
+        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV · codec support depends on this browser</p>
         <label for="fileInput" id="browseBtn" class="btn btn-primary vip-tap" role="button">Browse files</label>
         <button id="openDriveBtn" class="btn btn-outline vip-tap" type="button" title="Open audio/video from Google Drive (local processing)">Open from Drive</button>
         <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/ogg,audio/flac,audio/x-flac,audio/aac,audio/x-m4a,audio/m4a,audio/mp4,audio/webm,audio/amr,audio/aiff,audio/x-aiff,audio/x-caf,audio/x-ms-wma,audio/opus,audio/ac3,audio/eac3,video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska,video/ogg,video/3gpp,video/3gpp2,video/x-ms-wmv,video/mpeg,video/mp2t,video/x-flv,audio/*,video/*,.wav,.wave,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac,.webm,.weba,.aiff,.aif,.caf,.wma,.mka,.m4b,.m4r,.amr,.ac3,.eac3,.mp4,.m4v,.mov,.mkv,.avi,.ogv,.3gp,.3g2,.wmv,.mpeg,.mpg,.ts,.m2ts,.mts,.flv,.f4v,.asf" aria-label="Choose audio or video file">
       </div>
       <div class="upload-row">
-        <label for="modelSelect" class="inline-label">Model</label>
-        <select id="modelSelect" class="vip-select" aria-label="Separation model">
-          <option value="bsrnn_vocals" selected>Fast Vocal Isolation — BS-RNN (~4 MB, recommended)</option>
-          <option value="max_isolation">Maximum Isolation — BS-RNN → Denoise (2-pass, slower)</option>
-          <option value="rnnoise">Noise Suppression only — BiGRU (~2 MB, fastest)</option>
-          <option value="studio_isolation">Studio — Demucs → Denoise (very slow, ~149 MB)</option>
-          <option value="demucs">Demucs v4 only (very slow, ~149 MB)</option>
+        <label for="modelSelect" class="inline-label">Choose outcome</label>
+        <select id="modelSelect" class="vip-select" aria-label="Choose outcome" aria-describedby="outcomeHelp" disabled>
+          <option value="bsrnn_vocals" selected disabled>Clean Speech</option>
+          <option value="max_isolation" disabled>Maximum Isolation</option>
+          <option value="rnnoise" disabled>Preserve Ambience</option>
         </select>
-        <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Separate stems</button>
+        <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Process locally</button>
         <button id="cancelProcessBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled aria-label="Cancel processing">Cancel</button>
       </div>
+      <p id="outcomeHelp" class="hint">Choose the result you want, then press Process.</p>
+      <p id="quickCleanPreflight" class="hint" role="status">Checking local processing support…</p>
+      <details class="vip-advanced"><summary>Technical details</summary><p id="quickCleanModelDetails" class="hint"></p><span id="ortProviderHint" class="ort-provider-hint">Local runtime not checked yet</span></details>
+      <p id="quickCleanStatus" class="hint" role="status" aria-live="polite" aria-atomic="true" tabindex="-1">Import a recording to begin. Processing starts only when you press Process.</p>
       <div class="status-row">
         <span id="statusPillMount" role="status" aria-live="polite">
           <span class="status-dot"></span>
           <span>Idle — choose a file to begin</span>
         </span>
         <span id="statusText" class="visually-hidden" aria-hidden="true">Idle — choose a file to begin</span>
-        <span id="ortProviderHint" class="ort-provider-hint" aria-live="polite">Inference: local ONNX</span>
       </div>
       <!--
         Realtime processing indicator. Powered by the VoiceIsolate Pro design-
@@ -109,7 +153,7 @@
     <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
     <section class="panel vip-card" aria-labelledby="mixLabel">
       <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
-      <p class="hint">Stems play through the Web Audio graph. Sliders rebalance gains instantly — the AI never re-runs.</p>
+      <p class="hint">Voice and Background adjust existing stems instantly. No reprocessing. Export includes the current mix.</p>
 
       <!--
         Video preview. Shown only when the uploaded file is a video. The element
@@ -123,6 +167,12 @@
         <p class="video-note">Picture only — this player is muted; the sound is the live-mixed processed audio below.</p>
       </div>
 
+      <div class="quick-clean-compare" role="group" aria-label="Compare original and cleaned audio">
+        <button id="prepareComparisonBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled>Prepare matched A/B</button>
+        <button id="compareOriginalBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" aria-pressed="false" disabled>Original</button>
+        <button id="compareCleanedBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" aria-pressed="false" disabled>Cleaned</button>
+        <p id="comparisonStatus" class="hint" role="status">Compare the same recording at matched average level (RMS). Changes to the mix require a new comparison.</p>
+      </div>
       <div class="transport-row">
         <button id="playBtn" class="vip-iconbtn" type="button" disabled aria-label="Play" title="Play">&#9654;</button>
         <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">&#10074;&#10074;</button>
@@ -158,12 +208,6 @@
         <input type="range" id="seekSlider" class="landing-seek-input" min="0" max="1000" value="0" disabled aria-label="Playback position">
       </div>
 
-      <div class="vis-block">
-        <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek · In/Out to crop · Loop toggles repeat</span></div>
-        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
-        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
-        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
-      </div>
 
       <!--
         Output level meter. Powered by the design-system LevelMeter component;
@@ -174,9 +218,10 @@
 
       <div class="export-row" id="exportRow" hidden>
         <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled
-                title="Download isolated voice (video with processed audio when the source is a video)">
-          Download Processed
+                title="Export the current mix locally as WAV">
+          Export mix as WAV
         </button>
+        <button id="downloadVideoBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled>Export processed video</button>
         <button id="saveDriveBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled
                 title="Upload processed export to Google Drive (optional — processing stays local)">
           Save to Drive
@@ -186,12 +231,12 @@
 
       <div class="slider-grid slider-grid--primary">
         <div class="slider-row">
-          <label for="noiseReductionSlider">Noise Reduction</label>
-          <input type="range" id="noiseReductionSlider" min="0" max="100" value="100" step="1" disabled>
-          <span class="slider-val" id="noiseReductionVal">100%</span>
+          <label for="noiseReductionSlider">Background</label>
+          <input type="range" id="noiseReductionSlider" min="0" max="100" value="100" step="1" aria-describedby="backgroundHelp" disabled>
+          <span class="slider-val" id="noiseReductionVal">0% retained</span><span id="backgroundHelp" class="visually-hidden">Move right to remove more background; move left to retain more. The retained amount is announced.</span>
         </div>
         <div class="slider-row">
-          <label for="voiceLevelSlider">Voice Level</label>
+          <label for="voiceLevelSlider">Voice</label>
           <input type="range" id="voiceLevelSlider" min="0" max="200" value="100" step="1" disabled>
           <span class="slider-val" id="voiceLevelVal">100%</span>
         </div>

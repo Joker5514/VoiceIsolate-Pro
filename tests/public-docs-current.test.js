@@ -54,4 +54,9 @@ describe('served documentation reflects the current production architecture', ()
     expect(guide).toMatch(/Vercel Blob/);
     expect(guide).toMatch(/There are no browser-facing fallback providers/);
   });
+
+  test('download documentation contains no unresolved merge markers', () => {
+    const downloads = read('docs/DOWNLOADS.md');
+    expect(downloads).not.toMatch(/^<<<<<<<|^=======|^>>>>>>>/m);
+  });
 });

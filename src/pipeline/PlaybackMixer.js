@@ -209,6 +209,7 @@ export class PlaybackMixer {
     /** @type {AudioContext} */
     this.ctx = options.context || new Ctx({ sampleRate: SAMPLE_RATE });
     verifyContextSampleRate(this.ctx);
+    this._parameterTargets = new WeakMap();
 
     // ── Persistent graph (built once) ────────────────────────────────────
     this.speakerGain = this.ctx.createGain();
@@ -771,6 +772,7 @@ export class PlaybackMixer {
    * @param {number} target
    */
   _applyParam(param, target) {
+    this._parameterTargets.set(param, target);
     const now = this.ctx.currentTime;
     if (this._isPlaying && this.ctx.state === 'running') {
       param.setTargetAtTime(target, now, PARAM_SMOOTHING);
@@ -1178,6 +1180,81 @@ export class PlaybackMixer {
 
   /** AnalyserNode for visualizers (post-EQ, post-master). */
   getAnalyser() { return this.analyser; }
+
+  /** Render the current stem mix through this same graph, on the audio rendering thread.
+   * AudioParams are captured before the first await. Playback state is untouched.
+   * Native offline rendering cannot be terminated; cancelled results are discarded.
+   */
+  async renderMix({ signal, startSec = 0, endSec = this.duration() } = {}) {
+    const Offline = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+    if (!Offline) throw new Error('Offline export is unavailable in this browser. Try a supported desktop browser.');
+    if (!this.cleanBuffer || !this.noiseBuffer) throw new Error('Process a recording before exporting.');
+    const cancelled = () => Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+    if (signal?.aborted) throw cancelled();
+    const start = Math.max(0, Math.floor(startSec * SAMPLE_RATE));
+    const end = Math.min(this.cleanBuffer.length, Math.ceil(endSec * SAMPLE_RATE));
+    if (end <= start) throw new Error('Choose a non-empty export region.');
+    const ctx = new Offline(this.cleanBuffer.numberOfChannels, end - start, SAMPLE_RATE);
+    const render = new PlaybackMixer({ context: ctx });
+    // Reuse immutable AudioBuffers; no whole-file copies during graph construction.
+    render.cleanBuffer = this.cleanBuffer;
+    render.noiseBuffer = this.noiseBuffer;
+    const copyNode = (from, to) => {
+      if (!from || !to) return;
+      if (typeof from.type === 'string') to.type = from.type;
+      for (const key of ['gain', 'frequency', 'Q', 'detune', 'threshold', 'knee', 'ratio', 'attack', 'release']) {
+        if (!from[key]?.setValueAtTime || !to[key]?.setValueAtTime) continue;
+        to[key].cancelScheduledValues(0);
+        to[key].setValueAtTime(this._parameterTargets.get(from[key]) ?? from[key].value, 0);
+      }
+    };
+    for (const key of Object.keys(this)) copyNode(this[key], render[key]);
+    for (const [key, node] of this.graphicBands) copyNode(node, render.graphicBands.get(key));
+    render._gateParams = { ...this._gateParams };
+    render._deEsserParams = { ...this._deEsserParams };
+    render._segments = this.getSpeakerSegments();
+    render._speakers = new Map([...this._speakers].map(([id, state]) => [id, { ...state }]));
+    render._soloId = this._soloId;
+    const gateRequired = Boolean(this.gate) && this._gateParams.range > 0;
+    const deEsserRequired = Boolean(this.deEsser) && this._deEsserParams.amount > 0;
+    const sources = [];
+    let timer;
+    let abort;
+    const interruption = new Promise((_, reject) => {
+      abort = () => reject(cancelled());
+      signal?.addEventListener('abort', abort, { once: true });
+      timer = setTimeout(() => reject(new Error('Mix rendering timed out. Retry with a shorter recording.')), 120000);
+    });
+    try {
+      await Promise.race([render.workletsReady(), interruption]);
+      if (signal?.aborted) throw cancelled();
+      if ((gateRequired && !render.gate) || (deEsserRequired && !render.deEsser)) {
+        throw new Error('This browser cannot export the active gate/de-esser. Disable those effects or use another browser.');
+      }
+      // Preserve the actual live bypass state even when the offline context supports a worklet.
+      if (!this.gate) render._setGateParam('range', 0);
+      if (!this.deEsser) render._setDeEsserParam('amount', 0);
+      render._isPlaying = true;
+      render._offset = start / SAMPLE_RATE;
+      render._startedAt = -render._offset;
+      render._scheduleSpeakerAutomation();
+      for (const [buffer, destination] of [[render.cleanBuffer, render.speakerGain], [render.noiseBuffer, render.noiseGain]]) {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(destination);
+        source.start(0, start / SAMPLE_RATE, (end - start) / SAMPLE_RATE);
+        sources.push(source);
+      }
+      return await Promise.race([ctx.startRendering(), interruption]);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      for (const source of sources) { try { source.stop(); source.disconnect(); } catch { /* already ended */ } }
+      render._disposed = true;
+      // A stalled worklet load must not block cancellation of the owning job.
+      void render.dispose();
+    }
+  }
 
   /** Release all audio resources. The instance is unusable afterwards. */
   async dispose() {

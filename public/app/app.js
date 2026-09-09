@@ -5383,8 +5383,17 @@ class VoiceIsolatePro {
       if (DSP && typeof DSP.truePeakLimit === 'function' && out.length <= CHUNK * 2) {
         DSP.truePeakLimit(out, ceil);
       } else if (DSP && typeof DSP.truePeakLimit === 'function') {
-        // Process in place via temp views isn't supported by truePeakLimit — call once then yield.
-        DSP.truePeakLimit(out, ceil);
+        // A subarray is a zero-copy view, so the limiter can be time-sliced
+        // without allocating another full channel.  The previous single call
+        // monopolised the renderer for long recordings at 98% progress.
+        await processInChunks({
+          total: out.length,
+          chunkSize: CHUNK,
+          signal,
+          runChunk: (start, end) => {
+            DSP.truePeakLimit(out.subarray(start, end), ceil);
+          },
+        });
       } else {
         await processInChunks({
           total: out.length,
