@@ -219,7 +219,7 @@ function adaptiveHopSize(entry, sampleCount, sampleRate) {
     else if (durSec > 4 * 60) hop = base * 8;
     else if (durSec > 90) hop = base * 4;
     else if (durSec > 45) hop = base * 2;
-    else hop = base * 2;
+    else hop = base * 2; // always at least 2× on mobile (freeze prevention floor)
   } else {
     if (durSec > 20 * 60) hop = base * 8;
     else if (durSec > 8 * 60) hop = base * 4;

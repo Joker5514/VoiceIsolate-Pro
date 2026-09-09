@@ -714,7 +714,8 @@ function getWorker() {
         ui.modelSelect.disabled = false;
         break;
       case 'error':
-        if (stale && msg.requestId != null) break;
+        if (stale) break;
+        clearProcessWatch();
         failProcessing(new Error(msg.message || 'Local worker failed'));
         worker?.terminate();
         worker = null;
@@ -726,6 +727,7 @@ function getWorker() {
   });
   worker.addEventListener('error', (err) => {
     if (worker !== ownedWorker) return;
+    clearProcessWatch();
     failProcessing(new Error(err.message || 'Local worker failed'));
     worker.terminate();
     worker = null;
