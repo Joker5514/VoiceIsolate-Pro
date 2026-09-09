@@ -33,7 +33,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   stem caching and worker acknowledgement.
 - Automated coverage for the Engineer processing configuration, gate lookahead,
   slider tick wiring, and static Vercel routing boundary.
-- 14 new `tests/quick-clean.test.js` assertions verifying shipped model hashes,
+- New `tests/quick-clean.test.js` coverage verifies shipped model hashes,
   outcome rejection, backend gating, AudioReview matching, and MLWorker
   integrity-bypass prevention.
 
