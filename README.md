@@ -228,7 +228,7 @@ Latest product snapshot: [`docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf`
 | Maximum Isolation | `bsrnn_vocals → rnnoise` | Two-pass; listen for artifacts on bright speech |
 | Preserve Ambience | `rnnoise` | Gentle noise floor reduction, retains room character |
 
-All shipped models: ONNX fp32, 48 kHz, spectral-mask strategy, SHA-256 integrity-verified before every session.
+**Quick Clean models:** BSRNN and RNNoise use ONNX fp32, 48 kHz spectral-mask contracts and are SHA-256 integrity-verified before each session. Silero VAD uses a separate 16 kHz VAD contract.
 Loaded lazily from `/app/models/` (same-origin) · cached in IndexedDB on Web/Android or the filesystem-backed Electron cache · never fetched from CDN.
 
 **Fallback:** if a model fails integrity verification, the Quick Clean option is disabled. Classical DSP analysis continues without ML — no silent fake isolation.
