@@ -31,7 +31,7 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 | **Web** | Vercel → `public/` | Quick Clean workflow + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional. Always reflects the latest deployed commit. |
 | **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,620,559 bytes) | Capacitor WebView built from `17692f9`; release asset updated **2026-08-21T10:04:08Z**. Stale relative to current main — missing Quick Clean, A/B comparison, accessibility fixes. Rebuild from merged PR commit to get updates. |
 | **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,646,374 bytes) | Electron package built from `17692f9`; release asset updated **2026-08-21T10:04:10Z**. Stale relative to current main — same note as Android. |
-| **macOS / Linux** | Build targets only | Electron config can produce `.dmg` / `.AppImage`; no v25.0.2 GitHub Release assets are published. Build locally with `pnpm build:electron` on the target platform. |
+| **macOS / Linux** | Build targets only | Electron config can produce `.dmg` / `.AppImage`; no v25.0.2 GitHub Release assets are published. Build locally with `pnpm exec electron-builder --config electron/electron-builder.yml --mac` or `--linux` on the target platform. |
 
 Packaging rule: Web, Android, and Desktop **consume** `pnpm build` → `build/` when each surface is rebuilt from the same commit. The shared `public/app/` Engineer Console shell means any improvement merged to `main` is picked up by all three platforms on the next rebuild — there is no separate mobile or desktop UI to maintain.
 
