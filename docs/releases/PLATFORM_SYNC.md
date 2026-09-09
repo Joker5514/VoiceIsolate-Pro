@@ -7,10 +7,16 @@
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
 | **Synced at (UTC)** | 2026-08-21T10:04Z |
 | **Artifacts** | APK ~96.9 MB (debug offline) · Windows NSIS ~138 MB |
-| **Reviewed main** | `3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c` |
+| **Reviewed main (upstream)** | `754271e` (fix/projects: reject malformed project packs #812) |
+| **In-progress branch** | `fix/quick-clean-capability-gate-and-test-sync` |
+| **Branch base** | `3385ca3` (Merge #783) |
 | **v25.0.2 tag source** | `1cb37fd495cb80eaac369e028ad2c1fcae0a63ea` |
-| **Status** | Native artifacts are stale relative to reviewed main; deployed Web source is unknown |
+| **Status** | Native artifacts are stale relative to reviewed main; Quick Clean + fixes in branch PR |
 | **Provenance** | [`release-provenance.json`](release-provenance.json) |
+
+> **To bring Android and Desktop up to date** with Quick Clean, accessibility
+> improvements, and P1/P2 bug fixes, merge the PR into main and rebuild native
+> artifacts from the merged commit using the commands below.
 
 ## Version sources of truth
 

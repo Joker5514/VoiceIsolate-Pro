@@ -26,16 +26,19 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 
 ## Platform matrix
 
-| Platform | Artifact | What’s included |
+| Platform | Artifact | What's included |
 |----------|----------|-----------------|
-| **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,620,559 bytes) | Capacitor WebView built from `17692f98e1023ea7b18b7bd8a5c374291ccb67f8`; stale relative to reviewed main; release asset updated **2026-08-21T10:04:08Z** |
-| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,646,374 bytes) | Electron package built from `17692f98e1023ea7b18b7bd8a5c374291ccb67f8`; stale relative to reviewed main; release asset updated **2026-08-21T10:04:10Z** |
-| **macOS / Linux** | Build targets only | Electron config can produce `.dmg` / `.AppImage`; no v25.0.2 GitHub Release assets are published |
+| **Web** | Vercel → `public/` | Quick Clean workflow + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional. Always reflects the latest deployed commit. |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,620,559 bytes) | Capacitor WebView built from `17692f9`; release asset updated **2026-08-21T10:04:08Z**. Stale relative to current main — missing Quick Clean, A/B comparison, accessibility fixes. Rebuild from merged PR commit to get updates. |
+| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,646,374 bytes) | Electron package built from `17692f9`; release asset updated **2026-08-21T10:04:10Z**. Stale relative to current main — same note as Android. |
+| **macOS / Linux** | Build targets only | Electron config can produce `.dmg` / `.AppImage`; no v25.0.2 GitHub Release assets are published. Build locally with `pnpm build:electron` on the target platform. |
 
-Packaging rule: Web, Android, and Desktop **consume** `pnpm build` → `build/` when each surface is rebuilt from the same commit. Published Web / Android / Windows artifacts were rebuilt from `0b791c2` on 2026-08-24. Provenance: [releases/release-provenance.json](releases/release-provenance.json).
+Packaging rule: Web, Android, and Desktop **consume** `pnpm build` → `build/` when each surface is rebuilt from the same commit. The shared `public/app/` Engineer Console shell means any improvement merged to `main` is picked up by all three platforms on the next rebuild — there is no separate mobile or desktop UI to maintain.
 
-The current source also time-slices the final output-safety limiter with zero-copy typed-array views. This responsiveness fix is shared automatically by Web, Android, and Desktop through the single `public/app/` shell; the published v25.0.2 native download assets remain pinned to the provenance above until the next artifact rebuild.
+> **Pending in branch PR:** Quick Clean workflow (outcome-led model select with capability gate),
+> level-matched A/B comparison, worker error/timer bug fixes, WCAG AA color contrast fix,
+> 900px/480px responsive breakpoints. Once merged and tagged, rebuild Android and Windows
+> artifacts using the commands below to ship these improvements to desktop and mobile users.
 
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 

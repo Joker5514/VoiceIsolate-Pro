@@ -15,8 +15,9 @@
 </p>
 
 <p align="center">
-  <strong>Best-in-class voice isolation &amp; audio enhancement — 100% on-device, zero cloud.</strong><br>
-  32-stage Octa-Pass DSP · Hybrid ML (Demucs v4 + BSRNN + local target voiceprint) · WebGPU-Accelerated · Privacy-First
+  <strong>Privacy-first spoken-word rescue — 100% on-device, zero cloud.</strong><br>
+  Turn a noisy interview, podcast, field recording, or talking-head video into clear, publishable speech without uploading the file.<br>
+  Quick Clean workflow · Stem-Split &amp; Live-Mix · Hybrid ML (BSRNN + RNNoise) · WebGPU-accelerated · Engineer Console
 </p>
 
 <p align="center">
@@ -24,7 +25,7 @@
   <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest"><img src="https://img.shields.io/github/v/release/Joker5514/VoiceIsolate-Pro?display_name=tag&label=release" alt="Latest release"></a>
   <a href="https://voice-isolate-pro.vercel.app"><img src="https://img.shields.io/website?url=https%3A%2F%2Fvoice-isolate-pro.vercel.app&label=vercel&up_message=production&down_message=offline" alt="Vercel production status"></a>
   <img src="https://img.shields.io/badge/platform-web%20%7C%20android%20%7C%20windows-2563eb" alt="Published platforms: web, Android, Windows">
-  <img src="https://img.shields.io/badge/architecture-Threads%20from%20Space%20v8-blueviolet" alt="Architecture">
+  <img src="https://img.shields.io/badge/tests-2896%20passing-brightgreen" alt="2896 tests passing">
   <img src="https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white" alt="Node 22+">
   <img src="https://img.shields.io/badge/pnpm-11-000000?logo=pnpm&logoColor=f69220" alt="pnpm 11">
   <img src="https://img.shields.io/badge/privacy-no%20cloud%20audio-blue" alt="Privacy">
@@ -36,6 +37,11 @@
 > targets but have no v25.0.2 release assets. Run `pnpm version:check` before a
 > release; `pnpm mobile:sync-version` updates packaged browser and native
 > metadata after any version bump.
+>
+> **Native artifacts** (APK + Windows EXE) were built from `main@17692f9`
+> (2026-08-21). They share the same `public/app/` Engineer Console shell as the
+> web deployment and will pick up Quick Clean and accessibility changes on the
+> next rebuild from a tagged commit.
 
 ---
 
@@ -43,12 +49,13 @@
 
 | | |
 |---|---|
-| **Problem** | Extract studio-quality voice from noisy recordings without sending audio to a server |
-| **Workflow** | Upload (no decode freeze) → Analyze maps noise/voice → joint WhisperHunter isolation → Live-Mix preview & export |
-| **Architecture** | Threads from Space v8 — Dispatcher-Worker model, SharedArrayBuffer ring buffers, single Forward STFT + single iSTFT constraint |
-| **Execution** | Deferred decode on Analyze/Process · offline ML isolation · real-time Live-Mix via AudioWorklet · Forensic export via OfflineAudioContext |
+| **Promise** | Turn a noisy interview, podcast, or field recording into clear, publishable speech — entirely on the device. Nothing uploads. |
+| **Quick Clean** | Import → choose outcome → process locally → level-matched A/B → adjust Voice/Background → export |
+| **Outcomes** | **Clean Speech** · **Maximum Isolation** · **Preserve Ambience** — map to verified, shipped model chains |
+| **Architecture** | Stem-Split & Live-Mix — offline ONNX inference (once per file) then zero-ML real-time Live-Mix via Web Audio |
+| **ML gate** | Every option is capability-gated: `resolveQuickCleanPlan()` rejects unshipped, unsigned, or incompatible models |
 | **Platforms** | Web (Vercel) · Desktop (Electron) · Android (Capacitor) — **one Engineer Console shell** (`public/app/`) on all three |
-| **Engineer UI** | 3-col studio console · Process auto-chains analysis · click-safe / −1 dBTP cues · Focus enrollment collapsible |
+| **Engineer UI** | 3-col studio console · 67-slider rack · Creator / Studio / Forensic tiers · progressive disclosure above Quick Clean |
 
 > **Upload-only:** live microphone capture is intentionally disabled. Drop or browse for audio/video files on both surfaces — nothing is streamed to the cloud.
 
@@ -58,7 +65,7 @@
 
 | Route | Surface | What it does |
 |-------|---------|--------------|
-| [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation → Live-Mix sliders → per-speaker mute/solo → **Focus on one voice** enrollment → export. |
+| [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Quick Clean** | **Import → Choose outcome → Process locally → Level-matched A/B → Adjust Voice/Background → Export.** Outcome-led model select (Clean Speech / Maximum Isolation / Preserve Ambience), preflight shows local provider and model size before processing, explicit Process button, Live-Mix sliders adjust existing stems only (no re-inference), per-speaker mute/solo, **Focus on one voice** enrollment. |
 | [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Console** | Studio-rack UI (3-column session · stage · control rack): **66 range sliders plus Whisper mode** (67 registered controls) in module cards, spectrogram center stage, **DSP Integrity** + **Output Safety**, auto analysis/diarization after Process, collapsible **Focus on one voice**, explicit Simple View toggle. Creator / Studio / Forensic tiers. Same shell on **Web, Android (Capacitor), Desktop (Electron)** via `pnpm build` → `build/` → cap sync / electron-builder. |
 | [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK + Windows installer (GitHub Releases), web app links. |
 
@@ -204,19 +211,27 @@ Latest product snapshot: [`docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf`
 
 ---
 
-## ML Model Stack (actually shipped)
+## ML Model Stack
 
-| Model | Path | Task | Approx size |
-|-------|------|------|-------------|
-| Demucs v4 quantized | `public/app/models/demucs_v4_quantized.onnx` | Vocal / source separation | ~149 MB |
-| Demucs v4 fp32 | `demucs_v4_fp32.onnx` (optional heavy) | Separation | ~370 MB |
-| Band-Split RNN | `bsrnn_vocals.onnx` | Vocal mask | ~3.7 MB |
-| RNNoise suppressor | `rnnoise_suppressor.onnx` | Noise suppression mask | ~2 MB |
-| Silero VAD | `silero_vad.onnx` / `_int8` | Voice activity | ~2.3 MB |
+| Model | Status | Path | Task | Size |
+|-------|--------|------|------|------|
+| Band-Split RNN (`bsrnn_vocals.onnx`) | **Shipped, pinned** | `public/app/models/` | Vocal mask (spectral) | ~3.7 MB |
+| RNNoise suppressor (`rnnoise_suppressor.onnx`) | **Shipped, pinned** | `public/app/models/` | Noise suppression mask | ~2 MB |
+| Silero VAD (`silero_vad.onnx` / `_int8`) | **Shipped, pinned** | `public/app/models/` | Voice activity detection | ~2.3 MB |
+| Demucs v4 quantized (`demucs_v4_quantized.onnx`) | **Optional, unshipped** | drop in `public/app/models/` | Waveform source separation | ~149 MB |
 
-Loaded lazily · SHA-256 verified via `src/core/ModelManifest.js` · cached in IndexedDB where supported.
+**Quick Clean outcome → model chain:**
 
-**Fallback:** if a model is missing or integrity fails, classical DSP analysis/processing continues with lower confidence and UI notices — never silent fake ML.
+| Outcome | Chain | Notes |
+|---------|-------|-------|
+| Clean Speech | `bsrnn_vocals` | Single-pass vocal extraction, recommended |
+| Maximum Isolation | `bsrnn_vocals → rnnoise` | Two-pass; listen for artifacts on bright speech |
+| Preserve Ambience | `rnnoise` | Gentle noise floor reduction, retains room character |
+
+All shipped models: ONNX fp32, 48 kHz, spectral-mask strategy, SHA-256 integrity-verified before every session.
+Loaded lazily from `/app/models/` (same-origin) · cached in IndexedDB · never fetched from CDN.
+
+**Fallback:** if a model fails integrity verification, the Quick Clean option is disabled. Classical DSP analysis continues without ML — no silent fake isolation.
 
 ---
 
@@ -256,14 +271,13 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 |---------|---------|
 | `pnpm dev` | Dev server at `localhost:3000` (COOP/COEP for SharedArrayBuffer) |
 | `pnpm build` | Production build → `build/` |
-| `pnpm test` | Jest suite (2400+ tests) |
+| `pnpm test` | Jest suite (2896 tests) |
 | `pnpm validate` | Structural integrity gate (CI) |
 | `pnpm lint` | ESLint |
 | `pnpm worklets:verify` | AudioWorklet packaging check |
-| `pnpm android:build:win` | Windows Android debug APK → `dist/android/` |
+| `pnpm android:build:win` | Windows → Android debug APK (`dist/android/`) |
 | `pnpm android:build` | Android debug APK (Unix/macOS) |
-| `pnpm worklets:verify` | AudioWorklet packaging integrity |
-| `pnpm build:electron:dir` | Desktop unpacked (Windows) |
+| `pnpm build:electron:dir` | Desktop unpacked dir (Windows) |
 
 ### Downloads (GitHub Releases — correct asset URLs)
 
