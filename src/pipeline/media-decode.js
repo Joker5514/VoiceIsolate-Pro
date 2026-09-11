@@ -307,7 +307,7 @@ async function decodeAudioBufferSafe(ctx, arrayBuffer, { timeoutMs, signal } = {
     const onErr = (err) => {
       if (callbackSettled) return;
       callbackSettled = true;
-      reject(err || new Error('decodeAudioData failed'));
+      reject(err instanceof Error ? err : new Error(String(err || 'decodeAudioData failed')));
     };
     const ret = context.decodeAudioData(buf, onOk, onErr);
     if (ret && typeof ret.then === 'function') ret.then(onOk, onErr);
@@ -453,7 +453,11 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
   media.setAttribute('playsinline', '');
   media.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
   doc.body.appendChild(media);
-  media.src = url;
+  try {
+    media.src = url;
+  } catch (srcErr) {
+    throw new Error(`[VIP][FileIngestion] Cannot set media source: ${srcErr?.message || srcErr}`);
+  }
 
   // Reuse the app's AudioContext when viable — a closed context cannot create nodes.
   const reusableCtx = externalCtx?.state === 'closed' ? null : externalCtx;
@@ -475,7 +479,12 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
 
     const playbackRate = _applyCapturePlaybackRate(media);
 
-    const numChannels = 2;
+    // Read the actual channel count from the media element after metadata loads.
+    // Falls back to 2 (stereo) when the browser doesn't expose the track count.
+    const numChannels = Math.min(
+      2,
+      Math.max(1, media.mozChannels || media.audioTracks?.length || 2),
+    );
     const channels = Array.from({ length: numChannels }, () => createGrowingChannel());
     let writeOffset = 0;
     let captureDone = false;
@@ -686,8 +695,16 @@ function _waitForMetadata(media, signal = null) {
     };
     const fail = () => {
       const code = media.error?.code;
-      const msg  = media.error?.message || 'Media element failed to load';
-      settle(() => reject(new Error(`${msg}${code ? ` (code ${code})` : ''}`)));
+      // Translate numeric HTMLMediaElement error codes to actionable user text.
+      const codeDesc = code === 1 ? 'load aborted'
+        : code === 2 ? 'network error'
+        : code === 3 ? 'decode failed — file may be corrupt'
+        : code === 4 ? 'unsupported format or codec'
+        : null;
+      const msg = codeDesc
+        || media.error?.message
+        || 'Media element failed to load';
+      settle(() => reject(new Error(`[VIP][FileIngestion] ${msg}${code && !codeDesc ? ` (code ${code})` : ''}`)));
     };
     const onAbort = () => settle(() => reject(createAbortError()));
     timer = setTimeout(() => {
