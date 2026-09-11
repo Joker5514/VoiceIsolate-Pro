@@ -21,6 +21,7 @@
 'use strict';
 
 import { debugLog } from '../core/debug.js';
+import { buildSpeakerGainEnvelope } from '../core/SpeakerGainEnvelope.js';
 
 const WORKER_INIT_TIMEOUT_MS = 10000;
 const ENCODE_TIMEOUT_MS = 120000;
@@ -101,7 +102,11 @@ export class ExportOrchestrator {
       worker.onmessage = (e) => {
         const data = e?.data;
         if (!data || typeof data !== 'object') {
-          failWorker(new Error('[VIP][ExportOrchestrator] Malformed worker message.'));
+          if (!this._workerReady) {
+            failWorker(new Error('[VIP][ExportOrchestrator] Malformed worker initialization message.'));
+            return;
+          }
+          console.warn('[VIP][ExportOrchestrator] Ignoring malformed encoder message.');
           return;
         }
 
@@ -140,22 +145,28 @@ export class ExportOrchestrator {
         if (type === 'progress') {
           const pending = this._pendingRequests.get(requestId);
           if (pending && !Number.isFinite(data.progress)) {
-            failWorker(new Error('[VIP][ExportOrchestrator] Malformed worker progress.'));
+            this._pendingRequests.delete(requestId);
+            clearTimeout(pending.timeout);
+            pending.reject(new Error('[VIP][ExportOrchestrator] Malformed worker progress.'));
             return;
           }
           if (pending && pending.onProgress) {
             try {
               pending.onProgress(Math.max(0, Math.min(1, data.progress)), data.stage);
             } catch (progressError) {
-              failWorker(progressError);
+              this._pendingRequests.delete(requestId);
+              clearTimeout(pending.timeout);
+              pending.reject(progressError);
             }
           }
           return;
         }
 
-        if (!this._workerReady || this._pendingRequests.has(requestId)) {
+        if (!this._workerReady) {
           failWorker(new Error(`[VIP][ExportOrchestrator] Unknown worker message type: ${String(type)}.`));
+          return;
         }
+        console.warn(`[VIP][ExportOrchestrator] Ignoring unknown worker message type: ${String(type)}.`);
       };
 
       worker.onerror = (err) => {
@@ -272,11 +283,10 @@ export class ExportOrchestrator {
     const channelCount = channels.length;
     const { blob, format: resultFormat } = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        if (!this._pendingRequests.has(requestId)) return;
-        this._resetWorker(
-          this._worker,
-          new Error('[VIP][ExportOrchestrator] Encoding timeout.'),
-        );
+        const pending = this._pendingRequests.get(requestId);
+        if (!pending) return;
+        this._pendingRequests.delete(requestId);
+        pending.reject(new Error('[VIP][ExportOrchestrator] Encoding timeout.'));
       }, ENCODE_TIMEOUT_MS);
 
       this._pendingRequests.set(requestId, {
@@ -298,7 +308,12 @@ export class ExportOrchestrator {
           bitrate,
         }, transferList);
       } catch (error) {
-        this._resetWorker(this._worker, error);
+        const pending = this._pendingRequests.get(requestId);
+        if (pending) {
+          this._pendingRequests.delete(requestId);
+          clearTimeout(pending.timeout);
+          pending.reject(error);
+        }
       }
     });
 
@@ -347,31 +362,16 @@ export class ExportOrchestrator {
     const length = channels[0].length;
     const output = channels.map((ch) => new Float32Array(ch)); // Copy channels
 
-    // Build a gain envelope from the speaker segments
-    const gainEnvelope = new Float32Array(length);
-    gainEnvelope.fill(1); // Default to unity gain
-
-    for (const seg of segments) {
-      const startSample = Math.floor(seg.start * sampleRate);
-      const endSample = Math.floor(seg.end * sampleRate);
-      const speakerState = this.mixer.getSpeakerState(seg.speakerId);
-
-      if (!speakerState) continue;
-
-      // Calculate effective gain (respects mute and solo)
-      let gain = speakerState.volume / 100; // Convert percentage to linear
-      if (speakerState.muted) gain = 0;
-
-      const soloSpeaker = this.mixer.getSoloSpeaker();
-      if (soloSpeaker && soloSpeaker !== seg.speakerId) {
-        gain = 0; // Mute non-solo speakers
-      }
-
-      // Apply gain to envelope
-      for (let i = Math.max(0, startSample); i < Math.min(length, endSample); i++) {
-        gainEnvelope[i] = gain;
-      }
-    }
+    const gainEnvelope = buildSpeakerGainEnvelope({
+      length,
+      sampleRate,
+      segments,
+      getState: (speakerId) => {
+        const state = this.mixer.getSpeakerState(speakerId);
+        return state ? { ...state, volume: state.volume / 100 } : null;
+      },
+      soloId: this.mixer.getSoloSpeaker(),
+    });
 
     // Apply envelope to all channels
     for (let ch = 0; ch < output.length; ch++) {

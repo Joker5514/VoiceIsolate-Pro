@@ -77,7 +77,7 @@ describe('StemSeparation worker lifecycle', () => {
 
   test('reset rejects warmup waiters instead of abandoning their timers', async () => {
     await readyWorker();
-    const pending = StemSeparation.warmupModels(['test-model']);
+    const pending = StemSeparation.warmupModels(['bsrnn_vocals']);
     const rejection = expect(pending).rejects.toThrow('MLWorker reset');
     await waitForPost(workers.at(-1), 'warmup');
 
@@ -89,14 +89,47 @@ describe('StemSeparation worker lifecycle', () => {
   test('recycles when a warmup message cannot be posted', async () => {
     const worker = await readyWorker();
     worker.postMessage.mockImplementation((message) => {
-      if (message.type === 'warmup' && message.modelIds.includes('broken-model')) {
+      if (message.type === 'warmup' && message.modelIds.includes('rnnoise')) {
         throw new Error('warmup clone failed');
       }
     });
 
-    await expect(StemSeparation.warmupModels(['broken-model']))
+    await expect(StemSeparation.warmupModels(['rnnoise']))
       .rejects.toThrow('warmup clone failed');
     expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps the original deadline across partial warmed responses', async () => {
+    jest.useFakeTimers();
+    const worker = await readyWorker();
+    const pending = StemSeparation.warmupModels(['bsrnn_vocals', 'rnnoise']);
+    await waitForPost(worker, 'warmup');
+    worker.dispatch('message', { data: { type: 'warmed', modelIds: ['bsrnn_vocals'] } });
+    let settled = false;
+    pending.finally(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    worker.dispatch('message', { data: { type: 'warmed', modelIds: ['rnnoise'] } });
+    await expect(pending).resolves.toMatchObject({ modelIds: ['bsrnn_vocals', 'rnnoise'] });
+    jest.useRealTimers();
+  });
+
+  test('partial warmup still times out and removes its waiter', async () => {
+    jest.useFakeTimers();
+    const worker = await readyWorker();
+    const pending = StemSeparation.warmupModels(['bsrnn_vocals', 'rnnoise']);
+    await waitForPost(worker, 'warmup');
+    worker.dispatch('message', { data: { type: 'warmed', modelIds: ['bsrnn_vocals'] } });
+    const rejection = expect(pending).rejects.toThrow('warmup timeout');
+    await jest.advanceTimersByTimeAsync(120000);
+    await rejection;
+    jest.useRealTimers();
+  });
+
+  test('rejects unknown model IDs before creating a worker', async () => {
+    await expect(StemSeparation.warmupModels(['not-in-manifest']))
+      .rejects.toThrow('Unknown or unsupported model ID');
+    expect(global.Worker).not.toHaveBeenCalled();
   });
 
   test('ignores unscoped results and resolves only its matching request', async () => {

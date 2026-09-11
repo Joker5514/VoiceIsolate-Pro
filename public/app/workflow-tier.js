@@ -287,13 +287,8 @@ const WorkflowTier = (() => {
       bindHeroPicker();
       const initial = readInitialTier();
       setTier(initial, { persist: false });
-      window.addEventListener('vip:fileLoaded', () => {
-        const tier = getConfig();
-        if (tier.id === 'creator') applyTierPreset(tier);
-      });
-      window.addEventListener('vip:processingDone', () => {
-        if (currentTier === 'creator' && appRef) applyTierPreset(getConfig());
-      });
+      // Processing and file refreshes never reapply defaults: user/preset/
+      // restored tuning remains canonical until an explicit tier change/reset.
     },
     getTier() { return currentTier; },
     getConfig,

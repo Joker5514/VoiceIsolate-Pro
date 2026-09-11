@@ -96,6 +96,18 @@ export function clampSnap(raw, min, max, step) {
   return v;
 }
 
+/** Canonical conversion used by UI state, persistence, snapshots, and DSP. */
+export function normalizeSliderValue(raw, spec = {}, fallback = spec.default ?? spec.val ?? spec.min ?? 0) {
+  const min = Number(spec.min);
+  const max = Number(spec.max);
+  const step = Number(spec.step);
+  const safeMin = Number.isFinite(min) ? min : Number.NEGATIVE_INFINITY;
+  const safeMax = Number.isFinite(max) ? max : Number.POSITIVE_INFINITY;
+  const numericFallback = Number(fallback);
+  const candidate = Number.isFinite(Number(raw)) ? Number(raw) : numericFallback;
+  return clampSnap(Number.isFinite(candidate) ? candidate : 0, safeMin, safeMax, step);
+}
+
 /**
  * Search / filter helpers for Engineer control browser.
  * @param {object} entry registry-like { id, label, tip, hint, aliases?, group? }
@@ -189,11 +201,10 @@ export function createDspSliderRow(options) {
     ? options.isLocked
     : () => !!options.locked;
 
-  let value = clampSnap(
+  let value = normalizeSliderValue(
     options.value != null ? options.value : def,
-    min,
-    max,
-    step,
+    { min, max, step, default: def },
+    def,
   );
 
   const row = doc.createElement('div');
@@ -307,7 +318,7 @@ export function createDspSliderRow(options) {
       paint(value);
       return false;
     }
-    const next = clampSnap(raw, min, max, step);
+    const next = normalizeSliderValue(raw, { min, max, step, default: def }, def);
     if (next === value && source !== 'reset') {
       paint(next);
       return false;
@@ -434,7 +445,7 @@ export function createDspSliderRow(options) {
       return value;
     },
     setValue(v, { silent = false } = {}) {
-      const next = clampSnap(v, min, max, step);
+      const next = normalizeSliderValue(v, { min, max, step, default: def }, def);
       paint(next);
       if (!silent && typeof options.onChange === 'function') {
         options.onChange(id, next, { source: 'programmatic' });

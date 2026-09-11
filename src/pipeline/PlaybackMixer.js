@@ -31,10 +31,12 @@
  */
 'use strict';
 
+import { effectiveSpeakerGain, SPEAKER_GAIN_RAMP_SEC } from '../core/SpeakerGainEnvelope.js';
+
 import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/audio-config.js';
 
 /** Crossfade duration (seconds) for speaker solo/mute/segment boundaries. */
-const SPEAKER_RAMP_SEC = 0.012;
+const SPEAKER_RAMP_SEC = SPEAKER_GAIN_RAMP_SEC;
 
 // Web Audio BiquadFilter `type` values are fixed spec strings. They are hoisted
 // to named constants whose identifiers avoid the substring flagged by njsscan's
@@ -1095,11 +1097,7 @@ export class PlaybackMixer {
   getSoloSpeaker() { return this._soloId; }
 
   _effectiveSpeakerVolume(speakerId) {
-    const s = this._speakers.get(speakerId);
-    if (!s) return 1;
-    if (s.muted) return 0;
-    if (this._soloId && this._soloId !== speakerId) return 0;
-    return s.volume;
+    return effectiveSpeakerGain(this._speakers.get(speakerId), speakerId, this._soloId);
   }
 
   /**

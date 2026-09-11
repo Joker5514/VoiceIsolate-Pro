@@ -79,8 +79,13 @@ const SESSION_TEMP_KEY = 'vip-session-temp-v2';
  */
 export function saveSession(params, meta) {
   try {
+    const canonicalParams = { ...params };
+    if (!Number.isFinite(canonicalParams.stereoWidth) && Number.isFinite(canonicalParams.outWidth)) {
+      canonicalParams.stereoWidth = canonicalParams.outWidth;
+    }
+    delete canonicalParams.outWidth;
     _lsSet(SESSION_KEY, JSON.stringify({
-      params:  { ...params },
+      params: canonicalParams,
       meta:    { ...meta   },
       savedAt: Date.now(),
     }));
@@ -99,6 +104,14 @@ export function loadSession() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.params !== 'object') return null;
+    // Canonical key wins conflicts; old outWidth-only sessions migrate safely.
+    const width = Number.isFinite(parsed.params.stereoWidth)
+      ? parsed.params.stereoWidth
+      : parsed.params.outWidth;
+    if (Number.isFinite(width)) {
+      parsed.params.stereoWidth = width;
+      parsed.params.outWidth = width; // synchronized compatibility view in memory
+    }
     return { params: parsed.params, meta: parsed.meta ?? {} };
   } catch (err) {
     console.warn('[session-persist] loadSession parse error:', err);

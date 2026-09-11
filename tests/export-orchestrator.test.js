@@ -474,7 +474,7 @@ describe('ExportOrchestrator', () => {
       await expect(Promise.all([first, second])).resolves.toHaveLength(2);
     });
 
-    it('should terminate a stalled encoder and reject its request on timeout', async () => {
+    it('should reject only a stalled request on timeout', async () => {
       jest.useFakeTimers();
       const orchestrator = new ExportOrchestrator(mockMixer);
       const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
@@ -484,8 +484,8 @@ describe('ExportOrchestrator', () => {
       await jest.advanceTimersByTimeAsync(120000);
 
       await rejection;
-      expect(mockWorker.terminate).toHaveBeenCalled();
-      expect(orchestrator._worker).toBeNull();
+      expect(mockWorker.terminate).not.toHaveBeenCalled();
+      expect(orchestrator._worker).toBe(mockWorker);
     });
 
     it('should reject immediately when posting an encode request throws', async () => {
@@ -531,11 +531,11 @@ describe('ExportOrchestrator', () => {
       });
 
       await expect(exportPromise).rejects.toThrow('progress UI failed');
-      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+      expect(mockWorker.terminate).not.toHaveBeenCalled();
       expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
     });
 
-    it('rejects malformed non-finite progress and recycles the worker', async () => {
+    it('rejects malformed non-finite progress without recycling the worker', async () => {
       const orchestrator = new ExportOrchestrator(mockMixer);
       const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -546,36 +546,21 @@ describe('ExportOrchestrator', () => {
       });
 
       await expect(exportPromise).rejects.toThrow('Malformed worker progress');
-      expect(mockWorker.terminate).toHaveBeenCalledTimes(1);
+      expect(mockWorker.terminate).not.toHaveBeenCalled();
       expect(orchestrator._pendingRequests).toHaveProperty('size', 0);
     });
 
-    it('should reject malformed messages and allow a clean worker retry', async () => {
+    it('ignores malformed messages after ready and accepts the eventual result', async () => {
       const orchestrator = new ExportOrchestrator(mockMixer);
-      const failedExport = orchestrator.export({ stems: 'clean', format: 'wav' });
+      const exportPromise = orchestrator.export({ stems: 'clean', format: 'wav' });
       await new Promise(resolve => setTimeout(resolve, 10));
-      const failedWorker = mockWorker;
-
-      failedWorker.onmessage({ data: null });
-      await expect(failedExport).rejects.toThrow('Malformed worker message');
-      expect(failedWorker.terminate).toHaveBeenCalled();
-
-      const retriedExport = orchestrator.export({ stems: 'noise', format: 'wav' });
-      await new Promise(resolve => setTimeout(resolve, 10));
-      expect(global.Worker).toHaveBeenCalledTimes(2);
-      expect(mockWorker).not.toBe(failedWorker);
-
+      mockWorker.onmessage({ data: null });
       const requestId = mockWorker.postMessage.mock.calls[0][0].requestId;
-      mockWorker.onmessage({
-        data: {
-          type: 'result',
-          requestId,
-          blob: new Blob(['data'], { type: 'audio/wav' }),
-          format: 'wav',
-        },
-      });
-      await expect(retriedExport).resolves.toMatchObject({ format: 'wav' });
-    });
+      mockWorker.onmessage({ data: { type: 'result', requestId,
+        blob: new Blob(['data'], { type: 'audio/wav' }), format: 'wav' } });
+      await expect(exportPromise).resolves.toMatchObject({ format: 'wav' });
+      expect(mockWorker.terminate).not.toHaveBeenCalled();
+    });;
   });
 });
 
