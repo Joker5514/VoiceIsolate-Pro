@@ -1224,7 +1224,8 @@ async function onProcess() {
   if (!ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
   processingInFlight = true;
   try {
-    await ensureWorkerReady();
++    processingInFlight = true;
++    await ensureWorkerReady();
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
     hasProcessed = false;
     invalidateComparison();
