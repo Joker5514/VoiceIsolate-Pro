@@ -5322,7 +5322,7 @@ class VoiceIsolatePro {
     // ── Pass 9: stereo image ──
     if (channels.length >= 2) {
       if ((p.phaseCorr ?? 0) > 0) this._applyPhaseCorrection(channels, (p.phaseCorr ?? 0) / 100);
-      const widthPct = ((p.stereoWidth ?? 100) / 100) * ((p.outWidth ?? 100) / 100) * 100;
+      const widthPct = p.stereoWidth ?? p.outWidth ?? 100;
       if (Math.abs(widthPct - 100) > 0.5) {
         const w = DSP.stereoWiden(channels[0], channels[1], widthPct);
         channels[0] = w.left; channels[1] = w.right;
