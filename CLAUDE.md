@@ -152,6 +152,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 
 Rules:
 - **ESM everywhere** in `src/` (`import`/`export`). Tests use CommonJS (`require`).
+
 - `src/core/` modules must stay **pure**: importable in Node, workers, and the
   browser without side effects.
 - `MLWorker.js` is a classic worker (it must `importScripts('/lib/ort.min.js')`).
@@ -190,6 +191,21 @@ Rules:
     `docs/guides/WORKLETS.md`. After any worklet edit run `pnpm worklets:hash`.
 
 ---
+
+### 2.1 Production entry-point contract
+
+The shipping browser entry points are `public/index.html` → `public/landing.js`
+and `public/app/index.html` → `public/app/app.js`. Engineer processing uses
+`StemSeparation` → `MLWorkerHost` → `MLWorker`; Landing currently shares the
+same worker host/protocol directly. `pnpm build` copies both `public/` and
+`src/` into `build/`; Capacitor (`webDir: build`) and Electron (`vip://app/`)
+consume that exact output, so they do not own alternate processing graphs.
+
+`ProcessingOrchestrator.js` is currently **inactive compatibility code**: no
+production entry point imports it. Keep it stable for consumers and tests, but
+do not implement production defect fixes only there or silently migrate the
+shipping path to it. Any removal or canonical migration requires a separate,
+explicit architecture change.
 
 ## 3. Security Rules (Layer 0)
 

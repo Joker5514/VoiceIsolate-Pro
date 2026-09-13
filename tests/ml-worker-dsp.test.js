@@ -39,6 +39,9 @@ function loadWorkerSandbox(sessionRun) {
   sandbox.self.onmessage = null;
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'MLWorker.js' });
+  // Lexical declarations in strict classic-worker code are not guaranteed to
+  // become enumerable properties of a Node vm global.
+  sandbox.runSpectralMask = vm.runInContext('runSpectralMask', sandbox);
   sandbox.__session = { run: sessionRun };
   return sandbox;
 }

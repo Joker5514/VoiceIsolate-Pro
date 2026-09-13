@@ -149,6 +149,10 @@ let sliderUI = null;
 let speakerControls = null;
 let visualizer = null;
 let worker = null;
+let workerReadyPromise = null;
+let resolveWorkerReady = null;
+let rejectWorkerReady = null;
+let workerReadyTimer = null;
 /** @type {ReturnType<typeof import('/src/presentation/TargetSpeakerUI.js').mountTargetSpeakerUI>|null} */
 let targetSpeakerUi = null;
 
@@ -665,7 +669,19 @@ function getWorker() {
   if (worker) return worker;
   worker = createMLWorker();
   const ownedWorker = worker;
-  initMLWorker(worker);
+  workerReadyPromise = new Promise((resolve, reject) => {
+    resolveWorkerReady = resolve;
+    rejectWorkerReady = reject;
+  });
+  void workerReadyPromise.catch(() => {});
+  workerReadyTimer = setTimeout(() => {
+    if (worker !== ownedWorker) return;
+    const error = new Error('Local ML worker readiness timed out. Retry Process.');
+    rejectWorkerReady?.(error);
+    ownedWorker.terminate();
+    worker = null;
+    workerReadyPromise = null;
+  }, 30000);
   worker.addEventListener('message', (event) => {
     const msg = event.data || {};
     if (worker !== ownedWorker) return;
@@ -673,6 +689,12 @@ function getWorker() {
     if (!stale) lastProcessProgress = Date.now();
     switch (msg.type) {
       case 'ready': {
+        if (worker !== ownedWorker || typeof msg.backend !== 'string') break;
+        clearTimeout(workerReadyTimer);
+        workerReadyTimer = null;
+        resolveWorkerReady?.(ownedWorker);
+        resolveWorkerReady = null;
+        rejectWorkerReady = null;
         let debugEnabled = false;
         try {
           debugEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('vip_debug') === '1';
@@ -742,6 +764,9 @@ function getWorker() {
         failProcessing(new Error(msg.message || 'Local worker failed'));
         worker?.terminate();
         worker = null;
+        clearTimeout(workerReadyTimer);
+        rejectWorkerReady?.(new Error(msg.message || 'Local worker initialization failed'));
+        workerReadyPromise = null;
         quickClean.setBackend('probing');
         break;
       default:
@@ -754,9 +779,27 @@ function getWorker() {
     failProcessing(new Error(err.message || 'Local worker failed'));
     worker.terminate();
     worker = null;
+    clearTimeout(workerReadyTimer);
+    rejectWorkerReady?.(new Error(err.message || 'Local worker failed'));
+    workerReadyPromise = null;
     quickClean.setBackend('probing');
   });
+  worker.addEventListener('messageerror', () => {
+    if (worker !== ownedWorker) return;
+    const error = new Error('Local ML worker sent an unreadable initialization message.');
+    clearTimeout(workerReadyTimer);
+    rejectWorkerReady?.(error);
+    ownedWorker.terminate();
+    worker = null;
+    workerReadyPromise = null;
+  });
+  initMLWorker(worker);
   return worker;
+}
+
+function ensureWorkerReady() {
+  getWorker();
+  return workerReadyPromise;
 }
 
 async function detectSpeakers(clean, sampleRate) {
@@ -1178,16 +1221,13 @@ function warnIfNotServed() {
   }
 }
 
-function onProcess() {
+async function onProcess() {
   if (!ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
-  if (!worker) {
-    try { getWorker(); setStatus('Checking local runtime — press Process when ready.', 'warn'); }
-    catch (err) { failProcessing(err); }
-    return;
-  }
+  processingInFlight = true;
   try {
++    processingInFlight = true;
++    await ensureWorkerReady();
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
-    processingInFlight = true;
     hasProcessed = false;
     invalidateComparison();
     updateDownloadButton();
@@ -1222,7 +1262,9 @@ function onProcess() {
       worker = null;
       failProcessing(new Error('The worker stopped responding. Retry Process.'));
     }, 5000);
-    getWorker().postMessage({ type: 'process', requestId: id, modelIds: [...modelIds],
+    const readyWorker = await ensureWorkerReady();
+    if (readyWorker !== worker) throw new Error('Local ML worker was replaced before processing.');
+    readyWorker.postMessage({ type: 'process', requestId: id, modelIds: [...modelIds],
       channelData, sampleRate: processPlan.sampleRate }, channelData.map((channel) => channel.buffer));
   } catch (err) { failProcessing(err); }
 }

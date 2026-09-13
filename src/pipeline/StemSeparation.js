@@ -7,6 +7,7 @@
 'use strict';
 
 import { DEFAULT_ML_MODEL_IDS } from '../core/ml-defaults.js';
+import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from './MLStemCache.js';
 import { copyFloat32Channel, createYieldBudget } from './ui-yield.js';
@@ -21,7 +22,8 @@ let _activeReject = null;
 const _warmedModels = new Set();
 /** @type {Array<{ resolve: Function, reject: Function, timer: *, ids: string[] }>} */
 let _warmupWaiters = [];
-let _warmupHooked = false;
+let _warmupHookedWorker = null;
+let _warmupListeners = null;
 
 const WARMUP_TIMEOUT_MS = 120000;
 /** Max wait for a single separation job before falling back to DSP. */
@@ -52,13 +54,19 @@ function recycleWorker(worker, error) {
     try { rejectActive(resetError); } catch { /* active request already settled */ }
   }
   if (_worker) {
+    if (_warmupHookedWorker === _worker && _warmupListeners) {
+      _worker.removeEventListener('message', _warmupListeners.message);
+      _worker.removeEventListener('error', _warmupListeners.error);
+      _worker.removeEventListener('messageerror', _warmupListeners.messageerror);
+    }
     try { _worker.terminate(); } catch { /* worker already stopped */ }
     _worker = null;
   }
   _ready = null;
   _activeRequestId = null;
   _activeCancel = null;
-  _warmupHooked = false;
+  _warmupHookedWorker = null;
+  _warmupListeners = null;
   _warmedModels.clear();
   rejectWarmupWaiters(resetError);
 }
@@ -70,26 +78,32 @@ function getWorker() {
 }
 
 function hookWarmupListener(w) {
-  if (_warmupHooked) return;
-  _warmupHooked = true;
-  w.addEventListener('message', (ev) => {
+  if (_warmupHookedWorker === w) return;
+  const onMessage = (ev) => {
     const msg = ev.data || {};
     if (msg.type !== 'warmed') return;
     for (const id of msg.modelIds || []) _warmedModels.add(id);
     const pending = _warmupWaiters.splice(0);
     for (const waiter of pending) {
-      clearTimeout(waiter.timer);
       const stillMissing = waiter.ids.filter((id) => !_warmedModels.has(id));
-      if (stillMissing.length === 0) waiter.resolve(msg);
+      if (stillMissing.length === 0) {
+        clearTimeout(waiter.timer);
+        waiter.resolve({ ...msg, modelIds: waiter.ids });
+      }
       else _warmupWaiters.push(waiter);
     }
-  });
-  w.addEventListener('error', (ev) => {
+  };
+  const onError = (ev) => {
     recycleWorker(w, new Error(ev?.message || '[VIP][StemSeparation] MLWorker error'));
-  });
-  w.addEventListener('messageerror', () => {
+  };
+  const onMessageError = () => {
     recycleWorker(w, new Error('[VIP][StemSeparation] worker message deserialize failed'));
-  });
+  };
+  _warmupHookedWorker = w;
+  _warmupListeners = { message: onMessage, error: onError, messageerror: onMessageError };
+  w.addEventListener('message', onMessage);
+  w.addEventListener('error', onError);
+  w.addEventListener('messageerror', onMessageError);
 }
 
 function ensureReady() {
@@ -163,8 +177,13 @@ function ensureReady() {
 
 /** Prefetch + compile ONNX sessions while the user decodes a file. */
 export async function warmupModels(modelIds = DEFAULT_ML_MODEL_IDS) {
-  await ensureReady();
   const ids = (Array.isArray(modelIds) ? modelIds : []).filter((id) => typeof id === 'string' && id);
+  const invalid = ids.filter((id) => !MODEL_MANIFEST[id]
+    || !['spectral-mask', 'waveform', 'vad', 'universal-query'].includes(MODEL_MANIFEST[id].strategy));
+  if (invalid.length) {
+    throw new Error(`[VIP][StemSeparation] Unknown or unsupported model ID(s): ${invalid.join(', ')}`);
+  }
+  await ensureReady();
   const missing = ids.filter((id) => !_warmedModels.has(id));
   if (missing.length === 0) return { modelIds: ids };
 

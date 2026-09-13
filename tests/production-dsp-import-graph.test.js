@@ -31,7 +31,6 @@ const PRODUCTION_SEEDS = [
   'src/pipeline/ui-yield.js',
   'src/pipeline/JobController.js',
   'src/pipeline/PlaybackMixer.js',
-  'src/pipeline/ProcessingOrchestrator.js',
   'src/workers/MLWorker.js',
   'src/workers/USMWorker.js',
   'src/core/ml-defaults.js',
@@ -109,6 +108,13 @@ describe('production DSP import graph', () => {
     expect(app).toMatch(/signal:\s*this\._processAbortSignal\(\)/);
     expect(host).toContain('/src/workers/MLWorker.js');
     expect(host).not.toMatch(/ml-worker\.js/);
+  });
+
+  test('ProcessingOrchestrator is not imported by production entry points', () => {
+    for (const rel of ['public/landing.js', 'public/app/app.js', 'public/index.html', 'public/app/index.html']) {
+      expect(read(rel)).not.toMatch(/(?:import|src=)[^\n]*ProcessingOrchestrator/);
+    }
+    expect(read('CLAUDE.md')).toMatch(/ProcessingOrchestrator\.js` is currently \*\*inactive compatibility code\*\*/);
   });
 
   test('dsp-stages.js and offline-processor.js are marked quarantined', () => {

@@ -62,6 +62,7 @@ import {
   sliderMatchesQuery,
   SLIDER_SEARCH_ALIASES,
   buildAriaValueText,
+  normalizeSliderValue,
 } from '/src/presentation/DspSlider.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import {
@@ -702,13 +703,9 @@ function clampToSlider(id, value) {
   const reg = SLIDER_REG_BY_ID[id];
   const legacy = SLIDER_BY_ID[id];
   const s = reg || legacy;
-  const v = Number(value);
   const fallback = reg ? (reg.default ?? 0) : (legacy ? legacy.val : 0);
-  if (!Number.isFinite(v)) return fallback;
-  if (!s) return v;
-  if (v < s.min) return s.min;
-  if (v > s.max) return s.max;
-  return v;
+  if (!s) return Number.isFinite(Number(value)) ? Number(value) : fallback;
+  return normalizeSliderValue(value, s, fallback);
 }
 
 function numFromInput(el, fallback = 0) {
@@ -1773,9 +1770,10 @@ class VoiceIsolatePro {
 
   _appendSliderRow(s, container) {
       if (!container || container.querySelector(`[data-slider-id="${s.id}"]`)) return;
-      const initVal = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined)
+      const rawInitVal = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined)
         ? window.VIP_PARAMS[s.id]
         : s.val;
+      const initVal = clampToSlider(s.id, rawInitVal);
       const regEntry = SLIDER_REG_BY_ID[s.id];
       const groupEl = typeof container.closest === 'function'
         ? container.closest('details.slider-group, details.vip-section')
@@ -1820,11 +1818,18 @@ class VoiceIsolatePro {
           window.VIP_PARAMS = window.VIP_PARAMS || {};
           window.VIP_PARAMS[id] = v;
           this.params[id] = v;
+          const widthPeer = id === 'outWidth' ? 'stereoWidth' : id === 'stereoWidth' ? 'outWidth' : null;
+          if (widthPeer) {
+            window.VIP_PARAMS[widthPeer] = v;
+            this.params[widthPeer] = v;
+            const peerRow = document.querySelector(`.slider-row[data-slider-id="${widthPeer}"]`);
+            peerRow?._dspSlider?.setValue(v, { silent: true });
+          }
           if (this.sharedParams) {
             const idx = this._sliderIndexById.get(id);
             if (idx !== undefined) this.sharedParams[idx] = v;
           }
-          this.onSlider(id, v);
+          this.onSlider(widthPeer ? 'stereoWidth' : id, v);
           // Coalesce Live-Mix param storms. Process-time/export controls stay
           // in canonical state until their explicit consumer runs.
           if (BRIDGE_RT_SLIDER_IDS.has(id)) {
@@ -5317,7 +5322,7 @@ class VoiceIsolatePro {
     // ── Pass 9: stereo image ──
     if (channels.length >= 2) {
       if ((p.phaseCorr ?? 0) > 0) this._applyPhaseCorrection(channels, (p.phaseCorr ?? 0) / 100);
-      const widthPct = ((p.stereoWidth ?? 100) / 100) * ((p.outWidth ?? 100) / 100) * 100;
+      const widthPct = p.stereoWidth ?? p.outWidth ?? 100;
       if (Math.abs(widthPct - 100) > 0.5) {
         const w = DSP.stereoWiden(channels[0], channels[1], widthPct);
         channels[0] = w.left; channels[1] = w.right;

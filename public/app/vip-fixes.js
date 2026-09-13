@@ -649,6 +649,9 @@
     log('Patching sliders');
 
     function bindRow(row) {
+      // DspSlider owns canonical state + dispatch. This compatibility patch is
+      // detection-only for modern rows so one physical event has one owner.
+      if (row._dspSlider) return;
       const id     = row.dataset.sliderId;
       const slider = row.querySelector('input[type="range"]');
       if (!slider || !id || slider.dataset.vipFixBound === '1') return;
