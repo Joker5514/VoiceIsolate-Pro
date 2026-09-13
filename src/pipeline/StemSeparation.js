@@ -179,7 +179,7 @@ function ensureReady() {
 export async function warmupModels(modelIds = DEFAULT_ML_MODEL_IDS) {
   const ids = (Array.isArray(modelIds) ? modelIds : []).filter((id) => typeof id === 'string' && id);
   const invalid = ids.filter((id) => !MODEL_MANIFEST[id]
-    || !['spectral-mask', 'waveform', 'vad', 'universal-separation'].includes(MODEL_MANIFEST[id].strategy));
+    || !['spectral-mask', 'waveform', 'vad', 'universal-query'].includes(MODEL_MANIFEST[id].strategy));
   if (invalid.length) {
     throw new Error(`[VIP][StemSeparation] Unknown or unsupported model ID(s): ${invalid.join(', ')}`);
   }
