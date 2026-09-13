@@ -101,7 +101,7 @@ export function normalizeSliderValue(raw, spec = {}, fallback = spec.default ?? 
   const min = Number(spec.min);
   const max = Number(spec.max);
   const step = Number(spec.step);
-  const safeMin = Number.isFinite(min) ? min : Number.NEGATIVE_INFINITY;
+  const safeMin = Number.isFinite(min) ? min : 0;
   const safeMax = Number.isFinite(max) ? max : Number.POSITIVE_INFINITY;
   const numericFallback = Number(fallback);
   const candidate = Number.isFinite(Number(raw)) ? Number(raw) : numericFallback;
