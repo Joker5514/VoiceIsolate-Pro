@@ -166,6 +166,13 @@ export class ExportOrchestrator {
           failWorker(new Error(`[VIP][ExportOrchestrator] Unknown worker message type: ${String(type)}.`));
           return;
         }
+        const pending = this._pendingRequests.get(requestId);
+        if (pending) {
+          this._pendingRequests.delete(requestId);
+          clearTimeout(pending.timeout);
+          pending.reject(new Error(`[VIP][ExportOrchestrator] Unknown worker message type: ${String(type)}.`));
+          return;
+        }
         console.warn(`[VIP][ExportOrchestrator] Ignoring unknown worker message type: ${String(type)}.`);
       };
 
