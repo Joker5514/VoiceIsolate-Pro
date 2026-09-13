@@ -673,6 +673,7 @@ function getWorker() {
     resolveWorkerReady = resolve;
     rejectWorkerReady = reject;
   });
+  void workerReadyPromise.catch(() => {});
   workerReadyTimer = setTimeout(() => {
     if (worker !== ownedWorker) return;
     const error = new Error('Local ML worker readiness timed out. Retry Process.');
