@@ -1222,10 +1222,10 @@ function warnIfNotServed() {
 
 async function onProcess() {
   if (!ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
+  processingInFlight = true;
   try {
     await ensureWorkerReady();
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
-    processingInFlight = true;
     hasProcessed = false;
     invalidateComparison();
     updateDownloadButton();
