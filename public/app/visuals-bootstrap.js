@@ -628,7 +628,22 @@
 
   /** Tabs whose visualizer needs Three.js, which is loaded on first use. */
   const THREE_TABS = ['topo', 'swarm'];
+  const THREE_CONTAINERS = { topo: 'topoContainer', swarm: 'swarmContainer' };
   let _threeSyncBound = false;
+
+  /**
+   * Show (or clear, with an empty message) a status line inside a 3D panel.
+   * Only ever writes to a container the visualizer has not mounted into, so it
+   * cannot clobber a live renderer's canvas.
+   * @param {string} tabName @param {string} message
+   */
+  function _setVizPlaceholder(tabName, message) {
+    const host = $(THREE_CONTAINERS[tabName]);
+    if (!host || host.querySelector('canvas')) return;
+    if (!message) { host.textContent = ''; return; }
+    host.textContent = message;
+    host.setAttribute('role', 'status');
+  }
 
   function _initPremiumTab(tabName) {
     if (_premiumHandles.has(tabName)) return;
@@ -640,6 +655,9 @@
     // bail for now; vip:three-ready re-runs this sync once the module lands.
     if (THREE_TABS.includes(tabName) && !global.THREE) {
       if (typeof global.VIP_ensureThree === 'function') {
+        // Measured: the module is ~750 KB, which is 1.5 s on Fast 4G but 15.5 s
+        // on Slow 4G. Say so rather than leaving the panel blank for that long.
+        _setVizPlaceholder(tabName, 'Loading 3D visualizer…');
         if (!_threeSyncBound) {
           _threeSyncBound = true;
           // Guard on _running: the import can land after playback stopped, and
@@ -647,10 +665,17 @@
           // nothing tears down until the next tab change. The next start()
           // syncs it instead.
           global.addEventListener('vip:three-ready', () => {
+            for (const tab of THREE_TABS) _setVizPlaceholder(tab, '');
             if (_running) _syncPremiumViz();
           });
         }
-        global.VIP_ensureThree();
+        Promise.resolve(global.VIP_ensureThree()).then((m) => {
+          if (!m) {
+            for (const tab of THREE_TABS) {
+              _setVizPlaceholder(tab, '3D visualizer unavailable — the view could not load.');
+            }
+          }
+        });
       }
       return;
     }

@@ -252,19 +252,27 @@ describe('visuals-bootstrap module evaluated in jsdom-like sandbox', () => {
     window.VIP_initParticleSwarm = () => ({ stop() {} });
     window.VIP_initLiquidWaves   = () => ({ stop() {} });
 
-    const src = fs.readFileSync(VISUALS_BOOT_PATH, 'utf8');
-    window.eval(src);
+    try {
+      const src = fs.readFileSync(VISUALS_BOOT_PATH, 'utf8');
+      window.eval(src);
 
-    expect(window.VIP_VISUALS).toBeTruthy();
-    expect(typeof window.VIP_VISUALS.drawStatic).toBe('function');
-    expect(typeof window.VIP_VISUALS.onTabActivated).toBe('function');
-    expect(typeof window.VIP_VISUALS.initPremium).toBe('function');
-    expect(typeof window.VIP_VISUALS.start).toBe('function');
-    expect(typeof window.VIP_VISUALS.stop).toBe('function');
-    expect(typeof window.VIP_VISUALS.setViewMode).toBe('function');
-    expect(typeof window.VIP_VISUALS.getViewMode).toBe('function');
-    expect(typeof window.VIP_VISUALS.wireChrome).toBe('function');
-    expect(typeof window.VIP_VISUALS.toggleFullscreen).toBe('function');
-    expect(typeof window.VIP_VISUALS.activateTab).toBe('function');
+      expect(window.VIP_VISUALS).toBeTruthy();
+      expect(typeof window.VIP_VISUALS.drawStatic).toBe('function');
+      expect(typeof window.VIP_VISUALS.onTabActivated).toBe('function');
+      expect(typeof window.VIP_VISUALS.initPremium).toBe('function');
+      expect(typeof window.VIP_VISUALS.start).toBe('function');
+      expect(typeof window.VIP_VISUALS.stop).toBe('function');
+      expect(typeof window.VIP_VISUALS.setViewMode).toBe('function');
+      expect(typeof window.VIP_VISUALS.getViewMode).toBe('function');
+      expect(typeof window.VIP_VISUALS.wireChrome).toBe('function');
+      expect(typeof window.VIP_VISUALS.toggleFullscreen).toBe('function');
+      expect(typeof window.VIP_VISUALS.activateTab).toBe('function');
+    } finally {
+      // pretendToBeVisual starts a timer-backed requestAnimationFrame loop
+      // inside jsdom. Leaving it open held Node's event loop for the whole
+      // suite — the "Jest did not exit" warning. --detectOpenHandles never
+      // pointed here because it cannot attribute jsdom's internal timer.
+      window.close();
+    }
   });
 });

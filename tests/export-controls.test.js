@@ -15,6 +15,7 @@ describe('ExportControls', () => {
   let container;
   let mockMixer;
   let mockOrchestrator;
+  let instances;
 
   beforeEach(async () => {
     delete globalThis.vipDesktop;
@@ -74,7 +75,19 @@ describe('ExportControls', () => {
 
     // Import modules
     const controlsModule = await import('../src/presentation/ExportControls.js');
-    ExportControls = controlsModule.ExportControls;
+    // Record every instance a test constructs so afterEach can dispose them.
+    // _showStatus('success') arms a real 5 s auto-hide timer; leaving instances
+    // undisposed left those handles pending and held Node's event loop open
+    // after the suite finished ("Jest did not exit"). Subclassing keeps
+    // instanceof, the prototype chain and the constructor throws intact.
+    instances = [];
+    const RealExportControls = controlsModule.ExportControls;
+    ExportControls = class extends RealExportControls {
+      constructor(...args) {
+        super(...args);
+        instances.push(this);
+      }
+    };
 
     const orchestratorModule = await import('../src/pipeline/ExportOrchestrator.js');
     ExportOrchestrator = orchestratorModule.ExportOrchestrator;
@@ -86,6 +99,12 @@ describe('ExportControls', () => {
   });
 
   afterEach(() => {
+    // Dispose first: dispose() clears pending timers and touches the container,
+    // so it must run before the globals and the jsdom window are torn down.
+    for (const inst of instances || []) {
+      try { inst.dispose(); } catch { /* container already gone */ }
+    }
+    instances = [];
     delete globalThis.vipDesktop;
     delete global.document;
     delete global.window;

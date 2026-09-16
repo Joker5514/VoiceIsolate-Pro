@@ -33,6 +33,22 @@
       });
       return threePromise;
     };
+
+    /*
+      Warm the module on idle, but only where the bandwidth is cheap. Measured
+      cost of a cold first-use fetch: 1.5 s on Fast 4G, 15.5 s on Slow 4G,
+      18.7 s on Slow 3G. Prefetching on a fast link removes that wait entirely;
+      skipping it on a slow or metered link keeps the ~750 KB saving for the
+      people who most need it, and those users still get the loading state.
+    */
+    const conn = navigator.connection || null;
+    const cheapNetwork = !conn || (conn.saveData !== true
+      && (conn.effectiveType === undefined || conn.effectiveType === '4g'));
+    if (cheapNetwork) {
+      const warm = () => { globalThis.VIP_ensureThree(); };
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 8000 });
+      else setTimeout(warm, 4000);
+    }
   </script>
   <link rel="stylesheet" href="ds-tokens.css" />
   <link rel="stylesheet" href="style.css" />

@@ -115,8 +115,18 @@ await page.click('[data-hero-tier="creator"]', { timeout: 3000 });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload({ waitUntil: 'load' });
-    await page.waitForTimeout(600);
-    check(await page.locator('#psFieldNav').count() === 1, 'field nav present');
+    // engineer-console.js installs the field nav two rAFs after DOMContentLoaded
+    // (so first paint lands before the reparent). A fixed sleep races that under
+    // CPU contention — it failed once on a loaded machine and passed 3/3 idle.
+    // Wait for the element itself; the assertion below is unchanged, so this
+    // makes the check reliable without weakening what it proves.
+    let fieldNavPresent = true;
+    try {
+      await page.waitForSelector('#psFieldNav', { state: 'attached', timeout: 15000 });
+    } catch {
+      fieldNavPresent = false;
+    }
+    check(fieldNavPresent && await page.locator('#psFieldNav').count() === 1, 'field nav present');
 
     const cspish = consoleErrors.filter((t) => /Content Security Policy|Refused to/i.test(t));
     check(cspish.length === 0, `no CSP console errors (${cspish.slice(0, 3).join(' | ')})`);

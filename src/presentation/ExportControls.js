@@ -412,9 +412,16 @@ export class ExportControls {
       status.className = `vip-export-status ${type}`;
       status.style.display = 'block';
       
-      // Auto-hide success messages after 5 seconds
+      // Auto-hide success messages after 5 seconds. Tracked like the download
+      // cleanup timer below so dispose() can cancel it: untracked, it kept a
+      // 5 s handle alive after teardown (it held the Jest event loop open) and
+      // could fire _hideStatus() against an already-disposed container.
       if (type === 'success') {
-        setTimeout(() => this._hideStatus(), 5000);
+        const timer = setTimeout(() => {
+          this._pendingTimers.delete(timer);
+          this._hideStatus();
+        }, 5000);
+        this._pendingTimers.add(timer);
       }
     }
   }
