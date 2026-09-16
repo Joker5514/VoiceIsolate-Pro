@@ -44,17 +44,30 @@ body.ps-workstation .hdr {
     text-decoration: none;
     font-size: 13px;
   }
-  .ps-workspace-nav a:hover,
-  .ps-workspace-nav a:focus-visible {
+  .ps-workspace-nav a:hover {
     background: var(--surface-raised, #121a23);
     color: var(--text-primary, #f4f7fa);
-    outline: none;
   }
   .ps-workspace-nav a[aria-current="page"] {
     color: var(--text-primary, #f4f7fa);
     box-shadow: inset 2px 0 0 var(--action-process, #ff3d4d);
     background: rgba(255, 61, 77, 0.08);
   }
+}
+
+/* Keyboard focus.
+   These previously shared one rule with :hover and set `outline: none`, so the
+   only indicator was #121a23 on #0d131b — about 1.1:1, effectively invisible,
+   and indistinguishable from hover. The primary Engineer navigation had no
+   perceivable focus indicator (WCAG 2.4.7). Kept top-level, outside the
+   min-width:1100px block, so it holds wherever the nav is shown. */
+.ps-workspace-nav a:focus-visible,
+.ps-field-nav__btn:focus-visible {
+  outline: 2px solid var(--action-live, #2ed5e5);
+  outline-offset: -2px;
+  background: var(--surface-raised, #121a23);
+  color: var(--text-primary, #f4f7fa);
+  border-radius: 8px;
 }
 
 body.ps-forensic .ps-workspace-nav a[aria-current="page"] {

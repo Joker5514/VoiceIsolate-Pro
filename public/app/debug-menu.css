@@ -18,6 +18,10 @@
   transition: all 0.2s;
   white-space: nowrap;
 }
+#vip-debug-toggle:focus-visible {
+  outline: 2px solid rgba(0, 255, 180, 0.9);
+  outline-offset: 2px;
+}
 #vip-debug-toggle:hover {
   color: rgba(0, 255, 180, 1);
   background: rgba(0, 255, 180, 0.12);

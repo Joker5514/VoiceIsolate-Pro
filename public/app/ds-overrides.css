@@ -300,6 +300,15 @@ body::before { display: none !important; }
   box-shadow: none !important;
   transform: none !important;
 }
+/* The drop zone is role="button" tabindex="0" — the primary import control —
+   but had hover and dragover styling only, so keyboard users got no focus
+   indicator on it (WCAG 2.4.7). Distinct from :hover so focus is identifiable.
+   !important matches the specificity war already in this override layer. */
+.upload-zone:focus-visible {
+  outline: 2px solid var(--action-live, #2ed5e5) !important;
+  outline-offset: 3px !important;
+  border-color: var(--action-live, #2ed5e5) !important;
+}
 .upload-zone.dragover {
   border-color: var(--red-500) !important;
   background: rgba(220,38,38,0.1) !important;

@@ -94,10 +94,30 @@ async function main() {
   await page.setInputFiles('#fileInput', wavPath);
   await page.locator('#fileInput').dispatchEvent('change');
 
+  // Import deliberately does NOT start inference — processing begins only from
+  // an explicit user action (CLAUDE.md: "Import must not automatically begin
+  // inference"). This script used to upload and then wait for hStatus=DONE,
+  // which can only pass if import auto-processes, so it failed against correct
+  // behaviour. Verified: after import the app reports 0 ML worker messages,
+  // no outputBuffer and abMode 'original'; after Process it reports mlOk=true,
+  // outputBuffer, abMode 'processed'. mlOk is asserted below — it is the only
+  // one of those three that a silent DSP fallback cannot satisfy.
+  await page.waitForFunction(
+    () => { const b = document.getElementById('processBtn'); return b && !b.disabled; },
+    null,
+    { timeout: 60_000 },
+  );
+  await page.click('#processBtn');
+
+  // Break on every terminal state, not just DONE. app.js setStatus() also emits
+  // ERROR (decode/ML failure) and IDLE (reset/cancel); waiting only for DONE
+  // meant a failed run burned the whole 180 s deadline and then reported the
+  // downstream assertion rather than the actual error.
   const deadline = Date.now() + Math.max(180_000, SECS * 10000);
+  let endState = 'TIMEOUT';
   while (Date.now() < deadline) {
-    const done = await page.evaluate(() => document.getElementById('hStatus')?.textContent?.trim() === 'DONE');
-    if (done) break;
+    const st = await page.evaluate(() => document.getElementById('hStatus')?.textContent?.trim() || '');
+    if (st === 'DONE' || st === 'ERROR' || st === 'IDLE') { endState = st; break; }
     await page.waitForTimeout(500);
   }
 
@@ -121,8 +141,15 @@ async function main() {
   console.log('  Snapshot:', snap);
 
   const failures = [];
+  if (endState !== 'DONE') failures.push(`pipeline ended in ${endState} (expected DONE)`);
   if (snap.abMode !== 'processed') failures.push(`abMode=${snap.abMode} (expected processed)`);
   if (!snap.outputBuffer) failures.push('outputBuffer missing');
+  // Assert ML actually ran. app.js calls _setProcessedPlaybackMode()
+  // unconditionally after the pipeline, and _runFallbackPipeline() populates
+  // outputBuffer when _runMLIsolationPipeline() returns false — so abMode and
+  // outputBuffer alone stay green through a silent DSP fallback, which is the
+  // precise regression this calibration smoke exists to catch.
+  if (!snap.mlOk) failures.push('mlOk false (ML inference did not succeed; DSP fallback ran)');
   if (snap.paramCount < 50) failures.push(`VIP_PARAMS count ${snap.paramCount} < 50`);
   if (!Number.isFinite(snap.outGain)) failures.push('outGain not calibrated');
   if (!Number.isFinite(snap.gateThresh)) failures.push('gateThresh not calibrated');
