@@ -176,6 +176,10 @@ describe('decorative hero video is opt-in, not a first-load cost', () => {
     const gate = functionBody(appJs, 'shouldLoadHeroVideo');
     expect(gate).toMatch(/prefers-reduced-motion: reduce/);
     expect(gate).toMatch(/saveData/);
+    // The 2G branch is separate from saveData — a slow link is not necessarily
+    // a metered one, so deleting it must fail here too.
+    expect(gate).toMatch(/effectiveType/);
+    expect(gate).toMatch(/2g/);
     expect(gate).toMatch(/navigator\.onLine === false/);
     // Must probe the codec the shipped asset actually uses. Its avcC box reads
     // profile 0x64 (High) level 0x1F (3.1) -> avc1.64001F; probing Baseline
@@ -194,17 +198,30 @@ describe('decorative hero video is opt-in, not a first-load cost', () => {
     expect(init).toMatch(/if \(!shouldLoadHeroVideo\(\)\) \{ showFallback\(\); return; \}/);
   });
 
-  test('both the fallback and the release path detach the source', () => {
-    const init = functionBody(appJs, 'initHeroVideo');
-    // Hiding the element does not cancel an in-flight transfer, so each path
-    // that gives up on the video must remove the <source> and call load().
-    const detaches = init.match(/querySelectorAll\('source'\)\.forEach\(\(s\) => s\.remove\(\)\)/g) || [];
-    expect(detaches.length).toBeGreaterThanOrEqual(2);
-    const showFallback = /const showFallback = \(\) => \{[\s\S]*?\n    \};/.exec(init);
-    expect(showFallback).not.toBeNull();
-    expect(showFallback[0]).toMatch(/s\.remove\(\)/);
-    expect(showFallback[0]).toMatch(/video\.load\(\)/);
-  });
+  /** Body of `const <name> = () => { … };`, brace-matched. */
+  const arrowBody = (src, name) => {
+    const start = src.indexOf(`const ${name} = () => {`);
+    if (start < 0) throw new Error(`${name} not found`);
+    const open = src.indexOf('{', start);
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}' && --depth === 0) return src.slice(open, i + 1);
+    }
+    throw new Error(`unbalanced braces in ${name}`);
+  };
+
+  // Hiding the element does not cancel an in-flight transfer, so *each* path
+  // that gives up on the video must detach the <source> and call load().
+  // Asserted per path: counting matches across the whole function would let one
+  // path lose its teardown as long as the other still had two statements.
+  for (const path of ['showFallback', 'releaseHero']) {
+    test(`${path} detaches the source and reloads`, () => {
+      const body = arrowBody(functionBody(appJs, 'initHeroVideo'), path);
+      expect(body).toMatch(/querySelectorAll\('source'\)\.forEach\(\(s\) => s\.remove\(\)\)/);
+      expect(body).toMatch(/video\.load\(\)/);
+    });
+  }
 });
 
 describe('focusable content is never inside aria-hidden', () => {

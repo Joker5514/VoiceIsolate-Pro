@@ -125,17 +125,24 @@ await page.click('[data-hero-tier="creator"]', { timeout: 3000 });
     // exactly the property that makes this an a11y defect, and it does not
     // depend on which checkVisibility options a Chromium version supports.
     const ariaHiddenFocusable = await page.evaluate(() => {
-      const FOCUSABLE = 'a[href], button, input, select, textarea, summary, [tabindex]';
+      // Covers the element types that are focusable without an explicit
+      // tabindex, plus the host itself: `aria-hidden` sitting directly on a
+      // control is the same defect as one on a wrapper.
+      const FOCUSABLE = 'a[href], area[href], button, input, select, textarea,'
+        + ' summary, iframe, [contenteditable], [tabindex]';
       const restore = document.activeElement;
       const out = [];
       for (const host of document.querySelectorAll('[aria-hidden="true"]')) {
-        for (const el of host.querySelectorAll(FOCUSABLE)) {
+        const candidates = [host, ...host.querySelectorAll(FOCUSABLE)];
+        for (const el of candidates) {
+          if (el === host && !el.matches(FOCUSABLE)) continue;
           if (el.hasAttribute('disabled')) continue;
           const ti = el.getAttribute('tabindex');
           if (ti !== null && Number(ti) < 0) continue;
           try { el.focus({ preventScroll: true }); } catch { continue; }
           if (document.activeElement === el) {
-            out.push(`${el.tagName.toLowerCase()}#${el.id || ''} inside #${host.id || host.className}`);
+            const where = el === host ? 'itself' : `inside #${host.id || host.className}`;
+            out.push(`${el.tagName.toLowerCase()}#${el.id || ''} ${where}`);
           }
         }
       }
