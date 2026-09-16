@@ -639,8 +639,15 @@
    */
   function _setVizPlaceholder(tabName, message) {
     const host = $(THREE_CONTAINERS[tabName]);
-    if (!host || host.querySelector('canvas')) return;
-    if (!message) { host.textContent = ''; return; }
+    if (!host) return;
+    if (!message) {
+      // Always drop the role on clear — including once a canvas is mounted —
+      // so the live renderer host is never left exposed as an ARIA live region.
+      if (!host.querySelector('canvas')) host.textContent = '';
+      host.removeAttribute('role');
+      return;
+    }
+    if (host.querySelector('canvas')) return; // never clobber a live renderer
     host.textContent = message;
     host.setAttribute('role', 'status');
   }

@@ -41,9 +41,12 @@
       skipping it on a slow or metered link keeps the ~750 KB saving for the
       people who most need it, and those users still get the loading state.
     */
+    // Positive evidence only. navigator.connection is Chromium-only, so an
+    // absent or unknown value means we do not know the link — and speculatively
+    // spending ~750 KB on an assumption is exactly what the lazy load exists to
+    // avoid. Those users stay lazy and get the loading state instead.
     const conn = navigator.connection || null;
-    const cheapNetwork = !conn || (conn.saveData !== true
-      && (conn.effectiveType === undefined || conn.effectiveType === '4g'));
+    const cheapNetwork = conn?.saveData !== true && conn?.effectiveType === '4g';
     if (cheapNetwork) {
       const warm = () => { globalThis.VIP_ensureThree(); };
       if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 8000 });
