@@ -113,6 +113,40 @@ await page.click('[data-hero-tier="creator"]', { timeout: 3000 });
     const tier = await page.evaluate(() => document.getElementById('vipHero')?.dataset.workflowTier);
     check(tier === 'creator', `Quick maps to creator (got ${tier})`);
 
+    // Focusable content must never sit inside aria-hidden="true": it stays
+    // keyboard-reachable while being erased from the accessibility tree. This
+    // belongs in the browser rather than over the markup, because the shell has
+    // several legitimate aria-hidden containers that CSS hides.
+    //
+    // The test is real focusability, not visibility. `checkVisibility()` with
+    // default options ignores `visibility: hidden` and `opacity: 0`, so it
+    // reports the idle processing overlay's Cancel button as visible even
+    // though focus() cannot reach it. Moving focus and reading activeElement is
+    // exactly the property that makes this an a11y defect, and it does not
+    // depend on which checkVisibility options a Chromium version supports.
+    const ariaHiddenFocusable = await page.evaluate(() => {
+      const FOCUSABLE = 'a[href], button, input, select, textarea, summary, [tabindex]';
+      const restore = document.activeElement;
+      const out = [];
+      for (const host of document.querySelectorAll('[aria-hidden="true"]')) {
+        for (const el of host.querySelectorAll(FOCUSABLE)) {
+          if (el.hasAttribute('disabled')) continue;
+          const ti = el.getAttribute('tabindex');
+          if (ti !== null && Number(ti) < 0) continue;
+          try { el.focus({ preventScroll: true }); } catch { continue; }
+          if (document.activeElement === el) {
+            out.push(`${el.tagName.toLowerCase()}#${el.id || ''} inside #${host.id || host.className}`);
+          }
+        }
+      }
+      try { restore && restore.focus && restore.focus({ preventScroll: true }); } catch { /* ignore */ }
+      return out;
+    });
+    check(
+      ariaHiddenFocusable.length === 0,
+      `no focusable element inside aria-hidden (${ariaHiddenFocusable.slice(0, 3).join(' | ')})`,
+    );
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload({ waitUntil: 'load' });
     // engineer-console.js installs the field nav two rAFs after DOMContentLoaded

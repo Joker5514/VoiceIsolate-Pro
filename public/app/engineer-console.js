@@ -694,7 +694,13 @@
     const hdr = document.querySelector('.hdr');
     if (!hdr) return;
     const publish = () => {
-      const h = Math.round(hdr.getBoundingClientRect().height);
+      // `offsetHeight`, not `getBoundingClientRect()`: the Engineer UI scale
+      // control sets `document.body.style.zoom`, and a rect is the *visual*
+      // (zoomed) height. Consumers apply this value as a CSS length inside the
+      // already-zoomed body, so a rect would be scaled a second time — at 120%
+      // it published 126px where the layout height is 105px, pushing the rack
+      // ~25px too low. `offsetHeight` is the layout height CSS `top` shares.
+      const h = hdr.offsetHeight;
       if (h > 0) document.documentElement.style.setProperty('--vip-hdr-h', h + 'px');
     };
     publish();

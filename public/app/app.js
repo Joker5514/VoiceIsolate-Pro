@@ -282,9 +282,14 @@ const HeroExperience = (() => {
       // installs and a few Android WebViews cannot decode it. Without this
       // probe those browsers download all 2.2 MB, never render a frame, never
       // fire `error`, and sit on a blank hero until the 6 s release timer.
+      // The string is the asset's real codec, read from its avcC box:
+      // AVCProfileIndication 0x64 (High), level 0x1F (3.1) -> avc1.64001F.
+      // Probing Baseline instead would pass on a Baseline-only runtime that
+      // still cannot decode this file. Keep the two in sync if the asset is
+      // ever re-encoded.
       const probe = document.createElement('video');
       if (typeof probe.canPlayType === 'function'
-        && !probe.canPlayType('video/mp4; codecs="avc1.42E01E"')) return false;
+        && !probe.canPlayType('video/mp4; codecs="avc1.64001F"')) return false;
     } catch { /* capability probe only — default to playing */ }
     return true;
   }
@@ -296,6 +301,14 @@ const HeroExperience = (() => {
     const showFallback = () => {
       if (fallback) { fallback.hidden = false; fallback.setAttribute('aria-hidden', 'false'); }
       video.style.display = 'none';
+      // Hiding the element does not stop the transfer. If playback fails before
+      // the release timer, detach the source so a 2.2 MB asset we will never
+      // show stops downloading.
+      try {
+        video.removeAttribute('src');
+        video.querySelectorAll('source').forEach((s) => s.remove());
+        video.load();
+      } catch { /* nothing attached yet, or load() unavailable */ }
     };
     if (!shouldLoadHeroVideo()) { showFallback(); return; }
     // Markup ships no <source>; attach it only once we have decided to play.

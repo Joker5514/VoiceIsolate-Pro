@@ -58,9 +58,10 @@ describe('VoiceIsolate semantic design tokens', () => {
   });
 
   test('real landing Process action and live controls use shared semantics', () => {
-    // Filled red surfaces use the AA-safe --action-process-solid variant; the
-    // guard is that the color is a shared semantic token, not a literal hex.
-    expect(premium).toMatch(/#processBtn \{ background: var\(--action-process(-solid)?[,)]/);
+    // Filled red surfaces must use the AA-safe --action-process-solid variant:
+    // plain --action-process is only 3.48:1 against the white label, so
+    // accepting either token here would let the WCAG fix regress silently.
+    expect(premium).toMatch(/#processBtn \{ background: var\(--action-process-solid[,)]/);
     expect(premium).toContain("input[type='range'] { accent-color: var(--action-live);");
   });
 });

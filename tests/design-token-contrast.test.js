@@ -14,10 +14,29 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
+/**
+ * Parse a hex color to [r, g, b].
+ *
+ * `#RGB` shorthand and `#RRGGBBAA` are both valid CSS, and naive
+ * `parseInt(hex, 16)` would read the wrong channels for either — silently
+ * shifting every ratio below. Shorthand is expanded; an alpha channel is
+ * rejected outright rather than guessed at, because compositing needs a
+ * backdrop this helper does not have.
+ */
+function parseHex(hex) {
+  const raw = String(hex).trim().replace(/^#/, '');
+  if (!/^[0-9a-fA-F]+$/.test(raw)) throw new Error(`not a hex color: ${hex}`);
+  if (raw.length === 4 || raw.length === 8) {
+    throw new Error(`alpha hex needs compositing against a known backdrop: ${hex}`);
+  }
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  if (full.length !== 6) throw new Error(`unsupported hex length: ${hex}`);
+  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+}
+
 /** Relative luminance per WCAG 2.1 §1.4.3. */
 function luminance(hex) {
-  const n = parseInt(hex.replace('#', ''), 16);
-  const channels = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+  const channels = parseHex(hex).map((v) => {
     const c = v / 255;
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   });
@@ -52,6 +71,15 @@ describe('contrast helper', () => {
     // #767676 on white is the canonical "exactly AA" grey.
     expect(contrast('#767676', '#ffffff')).toBeGreaterThanOrEqual(4.5);
     expect(contrast('#777777', '#ffffff')).toBeLessThan(4.6);
+  });
+
+  test('handles #RGB shorthand and refuses alpha hex', () => {
+    expect(contrast('#fff', '#000')).toBeCloseTo(21, 1);
+    expect(luminance('#f00')).toBeCloseTo(luminance('#ff0000'), 10);
+    expect(() => luminance('#ffff')).toThrow(/alpha/);
+    expect(() => luminance('#ff000080')).toThrow(/alpha/);
+    expect(() => luminance('#ff00')).toThrow(/alpha/);
+    expect(() => luminance('not-a-color')).toThrow(/hex/);
   });
 });
 

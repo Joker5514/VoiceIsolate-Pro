@@ -929,13 +929,22 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
     .sr-row.dsp-slider-row,
     .slider-row.dsp-slider-row,
     .dsp-slider-row {
+      /* The ultrawide rack cell is only ~228px. Sharing row 1 with the numeric
+         field and both 40px buttons left the label 23-33px wide and overflowing
+         on 18 of 20 rows ("Gate Threshold" in 27px), so here the label takes a
+         full-width row of its own and the controls sit on the next one. */
       grid-template-columns: minmax(0, 1fr) minmax(56px, auto) var(--vip-hit) var(--vip-hit);
       grid-template-areas:
-        "label num reset lock"
+        "label label label label"
+        "num   num   reset lock"
         "track track track track"
-        "hint  hint hint  hint"
-        "info  info info  info";
+        "hint  hint  hint  hint"
+        "info  info  info  info";
       row-gap: 4px;
+    }
+    .dsp-slider-row .sr-label {
+      grid-area: label;
+      min-width: 0;
     }
     .dsp-slider-row .dsp-slider-track-wrap {
       grid-area: track;
@@ -944,6 +953,7 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
     .dsp-slider-row .dsp-slider-num-wrap {
       grid-area: num;
       min-width: 56px;
+      justify-content: flex-start;
     }
   }
 }

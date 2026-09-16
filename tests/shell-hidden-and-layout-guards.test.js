@@ -159,34 +159,89 @@ describe('decorative hero video is opt-in, not a first-load cost', () => {
     expect(tag[0]).not.toMatch(/<source\s/);
   });
 
-  test('app.js gates the fetch on reduced motion, Save-Data and offline', () => {
-    expect(appJs).toMatch(/function shouldLoadHeroVideo\(\)/);
-    expect(appJs).toMatch(/prefers-reduced-motion: reduce/);
-    expect(appJs).toMatch(/saveData/);
-    expect(appJs).toMatch(/navigator\.onLine === false/);
-    // A browser without H.264 would otherwise fetch 2.2 MB, render nothing and
-    // never fire `error` — the hero would just sit blank until the release timer.
-    expect(appJs).toMatch(/canPlayType\('video\/mp4; codecs="avc1\.42E01E"'\)/);
-    expect(appJs).toMatch(/if \(!shouldLoadHeroVideo\(\)\) \{ showFallback\(\); return; \}/);
+  /** Body of a named function declaration, brace-matched. */
+  const functionBody = (src, name) => {
+    const start = src.indexOf(`function ${name}(`);
+    if (start < 0) throw new Error(`${name} not found`);
+    const open = src.indexOf('{', start);
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}' && --depth === 0) return src.slice(open, i + 1);
+    }
+    throw new Error(`unbalanced braces in ${name}`);
+  };
+
+  test('shouldLoadHeroVideo opts out on motion, data, offline and codec', () => {
+    const gate = functionBody(appJs, 'shouldLoadHeroVideo');
+    expect(gate).toMatch(/prefers-reduced-motion: reduce/);
+    expect(gate).toMatch(/saveData/);
+    expect(gate).toMatch(/navigator\.onLine === false/);
+    // Must probe the codec the shipped asset actually uses. Its avcC box reads
+    // profile 0x64 (High) level 0x1F (3.1) -> avc1.64001F; probing Baseline
+    // would pass on a Baseline-only runtime that still cannot decode the file.
+    expect(gate).toMatch(/canPlayType\('video\/mp4; codecs="avc1\.64001F"'\)/);
   });
 
-  test('release detaches the <source>, not just the src attribute', () => {
-    expect(appJs).toMatch(/querySelectorAll\('source'\)\.forEach\(\(s\) => s\.remove\(\)\)/);
+  test('initHeroVideo consults the gate before attaching any source', () => {
+    const init = functionBody(appJs, 'initHeroVideo');
+    const guardAt = init.indexOf('shouldLoadHeroVideo()');
+    const attachAt = init.indexOf("createElement('source')");
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(attachAt).toBeGreaterThan(-1);
+    // The early return must come first, or the gate cannot prevent the fetch.
+    expect(guardAt).toBeLessThan(attachAt);
+    expect(init).toMatch(/if \(!shouldLoadHeroVideo\(\)\) \{ showFallback\(\); return; \}/);
+  });
+
+  test('both the fallback and the release path detach the source', () => {
+    const init = functionBody(appJs, 'initHeroVideo');
+    // Hiding the element does not cancel an in-flight transfer, so each path
+    // that gives up on the video must remove the <source> and call load().
+    const detaches = init.match(/querySelectorAll\('source'\)\.forEach\(\(s\) => s\.remove\(\)\)/g) || [];
+    expect(detaches.length).toBeGreaterThanOrEqual(2);
+    const showFallback = /const showFallback = \(\) => \{[\s\S]*?\n    \};/.exec(init);
+    expect(showFallback).not.toBeNull();
+    expect(showFallback[0]).toMatch(/s\.remove\(\)/);
+    expect(showFallback[0]).toMatch(/video\.load\(\)/);
   });
 });
 
-describe('visualization tablist is exposed to assistive technology', () => {
-  test('the scroll wrapper does not hide focusable tabs', () => {
-    const wrapper = /<div id="vizTabScroll"[^>]*>/.exec(engineerHtml);
-    expect(wrapper).not.toBeNull();
-    expect(wrapper[0]).not.toMatch(/aria-hidden="true"/);
+describe('focusable content is never inside aria-hidden', () => {
+  // Parse the real markup: a text slice between two offsets would not notice
+  // `aria-hidden="true"` appearing on #vizCardBody or any other ancestor
+  // outside the slice, which is exactly how this defect could come back.
+  const { JSDOM } = require('jsdom');
+  const doc = new JSDOM(engineerHtml).window.document;
+
+  /** Nearest ancestor (inclusive) carrying aria-hidden="true", or null. */
+  const hiddenAncestor = (el) => {
+    for (let n = el; n; n = n.parentElement) {
+      if (n.getAttribute && n.getAttribute('aria-hidden') === 'true') return n;
+    }
+    return null;
+  };
+  const describeEl = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '')
+    + (n.className ? '.' + String(n.className).split(/\s+/)[0] : '');
+
+  test('the visualization tablist has no aria-hidden ancestor', () => {
+    const tabBar = doc.getElementById('tabBar');
+    expect(tabBar).not.toBeNull();
+    const host = hiddenAncestor(tabBar);
+    expect(host && describeEl(host)).toBeNull();
   });
 
-  test('no aria-hidden ancestor wraps the tablist', () => {
-    const start = engineerHtml.indexOf('<div class="viz-tab-rail">');
-    const end = engineerHtml.indexOf('id="tabBar"');
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    expect(engineerHtml.slice(start, end)).not.toMatch(/aria-hidden="true"/);
+  test('every visualization tab is exposed', () => {
+    const tabs = [...doc.querySelectorAll('#tabBar [role="tab"]')];
+    expect(tabs.length).toBeGreaterThan(0);
+    const buried = tabs.filter((t) => hiddenAncestor(t)).map(describeEl);
+    expect(buried).toEqual([]);
   });
+
+  // A shell-wide "no focusable element under aria-hidden" sweep belongs in the
+  // browser, not here: several legitimate `aria-hidden` containers (the
+  // processing overlay, the preset modal, the isolation confirm bar) are hidden
+  // with `display: none` from CSS, which markup alone cannot see, and a
+  // display:none subtree is not focusable anyway. That assertion runs against
+  // real computed visibility in scripts/precision-studio-ui-smoke.cjs.
 });
