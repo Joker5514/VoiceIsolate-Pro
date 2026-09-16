@@ -642,7 +642,13 @@
       if (typeof global.VIP_ensureThree === 'function') {
         if (!_threeSyncBound) {
           _threeSyncBound = true;
-          global.addEventListener('vip:three-ready', () => _syncPremiumViz());
+          // Guard on _running: the import can land after playback stopped, and
+          // mounting then would allocate a WebGL context nothing ticks and
+          // nothing tears down until the next tab change. The next start()
+          // syncs it instead.
+          global.addEventListener('vip:three-ready', () => {
+            if (_running) _syncPremiumViz();
+          });
         }
         global.VIP_ensureThree();
       }

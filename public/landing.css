@@ -728,7 +728,9 @@ input[type="file"]:focus { border-color: var(--border-focus); }
 
 .slider-row {
   display: grid;
-  grid-template-columns: 148px 1fr 64px 22px;
+  /* Trailing track holds .slider-hint-btn, which is 24px so it meets the
+     WCAG 2.2 AA 2.5.8 minimum target size. */
+  grid-template-columns: 148px 1fr 64px 24px;
   align-items: center;
   gap: 12px;
   padding: 4px 8px;
@@ -738,15 +740,15 @@ input[type="file"]:focus { border-color: var(--border-focus); }
               border-color var(--dur-fast) var(--ease-out);
 }
 .slider-hint-btn {
-  /* 24px is the WCAG 2.2 AA 2.5.8 minimum target; the dot itself stays 22px
-     visually via the inset background so the rack spacing is unchanged. */
+  /* 24px is the WCAG 2.2 AA 2.5.8 minimum target. The .slider-row trailing
+     grid track is sized to match, so the dot does not overflow its column. */
   flex: 0 0 24px;
   width: 24px;
   height: 24px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-dim);
-  font: var(--fw-bold) 11px/22px var(--font-ui);
+  font: var(--fw-bold) 11px/24px var(--font-ui);
   text-align: center;
   cursor: pointer;
   border: 1px solid var(--border-strong);
@@ -1404,6 +1406,15 @@ a.vip-btn {
   min-height: 36px;
   min-width: 92px;
   justify-content: center;
+}
+/* The segmented wrapper uses overflow:hidden for its rounded outer corners,
+   which clips the global :focus-visible ring (outline-offset: 2px) on the two
+   edge buttons — leaving keyboard users with no focus indicator there. Draw
+   this one inside the button instead so it survives the clip. */
+.vip-btn--ab:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+  border-radius: 0;
 }
 .compare-row__ab .vip-btn--ab + .vip-btn--ab { border-left: 1px solid var(--border-strong); }
 .vip-btn--ab[aria-pressed="true"]:not(:disabled) {
