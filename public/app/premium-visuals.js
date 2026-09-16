@@ -61,6 +61,35 @@
     };
   }
 
+  /**
+   * Fully release a Three.js renderer and everything it owns.
+   *
+   * renderer.dispose() alone does NOT free geometry buffers, material programs,
+   * textures, or the WebGL context itself. These visualizers are remounted on
+   * every viz tab / gallery toggle, so without this a session accumulates one
+   * live context per switch until Chromium starts dropping the oldest one
+   * ("Too many active WebGL contexts") and earlier panels go black.
+   *
+   * @param {object} renderer THREE.WebGLRenderer
+   * @param {HTMLElement|null} container element holding renderer.domElement
+   * @param {object[]} [geometries]
+   * @param {object[]} [materials]
+   * @param {object[]} [textures]
+   */
+  function releaseThreeRenderer(renderer, container, geometries, materials, textures) {
+    for (const item of [].concat(geometries || [], materials || [], textures || [])) {
+      try { item?.dispose?.(); } catch (_) { /* already disposed */ }
+    }
+    try { renderer?.dispose?.(); } catch (_) { /* already disposed */ }
+    // Drops the GPU context instead of waiting for GC to maybe collect it.
+    try { renderer?.forceContextLoss?.(); } catch (_) { /* unsupported */ }
+    try {
+      const el = renderer?.domElement;
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      else if (container) container.innerHTML = '';
+    } catch (_) { /* detached */ }
+  }
+
   function initTopographic3D(analyser, container) {
     if (!container || !analyser || !global.THREE) {
       return { tick: () => {}, resize: () => {}, stop: () => {} };
@@ -142,8 +171,9 @@
       tick,
       resize,
       stop: () => {
+        if (!running) return;
         running = false;
-        renderer.dispose();
+        releaseThreeRenderer(renderer, container, [geometry], [material]);
       },
     };
   }
@@ -238,8 +268,9 @@
       tick,
       resize,
       stop: () => {
+        if (!running) return;
         running = false;
-        renderer.dispose();
+        releaseThreeRenderer(renderer, container, [geometry], [material], [texture]);
       },
     };
   }

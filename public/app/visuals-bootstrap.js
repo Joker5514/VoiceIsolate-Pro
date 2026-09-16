@@ -626,11 +626,28 @@
     for (const tab of Array.from(_premiumHandles.keys())) _stopPremiumTab(tab);
   }
 
+  /** Tabs whose visualizer needs Three.js, which is loaded on first use. */
+  const THREE_TABS = ['topo', 'swarm'];
+  let _threeSyncBound = false;
+
   function _initPremiumTab(tabName) {
     if (_premiumHandles.has(tabName)) return;
     if (!_panelVisible(tabName)) return;
     const an = _getAnalyser();
     if (!an) return;
+
+    // Three.js is no longer loaded eagerly on page load. Kick off the fetch and
+    // bail for now; vip:three-ready re-runs this sync once the module lands.
+    if (THREE_TABS.includes(tabName) && !global.THREE) {
+      if (typeof global.VIP_ensureThree === 'function') {
+        if (!_threeSyncBound) {
+          _threeSyncBound = true;
+          global.addEventListener('vip:three-ready', () => _syncPremiumViz());
+        }
+        global.VIP_ensureThree();
+      }
+      return;
+    }
 
     let handle = null;
     if (tabName === 'aura') {

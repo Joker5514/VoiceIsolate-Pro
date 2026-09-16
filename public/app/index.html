@@ -11,7 +11,28 @@
   <!-- onnxruntime-web is loaded locally from /lib/ort.min.js — never from CDN -->
   <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
   <script type="module">
-    import('three').then((m) => { globalThis.THREE = m; }).catch(() => {});
+    /*
+      Three.js is ~747 KB (three.module.min.js + three.core.min.js) and is only
+      needed by the topo / swarm 3D visualizer tabs. Importing it here on every
+      Engineer load spent that transfer before the audio pipeline was even
+      ready. It is now pulled on first use instead: visuals-bootstrap.js calls
+      VIP_ensureThree() when a 3D tab is opened and re-syncs on vip:three-ready.
+      Still vendored and same-origin — no CDN (CLAUDE.md §1.1).
+    */
+    let threePromise = null;
+    globalThis.VIP_ensureThree = function VIP_ensureThree() {
+      if (globalThis.THREE) return Promise.resolve(globalThis.THREE);
+      threePromise ||= import('three').then((m) => {
+        globalThis.THREE = m;
+        globalThis.dispatchEvent(new Event('vip:three-ready'));
+        return m;
+      }).catch((err) => {
+        threePromise = null; // allow a retry on the next tab activation
+        console.warn('[VIP][visuals] Three.js unavailable:', err?.message || err);
+        return null;
+      });
+      return threePromise;
+    };
   </script>
   <link rel="stylesheet" href="ds-tokens.css" />
   <link rel="stylesheet" href="style.css" />

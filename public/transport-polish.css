@@ -3,7 +3,9 @@
 .transport-seek {
   position: relative;
   width: 100%;
-  padding: 14px 2px 10px;
+  /* Symmetric padding so the scrubber's own centre lines up with the rail,
+     which is absolutely centred at top:50%. */
+  padding: 12px 2px;
   min-height: 28px;
 }
 
@@ -55,12 +57,21 @@
   pointer-events: none;
 }
 
-.tp-seek,
-.landing-seek-input {
+/* Type+attribute specificity is required here: the generic
+   `input[type="range"]` rule in landing.css outranks a bare class, so without
+   it the scrubber painted its own track on top of the real rail — and since
+   --pct is never set on this input, that track sat permanently at the 50%
+   fallback and read as "half played" no matter where the playhead was. */
+input[type="range"].tp-seek,
+input[type="range"].landing-seek-input {
   -webkit-appearance: none;
   appearance: none;
+  /* block, not inline-block: the inline baseline strut added ~11px of dead
+     height to .transport-seek and pushed the thumb off the rail centre. */
+  display: block;
   width: 100%;
-  height: 18px;
+  height: 24px;
+  padding: 0;
   margin: 0;
   border-radius: 99px;
   outline: none;
@@ -152,6 +163,8 @@
   letter-spacing: 0.04em;
   padding: 4px 8px;
   min-width: 2.2rem;
+  /* WCAG 2.2 AA 2.5.8 minimum target; these were 21px tall on every pointer. */
+  min-height: 24px;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
@@ -196,13 +209,16 @@
 /* Touch / mobile — engineer + landing seek bars (Android, iOS, coarse pointers) */
 @media (pointer: coarse) {
   .transport-seek {
-    padding: 16px 2px 14px;
+    /* Symmetric: an asymmetric 16/14 left the thumb 1px off the rail centre. */
+    padding: 15px 2px;
     min-height: 44px;
     touch-action: manipulation;
   }
 
-  .tp-seek,
-  .landing-seek-input {
+  /* Must match the type+attribute specificity used above, or the base 24px
+     scrubber height would win here and swallow the larger touch target. */
+  input[type="range"].tp-seek,
+  input[type="range"].landing-seek-input {
     height: 28px;
   }
 

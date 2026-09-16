@@ -738,9 +738,11 @@ input[type="file"]:focus { border-color: var(--border-focus); }
               border-color var(--dur-fast) var(--ease-out);
 }
 .slider-hint-btn {
-  flex: 0 0 22px;
-  width: 22px;
-  height: 22px;
+  /* 24px is the WCAG 2.2 AA 2.5.8 minimum target; the dot itself stays 22px
+     visually via the inset background so the rack spacing is unchanged. */
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-dim);
@@ -838,7 +840,15 @@ input[type="file"]:focus { border-color: var(--border-focus); }
 input[type="range"] {
   width: 100%;
   appearance: none; -webkit-appearance: none;
-  height: 3px;
+  /* box-sizing is border-box globally, so height includes the padding: the
+     padding is an invisible grab area (a 3px-tall track is not a usable target
+     for a mouse either, and fails WCAG 2.2 AA 2.5.8 on touch), and the content
+     box is the 4px track that actually gets painted.
+     background-clip MUST stay after the background shorthand — the shorthand
+     resets it to border-box, which is what made the padded touch sliders
+     render as a solid 24px slab instead of a track. */
+  height: 24px;
+  padding: 10px 0;
   border-radius: 2px;
   background: linear-gradient(
     to right,
@@ -847,6 +857,7 @@ input[type="range"] {
     var(--border-strong) var(--pct, 50%),
     var(--border-strong) 100%
   );
+  background-clip: content-box;
   cursor: pointer;
 }
 input[type="range"]::-webkit-slider-thumb {
@@ -1036,7 +1047,9 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
     font-size: 14px;
   }
   .hint-example-pill { padding: 10px 14px; font-size: var(--fs-xs); }
-  .slider-row input[type="range"] { padding: 12px 0; }
+  /* Height carries the padding (border-box), so the content box — the painted
+     track — stays 4px while the grab area grows to a full 44px on touch. */
+  .slider-row input[type="range"] { height: 44px; padding: 20px 0; }
 
   /* 44×44 primary controls */
   .vip-tap,
@@ -1349,3 +1362,78 @@ a.vip-btn {
 /* Output-level meter row in the Live-Mix panel (hidden until stems load). */
 .output-meter { margin-top: 14px; }
 .output-meter[hidden] { display: none; }
+
+/* ── Level-matched A/B comparison ──────────────────────────────────────────
+   Precision-instrument framing: a recessed well holding one arming action and
+   a segmented Original/Cleaned pair. The armed side is lit with the live
+   accent so the current reference is readable at a glance. Buttons are real
+   <button>s driven by aria-pressed — state is never colour-only.
+   ------------------------------------------------------------------------ */
+.compare-row {
+  margin: 14px 0 4px;
+  padding: 14px;
+  background: var(--well-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.compare-row__title {
+  margin: 0 0 4px;
+  font: var(--fw-semibold) var(--fs-xs)/1 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.compare-row .hint { margin-bottom: 10px; }
+.compare-row__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+/* Segmented pair: one hairline between the two halves, outer corners rounded. */
+.compare-row__ab {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.vip-btn--ab {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-height: 36px;
+  min-width: 92px;
+  justify-content: center;
+}
+.compare-row__ab .vip-btn--ab + .vip-btn--ab { border-left: 1px solid var(--border-strong); }
+.vip-btn--ab[aria-pressed="true"]:not(:disabled) {
+  background: rgba(46, 213, 229, 0.14);
+  border-color: var(--action-live);
+  color: var(--text-hi);
+  box-shadow: inset 0 -2px 0 0 var(--action-live);
+}
+.compare-row #comparisonStatus {
+  margin: 10px 0 0;
+  font-size: var(--fs-sm);
+}
+.compare-row #comparisonStatus:empty { display: none; }
+
+/* Quick Clean stage line under the outcome picker. Colour reinforces the
+   #uploadPanel[data-state] stage; the text itself always states the stage, so
+   the colour is redundant rather than load-bearing. */
+.quick-clean-status {
+  margin: 0 0 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.quick-clean-status[data-state="error"] { color: var(--red-400); }
+.quick-clean-status[data-state="processed"],
+.quick-clean-status[data-state="exported"] { color: var(--ok); }
+
+/* Phone: full-width targets, no horizontal overflow at 390px. */
+@media (max-width: 560px) {
+  .compare-row__controls { flex-direction: column; align-items: stretch; }
+  .compare-row__ab { width: 100%; }
+  .vip-btn--ab { flex: 1; min-width: 0; min-height: 44px; }
+  #prepareComparisonBtn { width: 100%; justify-content: center; min-height: 44px; }
+}

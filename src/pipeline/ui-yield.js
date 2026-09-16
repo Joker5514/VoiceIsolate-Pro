@@ -24,6 +24,16 @@ export const LARGE_CHANNEL_SAMPLES = 48000 * 30; // 30 sec @ 48 kHz
 export const COPY_CHUNK_SAMPLES = 48000 * 20;
 
 /**
+ * How long a single yield waits for requestAnimationFrame before falling back
+ * to a plain macrotask. Two 60 Hz frames — long enough that a healthy frame
+ * always wins the race, short enough that a throttled one cannot stall DSP.
+ */
+const RAF_GUARD_MS = 34;
+
+/** Latched once rAF misses the guard, so a throttled window yields via macrotask. */
+let rafUnreliable = false;
+
+/**
  * @param {AbortSignal|null|undefined} signal
  * @throws {DOMException} AbortError when aborted
  */
@@ -92,14 +102,41 @@ export async function yieldToBrowser() {
     }
     return;
   }
-  await new Promise((resolve) => {
-    const done = () => {
-      if (typeof setTimeout === 'function') setTimeout(resolve, 0);
-      else resolve();
-    };
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(done);
-    else done();
+  // requestAnimationFrame is throttled to 0 Hz in a hidden tab and in an
+  // occluded window, and never fires at all in a worker. Waiting on it alone
+  // deadlocks the caller: post-ML finalization and envelope builds would stall
+  // until the tab is foregrounded, which the landing watchdog then reports as
+  // "the worker stopped responding". A macrotask always runs, so rAF is only
+  // ever used as an optional paint alignment that a guard timer can outrun.
+  const macrotask = () => new Promise((resolve) => {
+    if (typeof setTimeout === 'function') setTimeout(resolve, 0);
+    else resolve();
   });
+
+  const hidden = typeof document !== 'undefined' && document.hidden === true;
+  if (rafUnreliable || hidden
+    || typeof requestAnimationFrame !== 'function'
+    || typeof setTimeout !== 'function') {
+    return macrotask();
+  }
+
+  const painted = await new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(guard);
+      resolve(ok);
+    };
+    const guard = setTimeout(() => finish(false), RAF_GUARD_MS);
+    requestAnimationFrame(() => finish(true));
+  });
+  // Latch after the first miss so an occluded window (document.hidden stays
+  // false) does not pay the guard delay on every subsequent yield. Plain
+  // macrotask yields stay correct and responsive, just not paint-aligned.
+  if (!painted) rafUnreliable = true;
+
+  return macrotask();
 }
 
 /**
