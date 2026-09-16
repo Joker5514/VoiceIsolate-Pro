@@ -24,6 +24,84 @@ export const LARGE_CHANNEL_SAMPLES = 48000 * 30; // 30 sec @ 48 kHz
 export const COPY_CHUNK_SAMPLES = 48000 * 20;
 
 /**
+ * How long a single yield waits for requestAnimationFrame before falling back
+ * to a plain macrotask. Two 60 Hz frames — long enough that a healthy frame
+ * always wins the race, short enough that a throttled one cannot stall DSP.
+ */
+const RAF_GUARD_MS = 34;
+
+/** Latched once rAF misses the guard, so a throttled window yields via macrotask. */
+let rafUnreliable = false;
+let visibilityRearmBound = false;
+
+/**
+ * Clear the rAF latch when the page becomes visible again.
+ *
+ * The latch exists so an occluded window does not pay the guard delay on every
+ * yield, but it is module state shared by Landing and Engineer: without this,
+ * one transient stall would disable paint alignment for the rest of the page
+ * session, including every later file and Process run. Bound lazily, and only
+ * when a document exists, so this module stays side-effect free in workers.
+ */
+function rearmRafOnVisibility() {
+  if (visibilityRearmBound) return;
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  visibilityRearmBound = true;
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) rafUnreliable = false;
+  });
+}
+
+/**
+ * True only on a real browser main thread.
+ *
+ * `window === globalThis` holds in a browser but not under jsdom (where tests
+ * assign a window object onto Node's global), and `window` is undefined in
+ * workers and in Node. That distinction matters below: it is exactly the
+ * context where hidden-page timer clamping applies, and the only one where a
+ * persistent MessagePort is safe.
+ */
+const isBrowserMainThread = typeof window !== 'undefined'
+  && typeof document !== 'undefined'
+  && window === globalThis
+  && typeof MessageChannel === 'function';
+
+/** Single reusable channel; one per yield would allocate thousands per file. */
+let macrotaskPort = null;
+const macrotaskQueue = [];
+
+/**
+ * Run a macrotask checkpoint so queued timers, input and Cancel can run.
+ *
+ * On a browser main thread this uses MessageChannel rather than setTimeout:
+ * hidden pages clamp timers to roughly one second, which would turn every
+ * cooperative yield in a background tab into a one-second stall — the same
+ * freeze this file exists to prevent, just slower instead of infinite.
+ * postMessage is not clamped that way.
+ *
+ * Everywhere else (Node, tests, workers) the plain timer is used. A live
+ * MessagePort keeps Node's event loop referenced, so doing this unconditionally
+ * stops the process from ever exiting — it hangs `pnpm test:ci` outright.
+ */
+function macrotask() {
+  if (isBrowserMainThread) {
+    if (!macrotaskPort) {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => { macrotaskQueue.shift()?.(); };
+      macrotaskPort = channel.port2;
+    }
+    return new Promise((resolve) => {
+      macrotaskQueue.push(resolve);
+      macrotaskPort.postMessage(0);
+    });
+  }
+  return new Promise((resolve) => {
+    if (typeof setTimeout === 'function') setTimeout(resolve, 0);
+    else resolve();
+  });
+}
+
+/**
  * @param {AbortSignal|null|undefined} signal
  * @throws {DOMException} AbortError when aborted
  */
@@ -87,19 +165,43 @@ export async function yieldToBrowser() {
   // before a long chunk loop resumes.
   if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
     await scheduler.yield();
-    if (typeof setTimeout === 'function') {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await macrotask();
     return;
   }
-  await new Promise((resolve) => {
-    const done = () => {
-      if (typeof setTimeout === 'function') setTimeout(resolve, 0);
-      else resolve();
+  // requestAnimationFrame is throttled to 0 Hz in a hidden tab and in an
+  // occluded window, and never fires at all in a worker. Waiting on it alone
+  // deadlocks the caller: post-ML finalization and envelope builds would stall
+  // until the tab is foregrounded, which the landing watchdog then reports as
+  // "the worker stopped responding". A macrotask always runs, so rAF is only
+  // ever used as an optional paint alignment that a guard timer can outrun.
+  const hidden = typeof document !== 'undefined' && document.hidden === true;
+  if (rafUnreliable || hidden
+    || typeof requestAnimationFrame !== 'function'
+    || typeof setTimeout !== 'function') {
+    return macrotask();
+  }
+
+  const painted = await new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(guard);
+      resolve(ok);
     };
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(done);
-    else done();
+    const guard = setTimeout(() => finish(false), RAF_GUARD_MS);
+    requestAnimationFrame(() => finish(true));
   });
+  // Latch after the first miss so an occluded window (document.hidden stays
+  // false) does not pay the guard delay on every subsequent yield. Plain
+  // macrotask yields stay correct and responsive, just not paint-aligned.
+  // The latch is cleared again the next time the page becomes visible.
+  if (!painted) {
+    rafUnreliable = true;
+    rearmRafOnVisibility();
+  }
+
+  return macrotask();
 }
 
 /**

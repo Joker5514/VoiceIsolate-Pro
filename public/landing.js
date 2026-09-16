@@ -1225,8 +1225,6 @@ async function onProcess() {
   if (!ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
   processingInFlight = true;
   try {
-+    processingInFlight = true;
-+    await ensureWorkerReady();
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
     hasProcessed = false;
     invalidateComparison();
@@ -1547,7 +1545,11 @@ for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedB
 document.addEventListener('input', (event) => {
   if (event.target.matches('input[type="range"]') && event.target.id !== 'seekSlider') {
     invalidateComparison();
-    $('comparisonStatus').textContent = 'Mix changed. Prepare matched A/B again to compare this version.';
+    // Optional node: a host shell may omit the A/B block. This handler runs on
+    // every slider frame, so it must never throw — an exception here would also
+    // skip the aria-valuetext update below.
+    const status = $('comparisonStatus');
+    if (status) status.textContent = 'Mix changed. Prepare matched A/B again to compare this version.';
   }
   if (event.target.id === 'noiseReductionSlider') event.target.setAttribute('aria-valuetext', `${100 - Number(event.target.value)} percent background retained`);
 });

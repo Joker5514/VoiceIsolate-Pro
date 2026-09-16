@@ -30,20 +30,34 @@ export class QuickCleanUI {
 
   plan() { return resolveQuickCleanPlan(this.select.value, { backend: this.backend }); }
 
+  /**
+   * Publish the current Quick Clean stage.
+   *
+   * An unknown state is still a programming error and throws. Missing DOM
+   * nodes are not: this is a presentation adapter, and a host page that omits
+   * an optional node must never be able to abort ingestion or processing.
+   */
   setState(state, message) {
     if (!STATES.has(state)) throw new Error(`Unknown Quick Clean state: ${state}`);
     this.state = state;
     const panel = this.doc.getElementById('uploadPanel');
-    panel.dataset.state = state;
+    if (panel) panel.dataset.state = state;
     const status = this.doc.getElementById('quickCleanStatus');
-    status.textContent = message;
-    status.dataset.state = state;
+    if (status) {
+      status.textContent = message;
+      status.dataset.state = state;
+    }
+  }
+
+  /** @param {string} id @param {string} text */
+  _write(id, text) {
+    const el = this.doc.getElementById(id);
+    if (el) el.textContent = text;
   }
 
   preflight(device, source) {
     const outcome = QUICK_CLEAN_OUTCOMES.find((item) => item.id === this.select.value);
-    this.doc.getElementById('outcomeHelp').textContent = outcome?.description || 'Choose an available outcome.';
-    const summary = this.doc.getElementById('quickCleanPreflight');
+    this._write('outcomeHelp', outcome?.description || 'Choose an available outcome.');
     try {
       const plan = this.plan();
       const mb = (plan.downloadBytes / 1048576).toFixed(1);
@@ -51,15 +65,15 @@ export class QuickCleanUI {
         : device.freeBytes < plan.downloadBytes
           ? 'Storage is low: model caching may fail. Clear local data if needed; processing can run without saving the cache.'
           : `${Math.floor(device.freeBytes / 1048576)} MB storage available; decoded audio also needs memory.`;
-      summary.textContent = `${this.backend === 'webgpu' ? 'WebGPU' : 'WASM'} available for local processing. `
+      this._write('quickCleanPreflight', `${this.backend === 'webgpu' ? 'WebGPU' : 'WASM'} available for local processing. `
         + (device?.online === false
           ? `Offline: Process requires previously cached models (${mb} MB). Reconnect if loading fails. `
           : `Up to ${mb} MB of models download when you press Process; cached bytes are checked before use. `)
-        + storage + (source ? ` Recording: ${source.duration.toFixed(1)} seconds at 48 kHz.` : '');
-      this.doc.getElementById('quickCleanModelDetails').textContent = `${plan.modelIds.join(' → ')} · SHA-256 verified · 48 kHz`;
+        + storage + (source ? ` Recording: ${source.duration.toFixed(1)} seconds at 48 kHz.` : ''));
+      this._write('quickCleanModelDetails', `${plan.modelIds.join(' → ')} · SHA-256 verified · 48 kHz`);
       return true;
     } catch (err) {
-      summary.textContent = err.message;
+      this._write('quickCleanPreflight', err.message);
       return false;
     }
   }

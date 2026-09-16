@@ -159,13 +159,19 @@
         <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/*,video/*" aria-label="Choose audio or video file">
       </div>
       <div class="upload-row">
-        <label for="modelSelect" class="inline-label">Model</label>
-        <select id="modelSelect" class="vip-select" aria-label="Separation model">
-          <option value="bsrnn_vocals" selected>Fast Vocal Isolation — BS-RNN (~4 MB, recommended)</option>
-          <option value="max_isolation">Maximum Isolation — BS-RNN → Denoise (2-pass, slower)</option>
-          <option value="rnnoise">Noise Suppression only — BiGRU (~2 MB, fastest)</option>
-          <option value="studio_isolation">Studio — Demucs → Denoise (very slow, ~149 MB)</option>
-          <option value="demucs">Demucs v4 only (very slow, ~149 MB)</option>
+        <!--
+          Outcome picker. QuickCleanUI replaces these options at boot from
+          QUICK_CLEAN_OUTCOMES (src/pipeline/QuickCleanPlan.js) and enables only
+          the chains with a shipped, hash-pinned model. The markup below mirrors
+          that contract exactly so there is no flash of stale options and no
+          model names in the product surface — the resolved chain is reported in
+          #quickCleanModelDetails as diagnostics.
+        -->
+        <label for="modelSelect" class="inline-label">Outcome</label>
+        <select id="modelSelect" class="vip-select" aria-label="Processing outcome">
+          <option value="bsrnn_vocals" selected>Clean Speech</option>
+          <option value="max_isolation">Maximum Isolation</option>
+          <option value="rnnoise">Preserve Ambience</option>
         </select>
         <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Separate stems</button>
         <button id="cancelProcessBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled aria-label="Cancel processing">Cancel</button>
@@ -173,6 +179,13 @@
       <p id="outcomeHelp" class="hint">Choose the result you want, then press Process.</p>
       <p id="quickCleanPreflight" class="hint" role="status">Checking local processing support…</p>
       <p id="quickCleanModelDetails" class="hint" aria-live="polite"></p>
+      <!--
+        Quick Clean stage line. QuickCleanUI.setState() writes here and mirrors
+        the stage onto #uploadPanel[data-state]. Deliberately NOT an aria-live
+        region: #statusPillMount is the single announced status so screen
+        readers are not told the same transition three times.
+      -->
+      <p id="quickCleanStatus" class="hint quick-clean-status" data-state="empty">Idle — choose a file to begin.</p>
 
       <div class="status-row">
         <span id="statusPillMount" role="status" aria-live="polite">
@@ -254,6 +267,30 @@
         fill from real RMS each animation frame (hidden until stems load).
       -->
       <div id="outputMeterMount" class="output-meter" hidden></div>
+
+      <!--
+        Level-matched A/B. landing.js prepareComparison() flushes pending slider
+        values, renders the current mix, measures both sides and applies RMS
+        match gains (src/pipeline/QuickCleanReview.js) so Original and Cleaned
+        are judged at equal loudness rather than "louder sounds better".
+        Any Live-Mix change invalidates the match and re-arms Prepare.
+      -->
+      <section class="compare-row" id="compareRow" aria-labelledby="compareLabel">
+        <h3 id="compareLabel" class="compare-row__title">Level-matched A/B</h3>
+        <p class="hint">Compare at equal loudness. Prepare again after changing the mix.</p>
+        <div class="compare-row__controls">
+          <button id="prepareComparisonBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled>
+            Prepare comparison
+          </button>
+          <div class="compare-row__ab" role="group" aria-label="Listen to original or cleaned">
+            <button id="compareOriginalBtn" class="vip-btn vip-btn--ab vip-tap" type="button"
+                    disabled aria-pressed="false">Original</button>
+            <button id="compareCleanedBtn" class="vip-btn vip-btn--ab vip-tap" type="button"
+                    disabled aria-pressed="false">Cleaned</button>
+          </div>
+        </div>
+        <p id="comparisonStatus" class="hint" role="status" aria-live="polite"></p>
+      </section>
 
       <div class="export-row" id="exportRow" hidden>
         <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled
