@@ -264,6 +264,31 @@ const HeroExperience = (() => {
     }
   }
 
+  /**
+   * Should the decorative hero loop be fetched at all?
+   *
+   * It is 2.2 MB of purely cosmetic video that app.js releases after 6 s. Users
+   * who asked for reduced motion, users on a metered/Save-Data connection, and
+   * offline sessions get the static fallback mark instead of the download.
+   */
+  function shouldLoadHeroVideo() {
+    try {
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
+      const conn = navigator.connection;
+      if (conn?.saveData) return false;
+      if (typeof conn?.effectiveType === 'string' && /^(slow-)?2g$/.test(conn.effectiveType)) return false;
+      if (navigator.onLine === false) return false;
+      // H.264 is proprietary: open-source Chromium builds, some Linux Firefox
+      // installs and a few Android WebViews cannot decode it. Without this
+      // probe those browsers download all 2.2 MB, never render a frame, never
+      // fire `error`, and sit on a blank hero until the 6 s release timer.
+      const probe = document.createElement('video');
+      if (typeof probe.canPlayType === 'function'
+        && !probe.canPlayType('video/mp4; codecs="avc1.42E01E"')) return false;
+    } catch { /* capability probe only — default to playing */ }
+    return true;
+  }
+
   function initHeroVideo() {
     const video = $('heroVideo');
     const fallback = $('heroFallback');
@@ -272,10 +297,23 @@ const HeroExperience = (() => {
       if (fallback) { fallback.hidden = false; fallback.setAttribute('aria-hidden', 'false'); }
       video.style.display = 'none';
     };
+    if (!shouldLoadHeroVideo()) { showFallback(); return; }
+    // Markup ships no <source>; attach it only once we have decided to play.
+    const src = video.dataset.src;
+    if (src && !video.currentSrc && !video.src) {
+      const source = document.createElement('source');
+      source.src = src;
+      source.type = 'video/mp4';
+      video.appendChild(source);
+      video.load();
+    }
     const releaseHero = () => {
       try { video.pause(); } catch { /* ignore */ }
       try {
+        // The source now lives on a <source> child, so clearing the attribute
+        // alone would leave the decoder and the 2.2 MB buffer attached.
         video.removeAttribute('src');
+        video.querySelectorAll('source').forEach((s) => s.remove());
         video.load();
       } catch { /* ignore */ }
       video.style.display = 'none';

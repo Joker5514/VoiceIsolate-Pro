@@ -19,9 +19,15 @@ body::before { display: none !important; }
   -webkit-backdrop-filter: none !important;
   border-bottom: 1px solid var(--border-strong) !important;
   box-shadow: var(--shadow-sm) !important;
-  padding: 0 16px !important;
-  height: var(--titlebar-h) !important;
-  gap: 12px !important;
+  padding: 4px 16px !important;
+  /* `height` (not min-height) clamped this wrapping flex header to 48px while
+     its two content rows needed 66-104px, so the second row (actions + live
+     stats) escaped the sticky bar and painted over the hero. Let the bar grow;
+     `--vip-hdr-h` (published by engineer-console.js) carries the real height to
+     everything that has to sit below it. */
+  min-height: var(--titlebar-h) !important;
+  height: auto !important;
+  gap: 8px 12px !important;
 }
 
 /* brand icon — replace the teal gradient square with the equalizer mark */

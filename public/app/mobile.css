@@ -87,6 +87,16 @@ html {
   .hdr {
     padding: 8px 12px;
     gap: 8px;
+    /* Stacked on narrow screens the bar is 190px+ tall — a quarter of a phone
+       viewport. Let it scroll away instead of pinning it; the bottom
+       `.mobile-action-bar` keeps primary navigation reachable. */
+    position: static;
+  }
+  .hdr-left,
+  .hdr-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
   }
   .hdr-left { gap: 8px; }
   .hdr-icon { width: 30px; height: 30px; border-radius: 6px; }

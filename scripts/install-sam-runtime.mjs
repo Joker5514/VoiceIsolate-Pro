@@ -51,24 +51,29 @@ function ensureLayout() {
   }
   // Marker so Android/web builds know SAM runtime is part of the product
   const marker = path.join(ROOT, 'public/app/models/sam-runtime.marker.json');
-  fs.writeFileSync(
-    marker,
-    JSON.stringify(
-      {
-        packageId: 'vip-sam-runtime',
-        version: '25.0.2',
-        bundled: true,
-        platforms: ['web', 'android', 'desktop'],
-        worker: 'services/sam-audio/server.py',
-        onnxOptional: '/app/models/sam_audio.onnx',
-        officialInstall: 'git+https://github.com/facebookresearch/sam-audio.git',
-        defaultModel: 'facebook/sam-audio-small',
-        installedAt: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
-  );
+  const payload = {
+    packageId: 'vip-sam-runtime',
+    version: '25.0.2',
+    bundled: true,
+    platforms: ['web', 'android', 'desktop'],
+    worker: 'services/sam-audio/server.py',
+    onnxOptional: '/app/models/sam_audio.onnx',
+    officialInstall: 'git+https://github.com/facebookresearch/sam-audio.git',
+    defaultModel: 'facebook/sam-audio-small',
+    installedAt: new Date().toISOString(),
+  };
+  // The marker is tracked in git and this script runs from a Jest suite, so a
+  // fresh timestamp on every run dirties the working tree for no reason. Keep
+  // the recorded install time when nothing else about the layout changed.
+  try {
+    const previous = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    const sameLayout = JSON.stringify({ ...previous, installedAt: null })
+      === JSON.stringify({ ...payload, installedAt: null });
+    if (sameLayout && typeof previous.installedAt === 'string') {
+      payload.installedAt = previous.installedAt;
+    }
+  } catch { /* first install, or unreadable marker — write a fresh one */ }
+  fs.writeFileSync(marker, JSON.stringify(payload, null, 2));
   log(`wrote ${path.relative(ROOT, marker)}`);
 }
 

@@ -24,7 +24,7 @@ body.ps-workstation .hdr {
     flex-direction: column;
     position: fixed;
     left: 0;
-    top: var(--titlebar-h, 48px);
+    top: var(--vip-hdr-h, var(--titlebar-h, 48px));
     bottom: 0;
     width: var(--ps-nav-w);
     padding: 16px 10px 24px;

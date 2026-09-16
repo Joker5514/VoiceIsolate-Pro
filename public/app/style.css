@@ -17,11 +17,15 @@
   --cyan: #ff2a2a;
   --green: #ff5500;
   --yellow: #eab308;
-  --purple: #d91818;
+  /* Historic name; the value is a red accent, not purple. Lightened from
+     #d91818 (3.90:1) so `.btn-ab` / `.lufs-val` text clears WCAG AA. */
+  --purple: #e84d4d;
   --blue: #3b82f6;
   --text: #eeeef2;
   --text2: #b0b0c4;
-  --dim: #5e5e78;
+  /* Raised from #5e5e78, which was 3.19:1 on the console background and
+     failed AA on every small button label and stat caption using it. */
+  --dim: #8484a0;
   --border: rgba(255,255,255,0.05);
   --border2: rgba(220,38,38,0.12);
   --r: 10px;
@@ -86,7 +90,7 @@ input[type='range']{
 
 /* ---- HEADER — v25 sleek neon ---- */
 .hdr{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:linear-gradient(180deg,rgba(4,8,14,.97) 0%,rgba(4,6,10,.96) 100%);backdrop-filter:blur(22px) saturate(130%);border-bottom:1px solid rgba(0,255,231,.09);box-shadow:0 1px 0 rgba(0,255,231,.05),0 14px 44px rgba(0,0,0,.32);gap:12px;flex-wrap:wrap}
-.hdr-left{display:flex;align-items:center;gap:10px}
+.hdr-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
 .hdr-icon{width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,rgba(0,180,160,.9),rgba(0,120,110,.8));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 18px rgba(0,255,231,.22),0 2px 8px rgba(0,0,0,.4)}
 .hdr-title{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;line-height:1.2;background:linear-gradient(90deg,#e8f4ff,rgba(0,255,231,.85));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .hdr-ver{font-family:var(--fm);font-size:0.72rem;background:linear-gradient(90deg,rgba(0,255,231,.9),rgba(157,77,255,.8));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
@@ -856,7 +860,7 @@ details.slider-group[open] > .vip-section-summary .chevron{transform:rotate(0deg
   button,input,select,.slider-group-header{min-height:44px}
 }
 
-.hdr-actions{display:flex;align-items:center;gap:8px}
+.hdr-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .hdr-link{text-decoration:none}
 .engine-cockpit{max-width:1520px;margin:10px auto 0;padding:0 10px}
 .cockpit-card{display:grid;gap:12px}
@@ -995,7 +999,7 @@ details.slider-group[open] > .vip-section-summary .chevron{transform:rotate(0deg
   flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .speaker-card__id {
-  font-size: 10px; color: #64748b; font-family: monospace;
+  font-size: 10px; color: var(--text-dim); font-family: monospace;
 }
 
 .speaker-card__vol-row {
@@ -1020,7 +1024,7 @@ details.slider-group[open] > .vip-section-summary .chevron{transform:rotate(0deg
 }
 
 /* ── Voiceprint status ─────────────────────────────────────────── */
-.vp-idle      { color: #64748b; }
+.vp-idle      { color: var(--text-dim); }
 .vp-recording { color: #f59e0b; animation: vip-blink .8s infinite; }
 .vp-ready     { color: #10b981; }
 .vp-error     { color: #ef4444; }
@@ -2230,7 +2234,7 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
 .cap-pill.bad { border-color: rgba(239, 68, 68, 0.5); color: #fca5a5; }
 .cap-details summary {
   cursor: pointer;
-  color: #64748b;
+  color: var(--text-dim);
   font-size: 0.75rem;
 }
 .cap-pre {
@@ -2350,7 +2354,7 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
   display: block;
   margin-top: 4px;
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--text-dim);
 }
 .analysis-error {
   margin-bottom: 10px;
@@ -2374,7 +2378,7 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #64748b;
+  color: var(--text-dim);
 }
 .analysis-list {
   margin: 0;
@@ -2413,7 +2417,7 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
   cursor: pointer;
 }
 .source-chip:hover { border-color: #38bdf8; }
-.chip-conf { margin-left: 4px; color: #64748b; }
+.chip-conf { margin-left: 4px; color: var(--text-dim); }
 .analysis-timeline {
   min-height: 160px;
   border-radius: 8px;
@@ -2432,7 +2436,7 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #64748b;
+  color: var(--text-dim);
   margin-right: 4px;
 }
 .audition-toolbar .btn.active {
@@ -2470,7 +2474,7 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
 .aud-quality.q-high { border-color: #22c55e; color: #86efac; }
 .aud-quality.q-medium { border-color: #eab308; color: #fde047; }
 .aud-quality.q-low { border-color: #64748b; color: #94a3b8; }
-.aud-conf { margin-left: auto; color: #64748b; font-size: 0.7rem; }
+.aud-conf { margin-left: auto; color: var(--text-dim); font-size: 0.7rem; }
 .aud-layer-controls {
   display: flex;
   flex-wrap: wrap;
@@ -2491,7 +2495,7 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
   min-width: 100px;
 }
 .aud-gain-label input[type="range"] { flex: 1; min-width: 60px; }
-.aud-empty { font-size: 0.8rem; color: #64748b; margin: 0; }
+.aud-empty { font-size: 0.8rem; color: var(--text-dim); margin: 0; }
 
 /* Universal Source Matrix panel */
 .source-matrix-panel {
