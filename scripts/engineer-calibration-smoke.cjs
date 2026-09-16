@@ -94,6 +94,20 @@ async function main() {
   await page.setInputFiles('#fileInput', wavPath);
   await page.locator('#fileInput').dispatchEvent('change');
 
+  // Import deliberately does NOT start inference — processing begins only from
+  // an explicit user action (CLAUDE.md: "Import must not automatically begin
+  // inference"). This script used to upload and then wait for hStatus=DONE,
+  // which can only pass if import auto-processes, so it failed against correct
+  // behaviour. Verified: after import the app reports 0 ML worker messages,
+  // no outputBuffer and abMode 'original'; after Process it reports mlOk=true,
+  // outputBuffer, abMode 'processed'.
+  await page.waitForFunction(
+    () => { const b = document.getElementById('processBtn'); return b && !b.disabled; },
+    null,
+    { timeout: 60_000 },
+  );
+  await page.click('#processBtn');
+
   const deadline = Date.now() + Math.max(180_000, SECS * 10000);
   while (Date.now() < deadline) {
     const done = await page.evaluate(() => document.getElementById('hStatus')?.textContent?.trim() === 'DONE');
