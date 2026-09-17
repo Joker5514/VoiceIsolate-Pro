@@ -92,7 +92,10 @@ body.ps-shell {
 .ps-workflow-nav__item--active .ps-workflow-nav__number {
   color: #fff;
   border-color: var(--action-process, #ff3d4d);
-  background: var(--action-process, #ff3d4d);
+  /* This badge paints white 11.5px numerals ON the action colour, which is only
+     3.48:1. Filled surfaces carrying white text use the darker solid variant
+     (5.05:1); the accent stays --action-process for the border and the glow. */
+  background: var(--action-process-solid, #d81f30);
   box-shadow: 0 0 18px color-mix(in srgb, var(--action-process, #ff3d4d) 35%, transparent);
 }
 

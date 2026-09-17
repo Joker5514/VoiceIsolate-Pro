@@ -22,6 +22,7 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const { launchChromium } = require('./lib/launch-chromium.cjs');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HEADLESS = process.env.LIVE_HEADLESS !== 'false';
@@ -29,7 +30,7 @@ const SERVER_BOOT_TIMEOUT_MS = 20000;
 const PIPELINE_TIMEOUT_MS = 60000;
 
 // ── Playwright ──────────────────────────────────────────────────────────
-let chromium;
+let chromium; // presence probe only — launchChromium() does the launching
 try {
   ({ chromium } = require('playwright'));
 } catch (e) {
@@ -207,7 +208,7 @@ async function runInPage(page) {
 
   let browser;
   try {
-    browser = await chromium.launch({
+    browser = await launchChromium({
       headless: HEADLESS,
       args: [
         '--no-sandbox',

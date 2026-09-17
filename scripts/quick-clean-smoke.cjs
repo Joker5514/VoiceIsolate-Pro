@@ -3,6 +3,7 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { launchChromium } = require('./lib/launch-chromium.cjs');
 
 const base = process.env.QUICK_CLEAN_URL || 'http://localhost:3000';
 const output = process.env.QUICK_CLEAN_OUTPUT || path.join(__dirname, '../output/playwright/quick-clean');
@@ -27,7 +28,7 @@ function fixture() {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchChromium({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);

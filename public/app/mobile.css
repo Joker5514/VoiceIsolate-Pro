@@ -83,6 +83,21 @@ html {
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {
 
+  /* ── Scroll padding for the fixed bottom action bar ──────────────────────
+     `.mobile-action-bar` is `position: fixed` at z-index 200 and owns the
+     bottom ~61px of the viewport. Below 768px the console collapses to one
+     column, so the DOCUMENT is the scroller and nothing kept programmatic
+     scrolling out of that band: `scrollIntoView`, `#anchor` navigation and
+     focus-driven scrolling all parked controls underneath it, where
+     `elementFromPoint` returns the bar and a click never reaches them (three
+     DSP lock buttons, measured in Chromium at 768px). The rack column has its
+     own `scroll-padding-bottom` for when it is the scroller; this is the
+     document-level equivalent. */
+  :root {
+    scroll-padding-bottom: calc(72px + var(--safe-bottom, 0px));
+    scroll-padding-top: 12px;
+  }
+
   /* ── Header ── */
   .hdr {
     padding: 8px 12px;

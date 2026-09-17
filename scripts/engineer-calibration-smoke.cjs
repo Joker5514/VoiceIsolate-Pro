@@ -10,6 +10,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const os = require('os');
+const { launchChromium } = require('./lib/launch-chromium.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const SECS = Number(process.argv[2] || 15);
@@ -81,7 +82,7 @@ async function main() {
   await waitForServer(BASE);
 
   const { chromium } = require('playwright');
-  const browser = await chromium.launch({ args: ['--no-sandbox'] });
+  const browser = await launchChromium({ args: ['--no-sandbox'] });
   const page = await browser.newPage();
   await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window._vipApp?.handleFile === 'function', null, { timeout: 30000 });

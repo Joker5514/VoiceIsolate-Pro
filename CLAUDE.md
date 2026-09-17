@@ -132,11 +132,25 @@ These were found by driving real Chromium against `pnpm dev` and are pinned by
 | **Dim text tokens are AA-pinned** | `--text-dim` and `--dim` paint 8–12px labels; both are held ≥4.5:1 on their own surfaces. Do not reintroduce one-off hexes such as `#64748b` as a text color. |
 | **The hero loop is opt-in** | 2.2 MB of decorative video was 43% of the Engineer shell's first-load bytes. It ships `preload="none"` with the URL on `data-src`; `app.js#shouldLoadHeroVideo` decides, opting out on reduced motion, Save-Data, 2G, offline, and browsers without H.264. |
 | **Focusable content is never inside `aria-hidden="true"`** | The visualization tablist sat inside an `aria-hidden` scroll wrapper while its tabs stayed keyboard-focusable. |
+| **The Whisper Mode row keeps its own grid template** | `.whisper-mode-row` is also a `.sr-row`, and slider-theme.css's four-column `.sr-row` base loads after style.css at equal specificity. With only style.css's areas surviving, the group track resolved to the flex group's 201px min-content, the row measured 487px inside a ~300px rack cell, and the lock and hint buttons were clipped out of `#tab-extreme-group`'s `overflow:hidden` box at 1024/1440/1920. slider-theme.css re-states the template with a `minmax(0, 1fr)` group track and stacks the row in the `@container vip-rack` blocks. |
+| **`--text-ghost` is AA-pinned** | It is only ever a text colour (9-10px `.vis-hint` / `.hint-range-*`). At `rgba(244,247,250,0.18)` it was 1.61:1; it is held at 0.48 alpha (4.65-4.72:1), still below `--text-dim`. Use a border or background token for decoration rather than dropping a text token below AA. |
 
 **Browser-driven QA is part of the definition of done for shell changes.** Static
 checks pass on all of the above defects; only a real browser catches them.
-`pnpm test:live`, `test:landing`, `test:engineer`, `test:ui` and `test:quick-clean`
-drive Chromium and must stay green.
+`pnpm test:live`, `test:landing`, `test:engineer`, `test:ui`, `test:quick-clean`,
+`test:calibration` and `test:shell-qa` drive Chromium and must stay green.
+
+`pnpm test:shell-qa` (`scripts/shell-qa-smoke.cjs`) is the standing guard for
+every invariant in this table. It measures rendered state only — computed
+`display`, real geometry, `elementFromPoint`, real clicks, real network
+requests — across both surfaces at 390/768/1024/1440/1920, walks the keyboard
+tab order, drives the hero-video gate through all six opt-outs, and finishes
+with the entry-point journey (load `/app/`, choose a file, press **Process**,
+assert a finite non-silent output buffer). Assertions about JS state belong
+nowhere in it: believing the app's own state is what let all six defects ship.
+Browser-side probes live in `scripts/lib/a11y-probes.js`; the smokes share
+`scripts/lib/launch-chromium.cjs`, which honours `VIP_CHROMIUM_PATH` for images
+whose pre-installed Chromium revision differs from the pinned Playwright build.
 
 ---
 
@@ -401,6 +415,8 @@ pnpm mobile:sync-version   # Android/iOS metadata + Capacitor/PWA version sync
 pnpm version:check         # cross-file version contract
 pnpm provenance:validate  # provenance schema/claims; stale/unknown allowed
 pnpm test:live             # Playwright headless Engineer pipeline smoke
+pnpm test:shell-qa         # browser-driven shell guards + entry-point journey
+pnpm test:calibration      # upload -> Process -> DONE, slider calibration
 ```
 
 ---

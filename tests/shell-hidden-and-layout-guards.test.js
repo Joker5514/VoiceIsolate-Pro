@@ -110,6 +110,91 @@ describe('DSP slider row adapts to its container, not the viewport', () => {
   });
 });
 
+describe('the Whisper Mode row keeps its lock inside the rack', () => {
+  const css = code(sliderThemeCss);
+
+  test('slider-theme.css re-states the whisper row template it overwrites', () => {
+    // `.whisper-mode-row` is also a `.sr-row`, and the four-column `.sr-row`
+    // base in slider-theme.css loads after style.css at equal specificity. With
+    // only style.css's areas surviving, the group track resolved to the flex
+    // group's 201px min-content and the lock landed ~160px outside
+    // `#tab-extreme-group`'s overflow:hidden box at 1024/1440/1920.
+    expect(css).toMatch(/\.sr-row\.whisper-mode-row[\s\S]{0,400}grid-template-columns:[^;]*minmax\(0, 1fr\)/);
+    expect(css).toMatch(/\.whisper-mode-row \.whisper-mode-group\s*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/\.whisper-mode-row \.wm-btn\s*\{[^}]*min-width:\s*0/);
+  });
+
+  test('a narrow container gives the aggression group its own row', () => {
+    const narrow = /@container\s+vip-rack\s*\(max-width:\s*400px\)\s*\{([\s\S]*?)\n\}/.exec(css);
+    expect(narrow).not.toBeNull();
+    expect(narrow[1]).toMatch(/\.sr-row\.whisper-mode-row/);
+    expect(narrow[1]).toMatch(/"group group group group"/);
+  });
+
+  test('the >=1800px two-column rack stacks the whisper row too', () => {
+    const ultra = /@media \(min-width: 1800px\)\s*\{\s*@container\s+vip-rack\s*\(max-width:\s*800px\)\s*\{([\s\S]*?)\n\s*\}\s*\n\}/.exec(css);
+    expect(ultra).not.toBeNull();
+    expect(ultra[1]).toMatch(/\.sr-row\.whisper-mode-row/);
+  });
+});
+
+describe('fixed chrome never swallows a scrolled-to control', () => {
+  test('the document scroller reserves room for the sticky header', () => {
+    // scroll-padding is read from the scroll container, which for the document
+    // viewport is `html` — it does not propagate up from `body`.
+    expect(code(read('public/app/precision-studio.css'))).toMatch(
+      /:root\s*\{[^}]*scroll-padding-top:\s*calc\(var\(--vip-hdr-h/,
+    );
+  });
+
+  test('the <=768px document scroller reserves room for the action bar', () => {
+    const mobile = code(read('public/app/mobile.css'));
+    const block = /@media \(max-width: 768px\)\s*\{([\s\S]*?)\n\}/.exec(mobile);
+    expect(block).not.toBeNull();
+    // `.mobile-action-bar` is fixed at z-index 200 and owns the bottom ~61px.
+    expect(block[1]).toMatch(/:root\s*\{[^}]*scroll-padding-bottom:/);
+  });
+});
+
+describe('text tokens stay AA-pinned', () => {
+  const ALPHA = /--text-ghost:\s*rgba\(244,\s*247,\s*250,\s*([0-9.]+)\)/;
+
+  for (const sheet of ['public/landing.css', 'public/app/ds-tokens.css']) {
+    test(`${sheet} keeps --text-ghost above the AA floor`, () => {
+      const m = ALPHA.exec(code(read(sheet)));
+      expect(m).not.toBeNull();
+      // 0.46 is the alpha at which #f4f7fa reaches 4.5:1 on --surface-root.
+      expect(Number(m[1])).toBeGreaterThanOrEqual(0.46);
+    });
+  }
+
+  test('the active workflow badge paints white on the solid action colour', () => {
+    const psShell = code(read('public/ps-shell.css'));
+    const rule = /\.ps-workflow-nav__item--active \.ps-workflow-nav__number\s*\{([^}]*)\}/.exec(psShell);
+    expect(rule).not.toBeNull();
+    expect(rule[1]).toMatch(/color:\s*#fff/);
+    // White on --action-process is 3.48:1; the solid variant is 5.05:1.
+    expect(rule[1]).toMatch(/background:\s*var\(--action-process-solid/);
+    expect(rule[1]).not.toMatch(/background:\s*var\(--action-process,/);
+  });
+
+  test('whisper-mode buttons do not reuse the 3:1 greys', () => {
+    const styleCss = code(read('public/app/style.css'));
+    expect(styleCss).not.toMatch(/\.wm-btn\s*\{[^}]*color:\s*#666\b/);
+    expect(styleCss).not.toMatch(/\.wm-btn\.active\[data-mode="2"\][^}]*color:\s*#fb923c/);
+  });
+
+  test('the debug panel does not paint labels below AA', () => {
+    const dbg = code(read('public/app/debug-menu.css'));
+    // `(?<![-\\w])` so `border-color` / `background-color` are not read as text.
+    const alphas = [...dbg.matchAll(/(?<![-\w])color:\s*rgba\(176,\s*184,\s*200,\s*([0-9.]+)\)/g)]
+      .map((m) => Number(m[1]));
+    expect(alphas.length).toBeGreaterThan(0);
+    // 0.64 is the alpha at which #b0b8c8 reaches 4.5:1 on the panel gradient.
+    expect(Math.min(...alphas)).toBeGreaterThanOrEqual(0.64);
+  });
+});
+
 describe('Engineer header sizes to its content', () => {
   test('.hdr is not clamped with a fixed height', () => {
     const rule = /\.hdr\s*\{([^}]*)\}/g;
