@@ -91,6 +91,17 @@ platform. Long per-sample finalization passes use `processInChunks()` from
 `src/pipeline/ui-yield.js`; typed-array `subarray()` views are preferred so
 responsiveness does not require full-channel copies or extra memory pressure.
 
+**Yields are time-budgeted, not per-chunk.** Chunk size is the work granularity;
+`processInChunks` yields only once the elapsed work passes the platform budget
+(`YIELD_BUDGET_*_MS`), and `yieldToBrowser()` aligns to a frame at most once per
+`PAINT_CHECKPOINT_MS`. Rendering is its own event-loop step, so a macrotask
+yield already lets the browser paint at 60 Hz; awaiting `requestAnimationFrame`
+on every yield bought no extra paint and cost a whole frame each time — 150–600
+chunks per pass turned ~30 ms of real work into 2.5–10 s of waiting on any
+engine without `scheduler.yield`. Do not "restore" a yield after every chunk, and
+do not reintroduce a per-yield rAF await. Cancellation stays bounded by the
+budget window (measured ~21 ms), not by the chunk count.
+
 **Timelines (realistic):** Electron MVP 3–4 weeks (signing + auto-update); Android hardening 5–6 weeks.
 
 ### 1.3 Engineer Console UI (layout rules)
@@ -434,6 +445,7 @@ const QUANTA_PER_HOP = HOP_SIZE / QUANTUM; // MUST be integer (4)
 3. Analysis and synthesis use **symmetric periodic Hann**; reconstruction divides by the summed window² envelope (COLA).
 4. **Product is upload-only** (`Permissions-Policy: microphone=()`). Real-time AudioWorklets are **playback-only** Gate + DeEsser (`/src/workers/GateProcessor.js`, `DeEsserProcessor.js`) — **not** a full spectral Live-Mode mic path and **not** a sub-10 ms isolation claim.
 5. Offline isolation STFT lives in **`src/workers/MLWorker.js`** (`fused-spectral-single-stft` for DEFAULT `bsrnn_vocals`; serial multi-STFT only for mixed/waveform chains e.g. Demucs). `EngineerSpectralControls.js` applies the Process snapshot inside that existing frame loop; the `app.js` `_spectralStageAsync` fallback still uses one STFT/iSTFT when ML is unavailable.
+   The fused path transforms a **real** frame with `realFftForward` / `realFftInverse` — a half-length complex FFT plus untangle, ~1.8× faster than the n-point transform it replaced, and numerically pinned to it by `tests/mlworker-real-fft.test.js`. The mirrored negative-frequency half is never materialised; do not reintroduce it. `fftInPlace` remains the general complex transform these are built on.
 6. Tests in `tests/overlap-add.test.js` must pass before merging ring-buffer changes.
 
 Lock-free `SharedRingBuffer` / `RingBuffer` FIFO transport remains in `public/app/ring-buffer.js` for legacy glue; production ML does not require a live-mic SAB ring path.

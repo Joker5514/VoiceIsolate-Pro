@@ -647,6 +647,101 @@ function fftInPlace(re, im, inverse) {
 }
 
 /**
+ * Forward FFT of a **real** frame, via a half-length complex FFT.
+ *
+ * A real signal of length n has a conjugate-symmetric spectrum, so running a
+ * full n-point complex transform on it does twice the work needed and throws
+ * half the result away. Packing the even samples into the real part and the
+ * odd samples into the imaginary part of an n/2-point transform, then
+ * untangling, produces the same bins 0..n/2 for roughly half the cost — and
+ * the STFT is about half of this worker's wall time on a long file.
+ *
+ * @param {Float32Array} x       windowed real frame, length n
+ * @param {number} n             FFT size (power of two)
+ * @param {Float32Array} outRe   destination for bins 0..n/2
+ * @param {Float32Array} outIm   destination for bins 0..n/2
+ * @param {number} off           destination offset
+ * @param {Float32Array} hr      scratch, length n/2
+ * @param {Float32Array} hi      scratch, length n/2
+ */
+function realFftForward(x, n, outRe, outIm, off, hr, hi) {
+  const m = n >> 1;
+  for (let j = 0; j < m; j++) {
+    hr[j] = x[2 * j];
+    hi[j] = x[2 * j + 1];
+  }
+  fftInPlace(hr, hi, false);
+  const { cos, sin } = fftTables(n);
+  // DC and Nyquist are both real and come from the same packed bin.
+  const z0r = hr[0];
+  const z0i = hi[0];
+  outRe[off] = z0r + z0i;
+  outIm[off] = 0;
+  outRe[off + m] = z0r - z0i;
+  outIm[off + m] = 0;
+  for (let k = 1; k < m; k++) {
+    const ar = hr[k];
+    const ai = hi[k];
+    const br = hr[m - k];
+    const bi = -hi[m - k];
+    // Even/odd sub-spectra: Fe = (Z_k + conj(Z_{m-k}))/2, Fo = (Z_k − conj(Z_{m-k}))/2i
+    const fer = 0.5 * (ar + br);
+    const fei = 0.5 * (ai + bi);
+    const dr = 0.5 * (ar - br);
+    const di = 0.5 * (ai - bi);
+    const for_ = di;
+    const foi = -dr;
+    const wr = cos[k];
+    const wi = sin[k];
+    outRe[off + k] = fer + (wr * for_ - wi * foi);
+    outIm[off + k] = fei + (wr * foi + wi * for_);
+  }
+}
+
+/**
+ * Inverse of {@link realFftForward}: bins 0..n/2 → a real frame of length n.
+ *
+ * The caller never has to materialise the mirrored negative-frequency half.
+ * Bin n/2 is taken as real, which is what the forward transform of a real
+ * frame produces and what per-bin gain masks preserve.
+ *
+ * @param {Float32Array} specRe  masked bins 0..n/2
+ * @param {Float32Array} specIm  masked bins 0..n/2
+ * @param {number} n             FFT size (power of two)
+ * @param {Float32Array} out     destination real frame, length n
+ * @param {Float32Array} hr      scratch, length n/2
+ * @param {Float32Array} hi      scratch, length n/2
+ */
+function realFftInverse(specRe, specIm, n, out, hr, hi) {
+  const m = n >> 1;
+  const { cos, sin } = fftTables(n);
+  hr[0] = 0.5 * (specRe[0] + specRe[m]);
+  hi[0] = 0.5 * (specRe[0] - specRe[m]);
+  for (let k = 1; k < m; k++) {
+    const ar = specRe[k];
+    const ai = specIm[k];
+    const br = specRe[m - k];
+    const bi = -specIm[m - k];
+    const fer = 0.5 * (ar + br);
+    const fei = 0.5 * (ai + bi);
+    const dr = 0.5 * (ar - br);
+    const di = 0.5 * (ai - bi);
+    // Undo the forward twiddle: Fo = ((X_k − conj(X_{m−k}))/2) · e^{+2πik/n}
+    const wr = cos[k];
+    const wi = sin[k];
+    const for_ = dr * wr + di * wi;
+    const foi = di * wr - dr * wi;
+    hr[k] = fer - foi;
+    hi[k] = fei + for_;
+  }
+  fftInPlace(hr, hi, true);
+  for (let j = 0; j < m; j++) {
+    out[2 * j] = hr[j];
+    out[2 * j + 1] = hi[j];
+  }
+}
+
+/**
  * Spectral-mask inference: the contract shared by both shipped models
  * (BiGRU noise suppressor, BSRNN vocal extractor).
  *
@@ -733,8 +828,14 @@ async function runFusedSpectralMaskChain(
 
   const out = new Float32Array(samples.length);
   const norm = new Float32Array(samples.length);
+  // Masked positive-frequency bins (0..N/2); the mirrored half is never built.
   const re = new Float32Array(N);
   const im = new Float32Array(N);
+  // Real-FFT scratch: one windowed/reconstructed frame plus the half-length
+  // complex working pair shared by the forward and inverse transforms.
+  const frame = new Float32Array(N);
+  const halfRe = new Float32Array(N >> 1);
+  const halfIm = new Float32Array(N >> 1);
   let cur = makeStftBatchBuf(batchMax, bins);
   let nxt = makeStftBatchBuf(batchMax, bins);
   // One stateful processor per channel/job. It mutates the already-masked
@@ -756,15 +857,13 @@ async function runFusedSpectralMaskChain(
     for (let b = 0; b < count; b++) {
       const start = (f0 + b) * hop;
       const avail = Math.max(0, Math.min(N, samples.length - start));
-      re.fill(0); im.fill(0);
-      for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
-      fftInPlace(re, im, false);
+      for (let i = 0; i < avail; i++) frame[i] = samples[start + i] * win[i];
+      if (avail < N) frame.fill(0, avail);
       const off = b * bins;
+      realFftForward(frame, N, buf.batchRe, buf.batchIm, off, halfRe, halfIm);
       for (let k = 0; k < bins; k++) {
-        const rr = re[k];
-        const ii = im[k];
-        buf.batchRe[off + k] = rr;
-        buf.batchIm[off + k] = ii;
+        const rr = buf.batchRe[off + k];
+        const ii = buf.batchIm[off + k];
         buf.batchMags[off + k] = Math.sqrt(rr * rr + ii * ii);
       }
     }
@@ -841,16 +940,12 @@ async function runFusedSpectralMaskChain(
         engineerProcessor.applyFrame(re, im, cur.batchMags, off);
       }
       hasPrevMask = true;
-      for (let k = bins; k < N; k++) {
-        re[k] = re[N - k];
-        im[k] = -im[N - k];
-      }
-      fftInPlace(re, im, true);
+      realFftInverse(re, im, N, frame, halfRe, halfIm);
 
       const start = (f0 + b) * hop;
       const avail = Math.max(0, Math.min(N, samples.length - start));
       for (let i = 0; i < avail; i++) {
-        out[start + i] += re[i] * win[i];
+        out[start + i] += frame[i] * win[i];
         norm[start + i] += win[i] * win[i];
       }
     }

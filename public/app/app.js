@@ -251,17 +251,40 @@ const HeroExperience = (() => {
     }
   }
 
+  let mirrorRaf = 0;
+
+  /**
+   * Copy the two source wave canvases into their mirrors.
+   *
+   * Progress ticks call this, so it runs hundreds of times per Process pass.
+   * Two details keep that cheap: assigning `canvas.width` reallocates the
+   * backing store and is skipped unless the size actually changed, and repeat
+   * calls inside one frame are coalesced — mirroring more than once per paint
+   * cannot show anything extra.
+   */
   function mirrorWaveCanvases() {
-    const pairs = [['waveCanvas', 'inputCanvas'], ['waveProcCanvas', 'outputCanvas']];
-    for (const [srcId, dstId] of pairs) {
-      const src = $(srcId);
-      const dst = $(dstId);
-      if (!src || !dst || !src.width) continue;
-      dst.width = src.width;
-      dst.height = src.height;
-      const ctx = dst.getContext('2d');
-      if (ctx) ctx.drawImage(src, 0, 0);
-    }
+    if (mirrorRaf) return;
+    const schedule = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (cb) => setTimeout(cb, 16);
+    mirrorRaf = schedule(() => {
+      mirrorRaf = 0;
+      const pairs = [['waveCanvas', 'inputCanvas'], ['waveProcCanvas', 'outputCanvas']];
+      for (const [srcId, dstId] of pairs) {
+        const src = $(srcId);
+        const dst = $(dstId);
+        if (!src || !dst || !src.width) continue;
+        const ctx = dst.getContext('2d');
+        if (!ctx) continue;
+        if (dst.width !== src.width || dst.height !== src.height) {
+          dst.width = src.width;
+          dst.height = src.height;
+        } else {
+          ctx.clearRect(0, 0, dst.width, dst.height);
+        }
+        ctx.drawImage(src, 0, 0);
+      }
+    }) || 0;
   }
 
   /**
@@ -1297,10 +1320,6 @@ class VoiceIsolatePro {
     const activeJobId = globalThis.__VIP_JOBS__?.getCurrentJobId?.() || null;
     const forcedTerminalReset = opts.force && !activeJobId;
     if (pipelineJobId && activeJobId !== pipelineJobId && !forcedTerminalReset) return false;
-    const fill = this.dom.pipeFill || $('pipeFill');
-    const bar = this.dom.pipeBar || $('pipeBar');
-    const detailEl = this.dom.pipeDetail || $('pipeDetail');
-    const badge = $('vip-proc-badge');
     let p = typeof pct === 'number' ? pct : (stageIndex / 32) * 100;
     if (!Number.isFinite(p)) p = 0;
     p = Math.max(0, Math.min(100, p));
@@ -1313,6 +1332,17 @@ class VoiceIsolatePro {
       if (p > 0 && p < 100 && p < prev) p = prev;
       this._pipelinePct = p;
     }
+    // Chunked DSP loops tick progress hundreds of times per pass, and a whole
+    // pass usually maps onto a few percent — so most calls repaint the exact
+    // same bar. Painting is not free (canvas mirroring, overlay, hero strip),
+    // so skip the repaint when nothing a user could see has changed.
+    const paintKey = `${Math.round(p)}|${detail || ''}|${stageIndex}`;
+    if (!opts.force && paintKey === this._pipelinePaintKey) return true;
+    this._pipelinePaintKey = paintKey;
+    const fill = this.dom.pipeFill || $('pipeFill');
+    const bar = this.dom.pipeBar || $('pipeBar');
+    const detailEl = this.dom.pipeDetail || $('pipeDetail');
+    const badge = $('vip-proc-badge');
     if (fill) fill.style.width = p + '%';
     if (bar) bar.setAttribute('aria-valuenow', String(Math.round(p)));
     if (detailEl) detailEl.textContent = detail || '';
