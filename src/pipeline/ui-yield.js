@@ -251,7 +251,7 @@ async function paintCheckpoint() {
  * @returns {Promise<void>}
  */
 export async function yieldToBrowser() {
-  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const now = monotonicNow();
   // Paint alignment at most once per PAINT_CHECKPOINT_MS — see that constant.
   if (now - lastPaintCheckpoint >= PAINT_CHECKPOINT_MS) {
     lastPaintCheckpoint = now;
