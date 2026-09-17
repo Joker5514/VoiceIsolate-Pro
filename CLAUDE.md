@@ -106,6 +106,27 @@ The studio-console skin is **layout/visual only**. Contributors must:
 | **Focus on one voice** | Shared `src/presentation/TargetSpeakerUI.js`; section + explain accordion **collapsed by default** in Engineer Console. |
 | **Android packaging** | `scripts/prepare-android-complete.mjs` + `verify-android-complete.mjs` **require** `app/engineer-console.css` and `app/engineer-console.js` in the offline bundle. |
 
+#### 1.3.1 Shell invariants (browser-verified — do not regress)
+
+These were found by driving real Chromium against `pnpm dev` and are pinned by
+`tests/shell-hidden-and-layout-guards.test.js` and
+`tests/design-token-contrast.test.js`. Re-run the guards after any shell CSS edit.
+
+| Invariant | Why it exists |
+|---|---|
+| **`[hidden] { display: none !important }`** in `public/landing.css` + `public/app/ds-tokens.css` | The UA sheet's `[hidden]` rule loses to any author `display`. Without this, `.ps-workspace-nav{display:flex}` and friends rendered the Forensic nav, the Quick strip, Landing's export row and the hero fallback while the JS that owns them believed they were hidden. Never set `display` on a hidden element to "show" it — clear the attribute. |
+| **DSP slider rows adapt on container width** (`@container vip-rack`) | The rack column is ~310–350px at *every* desktop width, but the canonical five-column row needs ≥380px. It overflowed its `overflow:hidden` `<details>` and the lock button was unclickable at 1024/1440/1920. Never swap the container query for a viewport media query. The ≥1800px two-column rack needs the paired 800px threshold. |
+| **`--vip-hdr-h`** published by `engineer-console.js` | `.hdr` wraps to 1–3 rows depending on width (48px / 71px / 105px / 269px). It must use `min-height`, never `height`, and everything sticky below it keys off `--vip-hdr-h` rather than a hardcoded offset. |
+| **`--action-process-solid`** for filled red surfaces | White on `--action-process` is 3.48:1. Any control painting white text **on** the action color uses the darker solid variant (5.05:1). Accents, borders, glows and text-on-dark keep `--action-process`. |
+| **Dim text tokens are AA-pinned** | `--text-dim` and `--dim` paint 8–12px labels; both are held ≥4.5:1 on their own surfaces. Do not reintroduce one-off hexes such as `#64748b` as a text color. |
+| **The hero loop is opt-in** | 2.2 MB of decorative video was 43% of the Engineer shell's first-load bytes. It ships `preload="none"` with the URL on `data-src`; `app.js#shouldLoadHeroVideo` decides, opting out on reduced motion, Save-Data, 2G, offline, and browsers without H.264. |
+| **Focusable content is never inside `aria-hidden="true"`** | The visualization tablist sat inside an `aria-hidden` scroll wrapper while its tabs stayed keyboard-focusable. |
+
+**Browser-driven QA is part of the definition of done for shell changes.** Static
+checks pass on all of the above defects; only a real browser catches them.
+`pnpm test:live`, `test:landing`, `test:engineer`, `test:ui` and `test:quick-clean`
+drive Chromium and must stay green.
+
 ---
 
 ## 2. The 4-Layer ES6 Module System

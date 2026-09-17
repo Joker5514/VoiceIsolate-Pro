@@ -39,6 +39,7 @@
       wireViewToggle();
       wireFocusExplain();
       installPrecisionStudioShell();
+      trackHeaderHeight();
       // Defer ticker + summary so reparent paints before any interval work.
       const schedule = globalThis.requestIdleCallback
         ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
@@ -679,6 +680,34 @@
         matrix.appendChild(pill);
       });
     }
+  }
+
+  /**
+   * Publish the header's real rendered height as `--vip-hdr-h`.
+   *
+   * `.hdr` is a wrapping flex bar whose extra rows (actions, live stats) only
+   * appear at some widths — measured at 48px, 71px, 105px and 269px across the
+   * responsive matrix. Anything sticky-positioned below it therefore cannot use
+   * a hardcoded offset. Cosmetic only — never gates audio or ML work.
+   */
+  function trackHeaderHeight() {
+    const hdr = document.querySelector('.hdr');
+    if (!hdr) return;
+    const publish = () => {
+      // `offsetHeight`, not `getBoundingClientRect()`: the Engineer UI scale
+      // control sets `document.body.style.zoom`, and a rect is the *visual*
+      // (zoomed) height. Consumers apply this value as a CSS length inside the
+      // already-zoomed body, so a rect would be scaled a second time — at 120%
+      // it published 126px where the layout height is 105px, pushing the rack
+      // ~25px too low. `offsetHeight` is the layout height CSS `top` shares.
+      const h = hdr.offsetHeight;
+      if (h > 0) document.documentElement.style.setProperty('--vip-hdr-h', h + 'px');
+    };
+    publish();
+    if (typeof ResizeObserver === 'function') {
+      try { new ResizeObserver(publish).observe(hdr); return; } catch { /* fall through */ }
+    }
+    window.addEventListener('resize', publish, { passive: true });
   }
 
   function el(tag, cls, text) {

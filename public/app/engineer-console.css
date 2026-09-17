@@ -98,8 +98,8 @@ body.eng-console .ec-col {
 }
 body.eng-console .ec-col-rack {
   position: sticky;
-  top: 64px;
-  max-height: calc(100vh - 72px);
+  top: calc(var(--vip-hdr-h, 48px) + 16px);
+  max-height: calc(100vh - var(--vip-hdr-h, 48px) - 24px);
   overflow-y: auto;
   overflow-x: hidden;
   /* Last control fully usable above sticky status / window chrome */
@@ -245,8 +245,8 @@ body.eng-console .ec-col-rack .vip-section-body {
 /* Compact laptop heights: keep rack scrollable and last row reachable */
 @media (max-height: 800px) {
   body.eng-console .ec-col-rack {
-    max-height: calc(100vh - 56px);
-    top: 52px;
+    max-height: calc(100vh - var(--vip-hdr-h, 48px) - 8px);
+    top: calc(var(--vip-hdr-h, 48px) + 4px);
     padding-bottom: 120px;
   }
 }

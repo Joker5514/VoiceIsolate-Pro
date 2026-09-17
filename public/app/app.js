@@ -264,6 +264,36 @@ const HeroExperience = (() => {
     }
   }
 
+  /**
+   * Should the decorative hero loop be fetched at all?
+   *
+   * It is 2.2 MB of purely cosmetic video that app.js releases after 6 s. Users
+   * who asked for reduced motion, users on a metered/Save-Data connection, and
+   * offline sessions get the static fallback mark instead of the download.
+   */
+  function shouldLoadHeroVideo() {
+    try {
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
+      const conn = navigator.connection;
+      if (conn?.saveData) return false;
+      if (typeof conn?.effectiveType === 'string' && /^(slow-)?2g$/.test(conn.effectiveType)) return false;
+      if (navigator.onLine === false) return false;
+      // H.264 is proprietary: open-source Chromium builds, some Linux Firefox
+      // installs and a few Android WebViews cannot decode it. Without this
+      // probe those browsers download all 2.2 MB, never render a frame, never
+      // fire `error`, and sit on a blank hero until the 6 s release timer.
+      // The string is the asset's real codec, read from its avcC box:
+      // AVCProfileIndication 0x64 (High), level 0x1F (3.1) -> avc1.64001F.
+      // Probing Baseline instead would pass on a Baseline-only runtime that
+      // still cannot decode this file. Keep the two in sync if the asset is
+      // ever re-encoded.
+      const probe = document.createElement('video');
+      if (typeof probe.canPlayType === 'function'
+        && !probe.canPlayType('video/mp4; codecs="avc1.64001F"')) return false;
+    } catch { /* capability probe only — default to playing */ }
+    return true;
+  }
+
   function initHeroVideo() {
     const video = $('heroVideo');
     const fallback = $('heroFallback');
@@ -271,11 +301,32 @@ const HeroExperience = (() => {
     const showFallback = () => {
       if (fallback) { fallback.hidden = false; fallback.setAttribute('aria-hidden', 'false'); }
       video.style.display = 'none';
+      // Hiding the element does not stop the transfer. If playback fails before
+      // the release timer, detach the source so a 2.2 MB asset we will never
+      // show stops downloading.
+      try {
+        video.removeAttribute('src');
+        video.querySelectorAll('source').forEach((s) => s.remove());
+        video.load();
+      } catch { /* nothing attached yet, or load() unavailable */ }
     };
+    if (!shouldLoadHeroVideo()) { showFallback(); return; }
+    // Markup ships no <source>; attach it only once we have decided to play.
+    const src = video.dataset.src;
+    if (src && !video.currentSrc && !video.src) {
+      const source = document.createElement('source');
+      source.src = src;
+      source.type = 'video/mp4';
+      video.appendChild(source);
+      video.load();
+    }
     const releaseHero = () => {
       try { video.pause(); } catch { /* ignore */ }
       try {
+        // The source now lives on a <source> child, so clearing the attribute
+        // alone would leave the decoder and the 2.2 MB buffer attached.
         video.removeAttribute('src');
+        video.querySelectorAll('source').forEach((s) => s.remove());
         video.load();
       } catch { /* ignore */ }
       video.style.display = 'none';

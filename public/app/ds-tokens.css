@@ -6,6 +6,17 @@
 
 /* Precision Studio tokens. No CDN fonts — system stacks only (CSP + offline APK). */
 
+/* ── `hidden` attribute must always win ───────────────────────────────────
+   State-managed UI here is toggled with `el.hidden = true/false`. The UA
+   sheet's `[hidden] { display: none }` has UA origin, so ANY author rule
+   that sets `display` (e.g. `.ps-workspace-nav { display: flex }`) silently
+   un-hides the element while JS still believes it is hidden. Keep this rule
+   so `hidden` stays authoritative; never set `display` on a hidden element
+   to "show" it — clear the attribute instead. */
+[hidden] {
+  display: none !important;
+}
+
 :root {
   /* ── Precision Studio semantic surfaces ───────────────────── */
   --surface-root:  #070b10;
@@ -15,6 +26,11 @@
   --text-primary:  #f4f7fa;
   --text-secondary:#8d9aaa;
   --action-process:#ff3d4d;
+  /* Filled-surface variant of --action-process. The accent red only reaches
+     3.48:1 against white, so any control that paints white text ON the action
+     color uses this darker red (5.05:1) instead. Accents, borders, glows and
+     text-on-dark keep --action-process. */
+  --action-process-solid: #d81f30;
   --action-live:   #2ed5e5;
   --state-success: #31cf7d;
   --state-warning: #f0b541;
@@ -63,7 +79,8 @@
   --text-hi:    var(--text-primary);
   --text:       #c5ced6;
   --text-2:     var(--text-secondary);
-  --text-dim:   #6d7a86;
+  /* Raised from #6d7a86 (4.49:1 on --surface-root) to clear WCAG AA 4.5:1. */
+  --text-dim:   #7b8894;
   --text-ghost: rgba(244,247,250,0.18);
 
   /* ── Borders ──────────────────────────────────────────────── */

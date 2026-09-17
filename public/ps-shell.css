@@ -38,7 +38,7 @@ body.ps-shell {
   left: 10px;
   padding: 10px 14px;
   color: #fff;
-  background: var(--action-process, #ff3d4d);
+  background: var(--action-process-solid, #d81f30);
   border-radius: 8px;
   font-weight: 700;
   transform: translateY(-160%);
@@ -233,7 +233,7 @@ body.ps-shell {
   outline-offset: 2px;
 }
 .ps-btn--process {
-  background: var(--action-process);
+  background: var(--action-process-solid, #d81f30);
   color: #fff;
 }
 .ps-btn--live {
@@ -313,7 +313,9 @@ body.ps-shell {
   margin-bottom: 10px;
   border-radius: 8px;
   background: var(--action-process);
-  color: #fff;
+  /* Dark ink on the filled badge, matching `.ps-step--live`. White on
+     --action-process is only 3.48:1, which fails AA for 11px text. */
+  color: #1b0207;
   font: 700 11px/1 var(--font-mono);
 }
 .ps-step--live .ps-step__n { background: var(--action-live); color: #041418; }

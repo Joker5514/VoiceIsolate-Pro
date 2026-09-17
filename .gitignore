@@ -21,6 +21,10 @@ node_modules
 /build
 /dist
 
+# Playwright smoke artifacts (scripts/quick-clean-smoke.cjs writes screenshots
+# and a processed WAV here on every `pnpm test:quick-clean` run)
+/output
+
 # Large installers / APKs (publish via GitHub Releases only)
 *.apk
 *.aab

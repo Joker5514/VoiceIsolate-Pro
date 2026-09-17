@@ -881,6 +881,83 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
 .dsp-slider-row .info-btn { grid-column: 1 / -1; justify-self: start; }
 .dsp-slider-row .info-popover { grid-column: 1 / -1; }
 
+/* ── Narrow-container adaptation (rack column) ────────────────────────────
+   The Engineer rack column is ~310-350px wide at EVERY desktop viewport, but
+   the five-column row needs >=380px (96+80+72+40+40 + gaps + padding). Inside
+   the rack the row therefore overflowed its own `details` (overflow:hidden),
+   clipping the reset button and hiding the lock button entirely — the lock
+   contract in CLAUDE.md was unreachable with a pointer at 1024/1440/1920.
+
+   Adapt on the CONTAINER's width, not the viewport's, so a wide host (Simple
+   view, ultrawide rack) keeps the canonical five-column row while the narrow
+   rack stacks the track under the label. Do NOT swap this for a viewport
+   media query: the rack width is independent of the viewport. */
+.slider-panel,
+.slider-group-content,
+.whisper-mode-host {
+  container-type: inline-size;
+  container-name: vip-rack;
+}
+
+@container vip-rack (max-width: 400px) {
+  .sr-row.dsp-slider-row,
+  .slider-row.dsp-slider-row,
+  .dsp-slider-row {
+    grid-template-columns: minmax(0, 1fr) minmax(56px, auto) var(--vip-hit) var(--vip-hit);
+    grid-template-areas:
+      "label num reset lock"
+      "track track track track"
+      "hint  hint hint  hint"
+      "info  info info  info";
+    row-gap: 4px;
+  }
+  .dsp-slider-row .dsp-slider-track-wrap {
+    grid-area: track;
+    width: 100%;
+  }
+  .dsp-slider-row .dsp-slider-num-wrap {
+    grid-area: num;
+    min-width: 56px;
+  }
+}
+
+/* Ultrawide racks (>=1800px) split `.slider-panel` into two row columns
+   (engineer-console.css), so each cell is roughly half the container. Raise the
+   threshold there so the stacked row still applies inside those narrow cells. */
+@media (min-width: 1800px) {
+  @container vip-rack (max-width: 800px) {
+    .sr-row.dsp-slider-row,
+    .slider-row.dsp-slider-row,
+    .dsp-slider-row {
+      /* The ultrawide rack cell is only ~228px. Sharing row 1 with the numeric
+         field and both 40px buttons left the label 23-33px wide and overflowing
+         on 18 of 20 rows ("Gate Threshold" in 27px), so here the label takes a
+         full-width row of its own and the controls sit on the next one. */
+      grid-template-columns: minmax(0, 1fr) minmax(56px, auto) var(--vip-hit) var(--vip-hit);
+      grid-template-areas:
+        "label label label label"
+        "num   num   reset lock"
+        "track track track track"
+        "hint  hint  hint  hint"
+        "info  info  info  info";
+      row-gap: 4px;
+    }
+    .dsp-slider-row .sr-label {
+      grid-area: label;
+      min-width: 0;
+    }
+    .dsp-slider-row .dsp-slider-track-wrap {
+      grid-area: track;
+      width: 100%;
+    }
+    .dsp-slider-row .dsp-slider-num-wrap {
+      grid-area: num;
+      min-width: 56px;
+      justify-content: flex-start;
+    }
+  }
+}
+
 /* Track: tall invisible hit strip around thin visual track */
 .dsp-slider-track-wrap {
   display: flex;

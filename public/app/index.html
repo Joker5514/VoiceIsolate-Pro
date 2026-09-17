@@ -233,10 +233,14 @@
     <div class="vip-hero-inner">
       <div class="vip-hero-media">
         <div class="vip-hero-video-frame">
-          <video id="heroVideo" class="vip-hero-video" autoplay muted loop playsinline preload="auto"
-            poster="" aria-label="VoiceIsolate Pro logo animation">
-            <source src="media/Voice_Isolate_Pro_logo_animation_202606182115.mp4" type="video/mp4" />
-          </video>
+          <!-- Decorative 6 s logo loop, released by app.js after the intro. At
+               2.2 MB it was 43% of the shell's first-load bytes on every
+               platform, including the Capacitor APK's first paint, so it is
+               `preload="none"` and app.js decides whether to fetch it at all
+               (reduced motion / Save-Data / offline opt out). -->
+          <video id="heroVideo" class="vip-hero-video" muted loop playsinline preload="none"
+            poster="" aria-label="VoiceIsolate Pro logo animation"
+            data-src="media/Voice_Isolate_Pro_logo_animation_202606182115.mp4"></video>
           <div id="heroFallback" class="vip-hero-fallback" hidden aria-hidden="true">
             <div class="vip-hero-fallback-mark" aria-hidden="true">VIP</div>
             <p class="vip-hero-fallback-text">VoiceIsolate Pro</p>
@@ -733,7 +737,7 @@
           <button id="vizIsoConfirmCancel" class="btn btn-xs btn-outline" type="button">Cancel</button>
         </div>
         <div class="viz-tab-rail">
-          <div id="vizTabScroll" class="viz-tab-rail__scroll" role="presentation" aria-hidden="true">
+          <div id="vizTabScroll" class="viz-tab-rail__scroll" role="presentation">
         <div id="tabBar" class="tabs" role="tablist" aria-label="Visualization tabs">
           <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
           <button id="btn-waveform" class="tab-btn" type="button" role="tab" aria-controls="tab-waveform" data-tab="waveform" aria-selected="false" tabindex="-1">Waveform</button>
