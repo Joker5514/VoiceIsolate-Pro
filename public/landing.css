@@ -770,7 +770,10 @@ input[type="file"]:focus { border-color: var(--border-focus); }
   height: 24px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
-  color: var(--text-dim);
+  /* --text-dim is pinned against the base surfaces, but this control lightens
+     its own to rgb(32,40,48), where #7b8894 falls to 4.11:1. The secondary
+     token clears it at 5.21:1. */
+  color: var(--text-secondary);
   font: var(--fw-bold) 11px/24px var(--font-ui);
   text-align: center;
   cursor: pointer;

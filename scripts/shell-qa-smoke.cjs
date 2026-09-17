@@ -14,9 +14,13 @@
  * Plus the entry-point journey the suite never exercised: load the Engineer
  * shell, choose a real file, press Process, get output.
  *
- * Every assertion reads rendered state — computed styles, real geometry,
- * `elementFromPoint`, real clicks, real network requests. Nothing here asserts
- * JS state, because that is exactly what let all six ship.
+ * The six shell audits read RENDERED state only — computed styles, real
+ * geometry, `elementFromPoint`, real clicks, real network requests — because
+ * asserting JS state is exactly what let all six ship. The entry-point journey
+ * at the end is the deliberate exception: it drives the real UI (choose a file,
+ * press Process) and then inspects `outputBuffer` and `hStatus` to prove the
+ * audio actually came out, which nothing rendered can show. Keep new shell
+ * guards on the rendered side of that line.
  *
  * Usage: node scripts/shell-qa-smoke.cjs
  */
@@ -114,6 +118,9 @@ async function expandEverything(page) {
     if (dbg) dbg.classList.remove('hidden');
     const iso = document.getElementById('vizIsoConfirm');
     if (iso) { iso.classList.remove('hidden'); iso.setAttribute('aria-hidden', 'false'); }
+    // Open a slider hint: its body is the only place `<mark>` is used, and a
+    // `<mark>` with a background but no colour keeps the UA's black MarkText.
+    document.querySelector('.dsp-slider-row .slider-hint-btn')?.click();
   });
   await page.waitForTimeout(400);
 }
@@ -219,8 +226,20 @@ async function tabWalk(page, steps = 60) {
         const ariaBad = await page.evaluate(() => window.__vipQA.focusableInAriaHidden());
         check(ariaBad.length === 0, 'no focusable control inside an aria-hidden region', ariaBad);
 
-        const contrast = await page.evaluate(() => window.__vipQA.contrastFailures());
-        check(contrast.length === 0, 'zero WCAG AA text-contrast failures', contrast.slice(0, 6));
+        const contrast = await page.evaluate(() => {
+          const f = window.__vipQA.contrastFailures();
+          return { fails: [...f], unmeasured: f.unmeasured, positionDependent: f.positionDependent };
+        });
+        // Only the definite bucket gates. Text on a gradient that clears AA at
+        // one stop and misses at another cannot be judged from computed style,
+        // so it is surfaced for a human rather than passed or failed here.
+        check(contrast.fails.length === 0, 'zero WCAG AA text-contrast failures', contrast.fails.slice(0, 6));
+        if (contrast.positionDependent.length) {
+          console.log(`      note: ${contrast.positionDependent.length} text node(s) sit on a gradient and pass at one end but not the other — needs a human eye`);
+        }
+        if (contrast.unmeasured.length) {
+          console.log(`      note: ${contrast.unmeasured.length} text node(s) over a url() image — not scorable from computed style`);
+        }
 
         if (url === '/app/') {
           const hdr = await page.evaluate(() => window.__vipQA.headerMetrics());
@@ -228,8 +247,13 @@ async function tabWalk(page, steps = 60) {
           if (hdr) {
             check(hdr.overflowBottomPx <= 1, 'no header content escapes the header box', hdr);
             check(hdr.scrollHeight <= hdr.clientHeight + 1, 'the header does not clip its own content', hdr);
-            check(hdr.cssMinHeight !== 'auto' && hdr.cssHeight !== hdr.cssMinHeight || hdr.height >= 48,
-              'the header sizes to content rather than a fixed clamp', hdr);
+            // `(A && B) || height >= 48` passed for any header at all. What
+            // distinguishes the defect is the clamp itself: `height` must not be
+            // pinned to the titlebar token while the content needs more.
+            const clamped = hdr.cssHeight === hdr.titlebarH && hdr.scrollHeight > hdr.clientHeight + 1;
+            check(!clamped, 'the header is not clamped below its content height', hdr);
+            check(hdr.cssMinHeight === hdr.titlebarH,
+              'the header keeps min-height (not height) on the titlebar token', hdr);
             check(hdr.publishedVar === `${hdr.offsetHeight}px`,
               '--vip-hdr-h carries the real layout height', hdr);
           }
@@ -294,7 +318,10 @@ async function tabWalk(page, steps = 60) {
       ['Save-Data', { initScripts: [FORCE_H264, conn({ saveData: true, effectiveType: '4g' })] }],
       ['2G', { initScripts: [FORCE_H264, conn({ saveData: false, effectiveType: '2g' })] }],
       ['slow-2g', { initScripts: [FORCE_H264, conn({ saveData: false, effectiveType: 'slow-2g' })] }],
-      ['no H.264', {}],
+      // Deterministic: a Chromium built WITH H.264 would otherwise fetch the
+      // hero here and fail a gate that is not actually broken.
+      ['no H.264', { initScripts: ["Object.defineProperty(HTMLVideoElement.prototype,'canPlayType',"
+        + "{value:function(){return '';},configurable:true});"] }],
       ['offline', { initScripts: [FORCE_H264, "Object.defineProperty(navigator,'onLine',{get:()=>false,configurable:true});"] }],
     ];
     for (const [label, opts] of gates) {
@@ -321,8 +348,9 @@ async function tabWalk(page, steps = 60) {
       });
       check(await page.locator('#processBtn').isVisible(), 'the Process button is rendered on load');
 
+      // `setInputFiles` dispatches `change` itself. A second manual dispatch
+      // ran the import twice, which is not what a real upload does.
       await page.setInputFiles('#fileInput', wav);
-      await page.locator('#fileInput').dispatchEvent('change');
       await page.waitForFunction(
         () => { const b = document.getElementById('processBtn'); return b && !b.disabled; },
         null, { timeout: 60000 },

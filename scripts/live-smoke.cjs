@@ -30,9 +30,9 @@ const SERVER_BOOT_TIMEOUT_MS = 20000;
 const PIPELINE_TIMEOUT_MS = 60000;
 
 // ── Playwright ──────────────────────────────────────────────────────────
-let chromium; // presence probe only — launchChromium() does the launching
+// Presence probe only — launchChromium() does its own require.
 try {
-  ({ chromium } = require('playwright'));
+  require('playwright');
 } catch (e) {
   console.error('[test:live] playwright is not installed. Run `pnpm install` first.');
   process.exit(2);

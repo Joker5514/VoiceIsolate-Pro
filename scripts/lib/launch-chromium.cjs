@@ -19,8 +19,14 @@ const path = require('path');
 function resolveExecutable() {
   const explicit = process.env.VIP_CHROMIUM_PATH;
   if (explicit) {
-    if (fs.existsSync(explicit)) return explicit;
-    throw new Error(`VIP_CHROMIUM_PATH points at a missing file: ${explicit}`);
+    // A directory or socket here would surface as an opaque Playwright launch
+    // error much later, so hold it to the same bar as the fallback below.
+    try {
+      if (fs.statSync(explicit).isFile()) return explicit;
+    } catch {
+      throw new Error(`VIP_CHROMIUM_PATH points at a missing file: ${explicit}`);
+    }
+    throw new Error(`VIP_CHROMIUM_PATH is not a regular file: ${explicit}`);
   }
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
   if (root) {

@@ -24,8 +24,8 @@ const PORT = parseInt(process.env.PORT || '3471', 10);
 const BASE = `http://127.0.0.1:${PORT}`;
 const HEADLESS = process.env.SMOKE_HEADLESS !== 'false';
 
-let chromium; // presence probe only — launchChromium() does the launching
-try { ({ chromium } = require('playwright')); }
+// Presence probe only — launchChromium() does its own require.
+try { require('playwright'); }
 catch { console.error('[engineer-rt-smoke] playwright missing — run pnpm install && npx playwright install chromium'); process.exit(2); }
 
 const serverProc = spawn(process.execPath, ['server.js'], {

@@ -163,8 +163,9 @@ describe('text tokens stay AA-pinned', () => {
     test(`${sheet} keeps --text-ghost above the AA floor`, () => {
       const m = ALPHA.exec(code(read(sheet)));
       expect(m).not.toBeNull();
-      // 0.46 is the alpha at which #f4f7fa reaches 4.5:1 on --surface-root.
-      expect(Number(m[1])).toBeGreaterThanOrEqual(0.46);
+      // 0.46 measures 4.41:1 on --surface-root — below AA. 0.48 is the first
+      // step that clears 4.5:1 on all three VIP surfaces (4.65-4.72:1).
+      expect(Number(m[1])).toBeGreaterThanOrEqual(0.48);
     });
   }
 
