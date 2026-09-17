@@ -3,8 +3,9 @@
  *
  * Discipline:
  *  - Prefer scheduler.yield() when available (Chrome 115+ / modern Android WebView)
- *  - Fall back to rAF + macrotask so paint/input can run during STFT/DSP
+ *  - Fall back to a MessageChannel macrotask so paint/input can run during DSP
  *  - Budgeted yields: yield at most once per interval (avoid thrashing)
+ *  - Frame alignment is a throttled checkpoint, never a per-yield rAF await
  */
 'use strict';
 
@@ -29,6 +30,25 @@ export const COPY_CHUNK_SAMPLES = 48000 * 20;
  * always wins the race, short enough that a throttled one cannot stall DSP.
  */
 const RAF_GUARD_MS = 34;
+
+/**
+ * Minimum gap between paint-aligned yields.
+ *
+ * Rendering is its own event-loop step, so the browser already paints between
+ * macrotasks: a busy loop that yields with MessageChannel still runs rAF at a
+ * full 60 Hz (measured in Chromium). Awaiting rAF on *every* yield therefore
+ * buys no extra paint and costs a whole frame of dead wait each time — about
+ * 16 ms per yield on any engine without scheduler.yield (Safari, Firefox,
+ * older Android WebView). At 300 chunks per pass that alone was ~5 s of idle
+ * waiting per O(N) finalization pass, repeated for every pass in Process.
+ *
+ * Frame alignment is still useful as an occasional checkpoint for engines that
+ * schedule rendering less eagerly, so it is throttled rather than removed.
+ */
+const PAINT_CHECKPOINT_MS = 120;
+
+/** performance.now() of the last paint-aligned yield. */
+let lastPaintCheckpoint = 0;
 
 /** Latched once rAF misses the guard, so a throttled window yields via macrotask. */
 let rafUnreliable = false;
@@ -117,12 +137,22 @@ export function throwIfAborted(signal) {
 
 /**
  * Bounded cooperative chunk runner for renderer-thread DSP finalization.
+ *
+ * Chunk size is the work granularity, not the yield rate. A chunk of audio
+ * costs well under a millisecond of arithmetic, so yielding after every one
+ * made the yield the dominant cost: a 5-minute file is 150–600 chunks per pass
+ * and Process runs several passes, which on an engine without scheduler.yield
+ * turned ~30 ms of real work into 2.5–10 s of waiting per pass. Yields are
+ * time-budgeted instead — the loop still hands the main thread back at least
+ * once per budget window, so input, Cancel and paint stay live.
+ *
  * @param {object} opts
  * @param {number} opts.total
  * @param {number} [opts.chunkSize]
  * @param {AbortSignal} [opts.signal]
  * @param {(ratio: number) => void} [opts.onProgress] 0..1 within this loop
  * @param {(start: number, end: number) => void} opts.runChunk
+ * @param {number} [opts.yieldBudgetMs] ms of work between yields
  */
 export async function processInChunks({
   total,
@@ -130,17 +160,30 @@ export async function processInChunks({
   signal = null,
   onProgress = null,
   runChunk,
+  yieldBudgetMs = 0,
 }) {
   const n = Math.max(0, Number(total) || 0);
   if (!n || typeof runChunk !== 'function') return;
   const size = Math.max(1, Number(chunkSize) || 48000);
+  const budget = Math.max(4, Number(yieldBudgetMs) || defaultYieldBudgetMs());
+  let lastYield = monotonicNow();
   for (let start = 0; start < n; start += size) {
     throwIfAborted(signal);
     const end = Math.min(n, start + size);
     runChunk(start, end);
     if (onProgress) onProgress(end / n);
-    if (end < n) await yieldToBrowser();
+    if (end >= n) break;
+    if (monotonicNow() - lastYield < budget) continue;
+    await yieldToBrowser();
+    // Measure the next window from after the yield, so the yield's own cost is
+    // never charged against the work budget.
+    lastYield = monotonicNow();
   }
+}
+
+/** performance.now() where available; Date.now() in bare Node/jsdom. */
+function monotonicNow() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
 function isMobileShell() {
@@ -154,33 +197,33 @@ function isMobileShell() {
   return false;
 }
 
+/** Per-platform ms of work between cooperative yields. */
+function defaultYieldBudgetMs() {
+  try {
+    if (isMobileShell()) return YIELD_BUDGET_MOBILE_MS;
+    if (typeof globalThis !== 'undefined' && globalThis.vipDesktop) {
+      return YIELD_BUDGET_DESKTOP_MS;
+    }
+  } catch { /* ignore */ }
+  return YIELD_BUDGET_MS;
+}
+
 /**
- * Yield to the browser so paint/input can run.
- * Prefer this over bare setTimeout(0) during multi-second DSP.
- * @returns {Promise<void>}
+ * Wait for one animation frame, bounded by a guard timer.
+ *
+ * requestAnimationFrame is throttled to 0 Hz in a hidden tab and in an occluded
+ * window, and never fires at all in a worker. Waiting on it alone deadlocks the
+ * caller: post-ML finalization and envelope builds would stall until the tab is
+ * foregrounded, which the landing watchdog then reports as "the worker stopped
+ * responding". The guard timer always outruns a frame that is not coming.
  */
-export async function yieldToBrowser() {
-  // Chromium: scheduler.yield() continuations can outrank an already queued
-  // timer. Follow it with a macrotask checkpoint so Cancel/input/timers run
-  // before a long chunk loop resumes.
-  if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
-    await scheduler.yield();
-    await macrotask();
-    return;
-  }
-  // requestAnimationFrame is throttled to 0 Hz in a hidden tab and in an
-  // occluded window, and never fires at all in a worker. Waiting on it alone
-  // deadlocks the caller: post-ML finalization and envelope builds would stall
-  // until the tab is foregrounded, which the landing watchdog then reports as
-  // "the worker stopped responding". A macrotask always runs, so rAF is only
-  // ever used as an optional paint alignment that a guard timer can outrun.
+async function paintCheckpoint() {
   const hidden = typeof document !== 'undefined' && document.hidden === true;
   if (rafUnreliable || hidden
     || typeof requestAnimationFrame !== 'function'
     || typeof setTimeout !== 'function') {
-    return macrotask();
+    return;
   }
-
   const painted = await new Promise((resolve) => {
     let settled = false;
     const finish = (ok) => {
@@ -193,14 +236,33 @@ export async function yieldToBrowser() {
     requestAnimationFrame(() => finish(true));
   });
   // Latch after the first miss so an occluded window (document.hidden stays
-  // false) does not pay the guard delay on every subsequent yield. Plain
+  // false) does not pay the guard delay on every subsequent checkpoint. Plain
   // macrotask yields stay correct and responsive, just not paint-aligned.
   // The latch is cleared again the next time the page becomes visible.
   if (!painted) {
     rafUnreliable = true;
     rearmRafOnVisibility();
   }
+}
 
+/**
+ * Yield to the browser so paint/input can run.
+ * Prefer this over bare setTimeout(0) during multi-second DSP.
+ * @returns {Promise<void>}
+ */
+export async function yieldToBrowser() {
+  const now = monotonicNow();
+  // Paint alignment at most once per PAINT_CHECKPOINT_MS — see that constant.
+  if (now - lastPaintCheckpoint >= PAINT_CHECKPOINT_MS) {
+    lastPaintCheckpoint = now;
+    await paintCheckpoint();
+  }
+  // Chromium: scheduler.yield() continuations can outrank an already queued
+  // timer. Follow it with a macrotask checkpoint so Cancel/input/timers run
+  // before a long chunk loop resumes.
+  if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
+    await scheduler.yield();
+  }
   return macrotask();
 }
 
@@ -209,20 +271,12 @@ export async function yieldToBrowser() {
  * @returns {() => Promise<void>}
  */
 export function createYieldBudget(intervalMs) {
-  let defaultMs = YIELD_BUDGET_MS;
-  try {
-    if (isMobileShell()) defaultMs = YIELD_BUDGET_MOBILE_MS;
-    else if (typeof globalThis !== 'undefined' && globalThis.vipDesktop) {
-      defaultMs = YIELD_BUDGET_DESKTOP_MS;
-    }
-  } catch { /* ignore */ }
-  const budget = Math.max(4, Number(intervalMs) || defaultMs);
-  let last = typeof performance !== 'undefined' ? performance.now() : 0;
+  const budget = Math.max(4, Number(intervalMs) || defaultYieldBudgetMs());
+  let last = monotonicNow();
   return async function maybeYield() {
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (now - last < budget) return;
-    last = now;
+    if (monotonicNow() - last < budget) return;
     await yieldToBrowser();
+    last = monotonicNow();
   };
 }
 

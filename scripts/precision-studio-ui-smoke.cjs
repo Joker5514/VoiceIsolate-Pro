@@ -69,6 +69,10 @@ function waitForServer(base, timeoutMs = 20000) {
     check(await page.locator('#waveCanvas').count() === 1, 'landing waveCanvas');
     check(await page.getByRole('heading', { name: /Clean voice/i }).count() >= 1, 'landing hero');
 
+    // Cancellation latency is bounded by the yield budget, not by the chunk
+    // count: processInChunks yields on elapsed work, so each chunk has to do
+    // real work for the loop to reach a yield at all. 600 chunks × ~2 ms is
+    // ~1.2 s of work that a cancel must cut short almost immediately.
     const responsiveness = await page.evaluate(async () => {
       const { processInChunks } = await import('/src/pipeline/ui-yield.js');
       const controller = new AbortController();
@@ -80,7 +84,11 @@ function waitForServer(base, timeoutMs = 20000) {
           total: 48_000 * 600,
           chunkSize: 48_000,
           signal: controller.signal,
-          runChunk: () => { chunks += 1; },
+          runChunk: () => {
+            chunks += 1;
+            const until = performance.now() + 2;
+            while (performance.now() < until) { /* stand in for real DSP */ }
+          },
         });
         return { cancelled: false, elapsedMs: performance.now() - startedAt, chunks };
       } catch (error) {
@@ -94,7 +102,7 @@ function waitForServer(base, timeoutMs = 20000) {
     check(
       responsiveness.cancelled
         && responsiveness.elapsedMs < 250
-        && responsiveness.chunks <= 2,
+        && responsiveness.chunks <= 40,
       `cooperative cancellation <250 ms (${responsiveness.elapsedMs.toFixed(1)} ms, ${responsiveness.chunks} chunk)`,
     );
 
