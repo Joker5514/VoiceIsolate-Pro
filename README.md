@@ -51,7 +51,25 @@ The Android artifact is a **debug/sideload APK**. The Windows installer may be u
 
 VoiceIsolate Pro accepts uploaded audio/video files and performs local analysis, voice isolation, enhancement, playback mixing, and export. It intentionally does **not** use live microphone ingestion.
 
-The core workflow is **Stem-Split & Live-Mix**:
+### Unified Premium Signal-First UX (Issue #820)
+
+Single coherent product system across Browser, Android & Desktop. **Signal canvas is center.**
+
+**Workflow:** Import/Record → Automatic Local Analysis → Select Signal → Contextual Action → Preview/Compare → Export. Raw immutable.
+
+- **New IA:** Home, Analyze, Enhance, Compare, Export, Settings. Isolate is contextual action, not nav. Manual Separation removed from primary nav.
+- **Landing:** Hero "Hear What Others Miss." 100% on-device whisper recovery. Interactive demo drag→Isolate→before/after.
+- **Workspace:** Direct waveform (horizontal drag) + spectrogram (rectangle) selection with handles/timestamp/zoom/clear/selected playback. Contextual palette: Isolate, Enhance Voice, Reduce Noise, Boost Whisper, Preview.
+- **Automatic analysis:** VAD, whisper candidates, noise floor, speaker detection, mask generation in worker/WebGPU/WASM/native with deterministic DSP fallback. Overlays: Speech, Whisper, Background Noise, Hum, Music/bleed, secondary speaker.
+- **Comparison:** Raw / Processed / Removed (Delta) A/B switching.
+- **Metrics:** Default Voice Clarity, Noise Reduction, Whisper Retention, Output dBFS; deep metrics in Advanced/Forensic inspector.
+- **Profiles:** Quick, Meeting, Studio, Forensic. Whisper Boost as intelligent action.
+- **Design system:** dark graphite/navy, semantic cyan/blue signal, violet selection, green validated, amber uncertain, red raw/destructive. Tokens centralized in `src/ui/tokens/`.
+- **100% local:** On-device · Private · Zero Cloud badge, no telemetry, works offline.
+
+Details: `docs/ui/unified-premium-ux-820.md` · Design ref: https://drive.google.com/drive/folders/1wtBNiRgQ73emQKcyaLFHluehmAI5t1Oa
+
+### Legacy Stem-Split & Live-Mix (preserved compatibility)
 
 1. **Upload** a file.
 2. **Analyze / Process** explicitly; heavy ML/DSP work runs once for that file/configuration.

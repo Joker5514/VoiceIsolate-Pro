@@ -48,6 +48,13 @@ import {
   throwIfAborted,
 } from '/src/pipeline/JobController.js';
 
+// ── Unified Premium Signal-First UX (Issue #820) ──────────────────────────
+// Shared state + automatic analysis + Raw/Processed/Removed
+import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
+import { ComparisonModes } from '/src/ui/tokens/design-tokens.js';
+import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
+import { ProcessingController } from '/src/core/audio/processing/ProcessingController.js';
+
 const $ = (id) => document.getElementById(id);
 
 /** Maps landing slider DOM ids → engineer-mode SLIDER_HINTS keys (or _custom). */
@@ -172,6 +179,13 @@ let review = null;
 let reviewInFlight = false;
 let preflightSeq = 0;
 const quickClean = new QuickCleanUI();
+
+// Unified session + processing controller for Raw/Processed/Removed
+const sessionStore = getAudioSessionStore();
+const processingController = new ProcessingController(sessionStore);
+try { window.__vipProcessingController = processingController; } catch {}
+// Expose session store for premium module
+try { window.__vipSessionStore = sessionStore; } catch {}
 /** Lazy-initialised analysis insights panel (post-stem, non-blocking). */
 let analysisInsights = null;
 function getAnalysisInsights() {
@@ -195,7 +209,7 @@ function clearProcessWatch() { clearInterval(processWatch); processWatch = null;
 
 function invalidateComparison() {
   review?.clear();
-  for (const id of ['compareOriginalBtn', 'compareCleanedBtn']) {
+  for (const id of ['compareOriginalBtn', 'compareCleanedBtn', 'compareRemovedBtn']) {
     const button = $(id);
     if (button) { button.disabled = true; button.setAttribute('aria-pressed', 'false'); }
   }
@@ -622,10 +636,13 @@ async function prepareComparison() {
     review ||= new QuickCleanReview(mixer);
     const gains = await review.prepare(ingested.channelData, { signal });
     throwIfAborted(signal);
-    for (const id of ['compareOriginalBtn', 'compareCleanedBtn']) $(id).disabled = false;
+    for (const id of ['compareOriginalBtn', 'compareCleanedBtn', 'compareRemovedBtn']) {
+      const btn = $(id);
+      if (btn) btn.disabled = false;
+    }
     $('comparisonStatus').textContent = gains.matched
-      ? 'Average level matched (RMS), with peak headroom. Original and Cleaned use the same timeline. This is not a LUFS measurement.'
-      : 'One side is silent or nearly silent; level matching is unavailable. Compare without normalization.';
+      ? 'Average level matched (RMS), with peak headroom. Raw, Processed, and Removed use the same timeline. Removed lets you audition what was removed.'
+      : 'One side is silent or nearly silent; level matching is unavailable. Compare without normalization. Check Removed to detect speech destruction.';
     quickClean.setState('processed', 'Comparison ready. Choose Original or Cleaned to listen.');
     endJob(job.id, 'completed');
   } catch (err) {
@@ -1130,9 +1147,62 @@ async function ingestFrom(file) {
     hideSpinner();
     endJob(job.id, 'completed');
     if (window.__vipLandingJobId === job.id) window.__vipLandingJobId = null;
-    quickClean.setState('imported', `Imported “${file.name}”. Nothing has been processed yet.`);
-    setStatus('Imported — choose an outcome, then press Process locally.', 'active');
-    // Import never initiates inference. Every duration follows the same explicit Process boundary.
+    quickClean.setState('imported', `Imported “${file.name}”. Automatic analysis starting…`);
+    setStatus(`Imported “${file.name}” — automatic analysis starting…`, 'active');
+
+    // ── Unified UX: preserve raw immutable, dispatch for automatic analysis
+    try {
+      const rawClone = next.channelData.map((ch) => ch.slice());
+      processingController.setRaw(rawClone, next.sampleRate);
+      sessionStore.importSource({
+        file,
+        name: file.name,
+        type: file.type,
+        duration: next.duration || (next.channelData[0]?.length / next.sampleRate) || 0,
+        sampleRate: next.sampleRate,
+        channels: next.channelData.length,
+        rawBuffer: rawClone,
+        fingerprint: next.sourceName || file.name,
+      });
+      // Dispatch for premium module to run automatic analysis
+      window.dispatchEvent(new CustomEvent('vip:fileImported', {
+        detail: {
+          channelData: rawClone,
+          sampleRate: next.sampleRate,
+          duration: next.duration || (rawClone[0]?.length / next.sampleRate) || 0,
+          file,
+        },
+      }));
+      // Also run local DSP analysis directly as fallback (never blocks)
+      (async () => {
+        try {
+          sessionStore.startAnalysis();
+          const analysisResult = await runAutoAnalysis(rawClone, next.sampleRate, {
+            onProgress: (pct, extra) => sessionStore.updateAnalysisProgress(pct, extra),
+          });
+          sessionStore.setAnalysisResult({
+            ...analysisResult,
+            regions: analysisResult.regions,
+            snrDb: analysisResult.snrDb,
+            speechRatio: analysisResult.speechRatio,
+            state: 'ready',
+          });
+          // Update metrics
+          sessionStore.updateMetrics({
+            voiceClarity: Math.min(100, Math.max(0, (analysisResult.snrDb + 10) * 3)),
+            noiseReduction: analysisResult.snrDb,
+            outputLevelDb: 20 * Math.log10(Math.max(1e-6, analysisResult.rms || 0.01)),
+          });
+        } catch (e) {
+          console.warn('[VIP][landing] auto analysis failed (non-fatal)', e);
+        }
+      })();
+    } catch (e) {
+      console.warn('[VIP][landing] unified session setup failed (non-fatal)', e);
+    }
+
+    // Import triggers automatic analysis, but Process still requires explicit user action per CLAUDE.md
+    // (slider never triggers ML, only explicit Process button)
   } catch (err) {
     if (seq !== ingestSeq) {
       if (window.__vipLandingJobId === job.id) {
@@ -1321,10 +1391,25 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   mixer.loadStems(clean, noise, sampleRate);
   hasProcessed = true;
   invalidateComparison();
+  // Unified: set processed and compute Removed delta
+  try {
+    processingController.setProcessed(clean, sampleRate);
+    // Also store noise as part of removed if available
+    sessionStore.applyProcessing({
+      processedBuffer: clean.map((c) => c.slice()),
+      removedBuffer: noise ? noise.map((c) => c.slice()) : processingController.getRemoved(),
+      sampleRate,
+      channels: clean.length,
+    });
+  } catch {}
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
   startOutputMeter();
   updateDownloadButton();
+  // Dispatch processed event for premium canvas
+  try {
+    window.dispatchEvent(new CustomEvent('vip:processed', { detail: { clean, noise, sampleRate } }));
+  } catch {}
 
   for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
     ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect,
@@ -1534,11 +1619,38 @@ window.addEventListener('unhandledrejection', (event) => {
 ui.processBtn.addEventListener('click', onProcess);
 ui.modelSelect.addEventListener('change', () => { void refreshPreflight(); });
 $('prepareComparisonBtn')?.addEventListener('click', () => { void prepareComparison(); });
-for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedBtn', 'cleaned']]) {
+for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedBtn', 'cleaned'], ['compareRemovedBtn', 'removed']]) {
   $(id)?.addEventListener('click', async () => {
     try {
-      await review?.listen(which);
-      for (const buttonId of ['compareOriginalBtn', 'compareCleanedBtn']) $(buttonId).setAttribute('aria-pressed', String(buttonId === id));
+      if (which === 'removed') {
+        // For removed, audition what was removed — use processing controller or noise stem
+        const removed = processingController.getRemoved() || processingController.getBufferForMode(ComparisonModes.REMOVED);
+        if (removed && mixer) {
+          // Temporarily load removed as clean for audition
+          const currentClean = mixer.cleanBuffer ? Array.from({ length: mixer.cleanBuffer.numberOfChannels }, (_, c) => mixer.cleanBuffer.getChannelData(c).slice()) : null;
+          const currentNoise = mixer.noiseBuffer ? Array.from({ length: mixer.noiseBuffer.numberOfChannels }, (_, c) => mixer.noiseBuffer.getChannelData(c).slice()) : null;
+          // Simple audition: play removed directly via a temporary buffer
+          // For now, use review if available, else just play via mixer if we can
+          if (review) {
+            // Review doesn't know removed, so we handle manually
+            // Stop current and play removed as processed
+            await mixer.pause();
+            // Store for restore
+            window.__vipRemovedAudition = { clean: currentClean, noise: currentNoise };
+            mixer.loadStems(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.duration() || (removed[0].length / 48000));
+            await mixer.play();
+          }
+        }
+      } else {
+        await review?.listen(which);
+      }
+      for (const buttonId of ['compareOriginalBtn', 'compareCleanedBtn', 'compareRemovedBtn']) {
+        const b = $(buttonId);
+        if (b) b.setAttribute('aria-pressed', String(buttonId === id));
+      }
+      // Update session store comparison mode
+      const modeMap = { original: ComparisonModes.RAW, cleaned: ComparisonModes.PROCESSED, removed: ComparisonModes.REMOVED };
+      if (modeMap[which]) sessionStore.setComparisonMode(modeMap[which]);
     } catch (err) { $('comparisonStatus').textContent = `Playback failed: ${err.message}. Try Play again.`; }
   });
 }

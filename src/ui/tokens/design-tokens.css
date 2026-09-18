@@ -1,0 +1,198 @@
+/* VoiceIsolate-Pro — Unified Premium Signal-First Design Tokens
+ * Single source of truth for Browser, Android, Desktop
+ * Premium dark graphite / deep navy foundation
+ */
+
+:root {
+  /* ── Core surfaces — graphite / navy ───────────────────────── */
+  --vip-surface-root: #070b10;
+  --vip-surface-panel: #0d131b;
+  --vip-surface-raised: #121a23;
+  --vip-surface-overlay: #161f29;
+  --vip-surface-well: rgba(0,0,0,0.32);
+  --vip-surface-scrim: rgba(7,11,16,0.82);
+
+  /* ── Borders ───────────────────────────────────────────────── */
+  --vip-border-subtle: #1d2a34;
+  --vip-border-strong: #26323d;
+  --vip-border-focus: rgba(46,213,229,0.55);
+
+  /* ── Text ──────────────────────────────────────────────────── */
+  --vip-text-primary: #f4f7fa;
+  --vip-text-secondary: #8d9aaa;
+  --vip-text-dim: #7b8894;
+  --vip-text-ghost: rgba(244,247,250,0.48);
+  --vip-text-inverse: #070b10;
+
+  /* ── Semantic color grammar (issue §8) ─────────────────────── */
+  /* Cyan / blue: signal / primary analysis */
+  --vip-signal-primary: #2ed5e5;
+  --vip-signal-primary-strong: #1ab8c7;
+  --vip-signal-secondary: #3b82f6;
+  --vip-signal-accent: #60a5fa;
+
+  /* Violet: selection / intelligent enhancement */
+  --vip-selection: #9b6cff;
+  --vip-selection-strong: #7c3aed;
+  --vip-selection-wash: rgba(155,108,255,0.14);
+  --vip-selection-glow: rgba(155,108,255,0.32);
+
+  /* Green: validated / local / successful */
+  --vip-success: #31cf7d;
+  --vip-success-wash: rgba(49,207,125,0.12);
+  --vip-success-glow: rgba(49,207,125,0.32);
+
+  /* Amber: uncertain detection / warning */
+  --vip-warning: #f0b541;
+  --vip-warning-wash: rgba(240,181,65,0.12);
+
+  /* Red: raw comparison / destructive warning */
+  --vip-critical: #ff3d4d;
+  --vip-critical-solid: #d81f30;
+  --vip-critical-wash: rgba(255,61,77,0.08);
+
+  /* ── Signal canvas specific ────────────────────────────────── */
+  --vip-canvas-bg: #05080c;
+  --vip-waveform-fill: rgba(46,213,229,0.85);
+  --vip-waveform-stroke: #2ed5e5;
+  --vip-waveform-raw: #ef4444;
+  --vip-waveform-processed: #2ed5e5;
+  --vip-waveform-removed: #f0b541;
+  --vip-spectrogram-low: #0a0e14;
+  --vip-spectrogram-mid: #1a2a3a;
+  --vip-spectrogram-high: #2ed5e5;
+  --vip-spectrogram-peak: #fbbf24;
+
+  /* ── Analysis overlay colors ───────────────────────────────── */
+  --vip-overlay-speech: rgba(46,213,229,0.22);
+  --vip-overlay-speech-border: rgba(46,213,229,0.55);
+  --vip-overlay-whisper: rgba(155,108,255,0.22);
+  --vip-overlay-whisper-border: rgba(155,108,255,0.55);
+  --vip-overlay-noise: rgba(141,154,170,0.18);
+  --vip-overlay-noise-border: rgba(141,154,170,0.35);
+  --vip-overlay-hum: rgba(240,181,65,0.18);
+  --vip-overlay-hum-border: rgba(240,181,65,0.45);
+  --vip-overlay-music: rgba(168,85,247,0.18);
+  --vip-overlay-music-border: rgba(168,85,247,0.45);
+  --vip-overlay-secondary: rgba(59,130,246,0.18);
+
+  /* ── Typography ────────────────────────────────────────────── */
+  --vip-font-ui: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --vip-font-mono: ui-monospace, "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
+  --vip-font-display: ui-sans-serif, system-ui, sans-serif;
+
+  --vip-fw-regular: 400;
+  --vip-fw-medium: 500;
+  --vip-fw-semibold: 600;
+  --vip-fw-bold: 700;
+
+  --vip-fs-3xs: 9px;
+  --vip-fs-2xs: 10px;
+  --vip-fs-xs: 11px;
+  --vip-fs-sm: 12px;
+  --vip-fs-base: 13px;
+  --vip-fs-md: 14px;
+  --vip-fs-lg: 16px;
+  --vip-fs-xl: 20px;
+  --vip-fs-2xl: 24px;
+  --vip-fs-3xl: 32px;
+  --vip-fs-hero: clamp(2.8rem, 6vw, 4.8rem);
+
+  /* ── Spacing ───────────────────────────────────────────────── */
+  --vip-sp-1: 4px;
+  --vip-sp-2: 8px;
+  --vip-sp-3: 12px;
+  --vip-sp-4: 16px;
+  --vip-sp-5: 20px;
+  --vip-sp-6: 24px;
+  --vip-sp-7: 28px;
+  --vip-sp-8: 32px;
+  --vip-sp-10: 40px;
+  --vip-sp-12: 48px;
+
+  /* ── Radii ─────────────────────────────────────────────────── */
+  --vip-radius-xs: 3px;
+  --vip-radius-sm: 4px;
+  --vip-radius-md: 6px;
+  --vip-radius-lg: 10px;
+  --vip-radius-xl: 14px;
+  --vip-radius-2xl: 20px;
+  --vip-radius-full: 9999px;
+
+  /* ── Elevation ─────────────────────────────────────────────── */
+  --vip-shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --vip-shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+  --vip-shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  --vip-shadow-glow-cyan: 0 0 20px rgba(46,213,229,0.25);
+  --vip-shadow-glow-violet: 0 0 20px rgba(155,108,255,0.25);
+  --vip-shadow-glow-green: 0 0 20px rgba(49,207,125,0.25);
+
+  /* ── Animation ─────────────────────────────────────────────── */
+  --vip-ease-out: cubic-bezier(0.22, 0.7, 0.2, 1);
+  --vip-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --vip-dur-fast: 0.12s;
+  --vip-dur-base: 0.20s;
+  --vip-dur-slow: 0.32s;
+  --vip-dur-slower: 0.5s;
+
+  /* ── Layout ────────────────────────────────────────────────── */
+  --vip-titlebar-h: 56px;
+  --vip-nav-h: 64px;
+  --vip-bottom-nav-h: 64px;
+  --vip-inspector-w: 320px;
+  --vip-inspector-w-lg: 380px;
+  --vip-rail-w: 220px;
+  --vip-touch-min: 44px;
+  --vip-touch-min-lg: 48px;
+
+  /* ── Meter ─────────────────────────────────────────────────── */
+  --vip-meter-track: #161f29;
+  --vip-meter-fill-ok: linear-gradient(to right, var(--vip-success), var(--vip-signal-primary));
+  --vip-meter-fill-warn: linear-gradient(to right, var(--vip-warning), var(--vip-critical));
+
+  /* ── Focus ─────────────────────────────────────────────────── */
+  --vip-focus-ring: 0 0 0 2px var(--vip-surface-root), 0 0 0 4px var(--vip-signal-primary);
+}
+
+/* ── High contrast / reduced motion ─────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vip-dur-fast: 0.001ms;
+    --vip-dur-base: 0.001ms;
+    --vip-dur-slow: 0.001ms;
+    --vip-dur-slower: 0.001ms;
+  }
+}
+
+/* ── Hidden must win ─────────────────────────────────────────── */
+[hidden] {
+  display: none !important;
+}
+
+/* ── Base resets for new system ──────────────────────────────── */
+.vip-reset {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Typography utilities ────────────────────────────────────── */
+.vip-kicker {
+  font: var(--vip-fw-bold) var(--vip-fs-2xs)/1 var(--vip-font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vip-signal-primary);
+}
+
+.vip-display {
+  font: var(--vip-fw-bold) var(--vip-fs-hero)/0.95 var(--vip-font-display);
+  letter-spacing: -0.04em;
+  color: var(--vip-text-primary);
+}
+
+/* ── Focus states ────────────────────────────────────────────── */
+.vip-focusable:focus-visible {
+  outline: none;
+  box-shadow: var(--vip-focus-ring);
+  border-radius: var(--vip-radius-sm);
+}

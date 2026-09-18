@@ -4194,6 +4194,32 @@ class VoiceIsolatePro {
       HeroExperience.mirrorWaveCanvases();
     });
     try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
+    // Unified premium UX — Issue #820: dispatch fileImported for automatic local analysis
+    try {
+      const channelData = [];
+      for (let c = 0; c < buf.numberOfChannels; c++) {
+        channelData.push(buf.getChannelData(c));
+      }
+      window.dispatchEvent(new CustomEvent('vip:fileImported', {
+        detail: {
+          channelData,
+          sampleRate: buf.sampleRate,
+          duration: buf.duration,
+          file: this._sourceFile || null,
+          name,
+          fileSeq,
+        }
+      }));
+      // Also expose for premium workspace module
+      window.__vipPremiumWorkspace?.handleFileImported?.({
+        channelData,
+        sampleRate: buf.sampleRate,
+        duration: buf.duration,
+        file: this._sourceFile || null,
+      });
+    } catch (e) {
+      console.warn('[VIP] vip:fileImported dispatch failed', e);
+    }
     this.showNotification('Decoded: ' + name + ' — run Analyze or Process', 'info');
 
     // No auto-pipeline on decode — user drives Analyze / Process / WhisperHunter.
@@ -4605,6 +4631,22 @@ class VoiceIsolatePro {
         this.updateAudioMetrics(this._computeAudioMetricsState());
       } catch (_) { /* metrics must not fail the pipeline */ }
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
+      // Unified premium UX — Issue #820: dispatch processed with Raw/Processed/Removed for comparison
+      try {
+        const cleanChannels = this._cleanStemChannels || (this.outputBuffer ? [this.outputBuffer.getChannelData(0)] : []);
+        const noiseChannels = this._noiseStemChannels || null;
+        window.dispatchEvent(new CustomEvent('vip:processed', {
+          detail: {
+            cleanChannels,
+            noiseChannels,
+            sampleRate: this._stemSampleRate || this.outputBuffer?.sampleRate || 48000,
+            outputBuffer: this.outputBuffer,
+            origBuffer: this.origBuffer || this.inputBuffer,
+          }
+        }));
+      } catch (e) {
+        console.warn('[VIP] vip:processed dispatch failed', e);
+      }
 
       if (this.outputBuffer) {
         const scheduleIdle = globalThis.requestIdleCallback
