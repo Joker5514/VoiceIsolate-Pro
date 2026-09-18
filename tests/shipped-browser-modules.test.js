@@ -66,18 +66,41 @@ describe('shipped browser JavaScript parses', () => {
 // Duplicate ids silently break `getElementById` — it returns whichever node
 // comes first in document order, so a hidden compatibility shim can shadow the
 // real canvas the app paints into.
+//
+// The ids come from a real parse rather than a regex over the source: an
+// attribute may be unquoted or spelled `ID=`, and `id="…"` inside a comment or
+// an inline script is text, not an element. Scripts never run — JSDOM only
+// parses here.
+const { JSDOM } = require('jsdom');
+
 const HTML_ENTRY_POINTS = ['public/index.html', 'public/app/index.html'];
+
+function duplicateElementIds(html) {
+  const { document } = new JSDOM(html).window;
+  const seen = new Set();
+  const duplicates = [];
+  for (const el of document.querySelectorAll('[id]')) {
+    const id = el.id;
+    if (!id) continue;
+    if (seen.has(id)) duplicates.push(id);
+    else seen.add(id);
+  }
+  return duplicates;
+}
 
 describe('shipped HTML entry points have unique element ids', () => {
   test.each(HTML_ENTRY_POINTS)('%s', (rel) => {
     const html = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-    const seen = new Map();
-    const duplicates = [];
-    for (const match of html.matchAll(/\sid=["']([^"']+)["']/g)) {
-      const id = match[1];
-      if (seen.has(id)) duplicates.push(id);
-      else seen.set(id, true);
-    }
-    expect(duplicates).toEqual([]);
+    expect(duplicateElementIds(html)).toEqual([]);
+  });
+
+  test('the check reads parsed elements, not raw source text', () => {
+    // Unquoted and upper-case attributes count; comment and script text does not.
+    expect(duplicateElementIds(
+      '<canvas id=waveCanvas></canvas><canvas ID="waveCanvas"></canvas>',
+    )).toEqual(['waveCanvas']);
+    expect(duplicateElementIds(
+      '<div id="a"></div><!-- <div id="a"> --><script>el.innerHTML = \'<div id="a">\';</script>',
+    )).toEqual([]);
   });
 });
