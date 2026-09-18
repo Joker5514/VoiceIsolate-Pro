@@ -1,0 +1,296 @@
+/* VoiceIsolate Pro — Engineer Premium Signal-First Workspace
+ * Unified across Browser, Android, Desktop
+ */
+
+@import url('/src/ui/tokens/design-tokens.css');
+
+/* ── Unified Navigation ─────────────────────────────────────────────── */
+.vip-engineer-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--vip-surface-panel) 90%, transparent);
+  border: 1px solid var(--vip-border-subtle);
+  border-radius: var(--vip-radius-xl);
+  margin: 12px;
+  backdrop-filter: blur(12px);
+}
+
+.vip-engineer-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: var(--vip-radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vip-text-secondary);
+  font: 500 13px/1 var(--vip-font-ui);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s var(--vip-ease-out);
+}
+
+.vip-engineer-nav__item:hover {
+  background: var(--vip-surface-raised);
+  color: var(--vip-text-primary);
+}
+
+.vip-engineer-nav__item--active {
+  background: var(--vip-surface-raised);
+  border-color: var(--vip-border-strong);
+  color: var(--vip-text-primary);
+  box-shadow: inset 2px 0 0 var(--vip-signal-primary);
+}
+
+/* ── Signal Canvas as Center ────────────────────────────────────────── */
+.vip-workstation {
+  display: grid;
+  grid-template-areas:
+    "canvas inspector"
+    "transport inspector";
+  grid-template-columns: 1fr 360px;
+  grid-template-rows: 1fr auto;
+  gap: 16px;
+  padding: 16px;
+  min-height: calc(100vh - 56px - 64px);
+}
+
+.vip-workstation__canvas {
+  grid-area: canvas;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vip-workstation__inspector {
+  grid-area: inspector;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+}
+
+.vip-workstation__transport {
+  grid-area: transport;
+}
+
+/* ── Contextual Action Palette ──────────────────────────────────────── */
+.vip-context-palette {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(13,19,27,0.96);
+  border: 1px solid #1d2a34;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(155,108,255,0.12);
+  backdrop-filter: blur(16px);
+}
+
+.vip-context-palette--visible {
+  display: flex;
+}
+
+.vip-context-palette__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font: 500 12px/1 ui-sans-serif;
+  border-radius: 6px;
+  border: 1px solid #26323d;
+  background: #121a23;
+  color: #c5ced6;
+  cursor: pointer;
+}
+
+.vip-context-palette__btn--primary {
+  /* Same white-on-violet rule as the profile buttons: solid variant for the
+     filled surface, bright value for the accent border. */
+  background: var(--vip-selection-solid);
+  border-color: var(--vip-selection);
+  color: white;
+  font-weight: 600;
+}
+
+/* ── Raw / Processed / Removed Toggle ───────────────────────────────── */
+.vip-compare-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #0d131b;
+  border: 1px solid #1d2a34;
+  border-radius: 10px;
+}
+
+.vip-compare-toggle__group {
+  display: inline-flex;
+  border: 1px solid #26323d;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #121a23;
+}
+
+.vip-compare-toggle__btn {
+  flex: 1;
+  min-height: 36px;
+  padding: 6px 12px;
+  font: 600 11px/1 ui-sans-serif;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #26323d;
+  color: #8d9aaa;
+  cursor: pointer;
+}
+
+.vip-compare-toggle__btn:last-child {
+  border-right: 0;
+}
+
+.vip-compare-toggle__btn[aria-pressed="true"] {
+  background: rgba(46,213,229,0.14);
+  color: #f4f7fa;
+  box-shadow: inset 0 -2px 0 #2ed5e5;
+}
+
+/* ── Profiles ───────────────────────────────────────────────────────── */
+.vip-profiles {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vip-profiles__btn {
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #26323d;
+  background: #121a23;
+  color: #8d9aaa;
+  font: 500 12px/1 ui-sans-serif;
+  cursor: pointer;
+}
+
+.vip-profiles__btn[aria-pressed="true"] {
+  /* White on the filled violet needs the darker solid variant (AA 4.5:1);
+     the bright value stays for the border accent. See --vip-selection-solid. */
+  background: var(--vip-selection-solid);
+  border-color: var(--vip-selection);
+  color: white;
+}
+
+/* ── Live Meters Simplified ─────────────────────────────────────────── */
+.vip-live-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.vip-live-metrics__card {
+  padding: 10px;
+  background: #121a23;
+  border: 1px solid #1d2a34;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vip-live-metrics__label {
+  font: 500 10px/1 ui-sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7b8894;
+}
+
+.vip-live-metrics__value {
+  font: 700 12px/1 ui-monospace, monospace;
+  color: #f4f7fa;
+}
+
+.vip-live-metrics__bar {
+  height: 6px;
+  background: #161f29;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.vip-live-metrics__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: #2ed5e5;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+/* ── Touch targets 44-48dp for Android ──────────────────────────────── */
+@media (pointer: coarse) {
+  .vip-context-palette__btn,
+  .vip-compare-toggle__btn,
+  .vip-profiles__btn,
+  .btn,
+  .vip-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .vip-engineer-nav__item {
+    min-height: 48px;
+  }
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .vip-workstation {
+    grid-template-areas:
+      "canvas"
+      "transport"
+      "inspector";
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+}
+
+/* ── Hide legacy Separation / Stem Split from primary nav ───────────── */
+[data-legacy-nav="separation"],
+[data-legacy-nav="stem-split"],
+#section-separation {
+  /* Demoted to Advanced, not removed entirely for compat */
+}
+
+#section-separation summary::after {
+  content: ' · Advanced';
+  font: 500 10px/1 ui-monospace, monospace;
+  color: #7b8894;
+  margin-left: 8px;
+}
+
+/* ── On-device badge ────────────────────────────────────────────────── */
+.vip-ondevice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #0d131b;
+  border: 1px solid #1d2a34;
+  border-radius: 999px;
+  font: 500 10px/1 ui-sans-serif;
+  color: #8d9aaa;
+}
+
+.vip-ondevice__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #31cf7d;
+  box-shadow: 0 0 0 3px rgba(49,207,125,0.12), 0 0 10px rgba(49,207,125,0.32);
+}

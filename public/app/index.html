@@ -91,6 +91,9 @@
   <link id="vip-enh-css" rel="stylesheet" href="vip-enhancements.css" />
   <link rel="stylesheet" href="debug-menu.css" />
   <link rel="stylesheet" href="../transport-polish.css" />
+  <link rel="stylesheet" href="premium-signal-workspace.css" />
+  <link rel="stylesheet" href="/src/ui/tokens/design-tokens.css" />
+  <link rel="stylesheet" href="/premium-signal.css" />
   <!-- Studio console skin (layout/visual only — preserves IDs) -->
   <link rel="stylesheet" href="engineer-console.css" />
 
@@ -223,6 +226,18 @@
       <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
     </div>
   </header>
+
+  <!-- Unified Premium Nav — Issue #820: Home, Analyze, Enhance, Compare, Export, Settings -->
+  <nav class="vip-engineer-nav vip-unified-nav" aria-label="Primary">
+    <a class="vip-engineer-nav__item vip-engineer-nav__item--active" href="/" data-nav="home"><span class="vip-nav__dot" aria-hidden="true"></span>Home</a>
+    <a class="vip-engineer-nav__item" href="#section-analysis" data-nav="analyze"><span class="vip-nav__dot" aria-hidden="true"></span>Analyze</a>
+    <a class="vip-engineer-nav__item" href="#section-presets" data-nav="enhance"><span class="vip-nav__dot" aria-hidden="true"></span>Enhance</a>
+    <a class="vip-engineer-nav__item" href="#vizCard" data-nav="compare"><span class="vip-nav__dot" aria-hidden="true"></span>Compare</a>
+    <a class="vip-engineer-nav__item" href="#section-processing" data-nav="export"><span class="vip-nav__dot" aria-hidden="true"></span>Export</a>
+    <a class="vip-engineer-nav__item" href="#settings" data-nav="settings"><span class="vip-nav__dot" aria-hidden="true"></span>Settings</a>
+    <span style="flex:1"></span>
+    <span class="vip-ondevice" id="engineerOnDeviceBadge"><span class="vip-ondevice__dot"></span>On-device · Private · Zero Cloud</span>
+  </nav>
 
   <!-- ── Cinematic hero / start experience ─────────────────────────────── -->
   <section id="vipHero" class="vip-hero" data-ui-state="idle" aria-label="VoiceIsolate Pro start">
@@ -360,6 +375,91 @@
         </div>
         <div id="cdnHealthPanel" class="cockpit-health"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- Unified Signal-First Workspace — Issue #820: Signal Canvas is center -->
+  <section class="vip-workstation" id="unifiedSignalWorkspace" aria-label="Signal workspace">
+    <div class="vip-workstation__canvas">
+      <div class="vip-workstation__header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h2 style="margin:0;font:700 13px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Signal Canvas</h2>
+        <span class="vip-ondevice"><span class="vip-ondevice__dot"></span>Raw immutable · 100% local</span>
+        <span style="flex:1"></span>
+        <div class="vip-profiles" id="engineerProfiles" role="group" aria-label="Profiles">
+          <button type="button" class="vip-profiles__btn" data-profile="quick" aria-pressed="true">Quick</button>
+          <button type="button" class="vip-profiles__btn" data-profile="meeting" aria-pressed="false">Meeting</button>
+          <button type="button" class="vip-profiles__btn" data-profile="studio" aria-pressed="false">Studio</button>
+          <button type="button" class="vip-profiles__btn" data-profile="forensic" aria-pressed="false">Forensic</button>
+        </div>
+      </div>
+      <!-- Signal Canvas host — mounted by premium module -->
+      <div id="unifiedSignalCanvas" style="position:relative;min-height:320px;background:#0d131b;border:1px solid #1d2a34;border-radius:10px;overflow:hidden;">
+        <canvas id="engineerWaveCanvas" width="1200" height="200" style="width:100%;height:200px;display:block;"></canvas>
+        <canvas id="engineerSpecCanvas" width="1200" height="160" style="width:100%;height:160px;display:block;border-top:1px solid #1d2a34;"></canvas>
+        <!-- Contextual action palette -->
+        <div class="vip-context-palette" id="regionActionPalette" role="toolbar" aria-label="Region actions">
+          <button type="button" class="vip-context-palette__btn vip-context-palette__btn--primary" data-action="isolate">Isolate</button>
+          <button type="button" class="vip-context-palette__btn" data-action="enhance">Enhance Voice</button>
+          <button type="button" class="vip-context-palette__btn" data-action="reduce-noise">Reduce Noise</button>
+          <button type="button" class="vip-context-palette__btn" data-action="boost-whisper">Boost Whisper</button>
+          <button type="button" class="vip-context-palette__btn" data-action="preview">Preview</button>
+        </div>
+      </div>
+      <div class="vip-compare-toggle" id="engineerCompareToggle">
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+          <span style="font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Compare</span>
+          <span style="font:500 10px/1 ui-sans-serif;color:var(--vip-text-dim);">A/B switching · Raw immutable</span>
+        </div>
+        <div class="vip-compare-toggle__group" role="group" aria-label="Comparison mode">
+          <button type="button" class="vip-compare-toggle__btn" data-compare="raw" aria-pressed="true">Raw</button>
+          <button type="button" class="vip-compare-toggle__btn" data-compare="processed" aria-pressed="false">Processed</button>
+          <button type="button" class="vip-compare-toggle__btn" data-compare="removed" aria-pressed="false">Removed (Delta)</button>
+        </div>
+        <div class="vip-live-metrics" id="engineerLiveMetrics">
+          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Voice Clarity</span><span class="vip-live-metrics__value" id="metricVoiceClarity">--</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricVoiceClarityFill"></div></div></div>
+          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Noise Reduction</span><span class="vip-live-metrics__value" id="metricNoiseReduction">-- dB</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricNoiseReductionFill"></div></div></div>
+          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Whisper Retention</span><span class="vip-live-metrics__value" id="metricWhisperRetention">--</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricWhisperRetentionFill"></div></div></div>
+          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Output dBFS</span><span class="vip-live-metrics__value" id="metricOutputDb">-- dBFS</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricOutputDbFill"></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="vip-workstation__inspector" id="engineerInspector">
+      <div class="card" style="padding:12px;">
+        <h3 style="margin:0 0 8px;font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Selection</h3>
+        <p class="hint" id="selectionInfo" style="margin:0;">Drag on waveform to select · drag rectangle on spectrogram · handles to resize · timestamp shown</p>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-xs" id="btnZoomToSelection">Zoom to selection</button>
+          <button type="button" class="btn btn-xs" id="btnClearSelection">Clear</button>
+          <button type="button" class="btn btn-xs" id="btnSelectedPlayback">Play selection</button>
+        </div>
+      </div>
+      <div class="card" style="padding:12px;">
+        <h3 style="margin:0 0 8px;font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Analysis Overlay</h3>
+        <div id="analysisOverlayLegend" style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span class="vip-chip" style="--chip-color:#2ed5e5;background:rgba(46,213,229,0.12);border:1px solid rgba(46,213,229,0.24);color:#2ed5e5;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Speech</span>
+          <span class="vip-chip" style="background:rgba(155,108,255,0.12);border:1px solid rgba(155,108,255,0.24);color:#9b6cff;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Whisper</span>
+          <span class="vip-chip" style="background:rgba(139,154,168,0.12);border:1px solid rgba(139,154,168,0.24);color:#8d9aaa;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Background Noise</span>
+          <span class="vip-chip" style="background:rgba(255,185,72,0.12);border:1px solid rgba(255,185,72,0.24);color:#ffb948;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Hum</span>
+          <span class="vip-chip" style="background:rgba(255,90,122,0.12);border:1px solid rgba(255,90,122,0.24);color:#ff5a7a;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Music/bleed</span>
+        </div>
+        <div id="analysisOverlayList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <div class="card" style="padding:12px;">
+        <h3 style="margin:0 0 8px;font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Advanced / Forensic</h3>
+        <details><summary style="cursor:pointer;font:500 12px/1 ui-sans-serif;color:#c5ced6;">Deep metrics</summary>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font:400 11px/1.4 ui-monospace,monospace;color:#8d9aaa;">
+            <span>SNR: <span id="deepSnr">--</span> dB</span>
+            <span>RMS: <span id="deepRms">--</span></span>
+            <span>Peak: <span id="deepPeak">--</span></span>
+            <span>LUFS: <span id="deepLufs">--</span></span>
+            <span>Voices: <span id="deepVoices">--</span></span>
+            <span>Duration: <span id="deepDuration">--</span></span>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div class="vip-workstation__transport" id="engineerTransportHost">
+      <!-- Transport reused from existing -->
     </div>
   </section>
 
@@ -848,6 +948,14 @@
     /* debug-menu.js — live system debug panel (` key to toggle) */
     import('./debug-menu.js').catch(err => {
       console.warn('[VIP] debug-menu.js not loaded:', err);
+    });
+    /* premium-workspace.js — unified signal-first UX (Issue #820) */
+    import('./premium-workspace.js').catch(err => {
+      console.warn('[VIP] premium-workspace.js not loaded:', err);
+    });
+    /* signal-canvas-integration.js — Issue #820: bridges SESSION_IMPORTED etc to MLWorker/PlaybackMixer */
+    import('./lib/signal-canvas-integration.js').catch(err => {
+      console.warn('[VIP] signal-canvas-integration.js not loaded:', err);
     });
   </script>
 

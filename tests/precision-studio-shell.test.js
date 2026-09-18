@@ -22,9 +22,11 @@ describe('Precision Studio shell', () => {
     expect(html).toContain('No placeholder measurements');
   });
 
-  test('landing title contract is unchanged', () => {
+  test('landing title contract matches the unified premium copy', () => {
+    // Intentionally updated with the #820/#821 unified signal-first UX
+    // (previous title: "Local voice isolation · Stem-Split &amp; Live-Mix").
     const html = read('public/index.html');
-    expect(html).toContain('VoiceIsolate Pro — Local voice isolation · Stem-Split &amp; Live-Mix');
+    expect(html).toContain('VoiceIsolate Pro — Hear What Others Miss · 100% On-Device');
   });
 
   test('engineer preserves IDs and adds workspace chrome', () => {

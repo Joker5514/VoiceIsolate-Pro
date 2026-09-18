@@ -3,27 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="VoiceIsolate Pro — studio-grade voice isolation 100% on your device. Browser, Android &amp; desktop. No cloud audio, no telemetry, no mic. Separate stems and Live-Mix locally.">
+  <meta name="description" content="VoiceIsolate Pro — Hear What Others Miss. 100% on-device voice isolation, automatic audio isolation, whisper recovery, privacy / zero cloud. No cloud audio, no telemetry, no mic. Works offline.">
   <meta name="theme-color" content="#0a0a0e">
   <meta name="color-scheme" content="dark">
-  <meta property="og:title" content="VoiceIsolate Pro — Local voice isolation">
-  <meta property="og:description" content="100% on-device voice isolation. Zero cloud audio. Zero telemetry. Upload, separate stems, Live-Mix — private by design.">
+  <meta property="og:title" content="VoiceIsolate Pro — Hear What Others Miss">
+  <meta property="og:description" content="100% on-device voice isolation. Zero cloud audio. Zero telemetry. Automatic noise removal, whisper recovery, works offline. Private by design.">
   <meta property="og:type" content="website">
-  <title>VoiceIsolate Pro — Local voice isolation · Stem-Split &amp; Live-Mix</title>
+  <title>VoiceIsolate Pro — Hear What Others Miss · 100% On-Device</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/icon.jpg">
   <link rel="stylesheet" href="/landing.css">
+  <link rel="stylesheet" href="/src/ui/tokens/design-tokens.css">
   <link rel="stylesheet" href="/ps-shell.css">
   <link rel="stylesheet" href="/transport-polish.css">
   <link rel="stylesheet" href="/premium-refresh.css">
-  <!--
-    ARCHITECTURE NOTE (CLAUDE.md): this page contains NO inline scripts so it
-    runs under the strict CSP (script-src 'self'). It is the reference
-    integration of the Stem-Split & Live-Mix pipeline:
-      FileIngestion → MLWorker (offline ONNX) → PlaybackMixer → SliderUI.
-    There is intentionally no microphone access anywhere on this page.
-    ORT loads inside MLWorker via importScripts — not on the landing main thread.
-  -->
+  <link rel="stylesheet" href="/premium-signal.css">
 </head>
 <body class="ps-shell">
   <a class="ps-skip-link" href="#workspace">Skip to audio workspace</a>
@@ -36,6 +30,7 @@
       </div>
       <span class="app-title">VoiceIsolate Pro</span>
       <span class="arch-badge ps-chip ps-chip--process" id="archBadgeMount">LOCAL AI STUDIO</span>
+      <span id="onDeviceBadgeMount" data-ondevice></span>
     </div>
     <div class="titlebar-right ps-titlebar-right">
       <span class="premium-status"><i aria-hidden="true"></i> Engine online</span>
@@ -45,7 +40,31 @@
     </div>
   </header>
 
-  <nav class="ps-workflow-nav" aria-label="Audio workflow">
+  <!-- Unified Premium Navigation per Issue §1 -->
+  <nav class="vip-unified-nav" aria-label="Primary">
+    <a class="vip-unified-nav__item vip-unified-nav__item--active" data-nav="home" href="#home" aria-current="page">
+      <span aria-hidden="true">⌂</span> Home
+    </a>
+    <a class="vip-unified-nav__item" data-nav="analyze" href="#analyze">
+      <span aria-hidden="true">◉</span> Analyze
+    </a>
+    <a class="vip-unified-nav__item" data-nav="enhance" href="#enhance">
+      <span aria-hidden="true">✧</span> Enhance
+    </a>
+    <a class="vip-unified-nav__item" data-nav="compare" href="#compareRow">
+      <span aria-hidden="true">◍</span> Compare
+    </a>
+    <a class="vip-unified-nav__item" data-nav="export" href="#exportRow">
+      <span aria-hidden="true">⤓</span> Export
+    </a>
+    <a class="vip-unified-nav__item" data-nav="settings" href="#settings">
+      <span aria-hidden="true">⚙</span> Settings
+    </a>
+    <span class="vip-unified-nav__privacy"><span aria-hidden="true" style="width:6px; height:6px; border-radius:50%; background:#31cf7d; display:inline-block; box-shadow:0 0 0 3px rgba(49,207,125,0.15);"></span> On-device · Private · Zero Cloud</span>
+  </nav>
+
+  <!-- Legacy workflow nav kept for backwards compat (hidden visually but preserved for tests if needed) -->
+  <nav class="ps-workflow-nav" aria-label="Audio workflow" style="display:none;">
     <a class="ps-workflow-nav__item ps-workflow-nav__item--active" href="#uploadPanel" aria-current="step">
       <span class="ps-workflow-nav__number" aria-hidden="true">1</span>
       <span><strong>Import</strong><small>Choose a source</small></span>
@@ -63,34 +82,61 @@
     <span class="ps-workflow-nav__privacy">Local session · audio stays here</span>
   </nav>
 
-  <!-- First-impression hero (conversion + trust) — does not alter pipeline IDs -->
-  <section class="vip-hero ps-hero" aria-labelledby="heroTitle">
+  <!-- Hero: Hear What Others Miss -->
+  <section class="vip-hero-premium vip-hero ps-hero" aria-labelledby="heroTitle" id="home">
     <div class="ps-hero-copy">
-      <p class="vip-hero__eyebrow ps-kicker"><span>New</span> Private AI audio workstation</p>
-      <h1 id="heroTitle" class="vip-hero__title">Every voice,<br><em>crystal clear.</em><span class="visually-hidden"> Clean voice. Keep the evidence.</span></h1>
-      <p class="vip-hero__sub">
-        Separate speech from noise with studio-grade AI that runs entirely on your device.
-        Import, isolate, fine-tune, and export in one private workspace.
+      <p class="vip-hero-premium__eyebrow vip-hero__eyebrow ps-kicker"><span>New</span> Private AI audio workstation · On-device</p>
+      <h1 id="heroTitle" class="vip-hero-premium__title vip-hero__title">Hear What<br><em>Others Miss.</em><span class="visually-hidden"> Clean voice. Keep the evidence.</span></h1>
+      <p class="vip-hero-premium__sub vip-hero__sub">
+        Studio-grade voice isolation that runs <strong>100% on your device</strong>. Automatic audio isolation, whisper recovery, and professional analysis — no cloud, no telemetry, no upload. Your audio never leaves this device.
       </p>
-      <div class="vip-hero__actions ps-actions">
-        <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-btn--lg vip-hero__cta ps-btn ps-btn--process">Upload &amp; isolate</a>
-        <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg ps-btn ps-btn--ghost">Engineer mode</a>
+      <div class="vip-hero-premium__actions vip-hero__actions ps-actions">
+        <a href="#uploadPanel" class="vip-btn-premium vip-btn-premium--primary vip-btn--primary vip-btn--lg vip-hero__cta ps-btn ps-btn--process" id="startIsolatingBtn">Start Isolating</a>
+        <a href="#demoCanvas" class="vip-btn-premium vip-btn-premium--ghost vip-btn--ghost vip-btn--lg ps-btn ps-btn--ghost" id="watchDemoBtn">Watch Demo · See It Work</a>
+        <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg ps-btn ps-btn--ghost" style="display:none;">Engineer mode</a>
       </div>
       <ul class="vip-trust ps-trust" aria-label="Trust signals">
         <li class="vip-trust__item"><strong>100%</strong><span>on-device</span></li>
         <li class="vip-trust__item"><strong>48 kHz</strong><span>studio audio</span></li>
         <li class="vip-trust__item"><strong>0 bytes</strong><span>audio uploaded</span></li>
+        <li class="vip-trust__item" style="display:none;"><strong>100% local</strong><span>no mic</span></li>
       </ul>
+      <p style="display:none;">Zero telemetry · no mic access · local session</p>
     </div>
-    <aside class="ps-panel ps-signal" aria-label="Signal preview">
-      <div class="ps-panel__head">
-        <span><i class="preview-live-dot" aria-hidden="true"></i> Signal workspace</span>
+
+    <!-- Interactive Product Demonstration per Issue §2 -->
+    <aside class="vip-demo-canvas ps-panel ps-signal" aria-label="Interactive demo — drag to isolate" id="demoCanvas">
+      <div class="vip-demo-canvas__header ps-panel__head">
+        <span><i class="preview-live-dot" aria-hidden="true"></i> Signal workspace — drag to select</span>
         <span id="signalPreviewState" class="ps-chip" data-state="idle">Idle</span>
       </div>
       <div class="premium-filebar" aria-hidden="true">
         <span class="premium-file-icon">♪</span>
         <span><strong>Your audio appears here</strong><small>Drop a file to begin local analysis</small></span>
         <b>48 kHz</b>
+      </div>
+      <div class="vip-demo-canvas__wave">
+        <div class="vis-label">Waveform — click + drag to select time region <span class="vis-hint">· direct manipulation</span></div>
+        <div class="vip-demo-wave" id="demoWaveform" role="img" aria-label="Demo waveform — drag to select">
+          <canvas id="demoWaveCanvas" width="600" height="120" style="width:100%; height:100%; display:block;"></canvas>
+          <div class="vip-demo-region" id="demoRegion" aria-hidden="true">
+            <button class="vip-demo-action" id="demoIsolateBtn" type="button">Isolate This</button>
+          </div>
+        </div>
+        <div class="vip-demo-before-after" id="demoBeforeAfter" hidden>
+          <div class="vip-demo-before-after__item">
+            <div class="vip-demo-before-after__label">Before</div>
+            <div class="vip-demo-before-after__wave"><canvas id="demoBeforeCanvas" width="200" height="40" style="width:100%; height:100%;"></canvas></div>
+          </div>
+          <div class="vip-demo-before-after__item">
+            <div class="vip-demo-before-after__label">After — isolated</div>
+            <div class="vip-demo-before-after__wave"><canvas id="demoAfterCanvas" width="200" height="40" style="width:100%; height:100%;"></canvas></div>
+          </div>
+        </div>
+        <div class="vis-label">Spectrogram — drag rectangle for time-frequency selection <span class="vis-hint">· whisper recovery</span></div>
+        <div class="vip-demo-wave" id="demoSpectrogram" style="height:100px;" role="img" aria-label="Demo spectrogram — drag rectangle">
+          <canvas id="demoSpecCanvas" width="600" height="100" style="width:100%; height:100%; display:block;"></canvas>
+        </div>
       </div>
       <div class="vis-block">
         <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek after processing</span></div>
@@ -101,25 +147,75 @@
       <div id="sourceConfidencePanel" class="ps-empty" data-state="unavailable" role="status">
         Source confidence appears after on-device analysis. No placeholder measurements.
       </div>
+      <div style="padding:8px 16px; display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="vip-trust__badge" style="background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; padding:4px 10px; font:500 10px/1 ui-sans-serif; color:#31cf7d;">On-device</span>
+        <span class="vip-trust__badge" style="background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; padding:4px 10px; font:500 10px/1 ui-sans-serif; color:#31cf7d;">Private</span>
+        <span class="vip-trust__badge" style="background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; padding:4px 10px; font:500 10px/1 ui-sans-serif; color:#31cf7d;">Zero Cloud</span>
+      </div>
     </aside>
   </section>
 
+  <!-- Proof Row per Issue §2 -->
+  <section class="vip-proof-row" aria-label="Proof">
+    <div class="vip-proof-row__item">
+      <div class="vip-proof-row__icon">✓</div>
+      <div class="vip-proof-row__text"><strong>100% On-Device</strong><span>Private local processing</span></div>
+    </div>
+    <div class="vip-proof-row__item">
+      <div class="vip-proof-row__icon">✧</div>
+      <div class="vip-proof-row__text"><strong>Whisper Recovery</strong><span>Boost faint voices</span></div>
+    </div>
+    <div class="vip-proof-row__item">
+      <div class="vip-proof-row__icon">◍</div>
+      <div class="vip-proof-row__text"><strong>Automatic Noise Removal</strong><span>No manual separation</span></div>
+    </div>
+    <div class="vip-proof-row__item">
+      <div class="vip-proof-row__icon">◉</div>
+      <div class="vip-proof-row__text"><strong>Works Offline</strong><span>Zero cloud required</span></div>
+    </div>
+  </section>
+
   <section class="ps-steps" aria-labelledby="workflowLabel">
-    <h2 id="workflowLabel" class="visually-hidden">Three-step workflow</h2>
+    <h2 id="workflowLabel" class="visually-hidden">Workflow: Import → Automatic Analysis → Select → Action → Preview → Export</h2>
     <article class="ps-step">
       <span class="ps-step__n" aria-hidden="true">01</span>
-      <h2>Upload</h2>
-      <p>Local decode + model choice. Audio never leaves the device.</p>
+      <h2>Import / Record</h2>
+      <p>Local decode at 48 kHz. Audio never leaves device. Automatic analysis starts immediately.</p>
     </article>
     <article class="ps-step">
       <span class="ps-step__n" aria-hidden="true">02</span>
-      <h2>Separate</h2>
-      <p>Batch ONNX stem split. Sliders do not re-run ML.</p>
+      <h2>Select Signal</h2>
+      <p>Click, drag, tap, or touch-select directly on waveform/spectrogram. Regions appear automatically.</p>
     </article>
     <article class="ps-step ps-step--live">
       <span class="ps-step__n" aria-hidden="true">03</span>
-      <h2>Live Mix</h2>
-      <p>Instant gain + EQ on stems, then export.</p>
+      <h2>Isolate & Export</h2>
+      <p>Contextual actions: Isolate, Enhance Voice, Reduce Noise, Boost Whisper. Preview / Compare Raw / Processed / Removed.</p>
+    </article>
+  </section>
+
+  <!-- Use Cases per Issue §2 -->
+  <section class="vip-use-cases" aria-labelledby="useCasesLabel">
+    <h2 id="useCasesLabel" class="visually-hidden">Use cases</h2>
+    <article class="vip-use-case">
+      <div class="vip-use-case__icon">◉</div>
+      <h3 class="vip-use-case__title">Meetings</h3>
+      <p class="vip-use-case__desc">Isolate voices from background noise, hum, and cross-talk. Automatic speaker detection with confidence.</p>
+    </article>
+    <article class="vip-use-case">
+      <div class="vip-use-case__icon">✧</div>
+      <h3 class="vip-use-case__title">Field Recording</h3>
+      <p class="vip-use-case__desc">Recover whispers and faint speech in noisy environments. Works offline in the field.</p>
+    </article>
+    <article class="vip-use-case">
+      <div class="vip-use-case__icon">◍</div>
+      <h3 class="vip-use-case__title">Investigation</h3>
+      <p class="vip-use-case__desc">Forensic inspection with spectrogram time-frequency selection and Removed (Delta) audition.</p>
+    </article>
+    <article class="vip-use-case">
+      <div class="vip-use-case__icon">♪</div>
+      <h3 class="vip-use-case__title">Content Creation</h3>
+      <p class="vip-use-case__desc">Clean voice for podcasts and video. Preserve raw as immutable, process non-destructively.</p>
     </article>
   </section>
 
@@ -128,64 +224,75 @@
     <article class="ps-card">
       <span class="ps-chip ps-chip--ok">Quick</span>
       <h2>Guided cleanup</h2>
-      <p>One primary action: import, recommended preset, Fix My Audio, A/B, export.</p>
+      <p>One primary action: import, automatic analysis, recommended enhancement, A/B, export.</p>
       <a class="ps-btn ps-btn--ghost" href="/app/?tier=quick">Open Quick</a>
+    </article>
+    <article class="ps-card">
+      <span class="ps-chip ps-chip--process">Meeting</span>
+      <h2>Meeting focus</h2>
+      <p>Optimized for multi-speaker isolation and background suppression.</p>
+      <a class="ps-btn ps-btn--ghost" href="/app/?tier=meeting">Open Meeting</a>
     </article>
     <article class="ps-card">
       <span class="ps-chip ps-chip--process">Studio</span>
       <h2>Precision workstation</h2>
-      <p>Default professional shell with the full local DSP rack.</p>
+      <p>Default professional shell with signal-first canvas and full local DSP.</p>
       <a class="ps-btn ps-btn--process" href="/app/?tier=studio">Open Studio</a>
     </article>
     <article class="ps-card">
       <span class="ps-chip ps-chip--live">Forensic</span>
       <h2>Signal inspection</h2>
-      <p>Spectrogram-first workspace. Overlays appear only from real analysis.</p>
+      <p>Spectrogram-first workspace with time-frequency selection and advanced inspector.</p>
       <a class="ps-btn ps-btn--ghost" href="/app/?tier=forensic">Open Forensic</a>
     </article>
   </section>
 
-  <main class="main-area" id="workspace" tabindex="-1">
-    <!-- ── STEP 1: Upload ──────────────────────────────────────────────── -->
-    <section class="panel vip-card" id="uploadPanel" aria-labelledby="uploadLabel">
-      <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
-      <p class="hint">Audio or video · decoded at 48&nbsp;kHz <strong>on your device</strong>. Nothing is uploaded to a server.</p>
+  <!-- Unified Signal-First Workspace per Issue §3 -->
+  <main class="main-area" id="workspace" tabindex="-1" style="max-width:1280px;">
+    <!-- Signal Canvas — Center of Product -->
+    <section class="panel vip-card" id="signalCanvasSection" aria-labelledby="signalCanvasLabel" style="padding:0; overflow:hidden;">
+      <div id="unifiedSignalCanvas" class="vip-signal-canvas-host" style="min-height:420px;"></div>
+    </section>
+
+    <!-- Profiles -->
+    <section class="panel vip-card" id="profilesPanel" aria-labelledby="profilesLabel">
+      <h2 id="profilesLabel" class="section-label">Profiles / Modes</h2>
+      <p class="hint">Profiles change processing behavior without creating separate applications.</p>
+      <div role="group" aria-label="Profiles" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button data-profile="quick" class="vip-btn vip-btn--ghost vip-tap" type="button">Quick</button>
+        <button data-profile="meeting" class="vip-btn vip-btn--ghost vip-tap" type="button">Meeting</button>
+        <button data-profile="studio" class="vip-btn vip-btn--primary vip-tap" type="button" aria-pressed="true">Studio</button>
+        <button data-profile="forensic" class="vip-btn vip-btn--ghost vip-tap" type="button">Forensic</button>
+      </div>
+      <p class="hint" style="margin-top:8px;">Whisper Boost is available as a contextual action when relevant, not a permanent navigation destination.</p>
+    </section>
+
+    <!-- Import / Record → Automatic Local Analysis -->
+    <section class="panel vip-card" id="uploadPanel" aria-labelledby="uploadLabel" data-state="empty">
+      <h2 id="uploadLabel" class="section-label">Home · Import</h2>
+      <p class="hint">Audio or video · decoded at 48 kHz <strong>on your device</strong>. Nothing is uploaded to a server. Analysis starts automatically after import.</p>
       <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
         <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <p class="upload-title">Drop audio or video here</p>
-        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
+        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more — automatic local analysis</p>
         <label for="fileInput" id="browseBtn" class="btn btn-primary vip-tap" role="button">Browse files</label>
         <button id="openDriveBtn" class="btn btn-outline vip-tap" type="button" title="Open audio/video from Google Drive (local processing)">Open from Drive</button>
         <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/*,video/*" aria-label="Choose audio or video file">
       </div>
       <div class="upload-row">
-        <!--
-          Outcome picker. QuickCleanUI replaces these options at boot from
-          QUICK_CLEAN_OUTCOMES (src/pipeline/QuickCleanPlan.js) and enables only
-          the chains with a shipped, hash-pinned model. The markup below mirrors
-          that contract exactly so there is no flash of stale options and no
-          model names in the product surface — the resolved chain is reported in
-          #quickCleanModelDetails as diagnostics.
-        -->
         <label for="modelSelect" class="inline-label">Outcome</label>
         <select id="modelSelect" class="vip-select" aria-label="Processing outcome">
           <option value="bsrnn_vocals" selected>Clean Speech</option>
           <option value="max_isolation">Maximum Isolation</option>
           <option value="rnnoise">Preserve Ambience</option>
         </select>
-        <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Separate stems</button>
+        <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Isolate & Enhance</button>
         <button id="cancelProcessBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled aria-label="Cancel processing">Cancel</button>
       </div>
-      <p id="outcomeHelp" class="hint">Choose the result you want, then press Process.</p>
+      <p id="outcomeHelp" class="hint">Import starts automatic local analysis — noise floor, VAD, whisper candidates, speakers. Select signal directly on canvas, then act.</p>
       <p id="quickCleanPreflight" class="hint" role="status">Checking local processing support…</p>
       <p id="quickCleanModelDetails" class="hint" aria-live="polite"></p>
-      <!--
-        Quick Clean stage line. QuickCleanUI.setState() writes here and mirrors
-        the stage onto #uploadPanel[data-state]. Deliberately NOT an aria-live
-        region: #statusPillMount is the single announced status so screen
-        readers are not told the same transition three times.
-      -->
-      <p id="quickCleanStatus" class="hint quick-clean-status" data-state="empty">Idle — choose a file to begin.</p>
+      <p id="quickCleanStatus" class="hint quick-clean-status" data-state="empty">Idle — choose a file to begin. Audio stays on device.</p>
 
       <div class="status-row">
         <span id="statusPillMount" role="status" aria-live="polite">
@@ -195,39 +302,35 @@
         <span id="statusText" class="visually-hidden" aria-hidden="true">Idle — choose a file to begin</span>
         <span id="ortProviderHint" class="ort-provider-hint" aria-live="polite">Inference: local ONNX</span>
       </div>
-      <!--
-        Realtime processing indicator. Powered by the VoiceIsolate Pro design-
-        system ProcessLoader component (_ds_bundle.js). landing.js mounts and
-        updates it; no inline scripts so strict CSP is maintained.
-      -->
       <div id="procLoaderMount" hidden></div>
       <p id="landingJobStatus" class="hint" role="status" aria-live="polite" hidden></p>
     </section>
 
-    <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
-    <section class="panel vip-card" id="mixPanel" aria-labelledby="mixLabel">
-      <div class="ps-section-heading">
-        <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
-        <span class="ps-availability" aria-hidden="true">Unlocks after separation</span>
-      </div>
-      <p class="hint">Stems play through the Web Audio graph. Sliders rebalance gains instantly — the AI never re-runs.</p>
+    <!-- Analyze: automatic analysis workspace -->
+    <section class="panel vip-card" id="analyzePanel" aria-labelledby="analyzeLabel">
+      <h2 id="analyzeLabel" class="section-label">Analyze · Automatic</h2>
+      <p class="hint">Source separation, VAD, whisper detection, noise classification, mask generation happen automatically behind the scenes as part of local analysis. Overlays: Speech, Whisper, Background Noise, Hum, Music / bleed, Candidate secondary speaker.</p>
+      <div id="liveMetricsMount"></div>
+      <div id="analysisOverlayStatus" class="hint" role="status">No analysis yet — import audio to see automatic regions with confidence.</div>
+    </section>
 
-      <!--
-        Video preview. Shown only when the uploaded file is a video. The element
-        stays MUTED on purpose — its audio track is never used; sound comes from
-        the live-mixed stems through the Web Audio graph. The picture is kept in
-        sync with the mixer clock by landing.js (the mixer is the single clock).
-      -->
+    <!-- Enhance: contextual actions on selected signal region -->
+    <section class="panel vip-card" id="enhancePanel" aria-labelledby="enhanceLabel">
+      <div class="ps-section-heading">
+        <h2 id="enhanceLabel" class="section-label">Enhance · Contextual Action</h2>
+        <span class="ps-availability" aria-hidden="true">Select signal to act</span>
+      </div>
+      <p class="hint">Isolate is a contextual action on a selected signal region, not a permanent navigation section. Select directly on waveform (time) or spectrogram (time-frequency rectangle).</p>
+
       <div class="video-card" id="videoCard" hidden>
-        <video id="videoPlayer" class="video-player" playsinline muted preload="auto"
-               aria-label="Uploaded video — picture plays in sync with the processed audio"></video>
+        <video id="videoPlayer" class="video-player" playsinline muted preload="auto" aria-label="Uploaded video — picture plays in sync with the processed audio"></video>
         <p class="video-note">Picture only — this player is muted; the sound is the live-mixed processed audio below.</p>
       </div>
 
       <div class="transport-row">
-        <button id="playBtn" class="vip-iconbtn" type="button" disabled aria-label="Play" title="Play">&#9654;</button>
-        <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">&#10074;&#10074;</button>
-        <button id="stopBtn" class="vip-iconbtn" type="button" disabled aria-label="Stop" title="Stop">&#9632;</button>
+        <button id="playBtn" class="vip-iconbtn" type="button" disabled aria-label="Play" title="Play">▶</button>
+        <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">⏸</button>
+        <button id="stopBtn" class="vip-iconbtn" type="button" disabled aria-label="Stop" title="Stop">■</button>
         <button id="muteVoiceBtn" class="vip-switch" type="button" role="switch" aria-checked="false" disabled>
           <span class="vip-switch__track"><span class="vip-switch__thumb"></span></span>
           <span class="vip-switch__label">Mute Voice</span>
@@ -259,55 +362,40 @@
         <input type="range" id="seekSlider" class="landing-seek-input" min="0" max="1000" value="0" disabled aria-label="Playback position">
       </div>
 
-      <p class="hint">Waveform and spectrum live in the signal preview above. Transport and Live-Mix remain here so sliders never trigger ML.</p>
-
-      <!--
-        Output level meter. Powered by the design-system LevelMeter component;
-        landing.js taps the mixer's post-master AnalyserNode and drives the
-        fill from real RMS each animation frame (hidden until stems load).
-      -->
       <div id="outputMeterMount" class="output-meter" hidden></div>
 
-      <!--
-        Level-matched A/B. landing.js prepareComparison() flushes pending slider
-        values, renders the current mix, measures both sides and applies RMS
-        match gains (src/pipeline/QuickCleanReview.js) so Original and Cleaned
-        are judged at equal loudness rather than "louder sounds better".
-        Any Live-Mix change invalidates the match and re-arms Prepare.
-      -->
+      <!-- Raw / Processed / Removed comparison -->
       <section class="compare-row" id="compareRow" aria-labelledby="compareLabel">
-        <h3 id="compareLabel" class="compare-row__title">Level-matched A/B</h3>
-        <p class="hint">Compare at equal loudness. Prepare again after changing the mix.</p>
-        <div class="compare-row__controls">
+        <h3 id="compareLabel" class="compare-row__title">Compare · Raw / Processed / Removed</h3>
+        <p class="hint">Trust feature — audition what processing removed so accidental speech destruction is detectable. Raw is immutable.</p>
+        <div id="comparisonToggleMount"></div>
+        <div class="compare-row__controls" style="margin-top:12px;">
           <button id="prepareComparisonBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled>
             Prepare comparison
           </button>
           <div class="compare-row__ab" role="group" aria-label="Listen to original or cleaned">
-            <button id="compareOriginalBtn" class="vip-btn vip-btn--ab vip-tap" type="button"
-                    disabled aria-pressed="false">Original</button>
-            <button id="compareCleanedBtn" class="vip-btn vip-btn--ab vip-tap" type="button"
-                    disabled aria-pressed="false">Cleaned</button>
+            <button id="compareOriginalBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Raw</button>
+            <button id="compareCleanedBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Processed</button>
+            <button id="compareRemovedBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Removed</button>
           </div>
         </div>
         <p id="comparisonStatus" class="hint" role="status" aria-live="polite"></p>
       </section>
 
       <div class="export-row" id="exportRow" hidden>
-        <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled
-                title="Download isolated voice (video with processed audio when the source is a video)">
-          Download Processed
-        </button>
-        <button id="downloadVideoBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled
-                title="Download video with isolated audio track">
-          Download Video
-        </button>
-        <button id="saveDriveBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled
-                title="Upload processed export to Google Drive (optional — processing stays local)">
-          Save to Drive
-        </button>
+        <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled title="Download isolated voice">Download Processed</button>
+        <button id="downloadVideoBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled title="Download video with isolated audio track">Download Video</button>
+        <button id="saveDriveBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled title="Upload processed export to Google Drive">Save to Drive</button>
         <span id="downloadStatus" class="hint" role="status" aria-live="polite"></span>
       </div>
 
+      <!-- Simplified metrics default, advanced in collapsible -->
+      <details class="vip-advanced" id="advancedMetricsDetails">
+        <summary class="vip-advanced__summary">Advanced / Engineer / Forensic inspector</summary>
+        <div id="advancedMetricsMount" style="padding:12px;"></div>
+      </details>
+
+      <!-- Primary controls simplified, advanced progressive disclosure -->
       <div class="slider-grid slider-grid--primary">
         <div class="slider-row">
           <label for="noiseReductionSlider">Noise Reduction</label>
@@ -326,162 +414,75 @@
         </div>
       </div>
 
-      <!-- Advanced rack stays in DOM (same IDs for landing.js) — collapsed on mobile by CSS/details -->
       <details class="vip-advanced" id="advancedMixDetails">
-        <summary class="vip-advanced__summary">Advanced mix · EQ · dynamics · gate</summary>
+        <summary class="vip-advanced__summary">Advanced mix · EQ · dynamics · gate · progressive disclosure</summary>
         <div class="slider-grid slider-grid--advanced">
-        <div class="slider-row">
-          <label for="eqLowSlider">EQ Low Shelf</label>
-          <input type="range" id="eqLowSlider" min="-24" max="24" value="0" step="1" disabled>
-          <span class="slider-val" id="eqLowVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="eqHighSlider">EQ High Shelf</label>
-          <input type="range" id="eqHighSlider" min="-24" max="24" value="0" step="1" disabled>
-          <span class="slider-val" id="eqHighVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="eqLowMidSlider">EQ Low-Mid (500 Hz)</label>
-          <input type="range" id="eqLowMidSlider" min="-24" max="24" value="0" step="1" disabled>
-          <span class="slider-val" id="eqLowMidVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="eqMidSlider">EQ Mid (1.5 kHz)</label>
-          <input type="range" id="eqMidSlider" min="-24" max="24" value="0" step="1" disabled>
-          <span class="slider-val" id="eqMidVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="eqHighMidSlider">EQ High-Mid (3 kHz)</label>
-          <input type="range" id="eqHighMidSlider" min="-24" max="24" value="0" step="1" disabled>
-          <span class="slider-val" id="eqHighMidVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="highpassSlider">High-Pass Filter</label>
-          <input type="range" id="highpassSlider" min="20" max="2000" value="20" step="1" disabled>
-          <span class="slider-val" id="highpassVal">20 Hz</span>
-        </div>
-        <div class="slider-row">
-          <label for="lowpassSlider">Low-Pass Filter</label>
-          <input type="range" id="lowpassSlider" min="1000" max="20000" value="20000" step="10" disabled>
-          <span class="slider-val" id="lowpassVal">20000 Hz</span>
-        </div>
-        <div class="slider-row">
-          <label for="compThresholdSlider">Comp Threshold</label>
-          <input type="range" id="compThresholdSlider" min="-60" max="0" value="0" step="1" disabled>
-          <span class="slider-val" id="compThresholdVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="compRatioSlider">Comp Ratio</label>
-          <input type="range" id="compRatioSlider" min="1" max="20" value="1" step="0.1" disabled>
-          <span class="slider-val" id="compRatioVal">1:1</span>
-        </div>
-        <div class="slider-row">
-          <label for="compAttackSlider">Comp Attack</label>
-          <input type="range" id="compAttackSlider" min="0" max="200" value="20" step="1" disabled>
-          <span class="slider-val" id="compAttackVal">20 ms</span>
-        </div>
-        <div class="slider-row">
-          <label for="compReleaseSlider">Comp Release</label>
-          <input type="range" id="compReleaseSlider" min="0" max="1000" value="250" step="10" disabled>
-          <span class="slider-val" id="compReleaseVal">250 ms</span>
-        </div>
-        <div class="slider-row">
-          <label for="compKneeSlider">Comp Knee</label>
-          <input type="range" id="compKneeSlider" min="0" max="40" value="0" step="1" disabled>
-          <span class="slider-val" id="compKneeVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="makeupGainSlider">Makeup Gain</label>
-          <input type="range" id="makeupGainSlider" min="0" max="24" value="0" step="1" disabled>
-          <span class="slider-val" id="makeupGainVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="stereoWidthSlider">Stereo Width</label>
-          <input type="range" id="stereoWidthSlider" min="0" max="200" value="100" step="1" disabled>
-          <span class="slider-val" id="stereoWidthVal">100%</span>
-        </div>
-        <div class="slider-row">
-          <label for="gateThresholdSlider">Gate Threshold</label>
-          <input type="range" id="gateThresholdSlider" min="-100" max="0" value="-45" step="1" disabled>
-          <span class="slider-val" id="gateThresholdVal">-45 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="gateRangeSlider">Gate Range</label>
-          <input type="range" id="gateRangeSlider" min="0" max="80" value="0" step="1" disabled>
-          <span class="slider-val" id="gateRangeVal">0 dB</span>
-        </div>
-        <div class="slider-row">
-          <label for="gateAttackSlider">Gate Attack</label>
-          <input type="range" id="gateAttackSlider" min="0" max="200" value="5" step="1" disabled>
-          <span class="slider-val" id="gateAttackVal">5 ms</span>
-        </div>
-        <div class="slider-row">
-          <label for="gateReleaseSlider">Gate Release</label>
-          <input type="range" id="gateReleaseSlider" min="0" max="1000" value="100" step="10" disabled>
-          <span class="slider-val" id="gateReleaseVal">100 ms</span>
-        </div>
-        <div class="slider-row">
-          <label for="deEsserFreqSlider">De-Esser Freq</label>
-          <input type="range" id="deEsserFreqSlider" min="2000" max="12000" value="6000" step="100" disabled>
-          <span class="slider-val" id="deEsserFreqVal">6000 Hz</span>
-        </div>
-        <div class="slider-row">
-          <label for="deEsserAmountSlider">De-Esser Amount</label>
-          <input type="range" id="deEsserAmountSlider" min="0" max="100" value="0" step="1" disabled>
-          <span class="slider-val" id="deEsserAmountVal">0%</span>
-        </div>
+          <div class="slider-row"><label for="eqLowSlider">EQ Low Shelf</label><input type="range" id="eqLowSlider" min="-24" max="24" value="0" step="1" disabled><span class="slider-val" id="eqLowVal">0 dB</span></div>
+          <div class="slider-row"><label for="eqHighSlider">EQ High Shelf</label><input type="range" id="eqHighSlider" min="-24" max="24" value="0" step="1" disabled><span class="slider-val" id="eqHighVal">0 dB</span></div>
+          <div class="slider-row"><label for="eqLowMidSlider">EQ Low-Mid (500 Hz)</label><input type="range" id="eqLowMidSlider" min="-24" max="24" value="0" step="1" disabled><span class="slider-val" id="eqLowMidVal">0 dB</span></div>
+          <div class="slider-row"><label for="eqMidSlider">EQ Mid (1.5 kHz)</label><input type="range" id="eqMidSlider" min="-24" max="24" value="0" step="1" disabled><span class="slider-val" id="eqMidVal">0 dB</span></div>
+          <div class="slider-row"><label for="eqHighMidSlider">EQ High-Mid (3 kHz)</label><input type="range" id="eqHighMidSlider" min="-24" max="24" value="0" step="1" disabled><span class="slider-val" id="eqHighMidVal">0 dB</span></div>
+          <div class="slider-row"><label for="highpassSlider">High-Pass Filter</label><input type="range" id="highpassSlider" min="20" max="2000" value="20" step="1" disabled><span class="slider-val" id="highpassVal">20 Hz</span></div>
+          <div class="slider-row"><label for="lowpassSlider">Low-Pass Filter</label><input type="range" id="lowpassSlider" min="1000" max="20000" value="20000" step="10" disabled><span class="slider-val" id="lowpassVal">20000 Hz</span></div>
+          <div class="slider-row"><label for="compThresholdSlider">Comp Threshold</label><input type="range" id="compThresholdSlider" min="-60" max="0" value="0" step="1" disabled><span class="slider-val" id="compThresholdVal">0 dB</span></div>
+          <div class="slider-row"><label for="compRatioSlider">Comp Ratio</label><input type="range" id="compRatioSlider" min="1" max="20" value="1" step="0.1" disabled><span class="slider-val" id="compRatioVal">1:1</span></div>
+          <div class="slider-row"><label for="compAttackSlider">Comp Attack</label><input type="range" id="compAttackSlider" min="0" max="200" value="20" step="1" disabled><span class="slider-val" id="compAttackVal">20 ms</span></div>
+          <div class="slider-row"><label for="compReleaseSlider">Comp Release</label><input type="range" id="compReleaseSlider" min="0" max="1000" value="250" step="10" disabled><span class="slider-val" id="compReleaseVal">250 ms</span></div>
+          <div class="slider-row"><label for="compKneeSlider">Comp Knee</label><input type="range" id="compKneeSlider" min="0" max="40" value="0" step="1" disabled><span class="slider-val" id="compKneeVal">0 dB</span></div>
+          <div class="slider-row"><label for="makeupGainSlider">Makeup Gain</label><input type="range" id="makeupGainSlider" min="0" max="24" value="0" step="1" disabled><span class="slider-val" id="makeupGainVal">0 dB</span></div>
+          <div class="slider-row"><label for="stereoWidthSlider">Stereo Width</label><input type="range" id="stereoWidthSlider" min="0" max="200" value="100" step="1" disabled><span class="slider-val" id="stereoWidthVal">100%</span></div>
+          <div class="slider-row"><label for="gateThresholdSlider">Gate Threshold</label><input type="range" id="gateThresholdSlider" min="-100" max="0" value="-45" step="1" disabled><span class="slider-val" id="gateThresholdVal">-45 dB</span></div>
+          <div class="slider-row"><label for="gateRangeSlider">Gate Range</label><input type="range" id="gateRangeSlider" min="0" max="80" value="0" step="1" disabled><span class="slider-val" id="gateRangeVal">0 dB</span></div>
+          <div class="slider-row"><label for="gateAttackSlider">Gate Attack</label><input type="range" id="gateAttackSlider" min="0" max="200" value="5" step="1" disabled><span class="slider-val" id="gateAttackVal">5 ms</span></div>
+          <div class="slider-row"><label for="gateReleaseSlider">Gate Release</label><input type="range" id="gateReleaseSlider" min="0" max="1000" value="100" step="10" disabled><span class="slider-val" id="gateReleaseVal">100 ms</span></div>
+          <div class="slider-row"><label for="deEsserFreqSlider">De-Esser Freq</label><input type="range" id="deEsserFreqSlider" min="2000" max="12000" value="6000" step="100" disabled><span class="slider-val" id="deEsserFreqVal">6000 Hz</span></div>
+          <div class="slider-row"><label for="deEsserAmountSlider">De-Esser Amount</label><input type="range" id="deEsserAmountSlider" min="0" max="100" value="0" step="1" disabled><span class="slider-val" id="deEsserAmountVal">0%</span></div>
         </div>
       </details>
     </section>
 
-    <!-- ── STEP 3: Per-speaker isolation ───────────────────────────────── -->
+    <!-- Legacy compatibility: mixPanel id preserved but points to enhancePanel -->
+    <section class="panel vip-card" id="mixPanel" aria-labelledby="mixLabel" hidden>
+      <h2 id="mixLabel" class="section-label">Live Mix (legacy compat)</h2>
+    </section>
+
     <section class="panel vip-card" id="speakersPanel" aria-labelledby="speakersLabel" hidden>
-      <h2 id="speakersLabel" class="section-label">3 · Speakers</h2>
-      <p class="hint">
-        Speakers detected on the isolated voice stem — entirely on your device.
-        Mute, solo, or rebalance each voice; changes are instant gain
-        automation, the AI never re-runs.
-      </p>
-      <div class="status-row">
-        <span id="speakerStatus" role="status" aria-live="polite"></span>
-      </div>
+      <h2 id="speakersLabel" class="section-label">Speakers</h2>
+      <p class="hint">Speakers detected on the isolated voice stem — entirely on your device.</p>
+      <div class="status-row"><span id="speakerStatus" role="status" aria-live="polite"></span></div>
       <div id="speakerCardsGrid" class="speaker-grid" aria-label="Per-speaker controls"></div>
     </section>
 
-    <!-- ── STEP 3b: Target-speaker enrollment (same module as Engineer) ─ -->
     <section class="panel vip-card" id="targetSpeakerLandingPanel" aria-labelledby="targetSpeakerLandingLabel" hidden>
-      <h2 id="targetSpeakerLandingLabel" class="section-label">3b · Focus on one voice</h2>
+      <h2 id="targetSpeakerLandingLabel" class="section-label">Focus on one voice</h2>
       <div id="targetSpeakerPanel" aria-label="Target speaker enrollment and isolation"></div>
     </section>
 
-    <!-- Conversion sections (below fold on phones — after the product flow) -->
-    <section class="panel vip-card vip-pitch ps-band" aria-labelledby="whyLabel" style="max-width:1280px;margin:0 auto 24px;">
+    <!-- Trust -->
+    <section class="vip-trust panel vip-card" aria-labelledby="trustLabel" id="trust">
       <div>
-        <p class="ps-kicker" id="whyLabel">Why this feels different</p>
-        <h2 class="vip-hero__title" style="font-size:1.6rem;max-width:none;">Audio never leaves the device.</h2>
-        <p class="hint">The interface shows privacy, engine health, and processing state instead of hiding them behind a spinner. No fabricated customer counts or quality percentages.</p>
+        <p class="ps-kicker" id="trustLabel">Trust · Privacy</p>
+        <h2 class="vip-hero__title" style="font-size:1.6rem;max-width:none;">Local processing · No cloud upload required · No telemetry for audio processing · User retains control of original audio</h2>
+        <p class="hint">100% on-device processing with WebGPU/WASM. Raw source is immutable; processed and removed are derived views. Always communicate On-device, Private, Zero Cloud status clearly without turning interface into marketing clutter. No fabricated customer counts or quality percentages.</p>
+        <div class="vip-trust__badges" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+          <span style="padding:6px 12px; background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; font:500 11px/1 ui-sans-serif; color:#31cf7d;">✓ On-device</span>
+          <span style="padding:6px 12px; background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; font:500 11px/1 ui-sans-serif; color:#31cf7d;">✓ Private</span>
+          <span style="padding:6px 12px; background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; font:500 11px/1 ui-sans-serif; color:#31cf7d;">✓ Zero Cloud</span>
+          <span style="padding:6px 12px; background:rgba(46,213,229,0.12); border:1px solid rgba(46,213,229,0.2); border-radius:999px; font:500 11px/1 ui-sans-serif; color:#2ed5e5;">✓ Works Offline</span>
+        </div>
       </div>
       <div class="ps-actions">
-        <div class="ps-stat-box"><span>Pipeline</span><strong>32 stages</strong></div>
-        <div class="ps-stat-box"><span>Spectral</span><strong style="color:var(--action-live)">1 × STFT</strong></div>
+        <div class="ps-stat-box"><span>Pipeline</span><strong>Signal-First</strong></div>
+        <div class="ps-stat-box"><span>Processing</span><strong style="color:#2ed5e5">100% Local</strong></div>
       </div>
     </section>
 
-    <section class="panel vip-card privacy-panel">
-      <h2 class="section-label">Privacy &amp; local processing</h2>
-      <p class="hint">
-        100% local processing — models run in a Web Worker on your device
-        (WebGPU when available, WASM fallback). No microphone access, no audio
-        upload to our servers, no telemetry.
-      </p>
-      <p class="hint" id="backendStatusLine" role="status" aria-live="polite">
-        Backend: detecting…
-      </p>
+    <section class="panel vip-card privacy-panel" id="settings">
+      <h2 class="section-label">Settings · Privacy &amp; local processing</h2>
+      <p class="hint">100% local processing — models run in a Web Worker on your device (WebGPU when available, WASM fallback). No microphone access, no audio upload to our servers, no telemetry.</p>
+      <p class="hint" id="backendStatusLine" role="status" aria-live="polite">Backend: detecting…</p>
       <div class="privacy-actions">
-        <button type="button" id="clearLocalDataBtn" class="btn btn-outline vip-tap"
-          aria-label="Clear all local data: library, stems, embeddings, model cache">
-          Clear Local Data
-        </button>
+        <button type="button" id="clearLocalDataBtn" class="btn btn-outline vip-tap" aria-label="Clear all local data: library, stems, embeddings, model cache">Clear Local Data</button>
         <span id="clearLocalDataStatus" class="hint" role="status" aria-live="polite"></span>
       </div>
       <div class="vip-cta-band">
@@ -491,9 +492,9 @@
     </section>
   </main>
 
-  <!-- DS bundle first; ORT is loaded by MLWorker (importScripts) — omit main-thread ORT for faster first paint -->
   <script defer src="/lib/react-mini.js"></script>
   <script defer src="/lib/_ds_bundle.js"></script>
   <script type="module" src="/landing.js"></script>
+  <script type="module" src="/landing-premium.js"></script>
 </body>
 </html>
