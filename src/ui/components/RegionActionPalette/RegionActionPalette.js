@@ -140,7 +140,7 @@ export class RegionActionPalette {
 
     // Mobile header
     const header = document.createElement('div');
-    header.style.cssText = `display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;`;
+    header.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;';
     header.innerHTML = `
       <span style="font:600 12px/1 ui-sans-serif; color:#f4f7fa;">Selection Action</span>
       <button data-action="close" style="width:32px; height:32px; border-radius:50%; border:1px solid #1d2a34; background:transparent; color:#8d9aaa; cursor:pointer;">✕</button>
@@ -214,8 +214,7 @@ export class RegionActionPalette {
 
     // Clear and append
     this._paletteEl.replaceChildren(fragDesktop);
-    // Keep header + actions
-    const existingHeader = this._bottomSheetEl.querySelector('div');
+    // Header + actions replace whatever the bottom sheet held before
     this._bottomSheetEl.replaceChildren(header, fragMobile);
 
     // Bind close

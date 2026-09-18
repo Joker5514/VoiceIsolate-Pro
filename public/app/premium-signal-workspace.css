@@ -112,8 +112,10 @@
 }
 
 .vip-context-palette__btn--primary {
-  background: #9b6cff;
-  border-color: #9b6cff;
+  /* Same white-on-violet rule as the profile buttons: solid variant for the
+     filled surface, bright value for the accent border. */
+  background: var(--vip-selection-solid);
+  border-color: var(--vip-selection);
   color: white;
   font-weight: 600;
 }
@@ -178,8 +180,10 @@
 }
 
 .vip-profiles__btn[aria-pressed="true"] {
-  background: #9b6cff;
-  border-color: #9b6cff;
+  /* White on the filled violet needs the darker solid variant (AA 4.5:1);
+     the bright value stays for the border accent. See --vip-selection-solid. */
+  background: var(--vip-selection-solid);
+  border-color: var(--vip-selection);
   color: white;
 }
 

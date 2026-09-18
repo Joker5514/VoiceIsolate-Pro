@@ -81,6 +81,7 @@ import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
+import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
 import {
   FILE_INPUT_ACCEPT,
   getFileInputAccept,
@@ -6999,6 +7000,13 @@ class VoiceIsolatePro {
         snr: Number.isFinite(state.snrDb) ? snrShort : '--',
       });
     }
+    // Unified session store (Issue #820): keep this method the ONE metrics
+    // writer — derive the premium live metrics from the stems and feed the
+    // shared AudioSessionStore that drives the Engineer live meters/overlays.
+    try {
+      const sessionMetrics = this._computeSessionMetricsState();
+      if (sessionMetrics) getAudioSessionStore().updateMetrics(sessionMetrics);
+    } catch (_) { /* session metrics must never fail the pipeline */ }
     return state;
   }
 
@@ -7065,6 +7073,156 @@ class VoiceIsolatePro {
       return { voicePct, noisePct, snrDb, oRms, pRms };
     } catch (_) {
       return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
+    }
+  }
+
+  /**
+   * Derive the unified session metrics (Voice Clarity, Noise Reduction,
+   * Whisper Retention, Output dBFS + deep readouts) from the current stems.
+   * This is NOT a second metrics writer: it is invoked exclusively from
+   * updateAudioMetrics() (the single Voice/Noise/SNR writer, CLAUDE.md §5.1)
+   * and pushes its result into the shared AudioSessionStore (Issue #820).
+   * Metrics describe the last Process pass regardless of A/B audition mode.
+   * @returns {object|null} patch for sessionStore.updateMetrics()
+   */
+  _computeSessionMetricsState() {
+    const orig = this.origBuffer || this.inputBuffer;
+    const proc = this.outputBuffer || this.procBuffer || null;
+    if (!orig || typeof orig.getChannelData !== 'function') return null;
+    if (!proc || proc === orig || typeof proc.getChannelData !== 'function') return null;
+    try {
+      const o = orig.getChannelData(0);
+      const p = proc.getChannelData(0);
+      const n = Math.min(o.length, p.length);
+      const sampleRate = proc.sampleRate || orig.sampleRate || 48000;
+      if (n < 256) return null;
+
+      // Identity cache: updateAudioMetrics() fires hundreds of times per
+      // Process pass; recompute only when the stems actually changed.
+      const stamp = (buf) => {
+        const d = buf.getChannelData(0);
+        const L = d.length;
+        return `${L}@${buf.sampleRate}:${d[0]}|${d[L >> 1]}|${d[L - 1]}`;
+      };
+      const key = `${stamp(orig)}|${stamp(proc)}`;
+      if (key === this._sessionMetricsKey && this._sessionMetricsCache) {
+        return this._sessionMetricsCache;
+      }
+
+      // Pass 1 (subsampled): processed RMS/peak + retained-vs-removed energy.
+      const step = Math.max(1, Math.floor(n / 16000));
+      let pSum = 0;
+      let pCount = 0;
+      let peak = 0;
+      let voiceEnergy = 0;
+      let noiseEnergy = 0;
+      for (let i = 0; i < n; i += step) {
+        const ov = o[i];
+        const pv = p[i];
+        pSum += pv * pv;
+        pCount += 1;
+        const abs = pv < 0 ? -pv : pv;
+        if (abs > peak) peak = abs;
+        // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
+        // retained energy ≈ voice.
+        const resid = ov - pv;
+        noiseEnergy += resid * resid;
+        voiceEnergy += pv * pv;
+      }
+      const rms = Math.sqrt(pSum / Math.max(1, pCount));
+      const total = voiceEnergy + noiseEnergy + 1e-12;
+      const voiceClarity = Math.max(0, Math.min(100, (voiceEnergy / total) * 100));
+      let snrDb = 20 * Math.log10((Math.sqrt(voiceEnergy) + 1e-10) / (Math.sqrt(noiseEnergy) + 1e-10));
+      if (!Number.isFinite(snrDb)) snrDb = 0;
+      snrDb = Math.max(-40, Math.min(60, snrDb));
+
+      // Pass 2 (20 ms frames): noise floor reduction + whisper-band retention.
+      const frame = Math.max(64, Math.floor(sampleRate * 0.02));
+      const preFrames = [];
+      const postFrames = [];
+      for (let pos = 0; pos + frame <= n; pos += frame) {
+        let ePre = 0;
+        let ePost = 0;
+        for (let i = 0; i < frame; i++) {
+          const ov = o[pos + i];
+          const pv = p[pos + i];
+          ePre += ov * ov;
+          ePost += pv * pv;
+        }
+        preFrames.push(ePre / frame);
+        postFrames.push(ePost / frame);
+      }
+      const dbOf = (v) => (v <= 1e-12 ? -120 : 10 * Math.log10(v));
+      const percentileDb = (arr) => {
+        if (!arr.length) return -120;
+        const sorted = [...arr].sort((a, b) => a - b);
+        return dbOf(sorted[Math.max(0, Math.floor(sorted.length * 0.1))]);
+      };
+      const floorPreDb = percentileDb(preFrames);
+      const floorPostDb = percentileDb(postFrames);
+      // Noise Reduction: how far the noise floor dropped, in dB (≥ 0).
+      let noiseReduction = Math.max(0, Math.min(60, floorPreDb - floorPostDb));
+      if (!preFrames.length) noiseReduction = Math.max(0, snrDb);
+
+      // Whisper Retention: energy kept in quiet (floor+2..floor+12 dB) frames.
+      let whisperPre = 0;
+      let whisperPost = 0;
+      for (let f = 0; f < preFrames.length; f++) {
+        const frameDb = dbOf(preFrames[f]);
+        if (frameDb > floorPreDb + 2 && frameDb < floorPreDb + 12) {
+          whisperPre += preFrames[f];
+          whisperPost += postFrames[f];
+        }
+      }
+      let whisperRetention;
+      if (whisperPre > 1e-12) {
+        whisperRetention = Math.max(0, Math.min(100, (whisperPost / whisperPre) * 100));
+      } else {
+        // No whisper-band frames: fall back to overall energy retention.
+        let ePre = 0;
+        let ePost = 0;
+        for (let f = 0; f < preFrames.length; f++) {
+          ePre += preFrames[f];
+          ePost += postFrames[f];
+        }
+        whisperRetention = ePre > 1e-12
+          ? Math.max(0, Math.min(100, (ePost / ePre) * 100))
+          : voiceClarity;
+      }
+
+      const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
+      // Simplified ungated LUFS (moment-based; K-weighting omitted).
+      const lufs = Math.max(-120, Math.min(0, -0.691 + 10 * Math.log10(pSum / Math.max(1, pCount) + 1e-12)));
+
+      // Voices: distinct diarization speakers when available, otherwise a
+      // speech-energy presence call.
+      let voices = null;
+      const segs = this._lastDiarizationSegments;
+      if (Array.isArray(segs) && segs.length) {
+        voices = new Set(segs.map((sg) => sg.speakerId || sg.speaker || sg.id).filter(Boolean)).size;
+      } else if (voiceClarity >= 15) {
+        voices = 1;
+      } else {
+        voices = 0;
+      }
+
+      const metrics = {
+        voiceClarity,
+        noiseReduction,
+        whisperRetention,
+        outputLevelDb,
+        snrDb,
+        rms,
+        peak,
+        lufs,
+        voices,
+        duration: Number.isFinite(orig.duration) ? orig.duration : n / sampleRate,
+      };
+      this._sessionMetricsKey = key;
+      this._sessionMetricsCache = metrics;
+      return metrics;
+    } catch (_) {
+      return null;
     }
   }
 

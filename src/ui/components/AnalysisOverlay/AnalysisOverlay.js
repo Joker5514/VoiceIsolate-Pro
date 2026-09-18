@@ -95,7 +95,6 @@ export class AnalysisOverlay {
     if (!this._regions.length || !this.options.duration) return;
 
     const containerWidth = this.container.clientWidth;
-    const containerHeight = this.container.clientHeight;
 
     for (const region of this._regions) {
       const style = OverlayStyles[region.type] || OverlayStyles.background_noise;

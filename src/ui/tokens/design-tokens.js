@@ -34,6 +34,10 @@ export const Tokens = Object.freeze({
   selection: {
     default: '#9b6cff',
     strong: '#7c3aed',
+    // Filled-surface variant: white on `default` is 3.51:1 (< AA). Follows the
+    // critical.default/critical.solid pattern — white text on the filled
+    // violet uses `solid`; accents/borders keep `default`.
+    solid: '#7c3aed',
     wash: 'rgba(155,108,255,0.14)',
     glow: 'rgba(155,108,255,0.32)',
   },
@@ -77,8 +81,8 @@ export const Tokens = Object.freeze({
     secondary: 'rgba(59,130,246,0.18)',
   },
   font: {
-    ui: 'ui-sans-serif, system-ui, \"Segoe UI\", sans-serif',
-    mono: 'ui-monospace, \"Cascadia Code\", \"Segoe UI Mono\", Consolas, monospace',
+    ui: 'ui-sans-serif, system-ui, "Segoe UI", sans-serif',
+    mono: 'ui-monospace, "Cascadia Code", "Segoe UI Mono", Consolas, monospace',
   },
   spacing: {
     1: '4px',
