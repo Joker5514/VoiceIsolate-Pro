@@ -75,6 +75,7 @@ export class LiveMeters {
     this._renderMeters();
   }
 
+  _createMeterCard(key, label, unit = '%', color = Tokens.signal.primary) {
   _createMeterCard(key, label, _unit = '%', color = Tokens.signal.primary) {
     const card = this.container.querySelector(`[data-meter="${key}"]`);
     if (!card) return;

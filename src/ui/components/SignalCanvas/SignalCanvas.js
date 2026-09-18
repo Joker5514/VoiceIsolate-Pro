@@ -304,6 +304,7 @@ export class SignalCanvas {
   setPlaybackTime(time) {
     this._playbackTime = time;
     const frac = this._duration > 0 ? time / this._duration : 0;
+    const stackWidth = this._els.selectionHost.clientWidth;
     this._els.cursor.style.display = 'block';
     this._els.cursor.style.left = `${frac * 100}%`;
     this._els.timeLabel.textContent = `${this._formatTime(time)} / ${this._formatTime(this._duration)}`;

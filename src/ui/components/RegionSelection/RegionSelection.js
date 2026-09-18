@@ -218,11 +218,13 @@ export class RegionSelection {
             newSel.end = newSel.start + this.options.minDuration;
           }
           break;
+        case 'move':
         case 'move': {
           const dur = this._dragStartSelection.end - this._dragStartSelection.start;
           newSel.start = Math.max(0, Math.min(this.options.duration - dur, this._dragStartSelection.start + deltaTime));
           newSel.end = newSel.start + dur;
           break;
+        default:
         }
         default: {
           // Creating new selection
