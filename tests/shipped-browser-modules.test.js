@@ -76,16 +76,23 @@ const { JSDOM } = require('jsdom');
 const HTML_ENTRY_POINTS = ['public/index.html', 'public/app/index.html'];
 
 function duplicateElementIds(html) {
-  const { document } = new JSDOM(html).window;
-  const seen = new Set();
-  const duplicates = [];
-  for (const el of document.querySelectorAll('[id]')) {
-    const id = el.id;
-    if (!id) continue;
-    if (seen.has(id)) duplicates.push(id);
-    else seen.add(id);
+  const { window } = new JSDOM(html);
+  try {
+    const seen = new Set();
+    const duplicates = [];
+    for (const el of window.document.querySelectorAll('[id]')) {
+      const id = el.id;
+      if (!id) continue;
+      if (seen.has(id)) duplicates.push(id);
+      else seen.add(id);
+    }
+    return duplicates;
+  } finally {
+    // Every jsdom window in this suite is closed — see the note in
+    // tests/visuals-bootstrap.test.js. The returned ids are plain strings, so
+    // nothing here outlives the window.
+    window.close();
   }
-  return duplicates;
 }
 
 describe('shipped HTML entry points have unique element ids', () => {
