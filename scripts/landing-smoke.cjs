@@ -25,6 +25,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const os = require('os');
+const { launchChromium } = require('./lib/launch-chromium.cjs');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -175,8 +176,7 @@ async function main() {
   process.on('SIGTERM', () => { cleanup(); process.exit(143); });
   await waitForServer(BASE);
 
-  const { chromium } = require('playwright');
-  const browser = await chromium.launch({
+  const browser = await launchChromium({
     args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'],
   });
   const page = await browser.newPage();

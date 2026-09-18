@@ -55,7 +55,12 @@
   /* Raised from #6d7a86 (4.49:1 on --surface-root) to clear WCAG AA 4.5:1
      for the 9-12px secondary labels this token paints. */
   --text-dim:  #7b8894;
-  --text-ghost: rgba(244,247,250,0.18);
+  /* Faintest text tier. Raised from rgba(244,247,250,0.18) — 1.61:1, the 9-10px
+     `.vis-hint` / `.hint-range-*` labels it paints were unreadable. 0.48 alpha
+     is 4.65-4.72:1 on every VIP surface and still sits below --text-dim (5.14-
+     5.44:1), so the hierarchy holds. Text tokens are AA-pinned; use a border or
+     background token for decoration instead of dropping this one. */
+  --text-ghost: rgba(244,247,250,0.48);
 
   --border:        var(--border-subtle);
   --border-strong: #26323d;
@@ -765,7 +770,10 @@ input[type="file"]:focus { border-color: var(--border-focus); }
   height: 24px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
-  color: var(--text-dim);
+  /* --text-dim is pinned against the base surfaces, but this control lightens
+     its own to rgb(32,40,48), where #7b8894 falls to 4.11:1. The secondary
+     token clears it at 5.21:1. */
+  color: var(--text-secondary);
   font: var(--fw-bold) 11px/24px var(--font-ui);
   text-align: center;
   cursor: pointer;

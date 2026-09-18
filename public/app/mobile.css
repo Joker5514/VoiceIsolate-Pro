@@ -83,6 +83,28 @@ html {
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {
 
+  /* ── Scroll padding for the fixed bottom action bar ──────────────────────
+     `.mobile-action-bar` is `position: fixed` at z-index 200 and owns the
+     bottom ~61px of the viewport. Below 768px the console collapses to one
+     column, so the DOCUMENT is the scroller and nothing kept programmatic
+     scrolling out of that band: `scrollIntoView`, `#anchor` navigation and
+     focus-driven scrolling all parked controls underneath it, where
+     `elementFromPoint` returns the bar and a click never reaches them (three
+     DSP lock buttons, measured in Chromium at 768px). The rack column has its
+     own `scroll-padding-bottom` for when it is the scroller; this is the
+     document-level equivalent.
+
+     The top inset stays on the measured header height. The `.hdr { position:
+     static }` rule below does NOT win on the Engineer surface — precision-
+     studio.css has `body.ps-workstation .hdr { position: sticky }` at (0,2,0)
+     against this rule's (0,1,0), and specificity beats source order — so the
+     header is still sticky here, measured at 269px (390px) and 191px (768px).
+     A flat inset would bury scroll targets under it. */
+  :root {
+    scroll-padding-bottom: calc(72px + var(--safe-bottom, 0px));
+    scroll-padding-top: calc(var(--vip-hdr-h, var(--titlebar-h, 48px)) + 8px);
+  }
+
   /* ── Header ── */
   .hdr {
     padding: 8px 12px;
@@ -298,7 +320,13 @@ html {
   .hint-range-meter { min-width: 0; flex: 1 1 100%; }
   .hint-body { font-size: 0.72rem; }
   .hint-chip, .hint-example-pill { font-size: 0.68rem; }
-  .whisper-mode-row {
+  /* Two-class selectors: slider-theme.css states the whisper template as
+     `.sr-row.whisper-mode-row` (0,2,0), and a bare `.whisper-mode-row` here
+     would lose to it however late this sheet loads. Touch layouts must keep
+     `--mob-touch-min` (44px) hit targets — with the desktop template winning,
+     the hint button rendered 22px wide at 768px. */
+  .sr-row.whisper-mode-row,
+  .slider-row.whisper-mode-row {
     grid-template-columns: minmax(0, 1fr) var(--mob-touch-min) var(--mob-touch-min) var(--mob-touch-min);
     grid-template-areas:
       "label reset lock hint"
@@ -309,7 +337,7 @@ html {
   .whisper-mode-row .whisper-mode-group { grid-area: group; }
   .whisper-mode-row .whisper-mode-reset { grid-area: reset; }
   .whisper-mode-row .slider-lock-btn { grid-area: lock; }
-  .whisper-mode-row .slider-hint-btn { grid-area: hint; }
+  .whisper-mode-row .slider-hint-btn { grid-area: hint; width: var(--mob-touch-min); }
   .whisper-mode-row .slider-hint { grid-area: panel; }
 
   /* WhisperHunter — full-width touch target on mobile/Android */

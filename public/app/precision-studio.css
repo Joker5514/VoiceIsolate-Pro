@@ -11,6 +11,18 @@ body.ps-workstation .hdr {
   z-index: 40;
 }
 
+/* The sticky header is 48-269px depending on how `.hdr` wraps, so programmatic
+   scrolling (`scrollIntoView`, `#anchor` links, focus) must be kept clear of it
+   or it parks controls underneath the bar. `--vip-hdr-h` is the measured layout
+   height published by engineer-console.js.
+   This has to sit on `:root`: scroll-padding is read from the scroll container,
+   and for the document viewport that is the `html` element — unlike `overflow`
+   and `scroll-behavior`, it does not propagate up from `body`. This sheet only
+   ships on the Engineer surface, so `:root` is already scoped to it. */
+:root {
+  scroll-padding-top: calc(var(--vip-hdr-h, var(--titlebar-h, 48px)) + 8px);
+}
+
 .ps-workspace-nav {
   display: none;
 }

@@ -18,13 +18,14 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const { launchChromium } = require('./lib/launch-chromium.cjs');
 
 const PORT = parseInt(process.env.PORT || '3471', 10);
 const BASE = `http://127.0.0.1:${PORT}`;
 const HEADLESS = process.env.SMOKE_HEADLESS !== 'false';
 
-let chromium;
-try { ({ chromium } = require('playwright')); }
+// Presence probe only — launchChromium() does its own require.
+try { require('playwright'); }
 catch { console.error('[engineer-rt-smoke] playwright missing — run pnpm install && npx playwright install chromium'); process.exit(2); }
 
 const serverProc = spawn(process.execPath, ['server.js'], {
@@ -72,7 +73,7 @@ function check(name, ok, detail = '') {
 
 (async () => {
   await waitForServer();
-  const browser = await chromium.launch({ headless: HEADLESS });
+  const browser = await launchChromium({ headless: HEADLESS });
   const page = await browser.newContext().then((c) => c.newPage());
   const errors = [];
   // Only JS errors matter here; the frozen legacy /app/ page makes external

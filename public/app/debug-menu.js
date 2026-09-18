@@ -121,7 +121,7 @@ function buildHTML() {
       <div class="dbg-row"><span class="dbg-label">vip-deesser ★</span><span class="dbg-value" id="dbgWkDeess">—</span></div>
       <div class="dbg-row"><span class="dbg-label">Live-Mix bridge</span><span class="dbg-value" id="dbgWkBridge">—</span></div>
       <div class="dbg-row"><span class="dbg-label">dsp-processor (legacy)</span><span class="dbg-value" id="dbgWkDSP">—</span></div>
-      <div class="dbg-row" style="padding-top:2px"><span class="dbg-label" style="font-size:9px;color:rgba(176,184,200,0.35)">★ = playback AudioWorklet (Gate + DeEsser)</span><span></span></div>
+      <div class="dbg-row" style="padding-top:2px"><span class="dbg-label" style="font-size:9px;color:rgba(176,184,200,0.68)">★ = playback AudioWorklet (Gate + DeEsser)</span><span></span></div>
     </div>
   </div>
 

@@ -105,13 +105,15 @@
 }
 .dbg-header-hint {
   font-size: 9px;
-  color: rgba(176, 184, 200, 0.4);
+  /* 0.4 alpha was 2.46:1 on the panel; 0.68 is 4.98:1 (WCAG AA). */
+  color: rgba(176, 184, 200, 0.68);
   letter-spacing: 0.05em;
 }
 .dbg-close {
   background: none;
   border: none;
-  color: rgba(176, 184, 200, 0.4);
+  /* 0.4 alpha was 2.46:1 for this 14px glyph; 0.68 is 4.98:1. */
+  color: rgba(176, 184, 200, 0.68);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
@@ -173,7 +175,8 @@
 }
 .dbg-row:last-child { border-bottom: none; }
 .dbg-label {
-  color: rgba(176, 184, 200, 0.6);
+  /* 0.6 alpha was 4.12:1 for these 11px labels; 0.68 is 5.00:1. */
+  color: rgba(176, 184, 200, 0.68);
   flex: 0 0 auto;
   max-width: 55%;
 }
@@ -190,7 +193,7 @@
 .dbg-value.ok  { color: #00ffb4; }
 .dbg-value.warn { color: #f59e0b; }
 .dbg-value.err  { color: #ff4444; }
-.dbg-value.dim  { color: rgba(176, 184, 200, 0.4); }
+.dbg-value.dim  { color: rgba(176, 184, 200, 0.68); }
 
 /* ── Status Badges ── */
 .dbg-badge {
@@ -205,7 +208,7 @@
 .dbg-badge.ok   { background: rgba(0, 255, 180, 0.1); color: #00ffb4; border: 1px solid rgba(0, 255, 180, 0.2); }
 .dbg-badge.warn { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
 .dbg-badge.err  { background: rgba(255, 68, 68, 0.1);  color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.2); }
-.dbg-badge.dim  { background: rgba(176, 184, 200, 0.07); color: rgba(176, 184, 200, 0.4); border: 1px solid rgba(176, 184, 200, 0.1); }
+.dbg-badge.dim  { background: rgba(176, 184, 200, 0.07); color: rgba(176, 184, 200, 0.7); border: 1px solid rgba(176, 184, 200, 0.1); }
 
 /* ── Pipeline Stage Bar ── */
 .dbg-stage-bar {
@@ -242,13 +245,13 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
 }
 .dbg-log-entry:last-child { border-bottom: none; }
-.dbg-log-ts   { color: rgba(0, 255, 180, 0.35); flex-shrink: 0; width: 52px; }
+.dbg-log-ts   { color: rgba(0, 255, 180, 0.62); flex-shrink: 0; width: 52px; }
 .dbg-log-tag  { flex-shrink: 0; width: 38px; font-weight: 700; }
-.dbg-log-tag.log  { color: rgba(176, 184, 200, 0.5); }
+.dbg-log-tag.log  { color: rgba(176, 184, 200, 0.68); }  /* 0.5 was 3.4:1 */
 .dbg-log-tag.info { color: #3b82f6; }
 .dbg-log-tag.warn { color: #f59e0b; }
 .dbg-log-tag.err  { color: #ff4444; }
-.dbg-log-msg  { color: rgba(176, 184, 200, 0.75); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbg-log-msg  { color: rgba(176, 184, 200, 0.8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Controls Footer ── */
 .dbg-footer {
@@ -302,7 +305,8 @@
   border-color: rgba(255, 68, 68, 0.4);
 }
 .dbg-btn-dim {
-  color: rgba(176, 184, 200, 0.5);
+  /* 0.5 alpha was 3.4:1 for this button label; 0.68 is 4.98:1. */
+  color: rgba(176, 184, 200, 0.68);
   background: rgba(176, 184, 200, 0.05);
   border-color: rgba(176, 184, 200, 0.12);
 }
@@ -351,7 +355,7 @@
 .dbg-model-dot.warn { background: #f59e0b; }
 .dbg-model-dot.err  { background: #ff4444; }
 .dbg-model-dot.dim  { background: rgba(176, 184, 200, 0.2); }
-.dbg-model-name { font-size: 9px; color: rgba(176, 184, 200, 0.7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbg-model-name { font-size: 9px; color: rgba(176, 184, 200, 0.78); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Resize handle ── */
 .dbg-resize {

@@ -267,7 +267,9 @@ input[type='range']{
   box-shadow:0 0 0 2px rgba(220,38,38,0.2);
 }
 .hint-body{margin:0;font-size:11px;line-height:1.4;color:var(--text2)}
-.hint-toward{background:rgba(0,245,255,0.08);border-radius:3px;padding:0 2px}
+/* `<mark>` carries the UA's `color: MarkText` (black). Setting only a
+   background left 11px black-on-dark-teal text at 1.47:1. */
+.hint-toward{background:rgba(0,245,255,0.08);color:var(--text,#c5ced6);border-radius:3px;padding:0 2px}
 .hint-toward em{color:#00f5ff;font-style:normal;font-weight:600}
 .hint-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .hint-chip{
@@ -1779,14 +1781,16 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
 .whisper-mode-row .slider-hint { grid-area: panel; }
 .whisper-mode-group { display: flex; gap: 4px; margin: 8px 0 14px; width: 100%; }
 .wm-btn {
+  /* #666 on #1a1a1a was 3.03:1 for 10px uppercase labels; #888 is 4.91:1. */
   flex: 1; padding: 7px 4px; font-size: 0.72em; font-weight: 700;
-  background: #1a1a1a; border: 1px solid #2a2a2a; color: #666;
+  background: #1a1a1a; border: 1px solid #2a2a2a; color: #888;
   border-radius: 5px; cursor: pointer; transition: all 180ms ease;
   text-transform: uppercase; letter-spacing: 0.06em;
 }
 .wm-btn.active[data-mode="0"] { background: #1f2937; color: #9ca3af; border-color: #374151; }
 .wm-btn.active[data-mode="1"] { background: #14532d; color: #4ade80; border-color: #166534; }
-.wm-btn.active[data-mode="2"] { background: #7c2d12; color: #fb923c; border-color: #9a3412; }
+/* #fb923c on #7c2d12 was 4.14:1; #fdba74 is 5.56:1. */
+.wm-btn.active[data-mode="2"] { background: #7c2d12; color: #fdba74; border-color: #9a3412; }
 .wm-btn.active[data-mode="3"] { background: #4c1d95; color: #c4b5fd; border-color: #6d28d9; box-shadow: 0 0 12px #7c3aed44; }
 
 /* Always-visible WhisperHunter CTA (all workflow tiers) */

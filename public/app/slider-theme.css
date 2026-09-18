@@ -899,6 +899,30 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
   container-name: vip-rack;
 }
 
+/* ── Whisper Mode row (the 67th control) ──────────────────────────────────
+   `.whisper-mode-row` is also a `.sr-row`, so the four-column base at the top
+   of this file overwrote the five-track template `style.css` gives it (equal
+   specificity, later sheet). What survived was `132px 1fr 56px 24px` plus one
+   implicit `auto` column, and that `1fr` resolves to `minmax(auto, 1fr)` — the
+   min-content width of the four-button OFF/LIGHT/HEAVY/FORENSIC group, 201px.
+   The row measured 487px inside a 288-316px rack cell, so the lock and hint
+   buttons landed 160-180px outside `#tab-extreme-group`'s `overflow:hidden`
+   client box and could not be clicked at 1024/1440/1920. Re-state the template
+   here, where row layout is owned, with a shrinkable group track. */
+.sr-row.whisper-mode-row,
+.slider-row.whisper-mode-row {
+  grid-template-columns: minmax(0, 132px) minmax(0, 1fr) var(--vip-hit) var(--vip-hit) 22px;
+  grid-template-areas:
+    "label group reset lock hint"
+    "panel panel panel panel panel";
+  gap: 6px 8px;
+}
+/* Flex items default to `min-width:auto`, which is what pushed the group past
+   its track in the first place. */
+.whisper-mode-row .sr-label { min-width: 0; white-space: normal; line-height: 1.25; }
+.whisper-mode-row .whisper-mode-group { min-width: 0; }
+.whisper-mode-row .wm-btn { min-width: 0; }
+
 @container vip-rack (max-width: 400px) {
   .sr-row.dsp-slider-row,
   .slider-row.dsp-slider-row,
@@ -918,6 +942,17 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
   .dsp-slider-row .dsp-slider-num-wrap {
     grid-area: num;
     min-width: 56px;
+  }
+  /* Same story for the whisper row: the four aggression buttons cannot share
+     row 1 with the label and both 40px hit targets inside a ~300px rack. */
+  .sr-row.whisper-mode-row,
+  .slider-row.whisper-mode-row {
+    grid-template-columns: minmax(0, 1fr) var(--vip-hit) var(--vip-hit) 22px;
+    grid-template-areas:
+      "label reset lock hint"
+      "group group group group"
+      "panel panel panel panel";
+    row-gap: 4px;
   }
 }
 
@@ -954,6 +989,16 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
       grid-area: num;
       min-width: 56px;
       justify-content: flex-start;
+    }
+    .sr-row.whisper-mode-row,
+    .slider-row.whisper-mode-row {
+      grid-template-columns: minmax(0, 1fr) var(--vip-hit) var(--vip-hit) 22px;
+      grid-template-areas:
+        "label label label label"
+        "reset reset lock  hint"
+        "group group group group"
+        "panel panel panel panel";
+      row-gap: 4px;
     }
   }
 }
