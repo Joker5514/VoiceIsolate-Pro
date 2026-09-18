@@ -15,6 +15,7 @@ export class ProcessingController {
   }
 
   setRaw(channelData, sampleRate) {
+  setRaw(channelData, _sampleRate) {
     // Deep clone to preserve immutable raw
     this._raw = channelData.map((ch) => ch.slice());
     this.store?.setProcessingState('idle', 0, 'raw_set');

@@ -85,6 +85,9 @@ export class ComparisonToggle {
 
   setMode(mode) {
     if (!Object.values(ComparisonModes).includes(mode)) return;
+    // Guard against no-op sets: store-driven syncs call setMode() with the
+    // current mode; re-emitting 'modeChanged' would loop back into the store.
+    if (this.options.mode === mode) return;
     this.options.mode = mode;
 
     // Update UI

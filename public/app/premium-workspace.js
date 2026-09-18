@@ -114,6 +114,10 @@ function drawWaveform(canvas, data) {
   const analysis = sessionStore.getState().analysis;
   if (analysis && analysis.regions) {
     for (const r of analysis.regions) {
+  // Regions live at the top level of the session (see audioSessionStore)
+  const regions = sessionStore.getState().regions;
+  if (regions && regions.length) {
+    for (const r of regions) {
       const x0 = Math.floor((r.start / state.duration) * w);
       const x1 = Math.floor((r.end / state.duration) * w);
       let color = 'rgba(46,213,229,0.08)';
@@ -442,6 +446,8 @@ function wireComparison() {
 
   // Subscribe to session store for external changes
   sessionStore.subscribe((state) => {
+  // Global subscribers receive (event, payload, state) — see audioSessionStore._emit
+  sessionStore.subscribe((event, payload, state) => {
     const currentMode = state.comparisonMode;
     if (!currentMode) return;
     const reverseMap = { [ComparisonModes.RAW]: 'raw', [ComparisonModes.PROCESSED]: 'processed', [ComparisonModes.REMOVED]: 'removed' };
@@ -500,6 +506,15 @@ function wireLiveMetrics() {
       if (list && state.analysis.regions) {
         list.innerHTML = '';
         for (const r of state.analysis.regions.slice(0, 12)) {
+  // Global subscribers receive (event, payload, state) — see audioSessionStore._emit
+  sessionStore.subscribe((event, payload, state) => {
+    if (state.metrics) updateLiveMetrics(state.metrics);
+    if (state.analysis) {
+      // Update overlay list — regions live at the top level of the session
+      const list = $('analysisOverlayList');
+      if (list && state.regions) {
+        list.innerHTML = '';
+        for (const r of state.regions.slice(0, 12)) {
           const div = document.createElement('div');
           div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:#121a23;border:1px solid #1d2a34;border-radius:4px;font:500 11px/1 ui-sans-serif;';
           div.innerHTML = `<span style="color:#c5ced6;">${r.type} ${r.start?.toFixed ? r.start.toFixed(1) + 's' : ''}</span><span style="color:${r.confidence > 0.7 ? '#31cf7d' : r.confidence > 0.4 ? '#ffb948' : '#ff5a7a'};">${Math.round((r.confidence || 0) * 100)}%</span>`;

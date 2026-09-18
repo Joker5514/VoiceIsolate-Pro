@@ -227,6 +227,10 @@ export class AudioSessionStore {
   }
 
   setAnalysisResult(result) {
+    // Regions live at the TOP level of the session (state.regions) — the
+    // canonical contract read by SignalCanvas, AnalysisOverlay and the
+    // overlay list. They must NOT also be duplicated under analysis.regions.
+    const { regions, ...analysisPatch } = result;
     return this._update((s) => ({
       ...s,
       analysis: {
@@ -237,6 +241,10 @@ export class AudioSessionStore {
         timestamp: new Date().toISOString(),
       },
       regions: result.regions || s.regions,
+        ...analysisPatch,
+        timestamp: new Date().toISOString(),
+      },
+      regions: regions || s.regions,
       metrics: {
         ...s.metrics,
         snrDb: result.snrDb ?? s.metrics.snrDb,
@@ -288,11 +296,16 @@ export class AudioSessionStore {
 
   setComparisonMode(mode) {
     if (!Object.values(ComparisonModes).includes(mode)) return this._session;
+    // Equality guard: re-emitting an unchanged mode ping-pongs through
+    // subscribers that sync UI widgets which re-dispatch the same mode
+    // (ComparisonToggle ↔ store) and overflows the stack.
+    if (this._session.comparisonMode === mode) return this._session;
     return this._update((s) => ({ ...s, comparisonMode: mode }), SessionEvents.COMPARE_MODE_CHANGED, mode);
   }
 
   setProfile(profile) {
     if (!Object.values(Profiles).includes(profile)) return this._session;
+    if (this._session.activeProfile === profile) return this._session;
     return this._update((s) => ({ ...s, activeProfile: profile }), SessionEvents.PROFILE_CHANGED, profile);
   }
 

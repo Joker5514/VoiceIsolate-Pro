@@ -15,6 +15,7 @@ import { getUIStore } from '../../state/uiStore.js';
 
 export class MobileAnalysisLayout {
   constructor(container, options = {}) {
+  constructor(container, _options = {}) {
     this.container = container;
     this._uiStore = getUIStore();
     this._els = {};

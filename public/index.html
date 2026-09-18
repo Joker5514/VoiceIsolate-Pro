@@ -138,6 +138,12 @@
           <canvas id="demoSpecCanvas" width="600" height="100" style="width:100%; height:100%; display:block;"></canvas>
         </div>
       </div>
+      <div class="vis-block">
+        <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek after processing</span></div>
+        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
+        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to Live-Mix sliders in real time</span></div>
+        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
+      </div>
       <div id="sourceConfidencePanel" class="ps-empty" data-state="unavailable" role="status">
         Source confidence appears after on-device analysis. No placeholder measurements.
       </div>
@@ -458,6 +464,7 @@
         <p class="ps-kicker" id="trustLabel">Trust · Privacy</p>
         <h2 class="vip-hero__title" style="font-size:1.6rem;max-width:none;">Local processing · No cloud upload required · No telemetry for audio processing · User retains control of original audio</h2>
         <p class="hint">100% on-device processing with WebGPU/WASM. Raw source is immutable; processed and removed are derived views. Always communicate On-device, Private, Zero Cloud status clearly without turning interface into marketing clutter.</p>
+        <p class="hint">100% on-device processing with WebGPU/WASM. Raw source is immutable; processed and removed are derived views. Always communicate On-device, Private, Zero Cloud status clearly without turning interface into marketing clutter. No fabricated customer counts or quality percentages.</p>
         <div class="vip-trust__badges" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
           <span style="padding:6px 12px; background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; font:500 11px/1 ui-sans-serif; color:#31cf7d;">✓ On-device</span>
           <span style="padding:6px 12px; background:rgba(49,207,125,0.12); border:1px solid rgba(49,207,125,0.2); border-radius:999px; font:500 11px/1 ui-sans-serif; color:#31cf7d;">✓ Private</span>

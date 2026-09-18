@@ -62,6 +62,9 @@
   gap: 6px;
   font: 500 10px/1 var(--vip-font-mono);
   color: var(--vip-text-dim);
+  /* --vip-text-dim only reaches 3.91:1 on the success wash — below AA for
+     this 10px label. The secondary token keeps it ≥4.5:1 at every viewport. */
+  color: var(--vip-text-secondary);
   padding: 4px 8px;
   background: var(--vip-success-wash);
   border: 1px solid rgba(49,207,125,0.2);

@@ -201,7 +201,14 @@ export default [
   // ── Stem-Split & Live-Mix architecture (src/ — see CLAUDE.md §2) ─────────────
   {
     // Layers 1/3/4 — browser ES modules
-    files: ['src/core/**/*.js', 'src/pipeline/**/*.js', 'src/presentation/**/*.js'],
+    files: [
+      'src/core/**/*.js',
+      'src/pipeline/**/*.js',
+      'src/presentation/**/*.js',
+      'src/platform/**/*.js',
+      'src/state/**/*.js',
+      'src/ui/**/*.js',
+    ],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
