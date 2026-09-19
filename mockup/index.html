@@ -1,0 +1,1077 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VoiceIsolate Pro — Product Mockup · 16:9</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d1220'/%3E%3Cpath d='M8 13v6M12 9v14M16 12v8M20 7v18M24 13v6' stroke='%234ecdc4' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+/* ============ tokens ============ */
+:root{
+  --bg0:#0a0e17; --bg1:#0d1220;
+  --panel:rgba(255,255,255,.035);
+  --panel2:rgba(255,255,255,.055);
+  --border:rgba(255,255,255,.09);
+  --border-soft:rgba(255,255,255,.055);
+  --txt-hi:rgba(255,255,255,.92);
+  --txt:rgba(255,255,255,.6);
+  --txt-lo:rgba(255,255,255,.38);
+  --cyan:#4ecdc4; --teal:#5eead4; --violet:#a78bfa; --violet2:#8b5cf6;
+  --pink:#e879f9; --green:#4ade80; --amber:#fbbf24; --blue:#60a5fa; --orange:#fb923c;
+  --grad:linear-gradient(135deg,#5eead4 0%,#4ecdc4 32%,#8b5cf6 100%);
+  --grad-soft:linear-gradient(135deg,rgba(94,234,212,.16),rgba(139,92,246,.16));
+  --r-lg:16px; --r-md:12px; --r-sm:9px;
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font);
+  color:var(--txt);
+  background:var(--bg0);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+::selection{background:rgba(139,92,246,.4)}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+.ic{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.icf{fill:currentColor;stroke:none}
+
+/* ============ ambient background ============ */
+.bg-fx{position:fixed;inset:0;z-index:-2;
+  background:
+    radial-gradient(1100px 720px at 72% -12%, rgba(78,205,196,.09), transparent 62%),
+    radial-gradient(950px 700px at 6% 112%, rgba(139,92,246,.12), transparent 60%),
+    linear-gradient(180deg,var(--bg0),var(--bg1));
+}
+.bg-fx::before{content:"";position:absolute;inset:0;
+  background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);
+  background-size:56px 56px;
+  -webkit-mask-image:radial-gradient(ellipse 90% 60% at 50% 0%, #000 0%, transparent 78%);
+          mask-image:radial-gradient(ellipse 90% 60% at 50% 0%, #000 0%, transparent 78%);
+}
+
+/* ============ shared ============ */
+.screen{min-height:100vh;position:relative;display:flex;flex-direction:column}
+.glass{
+  background:var(--panel);
+  border:1px solid var(--border);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 12px 40px rgba(2,4,10,.35);
+}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.kbd{font-size:10.5px;padding:2px 6px;border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;color:var(--txt-lo);font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border-radius:99px;font-size:11.5px;font-weight:600;letter-spacing:.02em}
+.btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;border-radius:var(--r-md);transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+.btn:active{transform:translateY(1px)}
+.btn-primary{
+  background:var(--grad);color:#fff;padding:13px 22px;font-size:14.5px;
+  box-shadow:0 8px 30px rgba(139,92,246,.38), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.btn-primary:hover{box-shadow:0 10px 40px rgba(139,92,246,.55), inset 0 1px 0 rgba(255,255,255,.25);transform:translateY(-1px)}
+.btn-outline{
+  border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.04);
+  color:var(--txt-hi);padding:13px 22px;font-size:14.5px;
+  backdrop-filter:blur(10px);
+}
+.btn-outline:hover{background:rgba(255,255,255,.08)}
+.rv{opacity:0;transform:translateY(16px)}
+.rv.in,.screen--landing .rv{animation:rv .9s cubic-bezier(.22,1,.36,1) forwards;animation-delay:var(--d,0s)}
+@keyframes rv{to{opacity:1;transform:none}}
+
+/* ============ SCREEN 1 — landing ============ */
+.topnav{
+  height:66px;flex:none;display:flex;align-items:center;gap:28px;
+  padding:0 30px;position:relative;z-index:5;
+}
+.logo{display:flex;align-items:center;gap:11px;text-decoration:none}
+.logo-mark{
+  width:31px;height:31px;border-radius:9px;background:var(--grad);
+  display:grid;place-items:center;color:#fff;
+  box-shadow:0 4px 18px rgba(94,205,196,.35), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.logo-mark .ic{width:17px;height:17px;stroke-width:2.1}
+.logo-word{font-size:15.5px;font-weight:700;color:var(--txt-hi);letter-spacing:-.01em}
+.nav-links{display:flex;gap:30px;margin:0 auto}
+.nav-links a{font-size:13.5px;font-weight:500;color:var(--txt);text-decoration:none;transition:color .15s}
+.nav-links a:hover{color:var(--txt-hi)}
+.nav-cta{display:flex;align-items:center;gap:18px}
+.nav-cta .signin{font-size:13.5px;font-weight:500;color:var(--txt);text-decoration:none}
+.nav-cta .signin:hover{color:var(--txt-hi)}
+.btn-nav{padding:9px 17px;font-size:13px;border-radius:10px}
+
+.hero{
+  flex:1;display:grid;grid-template-columns:1.04fr 1fr;gap:58px;align-items:center;
+  width:100%;max-width:1250px;margin:0 auto;padding:26px 34px 66px;min-height:0;position:relative;
+}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:10px;
+  font-size:11px;font-weight:700;letter-spacing:.3em;color:rgba(255,255,255,.45);
+  margin-bottom:22px;
+}
+.eyebrow::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--grad);transform:rotate(45deg);box-shadow:0 0 12px rgba(94,205,196,.8)}
+.h1{
+  font-size:clamp(44px,5.7vw,78px);font-weight:800;line-height:1.02;letter-spacing:-.035em;
+  color:var(--txt-hi);margin-bottom:22px;
+}
+.hero-sub{font-size:17px;line-height:1.65;color:var(--txt);max-width:52ch;margin-bottom:32px}
+.hero-ctas{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:26px}
+.hero-proof{display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;font-weight:500;color:var(--txt-lo)}
+.hero-proof span{display:inline-flex;align-items:center;gap:7px}
+.hero-proof .ic{width:14px;height:14px;color:var(--green);stroke-width:2.2}
+
+.hero-visual{
+  position:relative;height:100%;min-height:340px;max-height:560px;
+  border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.12);
+  background:
+    linear-gradient(180deg, rgba(10,14,23,.12) 0%, rgba(10,14,23,.05) 40%, rgba(10,14,23,.72) 100%),
+    url("assets/hero-silhouette.jpg") center 30%/cover no-repeat;
+  box-shadow:0 30px 80px rgba(2,4,12,.6), inset 0 1px 0 rgba(255,255,255,.14);
+}
+.hud{
+  position:absolute;display:flex;align-items:center;gap:9px;
+  padding:9px 13px;border-radius:11px;font-size:12px;font-weight:600;color:var(--txt-hi);
+  background:rgba(10,14,23,.55);border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 10px 30px rgba(2,4,12,.5);
+  animation:floaty 5.5s ease-in-out infinite alternate;
+}
+.hud .ic{width:15px;height:15px}
+.hud--a{top:18px;left:18px}
+.hud--b{top:36%;right:18px;animation-delay:-1.6s}
+.hud--c{bottom:64px;left:18px;animation-delay:-3s}
+.hud--d{bottom:18px;right:18px;color:var(--violet);animation-delay:-2.2s}
+.hud--d .ic{color:var(--violet)}
+@keyframes floaty{from{transform:translateY(-5px)}to{transform:translateY(5px)}}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.9s ease-out infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.55)}100%{box-shadow:0 0 0 9px rgba(74,222,128,0)}}
+.miniwave{display:flex;align-items:center;gap:2.5px;height:15px}
+.miniwave i{width:2.6px;border-radius:2px;background:linear-gradient(180deg,var(--teal),var(--violet));animation:bar 1.15s ease-in-out infinite alternate;transform-origin:center}
+@keyframes bar{from{transform:scaleY(.35)}to{transform:scaleY(1)}}
+.ring-mini{width:34px;height:34px;transform:rotate(-90deg)}
+
+.scroll-cue{
+  position:absolute;bottom:76px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  font-size:10.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--txt-lo);
+  text-decoration:none;
+}
+.scroll-cue .ic{width:15px;height:15px;animation:cue 1.8s ease-in-out infinite}
+@keyframes cue{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(5px);opacity:1}}
+
+.trustbar{
+  flex:none;height:62px;display:flex;align-items:center;justify-content:center;gap:44px;
+  border-top:1px solid var(--border-soft);background:rgba(255,255,255,.02);position:relative;
+}
+.trust{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:rgba(255,255,255,.72)}
+.trust .ic{width:16px;height:16px;color:rgba(255,255,255,.5)}
+.trust-sep{width:1px;height:22px;background:rgba(255,255,255,.1)}
+.trustbar .ver{position:absolute;right:26px;font-size:11px;font-weight:500;color:var(--txt-lo);letter-spacing:.04em}
+
+/* ============ SCREEN 2 — app ============ */
+.screen--app{height:100vh;min-height:100vh;overflow:hidden}
+.app-shell{display:flex;flex:1;min-height:0}
+
+.sidebar{
+  width:74px;flex:none;display:flex;flex-direction:column;align-items:center;
+  padding:16px 0;border-right:1px solid var(--border-soft);background:rgba(255,255,255,.018);
+}
+.sidebar .logo-mark{margin-bottom:26px}
+.side-nav{display:flex;flex-direction:column;gap:8px;width:100%;align-items:center}
+.nav-item{
+  position:relative;width:46px;height:46px;border-radius:12px;display:grid;place-items:center;
+  color:var(--txt-lo);transition:all .16s;
+}
+.nav-item .ic{width:19px;height:19px}
+.nav-item:hover{color:var(--txt);background:rgba(255,255,255,.05)}
+.nav-item.active{color:#c4b5fd;background:rgba(139,92,246,.16);box-shadow:inset 0 0 0 1px rgba(139,92,246,.28)}
+.nav-item.active::before{
+  content:"";position:absolute;left:-14px;top:11px;bottom:11px;width:3px;border-radius:3px;
+  background:var(--grad);box-shadow:0 0 10px rgba(139,92,246,.8);
+}
+.nav-item::after{
+  content:attr(data-tip);position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);
+  background:#131a2c;border:1px solid var(--border);color:var(--txt-hi);
+  font-size:11.5px;font-weight:600;padding:5px 9px;border-radius:7px;white-space:nowrap;
+  opacity:0;pointer-events:none;transition:opacity .15s;z-index:60;
+}
+.nav-item:hover::after{opacity:1}
+.side-bottom{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:12px}
+.side-bottom .divider{width:26px;height:1px;background:rgba(255,255,255,.1)}
+.avatar{
+  width:32px;height:32px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(135deg,#4ecdc4,#8b5cf6);color:#fff;font-size:11px;font-weight:700;letter-spacing:.03em;
+  box-shadow:0 0 0 2px rgba(255,255,255,.12);
+}
+
+.app-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{
+  height:56px;flex:none;display:flex;align-items:center;gap:16px;padding:0 20px;
+  border-bottom:1px solid var(--border-soft);position:relative;background:rgba(255,255,255,.018);
+}
+.crumbs{display:flex;align-items:center;gap:9px;font-size:13px;min-width:0}
+.crumbs .crumb{color:var(--txt-lo);font-weight:500;flex:none}
+.crumbs .ic{width:13px;height:13px;color:var(--txt-lo)}
+.crumbs .file{color:var(--txt-hi);font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.search{
+  position:absolute;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:9px;width:250px;padding:7px 11px;
+  border-radius:10px;border:1px solid var(--border-soft);background:rgba(255,255,255,.03);
+  color:var(--txt-lo);font-size:12.5px;
+}
+.search .ic{width:14px;height:14px}
+.search span{flex:1}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.status-pill{
+  display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;
+  border:1px solid rgba(74,222,128,.28);background:rgba(74,222,128,.08);
+  color:rgba(134,239,172,.9);font-size:12px;font-weight:600;
+}
+.status-pill .dot{width:7px;height:7px}
+.topbar .avatar{width:30px;height:30px;font-size:10.5px}
+
+.app-body{
+  flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 306px;gap:16px;padding:16px 20px;
+}
+.main-col{display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0}
+
+.panel{border-radius:var(--r-lg);display:flex;flex-direction:column;min-height:0}
+.panel-head{
+  flex:none;display:flex;align-items:center;gap:12px;padding:13px 16px;
+  border-bottom:1px solid var(--border-soft);
+}
+.panel-head .title{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:600;color:var(--txt-hi);letter-spacing:-.01em}
+.panel-head .title .ic{width:16px;height:16px;color:var(--teal)}
+.panel-head .meta{font-size:11.5px;color:var(--txt-lo);font-weight:500}
+.panel-head .spacer{flex:1}
+.chip-file{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;color:var(--txt);
+  padding:4px 10px;border-radius:7px;border:1px solid var(--border-soft);background:rgba(255,255,255,.03)}
+.chip-file .ic{width:13px;height:13px;color:var(--cyan)}
+
+.seg{display:flex;gap:2px;padding:3px;border-radius:9px;background:rgba(255,255,255,.045);border:1px solid var(--border-soft)}
+.seg button{padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;color:var(--txt-lo);transition:all .15s}
+.seg button:hover{color:var(--txt)}
+.seg button.active{background:rgba(94,205,196,.16);color:var(--teal);box-shadow:inset 0 0 0 1px rgba(94,205,196,.3)}
+.btn-ghost{
+  display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px;font-size:12px;font-weight:600;
+  color:var(--txt);border:1px solid var(--border-soft);background:rgba(255,255,255,.03);
+}
+.btn-ghost:hover{background:rgba(255,255,255,.07);color:var(--txt-hi)}
+.btn-ghost .ic{width:14px;height:14px}
+.btn-sm{padding:8px 14px;font-size:12px;border-radius:9px}
+.btn-sm .ic{width:14px;height:14px}
+
+/* ---- waveform ---- */
+.panel--wave{flex:1.22;min-height:230px}
+.wave-wrap{flex:1;min-height:110px;position:relative;margin:12px 14px 4px;border-radius:var(--r-md);overflow:hidden;background:rgba(2,4,10,.3)}
+canvas{display:block;width:100%;height:100%;position:absolute;inset:0}
+.sel{
+  position:absolute;top:0;bottom:0;border-radius:8px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(232,121,249,.17),rgba(139,92,246,.10));
+  border:1px solid rgba(232,121,249,.55);
+  box-shadow:0 0 24px rgba(232,121,249,.15) inset, 0 0 18px rgba(232,121,249,.12);
+}
+.sel::before,.sel::after{
+  content:"";position:absolute;top:0;bottom:0;width:4px;border-radius:3px;
+  background:linear-gradient(180deg,var(--pink),var(--violet2));box-shadow:0 0 10px rgba(232,121,249,.7);
+}
+.sel::before{left:-2.5px}
+.sel::after{right:-2.5px}
+.sel-chip{
+  position:absolute;top:-1px;left:10px;transform:translateY(-50%);
+  font-size:10.5px;font-weight:600;color:var(--txt-hi);white-space:nowrap;
+  background:#160f26;border:1px solid rgba(232,121,249,.5);padding:4px 9px;border-radius:7px;
+  box-shadow:0 6px 18px rgba(2,4,12,.5);
+}
+.sel-chip b{color:var(--pink);font-weight:700}
+.ctx-menu{
+  position:absolute;width:196px;padding:6px;border-radius:11px;z-index:10;
+  background:rgba(16,20,36,.82);border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  box-shadow:0 18px 50px rgba(2,4,12,.65), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.ctx-menu::before{
+  content:"";position:absolute;top:-5px;left:26px;width:9px;height:9px;transform:rotate(45deg);
+  background:rgba(16,20,36,.92);border-left:1px solid rgba(255,255,255,.14);border-top:1px solid rgba(255,255,255,.14);
+}
+.ctx-item{
+  display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:8px;
+  font-size:12.5px;font-weight:500;color:var(--txt);text-align:left;
+}
+.ctx-item .ic{width:15px;height:15px;color:var(--txt-lo)}
+.ctx-item:hover{background:rgba(255,255,255,.06);color:var(--txt-hi)}
+.ctx-item .ic:hover, .ctx-item:hover .ic{color:var(--teal)}
+.ctx-item.hot{background:rgba(139,92,246,.18);color:#d6ccff;box-shadow:inset 0 0 0 1px rgba(139,92,246,.35)}
+.ctx-item.hot .ic{color:var(--violet)}
+.ctx-item .hint{margin-left:auto;font-size:10px;color:var(--txt-lo);letter-spacing:.02em}
+.ctx-sep{height:1px;margin:5px 8px;background:rgba(255,255,255,.08)}
+.playhead{
+  position:absolute;top:0;bottom:0;width:1.5px;background:linear-gradient(180deg,var(--teal),rgba(94,234,212,.25));
+  box-shadow:0 0 12px rgba(94,234,212,.8);pointer-events:none;z-index:5;
+}
+.playhead::before{
+  content:"";position:absolute;top:-1px;left:50%;transform:translateX(-50%);
+  width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px rgba(94,234,212,.9);
+}
+.ruler{flex:none;display:flex;justify-content:space-between;padding:7px 16px 2px;font-size:10px;font-weight:500;color:var(--txt-lo);font-variant-numeric:tabular-nums}
+.ruler-ticks{height:5px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.14) 0 1px,transparent 1px calc(100%/12))}
+.transport{flex:none;display:flex;align-items:center;gap:14px;padding:10px 16px 14px}
+.play-btn{
+  width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;
+  background:var(--grad);box-shadow:0 6px 20px rgba(139,92,246,.45), inset 0 1px 0 rgba(255,255,255,.3);
+  transition:transform .15s;
+}
+.play-btn:hover{transform:scale(1.06)}
+.play-btn .ic{width:16px;height:16px}
+.timecode{font-size:12.5px;font-weight:600;color:var(--txt-hi);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.timecode .dim{color:var(--txt-lo);font-weight:500}
+.zoomer{display:flex;align-items:center;gap:2px;padding:3px;border-radius:8px;border:1px solid var(--border-soft);background:rgba(255,255,255,.03)}
+.zoomer button{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;color:var(--txt-lo)}
+.zoomer button:hover{color:var(--txt-hi);background:rgba(255,255,255,.06)}
+.zoomer .ic{width:13px;height:13px}
+.zoomer .pct{font-size:11px;font-weight:600;color:var(--txt);padding:0 7px;font-variant-numeric:tabular-nums}
+
+/* ---- row 2: spectro + metrics ---- */
+.row2{flex:1;min-height:190px;display:flex;gap:16px}
+.panel--spec{flex:1.45;min-width:0}
+.spec-wrap{flex:1;min-height:90px;position:relative;margin:12px 14px 8px;border-radius:var(--r-md);overflow:hidden;background:rgba(2,4,10,.4)}
+.spec-sel{
+  position:absolute;top:0;bottom:0;background:rgba(232,121,249,.10);
+  border-left:1px dashed rgba(232,121,249,.4);border-right:1px dashed rgba(232,121,249,.4);pointer-events:none;
+}
+.legend{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--txt-lo);font-weight:500}
+.legend .bar{width:74px;height:6px;border-radius:3px;background:linear-gradient(90deg,#0f1228,#4c1d95,#9333ea,#d946ef,#f97316,#fde047)}
+.freq-labels{position:absolute;left:8px;top:10px;bottom:10px;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none;z-index:4}
+.freq-labels span{font-size:9.5px;font-weight:600;color:rgba(255,255,255,.35);letter-spacing:.05em}
+
+.panel--metrics{flex:1;min-width:240px}
+.metrics-body{flex:1;display:flex;flex-direction:column;padding:14px 16px 12px;min-height:0}
+.rings{flex:1;display:flex;align-items:center;justify-content:space-around;min-height:96px;padding:2px 0}
+.ringbox{display:flex;flex-direction:column;align-items:center;gap:8px}
+.ring-svg{width:82px;height:82px;transform:rotate(-90deg)}
+.ring-track{fill:none;stroke:rgba(255,255,255,.06);stroke-width:7}
+.ring{fill:none;stroke-width:7;stroke-linecap:round;stroke-dasharray:213.6;stroke-dashoffset:213.6;transition:stroke-dashoffset 1.5s cubic-bezier(.22,1,.36,1)}
+.ring-label{text-align:center}
+.ring-label .num{font-size:15px;font-weight:700;color:var(--txt-hi);letter-spacing:-.02em}
+.ring-label .cap{font-size:10px;font-weight:500;color:var(--txt-lo);margin-top:2px;letter-spacing:.02em}
+.metrics-foot{flex:none;display:flex;flex-direction:column;gap:7px;padding-top:12px;border-top:1px solid var(--border-soft)}
+.mf-row{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:500;color:var(--txt)}
+.mf-row .ic{width:13px;height:13px}
+.mf-row .g{color:var(--green)} .mf-row .v{color:var(--violet)}
+.mf-row .val{margin-left:auto;color:var(--txt-hi);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ---- stat cards ---- */
+.stats{flex:none;display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.stat{
+  border-radius:var(--r-lg);padding:14px 16px;display:flex;flex-direction:column;gap:9px;
+  background:var(--panel);border:1px solid var(--border);backdrop-filter:blur(18px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);position:relative;overflow:hidden;
+}
+.stat::after{content:"";position:absolute;inset:0;background:radial-gradient(120px 60px at 20% -10%,var(--glow,transparent),transparent 70%);opacity:.5;pointer-events:none}
+.stat-top{display:flex;align-items:center;justify-content:space-between}
+.stat-icon{width:34px;height:34px;border-radius:10px;display:grid;place-items:center}
+.stat-icon .ic{width:16px;height:16px}
+.stat-icon.blue{background:rgba(96,165,250,.14);color:var(--blue);box-shadow:inset 0 0 0 1px rgba(96,165,250,.25)}
+.stat-icon.green{background:rgba(74,222,128,.12);color:var(--green);box-shadow:inset 0 0 0 1px rgba(74,222,128,.25)}
+.stat-icon.violet{background:rgba(139,92,246,.15);color:var(--violet);box-shadow:inset 0 0 0 1px rgba(139,92,246,.3)}
+.stat-icon.amber{background:rgba(251,191,36,.12);color:var(--amber);box-shadow:inset 0 0 0 1px rgba(251,191,36,.28)}
+.stat-badge{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--txt-lo)}
+.stat-num{font-size:21px;font-weight:700;color:var(--txt-hi);letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+.stat-cap{font-size:11.5px;font-weight:500;color:var(--txt-lo);margin-top:-5px}
+.stat-delta{font-size:10.5px;font-weight:600;margin-top:-4px}
+.stat-delta.up{color:var(--green)} .stat-delta.plain{color:var(--txt-lo);font-weight:500}
+
+/* ---- AI assistant rail ---- */
+.assistant{border-radius:var(--r-lg);display:flex;flex-direction:column;min-height:0;
+  background:linear-gradient(180deg,rgba(139,92,246,.07),rgba(255,255,255,.025) 40%);
+  border:1px solid var(--border);backdrop-filter:blur(18px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 12px 40px rgba(2,4,10,.35);
+}
+.assist-head{flex:none;display:flex;align-items:center;gap:11px;padding:14px 15px;border-bottom:1px solid var(--border-soft)}
+.brain-badge{width:32px;height:32px;border-radius:10px;background:var(--grad);display:grid;place-items:center;color:#fff;
+  box-shadow:0 4px 16px rgba(139,92,246,.45), inset 0 1px 0 rgba(255,255,255,.3)}
+.brain-badge .ic{width:16px;height:16px}
+.assist-head .t{font-size:13.5px;font-weight:600;color:var(--txt-hi)}
+.assist-head .s{font-size:10.5px;font-weight:500;color:var(--txt-lo);margin-top:1px}
+.assist-head .chip{margin-left:auto}
+.chip-violet{background:rgba(139,92,246,.14);border:1px solid rgba(139,92,246,.32);color:var(--violet)}
+.chat{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:11px;padding:15px 14px}
+.msg{max-width:92%;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.55;font-weight:500}
+.msg .who{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;opacity:.65}
+.msg--ai{align-self:flex-start;background:rgba(255,255,255,.05);border:1px solid var(--border-soft);color:var(--txt);border-top-left-radius:4px}
+.msg--ai .who{color:var(--teal)}
+.msg--user{align-self:flex-end;background:rgba(139,92,246,.16);border:1px solid rgba(139,92,246,.34);color:rgba(255,255,255,.82);border-top-right-radius:4px}
+.msg--user .who{color:var(--violet)}
+.result-card{margin-top:9px;padding:9px 10px;border-radius:9px;background:rgba(2,4,10,.4);border:1px solid var(--border-soft);display:flex;flex-direction:column;gap:7px}
+.result-row{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:500;color:var(--txt)}
+.result-row .ic{width:13px;height:13px;color:var(--green);stroke-width:2.4;flex:none}
+.result-row b{margin-left:auto;font-weight:700;color:var(--txt-hi);font-variant-numeric:tabular-nums}
+.typing{display:flex;align-items:center;gap:8px;padding:2px 4px;align-self:flex-start}
+.typing .d{width:5px;height:5px;border-radius:50%;background:var(--violet);animation:blink 1.2s infinite}
+.typing .d:nth-child(2){animation-delay:.18s}
+.typing .d:nth-child(3){animation-delay:.36s}
+@keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2.5px)}}
+.typing span{font-size:10.5px;font-weight:500;color:var(--txt-lo)}
+.assist-input{flex:none;display:flex;align-items:center;gap:9px;padding:12px 13px;border-top:1px solid var(--border-soft)}
+.assist-input .field{
+  flex:1;display:flex;align-items:center;padding:9px 12px;border-radius:10px;
+  border:1px solid var(--border-soft);background:rgba(2,4,10,.35);font-size:12px;color:var(--txt-lo);
+}
+.send-btn{width:34px;height:34px;flex:none;border-radius:10px;background:var(--grad);display:grid;place-items:center;color:#fff;
+  box-shadow:0 4px 14px rgba(139,92,246,.4);transition:transform .15s}
+.send-btn:hover{transform:scale(1.07)}
+.send-btn .ic{width:14px;height:14px}
+
+.app-trust{
+  flex:none;height:46px;display:flex;align-items:center;justify-content:center;gap:36px;
+  border-top:1px solid var(--border-soft);background:rgba(255,255,255,.018);position:relative;
+}
+.app-trust .trust{font-size:11.5px;gap:8px}
+.app-trust .trust .ic{width:14px;height:14px}
+.app-trust .left,.app-trust .right{position:absolute;font-size:10.5px;font-weight:500;color:var(--txt-lo);letter-spacing:.03em}
+.app-trust .left{left:20px}
+.app-trust .right{right:20px}
+
+/* ============ responsive ============ */
+@media (max-width:1180px){
+  .app-body{grid-template-columns:minmax(0,1fr) 264px}
+  .nav-links{display:none}
+}
+@media (max-width:980px){
+  .hero{grid-template-columns:1fr;gap:34px;padding-bottom:80px}
+  .hero-visual{max-height:340px;min-height:260px}
+  .screen--app{height:auto;min-height:100vh;overflow:visible}
+  .app-body{grid-template-columns:1fr}
+  .assistant{min-height:420px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .trustbar{gap:20px}
+  .app-trust .left{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ icon sprite ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 9.5v5M8 6v12M12 9v6M16 4v16M20 9.5v5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.7 9.7 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M8 17v-4M13 17V8M18 17v-6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.8-4.8"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4.5"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+  <symbol id="i-cloudoff" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.78 5.78A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.31-.19"/><path d="M21.53 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 10 5.07"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3.5" y="11" width="17" height="10.5" rx="2.5"/><path d="M7.5 11V7a4.5 4.5 0 0 1 9 0v4"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.8"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.94 15.5a2 2 0 0 0-1.44-1.44l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94a2 2 0 0 0 1.44-1.44l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.13 1.58a.5.5 0 0 1 0 .96l-6.13 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/><path d="M19 3v4M21 5h-4"/></symbol>
+  <symbol id="i-volx" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m22 9-6 6M16 9l6 6"/></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M20 4 8.2 15.8M14.5 14.5 20 20M8.2 8.2 12 12"/></symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a.6.6 0 0 0 .9.5l10.6-6.5a.6.6 0 0 0 0-1L8.9 5a.6.6 0 0 0-.9.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 5.2A3 3 0 1 0 6 6a4 4 0 0 0-2.5 5.8 4 4 0 0 0 .55 6.6A4 4 0 1 0 12 18.2z"/><path d="M12 5.2A3 3 0 1 1 18 6a4 4 0 0 1 2.5 5.8 4 4 0 0 1-.55 6.6A4 4 0 1 1 12 18.2z"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-arrowr" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-2.5a2 2 0 0 0-1.9 1.46l-2.36 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0L6.4 10.54A2 2 0 0 1 4.5 12H2"/></symbol>
+  <symbol id="i-fileaudio" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13.5H8M14 17H8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-chevdn" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chevr" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+</svg>
+
+<div class="bg-fx" aria-hidden="true"></div>
+
+<!-- ================================================================== -->
+<!-- SCREEN 1 — LANDING / HERO                                          -->
+<!-- ================================================================== -->
+<section class="screen screen--landing" id="landing">
+  <nav class="topnav">
+    <a class="logo" href="#landing">
+      <span class="logo-mark"><svg class="ic"><use href="#i-logo"/></svg></span>
+      <span class="logo-word">VoiceIsolate&nbsp;<span class="grad">Pro</span></span>
+    </a>
+    <div class="nav-links">
+      <a href="#landing">Product</a>
+      <a href="#studio">Studio</a>
+      <a href="#landing">Accuracy</a>
+      <a href="#landing">Pricing</a>
+    </div>
+    <div class="nav-cta">
+      <a class="signin" href="#studio">Sign in</a>
+      <a class="btn btn-primary btn-nav" href="#studio">Get Started <svg class="ic" style="width:14px;height:14px"><use href="#i-arrowr"/></svg></a>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow rv" style="--d:.05s">PRIVATE&nbsp;·&nbsp;ON-DEVICE&nbsp;·&nbsp;REAL&nbsp;RESULTS</div>
+      <h1 class="h1 rv" style="--d:.14s">Hear what<br/>others <span class="grad">miss.</span></h1>
+      <p class="hero-sub rv" style="--d:.24s">
+        Forensic-grade voice isolation that runs entirely on your machine. Isolate speech,
+        enhance whispers, and erase noise from any recording — without a single byte ever
+        leaving your device.
+      </p>
+      <div class="hero-ctas rv" style="--d:.34s">
+        <a class="btn btn-primary" href="#studio"><svg class="ic" style="width:16px;height:16px"><use href="#i-download"/></svg> Download Free</a>
+        <a class="btn btn-outline" href="#studio"><svg class="ic" style="width:15px;height:15px;color:var(--teal)"><use href="#i-play" class="icf"/></svg> Watch the 2-min demo</a>
+      </div>
+      <div class="hero-proof rv" style="--d:.44s">
+        <span><svg class="ic"><use href="#i-check"/></svg> No account needed</span>
+        <span><svg class="ic"><use href="#i-check"/></svg> Free for personal use</span>
+        <span><svg class="ic"><use href="#i-check"/></svg> macOS · Windows · Android</span>
+      </div>
+    </div>
+
+    <div class="hero-visual rv" style="--d:.3s">
+      <div class="hud hud--a"><span class="dot"></span> Speech isolated — 96%</div>
+      <div class="hud hud--b">
+        <svg class="ring-mini" viewBox="0 0 34 34">
+          <circle cx="17" cy="17" r="14" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="3.5"/>
+          <circle cx="17" cy="17" r="14" fill="none" stroke="#a78bfa" stroke-width="3.5" stroke-linecap="round"
+                  stroke-dasharray="87.9" stroke-dashoffset="7" style="filter:drop-shadow(0 0 5px rgba(167,139,250,.8))"/>
+        </svg>
+        Noise removed 92%
+      </div>
+      <div class="hud hud--c">
+        <span class="miniwave">
+          <i style="height:8px;animation-delay:0s"></i><i style="height:13px;animation-delay:.1s"></i><i style="height:10px;animation-delay:.2s"></i><i style="height:15px;animation-delay:.05s"></i><i style="height:9px;animation-delay:.25s"></i><i style="height:12px;animation-delay:.15s"></i><i style="height:7px;animation-delay:.3s"></i><i style="height:14px;animation-delay:.08s"></i><i style="height:10px;animation-delay:.22s"></i><i style="height:12px;animation-delay:.12s"></i>
+        </span>
+        00:14.2 → 00:22.8 · selected
+      </div>
+      <div class="hud hud--d"><svg class="ic"><use href="#i-zap"/></svg> 41 ms · fully on-device</div>
+    </div>
+
+    <a class="scroll-cue" href="#studio">Explore the studio <svg class="ic"><use href="#i-chevdn"/></svg></a>
+  </div>
+
+  <div class="trustbar">
+    <div class="trust"><svg class="ic"><use href="#i-lock"/></svg> 100% On-Device</div>
+    <div class="trust-sep"></div>
+    <div class="trust"><svg class="ic"><use href="#i-cloudoff"/></svg> Zero Cloud</div>
+    <div class="trust-sep"></div>
+    <div class="trust"><svg class="ic"><use href="#i-trend"/></svg> Real Impact</div>
+    <span class="ver">v25.0.2</span>
+  </div>
+</section>
+
+<!-- ================================================================== -->
+<!-- SCREEN 2 — STUDIO DASHBOARD                                        -->
+<!-- ================================================================== -->
+<section class="screen screen--app" id="studio">
+  <div class="app-shell">
+
+    <!-- sidebar -->
+    <aside class="sidebar">
+      <span class="logo-mark"><svg class="ic"><use href="#i-logo"/></svg></span>
+      <nav class="side-nav">
+        <button class="nav-item active" data-tip="Overview"><svg class="ic"><use href="#i-grid"/></svg></button>
+        <button class="nav-item" data-tip="Studio"><svg class="ic"><use href="#i-sliders"/></svg></button>
+        <button class="nav-item" data-tip="Sessions"><svg class="ic"><use href="#i-history"/></svg></button>
+        <button class="nav-item" data-tip="Library"><svg class="ic"><use href="#i-folder"/></svg></button>
+        <button class="nav-item" data-tip="Models"><svg class="ic"><use href="#i-cpu"/></svg></button>
+        <button class="nav-item" data-tip="Analytics"><svg class="ic"><use href="#i-chart"/></svg></button>
+      </nav>
+      <div class="side-bottom">
+        <div class="divider"></div>
+        <button class="nav-item" data-tip="Settings"><svg class="ic"><use href="#i-settings"/></svg></button>
+        <div class="avatar">AK</div>
+      </div>
+    </aside>
+
+    <!-- main -->
+    <div class="app-main">
+      <header class="topbar">
+        <div class="crumbs">
+          <span class="crumb">Studio</span>
+          <svg class="ic"><use href="#i-chevr"/></svg>
+          <span class="file">Podcast_EP12 — Final.wav</span>
+        </div>
+        <div class="search">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <span>Search sessions…</span>
+          <span class="kbd">⌘K</span>
+        </div>
+        <div class="top-right">
+          <span class="status-pill"><span class="dot"></span> On-Device · Active</span>
+          <button class="btn-ghost" style="padding:8px" aria-label="Notifications"><svg class="ic" style="width:15px;height:15px"><use href="#i-bell"/></svg></button>
+          <div class="avatar">AK</div>
+        </div>
+      </header>
+
+      <div class="app-body">
+        <!-- left column -->
+        <div class="main-col">
+
+          <!-- waveform panel -->
+          <div class="panel glass panel--wave rv" style="--d:.05s">
+            <div class="panel-head">
+              <div class="title"><svg class="ic"><use href="#i-activity"/></svg> Signal</div>
+              <span class="chip-file"><svg class="ic"><use href="#i-fileaudio"/></svg> 44.1 kHz · Stereo · 58.2 MB</span>
+              <div class="spacer"></div>
+              <div class="seg">
+                <button>Raw</button>
+                <button class="active">Processed</button>
+                <button>Removed</button>
+              </div>
+              <button class="btn-ghost"><svg class="ic"><use href="#i-scissors"/></svg> Split</button>
+              <button class="btn btn-primary btn-sm"><svg class="ic"><use href="#i-download"/></svg> Export selection</button>
+            </div>
+
+            <div class="wave-wrap" id="waveWrap">
+              <canvas id="waveCanvas"></canvas>
+              <div class="sel" id="selBox">
+                <span class="sel-chip"><b>00:14.2 → 00:22.8</b>&nbsp;· Speech 98% · 2 speakers</span>
+              </div>
+              <div class="ctx-menu" id="ctxMenu" role="menu" aria-label="Selection actions">
+                <button class="ctx-item hot"><svg class="ic"><use href="#i-target"/></svg> Isolate Selection <span class="hint">⌘I</span></button>
+                <button class="ctx-item"><svg class="ic"><use href="#i-sparkles"/></svg> Enhance <span class="hint">⌘E</span></button>
+                <button class="ctx-item"><svg class="ic"><use href="#i-volx"/></svg> Reduce Noise <span class="hint">⌘N</span></button>
+                <div class="ctx-sep"></div>
+                <button class="ctx-item"><svg class="ic"><use href="#i-scissors"/></svg> Split at Playhead</button>
+                <button class="ctx-item"><svg class="ic"><use href="#i-eraser"/></svg> Delete Silence</button>
+              </div>
+              <div class="playhead" id="phWave"></div>
+            </div>
+
+            <div class="ruler-ticks"></div>
+            <div class="ruler">
+              <span>00:00</span><span>00:12</span><span>00:24</span><span>00:36</span><span>00:48</span><span>01:00</span><span>01:12</span>
+            </div>
+            <div class="transport">
+              <button class="play-btn" id="playBtn" aria-label="Play">
+                <svg class="ic icf" id="icPlay"><use href="#i-play"/></svg>
+                <svg class="ic icf" id="icPause" style="display:none"><use href="#i-pause"/></svg>
+              </button>
+              <div class="timecode"><span id="timeNow">00:17.5</span> <span class="dim">/ 01:12.0</span></div>
+              <div class="spacer" style="flex:1"></div>
+              <div class="zoomer">
+                <button aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
+                <span class="pct">100%</span>
+                <button aria-label="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
+              </div>
+              <span class="meta" style="font-size:11.5px;color:var(--txt-lo);font-weight:500">38.4 s processed · 0 bytes uploaded</span>
+            </div>
+          </div>
+
+          <!-- row 2 -->
+          <div class="row2">
+            <!-- spectrogram -->
+            <div class="panel glass panel--spec rv" style="--d:.15s">
+              <div class="panel-head">
+                <div class="title"><svg class="ic"><use href="#i-grid"/></svg> Spectrogram</div>
+                <span class="meta">128-pt FFT · 8 kHz</span>
+                <div class="spacer"></div>
+                <div class="legend"><span>0 dB</span><span class="bar"></span><span>+60 dB</span></div>
+              </div>
+              <div class="spec-wrap">
+                <canvas id="specCanvas"></canvas>
+                <div class="spec-sel" id="specSel"></div>
+                <div class="playhead" id="phSpec"></div>
+                <div class="freq-labels"><span>8k</span><span>4k</span><span>2k</span><span>1k</span><span>0</span></div>
+              </div>
+            </div>
+
+            <!-- confidence metrics -->
+            <div class="panel glass panel--metrics rv" style="--d:.25s">
+              <div class="panel-head">
+                <div class="title"><svg class="ic"><use href="#i-target"/></svg> Confidence</div>
+                <div class="spacer"></div>
+                <span class="chip chip-violet">VIP-Core v3</span>
+              </div>
+              <div class="metrics-body">
+                <div class="rings">
+                  <div class="ringbox">
+                    <svg class="ring-svg" viewBox="0 0 82 82">
+                      <circle class="ring-track" cx="41" cy="41" r="34"/>
+                      <circle class="ring" data-pct="96" cx="41" cy="41" r="34" stroke="#5eead4" style="filter:drop-shadow(0 0 6px rgba(94,234,212,.6));transition-delay:.2s"/>
+                    </svg>
+                    <div class="ring-label"><div class="num" data-count="96">0%</div><div class="cap">SPEECH RETENTION</div></div>
+                  </div>
+                  <div class="ringbox">
+                    <svg class="ring-svg" viewBox="0 0 82 82">
+                      <circle class="ring-track" cx="41" cy="41" r="34"/>
+                      <circle class="ring" data-pct="92" cx="41" cy="41" r="34" stroke="#a78bfa" style="filter:drop-shadow(0 0 6px rgba(167,139,250,.6));transition-delay:.4s"/>
+                    </svg>
+                    <div class="ring-label"><div class="num" data-count="92">0%</div><div class="cap">NOISE REDUCTION</div></div>
+                  </div>
+                  <div class="ringbox">
+                    <svg class="ring-svg" viewBox="0 0 82 82">
+                      <circle class="ring-track" cx="41" cy="41" r="34"/>
+                      <circle class="ring" data-pct="84" cx="41" cy="41" r="34" stroke="#fbbf24" style="filter:drop-shadow(0 0 6px rgba(251,191,36,.5));transition-delay:.6s"/>
+                    </svg>
+                    <div class="ring-label"><div class="num" data-count="84">0%</div><div class="cap">WHISPER CLARITY</div></div>
+                  </div>
+                </div>
+                <div class="metrics-foot">
+                  <div class="mf-row"><svg class="ic g"><use href="#i-check"/></svg> Diarization — 2 speakers <span class="val">0.94</span></div>
+                  <div class="mf-row"><svg class="ic v"><use href="#i-zap"/></svg> Local inference / 10 s <span class="val">41 ms</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- stat cards -->
+          <div class="stats">
+            <div class="stat rv" style="--d:.3s;--glow:rgba(96,165,250,.25)">
+              <div class="stat-top">
+                <span class="stat-icon blue"><svg class="ic"><use href="#i-mic"/></svg></span>
+                <span class="stat-badge">PROCESSED</span>
+              </div>
+              <div class="stat-num">38.4 s</div>
+              <div class="stat-cap">Audio analyzed locally</div>
+              <div class="stat-delta up">▲ 4.2× faster on ANE</div>
+            </div>
+            <div class="stat rv" style="--d:.36s;--glow:rgba(74,222,128,.22)">
+              <div class="stat-top">
+                <span class="stat-icon green"><svg class="ic"><use href="#i-shield"/></svg></span>
+                <span class="stat-badge">PRIVACY</span>
+              </div>
+              <div class="stat-num">0 B</div>
+              <div class="stat-cap">Sent to any cloud</div>
+              <div class="stat-delta plain">Fully local pipeline</div>
+            </div>
+            <div class="stat rv" style="--d:.42s;--glow:rgba(139,92,246,.28)">
+              <div class="stat-top">
+                <span class="stat-icon violet"><svg class="ic"><use href="#i-cpu"/></svg></span>
+                <span class="stat-badge">PERF</span>
+              </div>
+              <div class="stat-num">142 ms</div>
+              <div class="stat-cap">Inference / 10 s</div>
+              <div class="stat-delta plain">VIP-Core v3 · int8</div>
+            </div>
+            <div class="stat rv" style="--d:.48s;--glow:rgba(251,191,36,.2)">
+              <div class="stat-top">
+                <span class="stat-icon amber"><svg class="ic"><use href="#i-mic"/></svg></span>
+                <span class="stat-badge">WHISPER</span>
+              </div>
+              <div class="stat-num">2</div>
+              <div class="stat-cap">Whisper segments found</div>
+              <div class="stat-delta up">▲ Enhanced +6 dB</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI assistant rail -->
+        <aside class="assistant rv" style="--d:.2s" aria-label="AI Assistant">
+          <div class="assist-head">
+            <span class="brain-badge"><svg class="ic"><use href="#i-brain"/></svg></span>
+            <div>
+              <div class="t">AI Assistant</div>
+              <div class="s">Analyzes locally · never uploads</div>
+            </div>
+            <span class="chip chip-violet">VIP-Core</span>
+          </div>
+          <div class="chat">
+            <div class="msg msg--ai">
+              <span class="who">Assistant</span>
+              I found 2 speakers and a steady HVAC hum from 00:14–00:22. I can isolate just
+              your voice in that window — want me to run it?
+            </div>
+            <div class="msg msg--user">
+              <span class="who">You</span>
+              Yes — and boost the whisper at 00:47 without adding hiss.
+            </div>
+            <div class="msg msg--ai">
+              <span class="who">Assistant</span>
+              Done. Here's what changed in the selection:
+              <div class="result-card">
+                <div class="result-row"><svg class="ic"><use href="#i-check"/></svg> HVAC hum removed <b>−31 dB</b></div>
+                <div class="result-row"><svg class="ic"><use href="#i-check"/></svg> Whisper enhanced <b>+6 dB</b></div>
+                <div class="result-row"><svg class="ic"><use href="#i-check"/></svg> Speech retention <b>96%</b></div>
+              </div>
+            </div>
+            <div class="typing"><span class="d"></span><span class="d"></span><span class="d"></span><span>previewing selection…</span></div>
+          </div>
+          <div class="assist-input">
+            <div class="field">Ask about this selection…</div>
+            <button class="send-btn" aria-label="Send"><svg class="ic"><use href="#i-send"/></svg></button>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="app-trust">
+        <span class="left">Podcast_EP12.wav · Raw is immutable</span>
+        <div class="trust"><svg class="ic"><use href="#i-lock"/></svg> 100% On-Device</div>
+        <div class="trust"><svg class="ic"><use href="#i-cloudoff"/></svg> Zero Cloud</div>
+        <div class="trust"><svg class="ic"><use href="#i-trend"/></svg> Real Impact</div>
+        <span class="right">v25.0.2 · build 8208619</span>
+      </footer>
+    </div>
+  </div>
+</section>
+
+<script>
+(() => {
+  "use strict";
+  const $ = s => document.querySelector(s);
+  const lerp = (a,b,t) => a + (b-a)*t;
+  const mix = (c1,c2,t) => [lerp(c1[0],c2[0],t), lerp(c1[1],c2[1],t), lerp(c1[2],c2[2],t)];
+  const css = (c,a=1) => `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+  const CYAN=[94,205,196], TEAL=[94,234,212], VIOLET=[139,92,246], PINK=[232,121,249];
+  const D = 72;                       // clip duration, seconds
+  const SEL = [14.2/D, 22.8/D];       // selection region (00:14.2 – 00:22.8)
+  const BURSTS = [[0.02,0.30],[0.34,0.43],[0.47,0.71],[0.76,0.86],[0.90,0.965]];
+  function activity(t){
+    let v = 0;
+    for (const [a,b] of BURSTS) if (t>=a && t<=b){
+      const m = (t-a)/(b-a);
+      v = Math.max(v, 0.5+0.5*Math.sin(m*Math.PI));
+    }
+    return v;
+  }
+
+  /* ---------- canvas sizing ---------- */
+  function sizeCanvas(cv){
+    const r = cv.getBoundingClientRect();
+    const d = window.devicePixelRatio || 1;
+    cv.width = Math.max(2, Math.round(r.width*d));
+    cv.height = Math.max(2, Math.round(r.height*d));
+    cv.getContext("2d").setTransform(d,0,0,d,0,0);
+    return {w:r.width, h:r.height};
+  }
+
+  /* ---------- waveform ---------- */
+  const N = 260;
+  const heights = new Float32Array(N);
+  {
+    const rnd = mulberry32(1337);
+    for (let i=0;i<N;i++){
+      const t = i/(N-1);
+      const act = activity(t);
+      heights[i] = 0.055 + act * (0.24 + 0.76*Math.abs(Math.sin(i*0.52 + rnd()*0.9)) * (0.55 + 0.45*rnd()));
+    }
+  }
+  const waveCv = $("#waveCanvas"), wctx = waveCv.getContext("2d");
+  let waveRect = {w:0,h:0};
+  function roundRect(ctx,x,y,w,h,r){
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+  function drawWave(now){
+    const {w,h} = waveRect;
+    if (w<10 || h<10) return;
+    wctx.clearRect(0,0,w,h);
+    const bw = w/N, barW = Math.max(1.4, bw*0.52), mid = h*0.52;
+    for (let i=0;i<N;i++){
+      const t = i/(N-1);
+      const inSel = t>=SEL[0] && t<=SEL[1];
+      const breath = 1 + 0.035*Math.sin(now/850 + i*0.35);
+      const hh = Math.max(1.5, heights[i]*breath*(h*0.46));
+      const x = i*bw + (bw-barW)/2;
+      const col = inSel ? PINK : mix(CYAN, VIOLET, Math.pow(t,1.15));
+      wctx.shadowBlur = inSel ? 9 : 0;
+      wctx.shadowColor = inSel ? "rgba(232,121,249,.85)" : "transparent";
+      wctx.fillStyle = css(col, inSel ? 1 : 0.9);
+      roundRect(wctx, x, mid-hh, barW, hh*2, barW/2);
+      wctx.fill();
+    }
+    wctx.shadowBlur = 0;
+    wctx.fillStyle = "rgba(255,255,255,.07)";
+    wctx.fillRect(0, mid-0.5, w, 1);
+  }
+
+  /* ---------- spectrogram ---------- */
+  const STOPS = [
+    [0.00,[13,16,38]], [0.28,[76,29,149]], [0.52,[147,51,234]],
+    [0.72,[217,70,239]], [0.87,[249,115,22]], [1.00,[253,224,71]]
+  ];
+  function colormap(v){
+    for (let i=1;i<STOPS.length;i++){
+      if (v <= STOPS[i][0]){
+        const [t0,c0] = STOPS[i-1], [t1,c1] = STOPS[i];
+        return mix(c0,c1,(v-t0)/(t1-t0));
+      }
+    }
+    return STOPS[STOPS.length-1][1];
+  }
+  function makeNoise(seed, cellX, cellY, wPx, hPx){
+    const rnd = mulberry32(seed);
+    const gw = Math.ceil(wPx/cellX)+2, gh = Math.ceil(hPx/cellY)+2;
+    const g = new Float32Array(gw*gh);
+    for (let i=0;i<g.length;i++) g[i] = rnd();
+    const at = (px,py) => {
+      const x = px/cellX, y = py/cellY;
+      const xi = x|0, yi = y|0, xf = x-xi, yf = y-yi;
+      const s = (a,b) => g[Math.max(0,Math.min(b,gh-1))*gw + Math.max(0,Math.min(a,gw-1))];
+      const u = xf*xf*(3-2*xf), v = yf*yf*(3-2*yf);
+      return (s(xi,yi)*(1-u)+s(xi+1,yi)*u)*(1-v) + (s(xi,yi+1)*(1-u)+s(xi+1,yi+1)*u)*v;
+    };
+    return at;
+  }
+  const specCv = $("#specCanvas");
+  let specRect = {w:0,h:0};
+  function drawSpec(){
+    const {w,h} = specRect;
+    if (w<20 || h<20) return;
+    const ctx = specCv.getContext("2d");
+    const d = window.devicePixelRatio || 1;
+    const off = document.createElement("canvas");
+    off.width = Math.ceil(w*d); off.height = Math.ceil(h*d);
+    const o = off.getContext("2d");
+    o.setTransform(d,0,0,d,0,0);
+
+    const rows = 48, cellH = h/rows;
+    const nA = makeNoise(7, 10, 9, w, h);
+    const nB = makeNoise(99, 4, 4, w, h);
+    const hotRow = new Float32Array(w);
+
+    for (let x=0;x<w;x++){
+      const t = x/(w-1), act = activity(t);
+      const inSel = t>=SEL[0] && t<=SEL[1];
+      let maxV = 0, maxB = rows-1;
+      for (let b=0;b<rows;b++){
+        const fHigh = 1 - b/(rows-1);           // 0 Hz at bottom, 8 kHz at top
+        let v = 0.05 + 0.09*nA(x, b*cellH) + 0.05*nB(x, b*cellH);
+        if (act > 0.03){
+          const f0 = 0.09 + 0.045*Math.sin(t*9 + 1.3) + 0.02*Math.sin(t*23.7);
+          for (let k=1;k<=6;k++){
+            v += act * (1/(0.8+k*0.55)) * Math.exp(-((fHigh-f0*k)**2)/(2*0.0016));
+          }
+          v += act*0.20*Math.exp(-((fHigh-0.42)**2)/(2*0.03))*(0.4+0.6*nB(x, b*cellH*0.5));
+          if (inSel) v += 0.9*Math.exp(-((fHigh-0.12)**2)/(2*0.0007))*(0.7+0.3*nB(x*2, b*cellH)); // HVAC hum
+        }
+        v = Math.min(1, Math.max(0, v));
+        if (v > maxV){ maxV = v; maxB = b; }
+        o.fillStyle = css(colormap(v));
+        o.fillRect(x, b*cellH, 1, cellH+0.6);
+      }
+      hotRow[x] = maxB;
+    }
+
+    ctx.clearRect(0,0,w,h);
+    ctx.globalAlpha = 0.45; ctx.drawImage(off, 3, 4, w, h);      // extruded "depth" face
+    ctx.globalAlpha = 1;    ctx.drawImage(off, 0, 0, w, h);
+    for (let x=0;x<w;x+=1){                                      // top-edge glint
+      const y = hotRow[x]*cellH;
+      ctx.fillStyle = "rgba(254,240,138,.4)";
+      ctx.fillRect(x, y, 1, 1.2);
+    }
+    const grad = ctx.createLinearGradient(0,0,0,h);              // glass sheen
+    grad.addColorStop(0,"rgba(255,255,255,.055)");
+    grad.addColorStop(0.3,"rgba(255,255,255,0)");
+    ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
+  }
+
+  /* ---------- selection / playhead placement ---------- */
+  const selBox = $("#selBox"), specSel = $("#specSel"),
+        phWave = $("#phWave"), phSpec = $("#phSpec"),
+        timeNow = $("#timeNow"), ctxMenu = $("#ctxMenu");
+  let playT = 17.5, playing = false, last = performance.now();
+  const SPEED = D/55; // full pass in ~55 s
+
+  function placeOverlays(){
+    const l = (SEL[0]*100).toFixed(3)+"%", wd = ((SEL[1]-SEL[0])*100).toFixed(3)+"%";
+    selBox.style.left = l; selBox.style.width = wd;
+    specSel.style.left = l; specSel.style.width = wd;
+    ctxMenu.style.left = "min(" + (SEL[1]*100).toFixed(3) + "% - 150px, calc(100% - 210px))";
+    ctxMenu.style.top = "16px";
+    setPlayhead();
+  }
+  function fmt(t){
+    const m = Math.floor(t/60), s = Math.floor(t%60), d = Math.floor((t*10)%10);
+    return String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0") + "." + d;
+  }
+  function setPlayhead(){
+    const l = (playT/D*100).toFixed(3)+"%";
+    phWave.style.left = l; phSpec.style.left = l;
+    timeNow.textContent = fmt(playT);
+  }
+
+  /* ---------- rAF loop ---------- */
+  function tick(now){
+    const dt = (now-last)/1000; last = now;
+    if (playing){
+      playT += dt*SPEED;
+      if (playT >= D) playT = 0;
+      setPlayhead();
+    }
+    drawWave(now);
+    requestAnimationFrame(tick);
+  }
+
+  /* ---------- controls ---------- */
+  const playBtn = $("#playBtn"), icPlay = $("#icPlay"), icPause = $("#icPause");
+  function setPlaying(p){
+    playing = p;
+    icPlay.style.display = p ? "none" : "";
+    icPause.style.display = p ? "" : "none";
+    playBtn.style.boxShadow = p
+      ? "0 6px 26px rgba(94,234,212,.55), inset 0 1px 0 rgba(255,255,255,.3)"
+      : "0 6px 20px rgba(139,92,246,.45), inset 0 1px 0 rgba(255,255,255,.3)";
+  }
+  playBtn.addEventListener("click", () => setPlaying(!playing));
+  window.addEventListener("keydown", e => {
+    if (e.code === "Space" && !/INPUT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)){
+      e.preventDefault(); setPlaying(!playing);
+    }
+  });
+
+  /* ---------- confidence rings + counters ---------- */
+  const C = 2*Math.PI*34; // r=34 → 213.6
+  function animateRings(){
+    document.querySelectorAll(".ring").forEach(r => {
+      const pct = +r.dataset.pct;
+      r.style.strokeDasharray = C.toFixed(1);
+      r.style.strokeDashoffset = (C*(1-pct/100)).toFixed(1);
+    });
+    document.querySelectorAll(".num[data-count]").forEach(el => {
+      const target = +el.dataset.count, t0 = performance.now(), dur = 1500;
+      (function step(now){
+        const p = Math.min(1,(now-t0)/dur), e = 1-Math.pow(1-p,3);
+        el.textContent = Math.round(target*e) + "%";
+        if (p < 1) requestAnimationFrame(step);
+      })(t0);
+    });
+  }
+
+  /* ---------- reveal on scroll (app screen) ---------- */
+  const appScreen = document.querySelector(".screen--app");
+  const io = new IntersectionObserver(es => {
+    es.forEach(en => {
+      if (en.isIntersecting){
+        appScreen.classList.add("in");
+        appScreen.querySelectorAll(".rv").forEach(el => el.classList.add("in"));
+        animateRings();
+        io.disconnect();
+      }
+    });
+  }, {threshold:.2});
+  io.observe(appScreen);
+
+  /* ---------- layout ---------- */
+  let rsT;
+  function layout(){
+    waveRect = sizeCanvas(waveCv);
+    specRect = sizeCanvas(specCv);
+    placeOverlays();
+    drawSpec();
+  }
+  window.addEventListener("resize", () => { clearTimeout(rsT); rsT = setTimeout(layout,120); });
+  layout();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
