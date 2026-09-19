@@ -111,9 +111,6 @@ function drawWaveform(canvas, data) {
   }
 
   // Analysis regions overlay (speech/whisper/noise/hum)
-  const analysis = sessionStore.getState().analysis;
-  if (analysis && analysis.regions) {
-    for (const r of analysis.regions) {
   // Regions live at the top level of the session (see audioSessionStore)
   const regions = sessionStore.getState().regions;
   if (regions && regions.length) {
@@ -445,7 +442,6 @@ function wireComparison() {
   });
 
   // Subscribe to session store for external changes
-  sessionStore.subscribe((state) => {
   // Global subscribers receive (event, payload, state) — see audioSessionStore._emit
   sessionStore.subscribe((event, payload, state) => {
     const currentMode = state.comparisonMode;
@@ -498,14 +494,6 @@ function updateLiveMetrics(metrics) {
 }
 
 function wireLiveMetrics() {
-  sessionStore.subscribe((state) => {
-    if (state.metrics) updateLiveMetrics(state.metrics);
-    if (state.analysis) {
-      // Update overlay list
-      const list = $('analysisOverlayList');
-      if (list && state.analysis.regions) {
-        list.innerHTML = '';
-        for (const r of state.analysis.regions.slice(0, 12)) {
   // Global subscribers receive (event, payload, state) — see audioSessionStore._emit
   sessionStore.subscribe((event, payload, state) => {
     if (state.metrics) updateLiveMetrics(state.metrics);

@@ -118,8 +118,10 @@ function makeWav() {
   process.on('exit', cleanup);
 
   await waitForServer(BASE);
-  const { chromium } = require('playwright');
-  const browser = await chromium.launch({ args: ['--no-sandbox'] });
+  // Shared launcher so images whose pre-installed Chromium revision differs
+  // from the pinned Playwright build can still run the upload smoke.
+  const { launchChromium } = require('./lib/launch-chromium.cjs');
+  const browser = await launchChromium({ args: ['--no-sandbox'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));

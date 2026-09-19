@@ -71,7 +71,7 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
       noiseChannels,
       outputBuffer: d.outputBuffer,
     });
-    dispatch('REGIONS_UPDATED', { regions: store.getState?.().analysis?.regions || [] });
+    dispatch('REGIONS_UPDATED', { regions: store.getState?.().regions || [] });
   }
 
   function handleSelectionFromStore() {
@@ -105,7 +105,6 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
     });
 
     // Session store → events
-    store.subscribe?.((s, prev) => {
     // Global subscribers receive (event, payload, state) — see audioSessionStore._emit
     let prevSession = store.getState?.();
     store.subscribe?.((event, payload, s) => {
@@ -117,8 +116,6 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
       if (s.comparisonMode !== prev?.comparisonMode) {
         dispatch('COMPARE_MODE_CHANGED', { mode: s.comparisonMode });
       }
-      if (s.analysis?.regions !== prev?.analysis?.regions) {
-        dispatch('REGIONS_UPDATED', { regions: s.analysis?.regions || [] });
       if (s.regions !== prev?.regions) {
         dispatch('REGIONS_UPDATED', { regions: s.regions || [] });
       }
