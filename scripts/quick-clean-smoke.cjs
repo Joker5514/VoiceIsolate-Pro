@@ -71,8 +71,11 @@ function waitForServer(url, timeoutMs = 20000) {
 async function startServer() {
   const port = await getFreePort();
   base = `http://127.0.0.1:${port}`;
+  const env = { ...process.env, PORT: String(port) };
+  // server.js skips app.listen() under NODE_ENV=test, which a Jest-launched run inherits.
+  if (env.NODE_ENV === 'test') env.NODE_ENV = 'development';
   server = spawn(process.execPath, ['server.js'], {
-    cwd: path.join(__dirname, '..'), env: { ...process.env, PORT: String(port) }, stdio: 'ignore',
+    cwd: path.join(__dirname, '..'), env, stdio: 'ignore',
   });
   server.unref(); // never hold the smoke open; the 'exit' handler stops it
   await waitForServer(base);
