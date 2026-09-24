@@ -11,6 +11,18 @@ const { launchChromium } = require('./lib/launch-chromium.cjs');
 // free port like the other smokes, so `pnpm test:quick-clean` runs standalone.
 let base = process.env.QUICK_CLEAN_URL;
 let server = null;
+let browser = null;
+
+// Every exit path, including a failure before the browser is up, stops the server.
+process.on('exit', () => { if (server) server.kill('SIGTERM'); });
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+  process.on(signal, async () => {
+    report.checks.push({ status: 'FAIL', name: 'Browser workflow', evidence: `interrupted by ${signal}` });
+    fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(report, null, 2));
+    await browser?.close().catch(() => {});
+    process.exit(code);
+  });
+}
 const output = process.env.QUICK_CLEAN_OUTPUT || path.join(__dirname, '../output/playwright/quick-clean');
 fs.mkdirSync(output, { recursive: true });
 const report = { checks: [], errors: [], consoleErrors: [], requests: [] };
@@ -62,14 +74,13 @@ async function startServer() {
   server = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'), env: { ...process.env, PORT: String(port) }, stdio: 'ignore',
   });
-  process.on('SIGINT', () => { server.kill('SIGKILL'); process.exit(130); });
-  process.on('SIGTERM', () => { server.kill('SIGKILL'); process.exit(143); });
+  server.unref(); // never hold the smoke open; the 'exit' handler stops it
   await waitForServer(base);
 }
 
 (async () => {
   if (!base) await startServer();
-  const browser = await launchChromium({ headless: true });
+  browser = await launchChromium({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -195,6 +206,5 @@ async function startServer() {
   } finally {
     fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(report, null, 2));
     await browser.close();
-    if (server) server.kill('SIGTERM');
   }
 })().catch((err) => { console.error(err); process.exitCode = 1; });
