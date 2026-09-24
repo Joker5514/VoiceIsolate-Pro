@@ -62,7 +62,7 @@ function waitForServer(url, timeoutMs = 20000) {
     const ping = () => {
       const req = http.get(`${url}/`, (res) => { res.resume(); if (res.statusCode < 500) resolve(); else retry(); });
       req.on('error', retry);
-      req.setTimeout(1500, () => { req.destroy(); retry(); });
+      req.setTimeout(1500, () => req.destroy(new Error('probe timeout'))); // 'error' handler retries
     };
     ping();
   });
@@ -74,6 +74,8 @@ async function startServer() {
   const env = { ...process.env, PORT: String(port) };
   // server.js skips app.listen() under NODE_ENV=test, which a Jest-launched run inherits.
   if (env.NODE_ENV === 'test') env.NODE_ENV = 'development';
+  // Without this, server.js would upload every local model to Vercel Blob on startup.
+  delete env.BLOB_READ_WRITE_TOKEN;
   server = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'), env, stdio: 'ignore',
   });
