@@ -3,9 +3,14 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const http = require('node:http');
+const { spawn } = require('node:child_process');
 const { launchChromium } = require('./lib/launch-chromium.cjs');
 
-const base = process.env.QUICK_CLEAN_URL || 'http://localhost:3000';
+// Point at an existing server with QUICK_CLEAN_URL; otherwise self-host one on a
+// free port like the other smokes, so `pnpm test:quick-clean` runs standalone.
+let base = process.env.QUICK_CLEAN_URL;
+let server = null;
 const output = process.env.QUICK_CLEAN_OUTPUT || path.join(__dirname, '../output/playwright/quick-clean');
 fs.mkdirSync(output, { recursive: true });
 const report = { checks: [], errors: [], consoleErrors: [], requests: [] };
@@ -27,7 +32,43 @@ function fixture() {
   return { name: 'quick-clean-fixture.wav', mimeType: 'audio/wav', buffer: wav };
 }
 
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const s = http.createServer();
+    s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
+    s.on('error', reject);
+  });
+}
+
+function waitForServer(url, timeoutMs = 20000) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const retry = () => {
+      if (Date.now() - start > timeoutMs) reject(new Error(`server did not start (${url})`));
+      else setTimeout(ping, 250);
+    };
+    const ping = () => {
+      const req = http.get(`${url}/`, (res) => { res.resume(); if (res.statusCode < 500) resolve(); else retry(); });
+      req.on('error', retry);
+      req.setTimeout(1500, () => { req.destroy(); retry(); });
+    };
+    ping();
+  });
+}
+
+async function startServer() {
+  const port = await getFreePort();
+  base = `http://127.0.0.1:${port}`;
+  server = spawn(process.execPath, ['server.js'], {
+    cwd: path.join(__dirname, '..'), env: { ...process.env, PORT: String(port) }, stdio: 'ignore',
+  });
+  process.on('SIGINT', () => { server.kill('SIGKILL'); process.exit(130); });
+  process.on('SIGTERM', () => { server.kill('SIGKILL'); process.exit(143); });
+  await waitForServer(base);
+}
+
 (async () => {
+  if (!base) await startServer();
   const browser = await launchChromium({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   const page = await context.newPage();
@@ -154,5 +195,6 @@ function fixture() {
   } finally {
     fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(report, null, 2));
     await browser.close();
+    if (server) server.kill('SIGTERM');
   }
 })().catch((err) => { console.error(err); process.exitCode = 1; });
