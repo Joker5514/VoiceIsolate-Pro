@@ -3,9 +3,26 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const http = require('node:http');
+const { spawn } = require('node:child_process');
 const { launchChromium } = require('./lib/launch-chromium.cjs');
 
-const base = process.env.QUICK_CLEAN_URL || 'http://localhost:3000';
+// Point at an existing server with QUICK_CLEAN_URL; otherwise self-host one on a
+// free port like the other smokes, so `pnpm test:quick-clean` runs standalone.
+let base = process.env.QUICK_CLEAN_URL;
+let server = null;
+let browser = null;
+
+// Every exit path, including a failure before the browser is up, stops the server.
+process.on('exit', () => { if (server) server.kill('SIGTERM'); });
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+  process.on(signal, async () => {
+    report.checks.push({ status: 'FAIL', name: 'Browser workflow', evidence: `interrupted by ${signal}` });
+    fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(report, null, 2));
+    await browser?.close().catch(() => {});
+    process.exit(code);
+  });
+}
 const output = process.env.QUICK_CLEAN_OUTPUT || path.join(__dirname, '../output/playwright/quick-clean');
 fs.mkdirSync(output, { recursive: true });
 const report = { checks: [], errors: [], consoleErrors: [], requests: [] };
@@ -27,8 +44,48 @@ function fixture() {
   return { name: 'quick-clean-fixture.wav', mimeType: 'audio/wav', buffer: wav };
 }
 
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const s = http.createServer();
+    s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
+    s.on('error', reject);
+  });
+}
+
+function waitForServer(url, timeoutMs = 20000) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const retry = () => {
+      if (Date.now() - start > timeoutMs) reject(new Error(`server did not start (${url})`));
+      else setTimeout(ping, 250);
+    };
+    const ping = () => {
+      const req = http.get(`${url}/`, (res) => { res.resume(); if (res.statusCode < 500) resolve(); else retry(); });
+      req.on('error', retry);
+      req.setTimeout(1500, () => req.destroy(new Error('probe timeout'))); // 'error' handler retries
+    };
+    ping();
+  });
+}
+
+async function startServer() {
+  const port = await getFreePort();
+  base = `http://127.0.0.1:${port}`;
+  const env = { ...process.env, PORT: String(port) };
+  // server.js skips app.listen() under NODE_ENV=test, which a Jest-launched run inherits.
+  if (env.NODE_ENV === 'test') env.NODE_ENV = 'development';
+  // Without this, server.js would upload every local model to Vercel Blob on startup.
+  delete env.BLOB_READ_WRITE_TOKEN;
+  server = spawn(process.execPath, ['server.js'], {
+    cwd: path.join(__dirname, '..'), env, stdio: 'ignore',
+  });
+  server.unref(); // never hold the smoke open; the 'exit' handler stops it
+  await waitForServer(base);
+}
+
 (async () => {
-  const browser = await launchChromium({ headless: true });
+  if (!base) await startServer();
+  browser = await launchChromium({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
