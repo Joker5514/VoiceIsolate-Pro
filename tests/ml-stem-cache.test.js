@@ -102,17 +102,19 @@ describe('stemCacheKey content identity', () => {
     expect(stemCacheKey(ch, 48000, ['m'], 'a.wav')).not.toContain('a.wav');
   });
 
-  test('repeat keys for the same buffers reuse the digest without rehashing', () => {
-    const ch = [new Float32Array(48000 * 60).fill(0.25)];
+  test('repeat keys for the same buffers reuse the digest without rehashing', async () => {
+    const { getDigestComputationCount } = await import('../src/pipeline/MLStemCache.js');
+    const ch = [new Float32Array(48000).fill(0.25)];
+    const before = getDigestComputationCount();
     const first = stemCacheKey(ch, 48000, ['m']);
-    const started = performance.now();
-    for (let i = 0; i < 20; i++) stemCacheKey(ch, 48000, ['m']);
-    expect(performance.now() - started).toBeLessThan(20);
+    for (let i = 0; i < 20; i++) expect(stemCacheKey(ch, 48000, ['m', 'x'])).not.toBe(first);
     expect(stemCacheKey(ch, 48000, ['m'])).toBe(first);
+    expect(getDigestComputationCount() - before).toBe(1);
     // A new buffer with other content is hashed afresh.
     const other = [ch[0].slice()];
     other[0][5] = 0;
     expect(stemCacheKey(other, 48000, ['m'])).not.toBe(first);
+    expect(getDigestComputationCount() - before).toBe(2);
   });
 
   test('subarray views hash only their own samples', () => {

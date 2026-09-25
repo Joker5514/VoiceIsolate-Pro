@@ -52,7 +52,10 @@ jobs:
       - name: Skip unless this SHA is still the tip of main
         id: tip
         run: |
-          tip="$(git ls-remote origin refs/heads/main | cut -f1)"
+          set -euo pipefail
+          # A failed lookup must fail the job, never read as "superseded".
+          tip="$(git ls-remote --exit-code origin refs/heads/main | cut -f1)"
+          if [ -z "$tip" ]; then echo "::error::could not resolve the tip of main"; exit 1; fi
           echo "main tip: $tip, verified: $VERIFIED_SHA (ci run ${{ github.event.workflow_run.id }})"
           if [ "$tip" = "$VERIFIED_SHA" ]; then echo "current=true" >> "$GITHUB_OUTPUT"; else echo "current=false" >> "$GITHUB_OUTPUT"; fi
 

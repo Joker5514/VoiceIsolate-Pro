@@ -45,11 +45,19 @@ function isSafeExternalUrl(url) {
   return Boolean(u) && EXTERNAL_PROTOCOLS.has(u.protocol);
 }
 
-/** Firebase auth domain used by the optional Drive sign-in (public/app/firebase-config.js). */
+/**
+ * Firebase auth domain for the optional Drive sign-in. In Electron the main
+ * process is the single source: it hands this value to the preload
+ * (`vipDesktop.firebaseAuthDomain`), and public/app/firebase-config.js prefers
+ * it, so the renderer signs in on exactly the domain this policy allows. The
+ * renderer never tells main which domain to trust.
+ */
 const DEFAULT_AUTH_DOMAIN = 'voiceisolate-pro.firebaseapp.com';
+const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 
 function authDomain() {
-  return process.env.VIP_FIREBASE_AUTH_DOMAIN || DEFAULT_AUTH_DOMAIN;
+  const configured = (process.env.VIP_FIREBASE_AUTH_DOMAIN || '').trim().toLowerCase();
+  return HOSTNAME.test(configured) ? configured : DEFAULT_AUTH_DOMAIN;
 }
 
 /**
@@ -110,5 +118,5 @@ async function resolveInsideReal(fsp, dir, relativePath) {
 }
 
 module.exports = {
-  isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInside, resolveInsideReal,
+  authDomain, isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInside, resolveInsideReal,
 };

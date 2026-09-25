@@ -75,6 +75,8 @@ function waitForServer(url, timeoutMs = 20000) {
 
     check(preloadErrors.length === 0, 'sandboxed preload loads without errors', preloadErrors);
     check(await win.evaluate(() => typeof window.vipDesktop) === 'object', 'window.vipDesktop is exposed');
+    const domain = await win.evaluate(() => window.vipDesktop.firebaseAuthDomain);
+    check(domain === 'voiceisolate-pro.firebaseapp.com', 'preload receives the main-process auth domain', domain);
     const platform = await win.evaluate(() => window.vipDesktop.platform());
     check(platform === process.platform, 'IPC answers the app document', platform);
     const traversal = await win.evaluate(() => window.vipDesktop.readModelCache('../../../../etc/passwd'));

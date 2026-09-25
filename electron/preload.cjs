@@ -34,7 +34,15 @@ const IPC = Object.freeze({
   SAM_WORKER_CAPABILITIES: 'vip:sam-worker-capabilities',
 });
 
+// Passed by main via webPreferences.additionalArguments; see navigation-policy.cjs.
+const AUTH_DOMAIN_ARG = '--vip-firebase-auth-domain=';
+const firebaseAuthDomain = (process.argv.find((a) => a.startsWith(AUTH_DOMAIN_ARG)) || '')
+  .slice(AUTH_DOMAIN_ARG.length) || null;
+
 const vipDesktop = Object.freeze({
+  /** Firebase auth domain the main process allows sign-in popups on. */
+  firebaseAuthDomain,
+
   /** @returns {Promise<'win32'|'darwin'|'linux'>} */
   platform: () => ipcRenderer.invoke(IPC.PLATFORM),
 

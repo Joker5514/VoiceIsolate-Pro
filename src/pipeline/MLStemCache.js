@@ -46,6 +46,12 @@ function contentDigest(channelData) {
  * @type {WeakMap<Float32Array, { channels: Float32Array[], digest: string }>}
  */
 const _digests = new WeakMap();
+let _digestComputations = 0;
+
+/** Full-content hash passes run so far (tests assert memoisation with it). */
+export function getDigestComputationCount() {
+  return _digestComputations;
+}
 
 function memoDigest(channelData) {
   const hit = _digests.get(channelData[0]);
@@ -53,6 +59,7 @@ function memoDigest(channelData) {
     return hit.digest;
   }
   const digest = contentDigest(channelData);
+  _digestComputations += 1;
   _digests.set(channelData[0], { channels: [...channelData], digest });
   return digest;
 }

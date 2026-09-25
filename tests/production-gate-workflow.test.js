@@ -72,7 +72,9 @@ describe('CI workflows', () => {
 
   test('production deploys are serialized and never roll main back', () => {
     expect(deploy).toMatch(/concurrency:\s*\n\s*group: deploy-production\s*\n\s*cancel-in-progress: false/);
-    expect(deploy).toContain('git ls-remote origin refs/heads/main');
+    // A failed lookup must fail the job rather than read as "superseded".
+    expect(deploy).toMatch(/set -euo pipefail\s*\n[^\n]*\n\s*tip="\$\(git ls-remote --exit-code origin refs\/heads\/main \| cut -f1\)"/);
+    expect(deploy).toContain('if [ -z "$tip" ]; then');
     expect(deploy).toMatch(/Deploy Production\s*\n\s*if: steps\.tip\.outputs\.current == 'true'/);
   });
 
@@ -101,6 +103,41 @@ describe('CI workflows', () => {
   test('workflow copies under docs/ci-patches stay identical', () => {
     for (const name of ['ci.yml', 'deploy.yml', 'release-build.yml']) {
       expect(read(`docs/ci-patches/${name}`)).toBe(read(`.github/workflows/${name}`));
+    }
+  });
+});
+
+describe('prod:verify gate behaviour', () => {
+  const { spawnSync } = require('child_process');
+  const os = require('os');
+  const gatePath = path.join(ROOT, 'scripts/prod-verify.mjs');
+
+  test.each([['--only'], ['--only=']])('an empty %s selection exits 2 without verifying anything', (arg) => {
+    const run = spawnSync(process.execPath, [gatePath, arg], { cwd: ROOT, encoding: 'utf8' });
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain('--only needs at least one step id');
+  });
+
+  test('--fail-fast reports skipped steps as skipped after a failure, not as a disabled tier', () => {
+    // A throwaway root with stub scripts: the first selected step fails, the second must not run.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-gate-'));
+    try {
+      fs.mkdirSync(path.join(root, 'scripts'));
+      fs.copyFileSync(gatePath, path.join(root, 'scripts/prod-verify.mjs'));
+      fs.writeFileSync(path.join(root, 'scripts/apply-ci-patches.mjs'), 'process.exit(1);\n');
+      fs.writeFileSync(path.join(root, 'scripts/check-version-sync.cjs'), 'process.exit(0);\n');
+      const run = spawnSync(process.execPath,
+        [path.join(root, 'scripts/prod-verify.mjs'), '--only', 'ci-patches,version', '--fail-fast'],
+        { cwd: root, encoding: 'utf8' });
+      expect(run.status).toBe(1);
+      const report = JSON.parse(fs.readFileSync(path.join(root, 'output/prod-verify/report.json'), 'utf8'));
+      const byId = Object.fromEntries(report.results.map((r) => [r.id, r]));
+      expect(byId['ci-patches'].status).toBe('FAIL');
+      expect(byId.version).toMatchObject({ status: 'NOT RUN', reason: 'skipped after a failure (--fail-fast)' });
+      expect(byId.lint.reason).toBe('not selected');
+      expect(report.verdict).toBe('FAIL');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });

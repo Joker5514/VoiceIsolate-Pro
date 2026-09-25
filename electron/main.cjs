@@ -26,7 +26,7 @@ const http = require('http');
 const { autoUpdater } = require('electron-updater');
 const { IPC } = require('./ipc-channels.cjs');
 const {
-  isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInsideReal,
+  authDomain, isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInsideReal,
 } = require('./navigation-policy.cjs');
 
 const ROOT = path.join(__dirname, '..');
@@ -260,6 +260,9 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       preload: path.join(__dirname, 'preload.cjs'),
+      // The preload exposes this as vipDesktop.firebaseAuthDomain so renderer
+      // sign-in and the popup policy use one value.
+      additionalArguments: [`--vip-firebase-auth-domain=${authDomain()}`],
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
