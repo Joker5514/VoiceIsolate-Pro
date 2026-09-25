@@ -75,3 +75,30 @@ describe('MLStemCache', () => {
     expect(getCachedStems('k')).toBeNull();
   });
 });
+
+describe('stemCacheKey content identity', () => {
+  test('an edit between sparse probe points changes the key', () => {
+    const len = 48000;
+    const original = new Float32Array(len);
+    for (let i = 0; i < len; i++) original[i] = Math.sin(i * 0.01) * 0.3;
+    const edited = original.slice();
+    // Sample 7 is never a probe point of a 64-step sparse sample, the first,
+    // middle or last sample; the old key missed exactly this kind of edit.
+    edited[7] = 0;
+    const a = stemCacheKey([original], 48000, ['bsrnn_vocals'], 'clip.wav');
+    const b = stemCacheKey([edited], 48000, ['bsrnn_vocals'], 'clip.wav');
+    expect(a).not.toBe(b);
+  });
+
+  test('swapping channels changes the key', () => {
+    const l = new Float32Array([0.1, 0.2, 0.3]);
+    const r = new Float32Array([0.4, 0.5, 0.6]);
+    expect(stemCacheKey([l, r], 48000, ['m'])).not.toBe(stemCacheKey([r, l], 48000, ['m']));
+  });
+
+  test('subarray views hash only their own samples', () => {
+    const backing = new Float32Array([9, 0.1, 0.2, 0.3, 9]);
+    const view = backing.subarray(1, 4);
+    expect(stemCacheKey([view], 48000, ['m'])).toBe(stemCacheKey([new Float32Array([0.1, 0.2, 0.3])], 48000, ['m']));
+  });
+});

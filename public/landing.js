@@ -1310,6 +1310,7 @@ async function onProcess() {
     quickClean.setState('processing', currentJobLabel);
     setProcStage('separate', 0, currentJobLabel);
     const id = ++requestSeq;
+    ingested._stemCacheKey = cacheKey;
     const cached = getCachedStems(cacheKey);
     if (cached) {
       onStems({ requestId: id, clean: cached.clean.map((c) => c.slice()),
@@ -1317,7 +1318,6 @@ async function onProcess() {
         passthrough: false, _cacheKey: cacheKey });
       return;
     }
-    ingested._stemCacheKey = cacheKey;
     stageStart('model_load');
     const channelData = ingested.channelData.map((channel) => channel.slice());
     const startedAt = Date.now();
@@ -1442,7 +1442,8 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   // Runs cooperatively via FullAnalysisHost → FullAnalysisWorker. Non-blocking.
   scheduleIdle(() => {
     if (requestId !== requestSeq || !hasProcessed) return;
-    const fingerprint = ingested?._stemCacheKey || ingested?.sourceName || 'unknown';
+    // Content-derived key only: a filename would let two different files share analysis.
+    const fingerprint = ingested?._stemCacheKey;
     const backend = quickClean.backend === 'webgpu' ? 'webgpu' : 'wasm';
     void getAnalysisInsights()?.analyze(clean, sampleRate, { contentFingerprint: fingerprint, backend });
   });

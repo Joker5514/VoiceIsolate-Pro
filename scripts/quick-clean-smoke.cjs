@@ -130,6 +130,18 @@ async function startServer() {
     const processing = await page.evaluate(() => window.__quickCleanMessages.filter((msg) => msg.type === 'process'));
     assert.equal(processing.length, 1); assert.equal(processing[0].sampleRate, 48000);
     check('Explicit keyboard Process produces real local stems', processing);
+    // Idle-callback analysis must reach a real result, not the failure copy the
+    // panel showed on every file while its snapshot contract was mismatched.
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('#sourceConfidencePanel');
+      return panel && (['ready', 'failed'].includes(panel.dataset.state) || /Analysis complete/.test(panel.textContent));
+    }, null, { timeout: 30000 });
+    const insights = await page.evaluate(() => {
+      const panel = document.querySelector('#sourceConfidencePanel');
+      return { state: panel.dataset.state, text: panel.textContent.trim().slice(0, 160) };
+    });
+    assert.notEqual(insights.state, 'failed', insights.text);
+    check('On-device analysis panel renders a measured result', insights);
     await page.locator('#playBtn').click();
     await page.locator('#voiceLevelSlider').fill('85');
     await page.locator('#noiseReductionSlider').fill('70');

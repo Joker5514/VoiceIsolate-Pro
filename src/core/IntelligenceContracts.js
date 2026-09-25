@@ -83,6 +83,9 @@ export function validateProcessingPlan(plan) {
   record(plan, 'ProcessingPlan');
   text(plan.id, 'ProcessingPlan.id');
   text(plan.version, 'ProcessingPlan.version');
+  // A plan is only meaningful for the session and input it was derived from.
+  text(plan.sessionId, 'ProcessingPlan.sessionId');
+  text(plan.contentFingerprint, 'ProcessingPlan.contentFingerprint');
   text(plan.analysisVersion, 'ProcessingPlan.analysisVersion');
   text(plan.goal, 'ProcessingPlan.goal');
   assertion(Array.isArray(plan.operations), 'ProcessingPlan.operations must be an array');
@@ -98,6 +101,23 @@ export function validateProcessingPlan(plan) {
   stringList(plan.evidenceRefs, 'ProcessingPlan.evidenceRefs');
   text(plan.recommendationId, 'ProcessingPlan.recommendationId');
   record(plan.constraints, 'ProcessingPlan.constraints');
+  return plan;
+}
+
+/**
+ * Reject a validated plan that no longer belongs to the current session or
+ * input. Callers pass the identity they currently hold.
+ */
+export function assertPlanIsCurrent(plan, { sessionId, contentFingerprint } = {}) {
+  validateProcessingPlan(plan);
+  const staleSession = sessionId !== undefined && plan.sessionId !== sessionId;
+  const staleInput = contentFingerprint !== undefined && plan.contentFingerprint !== contentFingerprint;
+  if (staleSession || staleInput) {
+    const err = new Error(`[VIP][Contracts] ProcessingPlan '${plan.id}' is stale for the current ${staleSession ? 'session' : 'input'}`);
+    err.name = 'StalePlanError';
+    err.code = 'STALE';
+    throw err;
+  }
   return plan;
 }
 
@@ -131,6 +151,7 @@ export default {
   validateAnalysisSnapshot,
   validateRecommendation,
   validateProcessingPlan,
+  assertPlanIsCurrent,
   validateEvaluationReport,
   immutableProcessingPlan,
 };

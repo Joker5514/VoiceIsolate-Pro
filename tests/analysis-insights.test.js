@@ -128,7 +128,8 @@ describe('landing.js wires AnalysisInsightsUI', () => {
 
   test('passes contentFingerprint derived from cache key or sourceName', () => {
     expect(landing).toMatch(/contentFingerprint.*fingerprint|fingerprint.*contentFingerprint/s);
-    expect(landing).toMatch(/_stemCacheKey.*sourceName|sourceName.*_stemCacheKey/s);
+    // Analysis is keyed by audio content only, never by filename.
+    expect(landing).toMatch(/const fingerprint = ingested\?\._stemCacheKey;/);
   });
 });
 
@@ -189,8 +190,10 @@ test('toSnapshot produces an object that passes validateAnalysisSnapshot', async
     backend: 'wasm',
   });
 
-  // Panel should be in a terminal state (not left as 'pending').
-  // In a Node/Jest environment Worker is unavailable so 'failed' is acceptable.
-  expect(['ready', 'unavailable', 'failed']).toContain(container.dataset.state);
+  // The host is mocked, so the worker is irrelevant: a real FullAnalysis
+  // result must render. Accepting 'failed' here hid a contract mismatch that
+  // made the Landing panel fail on every file.
+  expect(container.dataset.state).toBe('ready');
+  expect(container.textContent).toMatch(/SNR 12\.0 dB/);
   dom.window.close();
 });
