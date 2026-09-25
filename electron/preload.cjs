@@ -11,7 +11,28 @@
  * Renderer receives only the whitelisted API below via contextBridge.
  */
 const { contextBridge, ipcRenderer } = require('electron');
-const { IPC } = require('./ipc-channels.cjs');
+
+// A sandboxed preload can only require 'electron' and a few Node builtins;
+// requiring the shared ipc-channels module threw "module not found" and the whole
+// bridge was never exposed. This copy must equal electron/ipc-channels.cjs
+// (pinned by tests/electron-navigation-policy.test.js).
+const IPC = Object.freeze({
+  PLATFORM: 'vip:platform',
+  APP_VERSION: 'vip:app-version',
+  OPEN_FILE: 'vip:open-file',
+  SAVE_FILE: 'vip:save-file',
+  MODEL_CACHE_PATH: 'vip:model-cache-path',
+  READ_MODEL_CACHE: 'vip:read-model-cache',
+  WRITE_MODEL_CACHE: 'vip:write-model-cache',
+  UPDATE_CHECK: 'vip:update-check',
+  UPDATE_DOWNLOAD: 'vip:update-download',
+  UPDATE_INSTALL: 'vip:update-install',
+  UPDATE_STATUS: 'vip:update-status',
+  SAM_WORKER_STATUS: 'vip:sam-worker-status',
+  SAM_WORKER_START: 'vip:sam-worker-start',
+  SAM_WORKER_STOP: 'vip:sam-worker-stop',
+  SAM_WORKER_CAPABILITIES: 'vip:sam-worker-capabilities',
+});
 
 const vipDesktop = Object.freeze({
   /** @returns {Promise<'win32'|'darwin'|'linux'>} */

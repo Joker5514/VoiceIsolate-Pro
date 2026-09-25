@@ -25,6 +25,9 @@ const { spawn } = require('child_process');
 const http = require('http');
 const { autoUpdater } = require('electron-updater');
 const { IPC } = require('./ipc-channels.cjs');
+const {
+  isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, resolveInside,
+} = require('./navigation-policy.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const isDev = process.env.VIP_ELECTRON_DEV === '1' || !app.isPackaged;
@@ -267,34 +270,33 @@ function createWindow() {
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Allow Google / Firebase OAuth + Drive Picker popups inside Electron.
-    // Everything else opens in the system browser (offline-capable default).
-    try {
-      const u = new URL(url);
-      const host = u.hostname || '';
-      const allowPopup = host === 'accounts.google.com'
-        || host === 'apis.google.com'
-        || host.endsWith('.google.com')
-        || host.endsWith('.googleusercontent.com')
-        || host.endsWith('.firebaseapp.com')
-        || host === 'www.gstatic.com';
-      if (allowPopup) {
-        return {
-          action: 'allow',
-          overrideBrowserWindowOptions: {
-            width: 520,
-            height: 740,
-            autoHideMenuBar: true,
-            webPreferences: {
-              contextIsolation: true,
-              nodeIntegration: false,
-              sandbox: true,
-            },
+    // Everything else opens in the system browser (offline-capable default),
+    // and only for web/mail schemes: the OS can launch programs from others.
+    if (isAllowedAuthPopup(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 520,
+          height: 740,
+          autoHideMenuBar: true,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
           },
-        };
-      }
-    } catch { /* fall through */ }
-    shell.openExternal(url);
+        },
+      };
+    }
+    if (isSafeExternalUrl(url)) shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // The preload bridge is attached to whatever document this window holds, so
+  // the window must never leave the app's own origin.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url, { isDev, devUrl: DEV_URL })) return;
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) shell.openExternal(url);
   });
 
   if (isDev) {
@@ -312,11 +314,25 @@ function createWindow() {
   });
 }
 
-function registerIpc() {
-  ipcMain.handle(IPC.PLATFORM, () => process.platform);
-  ipcMain.handle(IPC.APP_VERSION, () => app.getVersion());
+/**
+ * Register an IPC handler that answers only the app's own document; a popup
+ * or any other origin that somehow holds the preload is refused.
+ */
+function handleTrusted(channel, fn) {
+  ipcMain.handle(channel, (evt, ...args) => {
+    const senderUrl = evt.senderFrame?.url || '';
+    if (!isAppUrl(senderUrl, { isDev, devUrl: DEV_URL })) {
+      throw new Error(`[VIP] IPC ${channel} refused for untrusted sender`);
+    }
+    return fn(evt, ...args);
+  });
+}
 
-  ipcMain.handle(IPC.OPEN_FILE, async () => {
+function registerIpc() {
+  handleTrusted(IPC.PLATFORM, () => process.platform);
+  handleTrusted(IPC.APP_VERSION, () => app.getVersion());
+
+  handleTrusted(IPC.OPEN_FILE, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Import Audio or Video',
       properties: ['openFile'],
@@ -359,7 +375,7 @@ function registerIpc() {
     };
   });
 
-  ipcMain.handle(IPC.SAVE_FILE, async (_evt, opts) => {
+  handleTrusted(IPC.SAVE_FILE, async (_evt, opts) => {
     const defaultName = (opts && opts.defaultName) || 'voiceisolate-export.wav';
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       title: 'Export Audio',
@@ -376,11 +392,11 @@ function registerIpc() {
     return { canceled: false, filePath };
   });
 
-  ipcMain.handle(IPC.MODEL_CACHE_PATH, async () => ensureModelCacheDir());
+  handleTrusted(IPC.MODEL_CACHE_PATH, async () => ensureModelCacheDir());
 
-  ipcMain.handle(IPC.READ_MODEL_CACHE, async (_evt, relativePath) => {
-    if (!relativePath || relativePath.includes('..')) return null;
-    const full = path.join(await ensureModelCacheDir(), relativePath);
+  handleTrusted(IPC.READ_MODEL_CACHE, async (_evt, relativePath) => {
+    const full = resolveInside(await ensureModelCacheDir(), relativePath);
+    if (!full) return null;
     try {
       const data = await fs.readFile(full);
       return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
@@ -389,18 +405,16 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle(IPC.WRITE_MODEL_CACHE, async (_evt, opts) => {
-    const rel = opts && opts.relativePath;
-    if (!rel || rel.includes('..')) return { ok: false, bytes: 0 };
-    const dir = await ensureModelCacheDir();
-    const full = path.join(dir, rel);
+  handleTrusted(IPC.WRITE_MODEL_CACHE, async (_evt, opts) => {
+    const full = resolveInside(await ensureModelCacheDir(), opts && opts.relativePath);
+    if (!full) return { ok: false, bytes: 0 };
     await fs.mkdir(path.dirname(full), { recursive: true });
     const buf = Buffer.from(opts.buffer);
     await fs.writeFile(full, buf);
     return { ok: true, bytes: buf.byteLength };
   });
 
-  ipcMain.handle(IPC.UPDATE_CHECK, async () => {
+  handleTrusted(IPC.UPDATE_CHECK, async () => {
     if (!app.isPackaged) {
       return { ok: false, reason: 'dev' };
     }
@@ -411,21 +425,21 @@ function registerIpc() {
     return { ok: true, updateInfo: result?.updateInfo?.version || null };
   });
 
-  ipcMain.handle(IPC.UPDATE_DOWNLOAD, async () => {
+  handleTrusted(IPC.UPDATE_DOWNLOAD, async () => {
     if (!app.isPackaged) return { ok: false, reason: 'dev' };
     if (!net.isOnline()) return { ok: false, reason: 'offline' };
     await autoUpdater.downloadUpdate();
     return { ok: true };
   });
 
-  ipcMain.handle(IPC.UPDATE_INSTALL, () => {
+  handleTrusted(IPC.UPDATE_INSTALL, () => {
     if (!app.isPackaged) return { ok: false, reason: 'dev' };
     autoUpdater.quitAndInstall();
     return { ok: true };
   });
 
   // ── Local SAM-Audio worker (Option B) ───────────────────────────────────
-  ipcMain.handle(IPC.SAM_WORKER_STATUS, async () => {
+  handleTrusted(IPC.SAM_WORKER_STATUS, async () => {
     const running = !!(samWorkerProc && !samWorkerProc.killed);
     const baseUrl = `http://127.0.0.1:${samWorkerPort}`;
     let healthy = false;
@@ -442,7 +456,7 @@ function registerIpc() {
     };
   });
 
-  ipcMain.handle(IPC.SAM_WORKER_START, async (_evt, opts) => {
+  handleTrusted(IPC.SAM_WORKER_START, async (_evt, opts) => {
     const port = Number(opts?.port || process.env.SAM_AUDIO_PORT || 8765) || 8765;
     if (samWorkerProc && !samWorkerProc.killed) {
       return { ok: true, already: true, baseUrl: `http://127.0.0.1:${samWorkerPort}` };
@@ -512,7 +526,7 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle(IPC.SAM_WORKER_STOP, async () => {
+  handleTrusted(IPC.SAM_WORKER_STOP, async () => {
     if (samWorkerProc && !samWorkerProc.killed) {
       try {
         samWorkerProc.kill();
@@ -522,7 +536,7 @@ function registerIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle(IPC.SAM_WORKER_CAPABILITIES, async () => {
+  handleTrusted(IPC.SAM_WORKER_CAPABILITIES, async () => {
     const baseUrl = `http://127.0.0.1:${samWorkerPort}`;
     try {
       const body = await httpGetJson(`${baseUrl}/capabilities`);
