@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const { chromium } = require('playwright');
+const { launchChromium } = require('./lib/launch-chromium.cjs');
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
@@ -48,7 +48,7 @@ function waitForServer(base, timeoutMs = 20000) {
 
   try {
     await waitForServer(BASE);
-    const browser = await chromium.launch({ args: ['--no-sandbox'] });
+    const browser = await launchChromium();
     const page = await browser.newPage();
     await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
     await page.waitForFunction(

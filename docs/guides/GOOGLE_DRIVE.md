@@ -26,6 +26,14 @@ window.GOOGLE_API_KEY = window.FIREBASE_API_KEY; // Picker developer key
 // window.GOOGLE_OAUTH_CLIENT_ID = '….apps.googleusercontent.com';
 ```
 
+**Electron:** the main process owns the auth domain. Set `VIP_FIREBASE_AUTH_DOMAIN`
+in the desktop app's environment; main passes it to the preload
+(`window.vipDesktop.firebaseAuthDomain`), `firebase-config.js` prefers it over
+`window.FIREBASE_AUTH_DOMAIN`, and the sign-in popup policy in
+`electron/navigation-policy.cjs` allows exactly that domain plus
+accounts.google.com. Unset or invalid values fall back to
+`voiceisolate-pro.firebaseapp.com`.
+
 ## UX
 
 | Button | Surface | Behavior |

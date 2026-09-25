@@ -142,4 +142,18 @@ describe('AnalysisSnapshotAdapter', () => {
     expect(() => adaptFullAnalysisToSnapshot(rawFixture({ channels: 0 }))).toThrow(/channels/);
     expect(() => adaptFullAnalysisToSnapshot(rawFixture({ duration: Number.NaN }))).toThrow(/duration/);
   });
+
+  test('low measured SNR without classified noise segments still supports the reduce-noise goal', () => {
+    const snapshot = adaptFullAnalysisToSnapshot(rawFixture({ snrDb: 6, noiseSegments: [] }), { contentFingerprint: 'fp' });
+    const region = snapshot.evidenceRegions.find((r) => r.detectionType === 'stationary_noise');
+    expect(region).toMatchObject({ startTime: 0, endTime: 3, certainty: 'high', evidence: { snrDb: 6 } });
+    expect(recommendForGoal(snapshot, 'reduce_background_noise').plan).not.toBeNull();
+  });
+
+  test('no stationary-noise evidence is invented for clean audio or when noise segments exist', () => {
+    const clean = adaptFullAnalysisToSnapshot(rawFixture({ snrDb: 30, noiseSegments: [] }), { contentFingerprint: 'fp' });
+    expect(clean.evidenceRegions.some((r) => r.detectionType === 'stationary_noise')).toBe(false);
+    const segmented = adaptFullAnalysisToSnapshot(rawFixture({ snrDb: 6 }), { contentFingerprint: 'fp' });
+    expect(segmented.evidenceRegions.some((r) => r.detectionType === 'stationary_noise')).toBe(false);
+  });
 });

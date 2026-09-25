@@ -80,6 +80,8 @@ export function recommendForGoal(snapshot, goal, context = {}) {
   const plan = immutableProcessingPlan({
     id: stableId('plan', [recommendationId, JSON.stringify(parameters)]),
     version: '1',
+    sessionId: snapshot.sessionId,
+    contentFingerprint: snapshot.contentFingerprint,
     analysisVersion: snapshot.analysisVersion,
     goal,
     operations: [{ id: 'process-controls', parameters }],

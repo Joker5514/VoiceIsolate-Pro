@@ -58,7 +58,8 @@ describe('deterministic recommendation and bridge', () => {
     expect(first.plan.evidenceRefs).toEqual(['noise-0-3']);
     expect(first.plan.operations[0].parameters.nrAmount).toBe(42);
     expect(Object.isFrozen(first.plan.operations[0].parameters)).toBe(true);
-    expect(planToControlPatch(first.plan, { outGain: -2 }).outGain).toBe(-2);
+    const current = { sessionId: 'session-local-1', contentFingerprint: 'sha256-safe-fingerprint' };
+    expect(planToControlPatch(first.plan, { outGain: -2 }, current).outGain).toBe(-2);
   });
 
   test('does not create a plan for stale, unsupported, or no-material-problem analysis', () => {
@@ -80,5 +81,125 @@ describe('analysis coordinator', () => {
     coordinator.invalidate(identity);
     await coordinator.analyze(identity, {});
     expect(calls).toBe(2);
+  });
+});
+
+describe('analysis coordinator cancellation and staleness', () => {
+  const identity = { contentFingerprint: 'fp-1', analysisVersion: '1', analyzerVersions: {}, modelVersions: {}, configuration: {}, runtime: 'wasm' };
+
+  // Mirrors FullAnalysisHost: rejects as soon as its signal aborts.
+  function abortableAnalyzer(delayMs = 20) {
+    const calls = { count: 0, aborted: 0 };
+    const analyze = (_input, { signal }) => new Promise((resolve, reject) => {
+      calls.count += 1;
+      const cancel = () => {
+        calls.aborted += 1;
+        const err = new Error('Cancelled');
+        err.name = 'CancellationError';
+        reject(err);
+      };
+      if (signal.aborted) { cancel(); return; }
+      const timer = setTimeout(() => resolve(snapshot({ contentFingerprint: 'fp-1' })), delayMs);
+      signal.addEventListener('abort', () => { clearTimeout(timer); cancel(); }, { once: true });
+    });
+    return { analyze, calls };
+  }
+
+  test('a caller that re-requests after cancelling its own request gets a fresh result', async () => {
+    // AnalysisInsightsUI aborts its previous controller and re-analyzes the same
+    // file; the second caller must not inherit the first caller's cancellation.
+    const { analyze, calls } = abortableAnalyzer();
+    const coordinator = new AnalysisCoordinator({ analyze });
+    const first = new AbortController();
+    const p1 = coordinator.analyze(identity, {}, { signal: first.signal });
+    first.abort();
+    await expect(p1).rejects.toMatchObject({ name: 'AbortError', code: 'CANCELLED' });
+    const second = new AbortController();
+    const result = await coordinator.analyze(identity, {}, { signal: second.signal });
+    expect(result.freshness).toBe('fresh');
+    expect(calls.count).toBe(2);
+    expect(calls.aborted).toBe(1);
+  });
+
+  test('one waiter cancelling does not cancel a shared run other waiters still need', async () => {
+    const { analyze, calls } = abortableAnalyzer();
+    const coordinator = new AnalysisCoordinator({ analyze });
+    const a = new AbortController();
+    const pa = coordinator.analyze(identity, {}, { signal: a.signal });
+    const pb = coordinator.analyze(identity, {}, {});
+    a.abort();
+    await expect(pa).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(pb).resolves.toMatchObject({ freshness: 'fresh' });
+    expect(calls.count).toBe(1);
+    expect(calls.aborted).toBe(0);
+  });
+
+  test('invalidate() reports in-flight waiters as stale and lets new callers start fresh', async () => {
+    const { analyze, calls } = abortableAnalyzer();
+    const coordinator = new AnalysisCoordinator({ analyze });
+    const orphan = coordinator.analyze(identity, {}, {});
+    coordinator.invalidate(identity);
+    await expect(orphan).rejects.toMatchObject({ name: 'StaleAnalysisError', code: 'STALE' });
+    await expect(coordinator.analyze(identity, {}, {})).resolves.toMatchObject({ freshness: 'fresh' });
+    expect(calls.count).toBe(2);
+  });
+
+  test('requests without a content fingerprint are never cached or shared', async () => {
+    let n = 0;
+    const coordinator = new AnalysisCoordinator({ analyze: async () => { n += 1; return snapshot(); } });
+    const anon = { ...identity, contentFingerprint: undefined };
+    await coordinator.analyze(anon, {});
+    await coordinator.analyze(anon, {});
+    await coordinator.analyze({ ...identity, contentFingerprint: 'unknown' }, {});
+    expect(n).toBe(3);
+    expect(coordinator.cache.size).toBe(0);
+  });
+
+  test('an uncacheable request reports its own cancellation as CANCELLED', async () => {
+    const { analyze } = abortableAnalyzer();
+    const coordinator = new AnalysisCoordinator({ analyze });
+    const ctrl = new AbortController();
+    const pending = coordinator.analyze({ ...identity, contentFingerprint: undefined }, {}, { signal: ctrl.signal });
+    ctrl.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError', code: 'CANCELLED' });
+  });
+
+  test('a failed run does not poison later requests', async () => {
+    let n = 0;
+    const coordinator = new AnalysisCoordinator({ analyze: async () => { n += 1; if (n === 1) throw new Error('boom'); return snapshot({ contentFingerprint: 'fp-1' }); } });
+    await expect(coordinator.analyze(identity, {})).rejects.toThrow('boom');
+    await expect(coordinator.analyze(identity, {})).resolves.toMatchObject({ freshness: 'fresh' });
+  });
+});
+
+describe('processing plan session binding', () => {
+  test('plans carry the session and input they were derived from', () => {
+    const { plan } = recommendation.recommendForGoal(snapshot(), 'reduce_background_noise');
+    expect(plan.sessionId).toBe('session-local-1');
+    expect(plan.contentFingerprint).toBe('sha256-safe-fingerprint');
+  });
+
+  test('the bridge rejects a plan for another session or input', () => {
+    const { plan } = recommendation.recommendForGoal(snapshot(), 'reduce_background_noise');
+    const current = { sessionId: 'session-local-1', contentFingerprint: 'sha256-safe-fingerprint' };
+    expect(planToControlPatch(plan, {}, current).nrAmount).toBe(55);
+    expect(() => planToControlPatch(plan, {}, { ...current, contentFingerprint: 'other-file' }))
+      .toThrow(expect.objectContaining({ name: 'StalePlanError', code: 'STALE' }));
+    expect(() => planToControlPatch(plan, {}, { ...current, sessionId: 'session-2' })).toThrow(/stale/);
+    expect(() => planToControlPatch(plan, {}, { sessionId: 'x', contentFingerprint: 'y' }))
+      .toThrow(/stale for the current session and input/);
+  });
+
+  test('the bridge refuses to compare against a missing or partial current identity', () => {
+    const { plan } = recommendation.recommendForGoal(snapshot(), 'reduce_background_noise');
+    expect(() => planToControlPatch(plan, {})).toThrow(/current identity/);
+    expect(() => planToControlPatch(plan, {}, { sessionId: 'session-local-1' })).toThrow(/contentFingerprint/);
+    expect(() => planToControlPatch(plan, {}, { contentFingerprint: 'sha256-safe-fingerprint' })).toThrow(/sessionId/);
+  });
+
+  test('a plan without session binding fails validation', () => {
+    const { plan } = recommendation.recommendForGoal(snapshot(), 'reduce_background_noise');
+    const { sessionId: _omit, ...unbound } = plan;
+    expect(() => contracts.validateProcessingPlan(unbound)).toThrow(/sessionId/);
   });
 });
