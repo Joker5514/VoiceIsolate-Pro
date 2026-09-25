@@ -96,6 +96,25 @@ describe('stemCacheKey content identity', () => {
     expect(stemCacheKey([l, r], 48000, ['m'])).not.toBe(stemCacheKey([r, l], 48000, ['m']));
   });
 
+  test('the key depends on audio content, not the file name', () => {
+    const ch = [new Float32Array([0.1, 0.2, 0.3])];
+    expect(stemCacheKey(ch, 48000, ['m'], 'a.wav')).toBe(stemCacheKey(ch, 48000, ['m'], 'renamed.wav'));
+    expect(stemCacheKey(ch, 48000, ['m'], 'a.wav')).not.toContain('a.wav');
+  });
+
+  test('repeat keys for the same buffers reuse the digest without rehashing', () => {
+    const ch = [new Float32Array(48000 * 60).fill(0.25)];
+    const first = stemCacheKey(ch, 48000, ['m']);
+    const started = performance.now();
+    for (let i = 0; i < 20; i++) stemCacheKey(ch, 48000, ['m']);
+    expect(performance.now() - started).toBeLessThan(20);
+    expect(stemCacheKey(ch, 48000, ['m'])).toBe(first);
+    // A new buffer with other content is hashed afresh.
+    const other = [ch[0].slice()];
+    other[0][5] = 0;
+    expect(stemCacheKey(other, 48000, ['m'])).not.toBe(first);
+  });
+
   test('subarray views hash only their own samples', () => {
     const backing = new Float32Array([9, 0.1, 0.2, 0.3, 9]);
     const view = backing.subarray(1, 4);

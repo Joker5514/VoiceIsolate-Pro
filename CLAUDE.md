@@ -269,7 +269,9 @@ explicit architecture change.
   derived from; `planToControlPatch(plan, controls, { sessionId, contentFingerprint })`
   rejects a plan for another session/input (`StalePlanError`).
 - `stemCacheKey` digests every sample of every channel (schema `sk2`); a sparse
-  probe let an edited file with the same name and length reuse old stems.
+  probe let an edited file with the same name and length reuse old stems. The
+  file name is not part of the key, and digests are memoised per decoded buffer
+  so repeat Process clicks do not rehash.
 
 ## 3. Security Rules (Layer 0)
 
@@ -440,9 +442,12 @@ pnpm prod:verify           # THE production gate (static + browser; --network, -
 ```
 
 **`pnpm prod:verify` is the single definition of "verified".** `ci.yml` runs it
-on every PR and `main` push; `deploy.yml` starts from a successful `ci` run and
-deploys that run's `head_sha`; `release-build.yml` calls `ci.yml` on a pinned
-SHA before building. Do not add a second, weaker success definition to another
+on every PR and `main` push (all tiers, `--network --desktop` under xvfb);
+`deploy.yml` starts from a successful `ci` run on a `main` push, deploys that
+run's `head_sha` in a serialized group, and skips a SHA that is no longer the
+tip of `main`. It never builds PR code (a `workflow_run` job holds secrets);
+previews belong to the Vercel Git integration. `release-build.yml` calls
+`ci.yml` on the immutable triggering SHA before building. Do not add a second, weaker success definition to another
 workflow, and do not suppress a gate step with `continue-on-error` or `|| true`.
 Workflow edits go in both `.github/workflows/` and `docs/ci-patches/`
 (`pnpm ci:check-patches` fails on drift).
@@ -519,10 +524,13 @@ webPreferences: {
   IPC channel map is therefore inlined in `preload.cjs` and pinned equal to
   `ipc-channels.cjs` by `tests/electron-navigation-policy.test.js`.
 - Trust policy lives in `electron/navigation-policy.cjs` (pure, unit-tested):
-  every handler registers through `handleTrusted` (sender frame must be
-  `vip://app` or, in dev, the dev-server origin); `will-navigate` keeps the main
-  window on the app origin; `shell.openExternal` only receives http/https/mailto;
-  model-cache paths resolve through `resolveInside`. Runtime proof:
+  every handler registers through `handleTrusted` (sender must be the main
+  window's top frame on `vip://app` or, in dev, the dev-server origin);
+  `will-navigate` + `will-redirect` keep the main window on the app origin;
+  sign-in popups open only on the app's Firebase auth domain or
+  accounts.google.com, stay inside the OAuth flow and cannot open windows;
+  `shell.openExternal` only receives http/https/mailto; model-cache paths
+  resolve through the symlink-aware `resolveInsideReal`. Runtime proof:
   `xvfb-run -a pnpm test:electron-security` (`prod:verify --desktop`).
 - File I/O and model cache: main process with native dialogs (`vip:open-file`, `vip:save-file`, `vip:model-cache-path`).
 - Stripe / payment keys: main process or server only — never exposed to renderer.

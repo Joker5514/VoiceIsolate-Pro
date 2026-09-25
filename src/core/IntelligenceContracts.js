@@ -108,12 +108,18 @@ export function validateProcessingPlan(plan) {
  * Reject a validated plan that no longer belongs to the current session or
  * input. Callers pass the identity they currently hold.
  */
-export function assertPlanIsCurrent(plan, { sessionId, contentFingerprint } = {}) {
+export function assertPlanIsCurrent(plan, current) {
   validateProcessingPlan(plan);
-  const staleSession = sessionId !== undefined && plan.sessionId !== sessionId;
-  const staleInput = contentFingerprint !== undefined && plan.contentFingerprint !== contentFingerprint;
-  if (staleSession || staleInput) {
-    const err = new Error(`[VIP][Contracts] ProcessingPlan '${plan.id}' is stale for the current ${staleSession ? 'session' : 'input'}`);
+  // Both identities are required: an omitted field would silently skip the check.
+  record(current, 'current identity');
+  text(current.sessionId, 'current.sessionId');
+  text(current.contentFingerprint, 'current.contentFingerprint');
+  const stale = [
+    plan.sessionId !== current.sessionId && 'session',
+    plan.contentFingerprint !== current.contentFingerprint && 'input',
+  ].filter(Boolean);
+  if (stale.length) {
+    const err = new Error(`[VIP][Contracts] ProcessingPlan '${plan.id}' is stale for the current ${stale.join(' and ')}`);
     err.name = 'StalePlanError';
     err.code = 'STALE';
     throw err;

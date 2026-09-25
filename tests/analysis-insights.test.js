@@ -126,7 +126,7 @@ describe('landing.js wires AnalysisInsightsUI', () => {
     expect(landing).toMatch(/requestId\s*!==\s*requestSeq.*hasProcessed/s);
   });
 
-  test('passes contentFingerprint derived from cache key or sourceName', () => {
+  test('derives contentFingerprint from the content cache key only', () => {
     expect(landing).toMatch(/contentFingerprint.*fingerprint|fingerprint.*contentFingerprint/s);
     // Analysis is keyed by audio content only, never by filename.
     expect(landing).toMatch(/const fingerprint = ingested\?\._stemCacheKey;/);

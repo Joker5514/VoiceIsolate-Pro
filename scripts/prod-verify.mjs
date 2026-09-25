@@ -101,6 +101,11 @@ const selected = STEPS.filter(([id, tier]) => {
   if (tier === 'desktop') return includeDesktop;
   return true;
 });
+if (only && only.length === 0) {
+  // An empty selection would "pass" without verifying anything.
+  console.error('[prod:verify] --only needs at least one step id');
+  process.exit(2);
+}
 if (only) {
   const unknown = only.filter((id) => !STEPS.some(([s]) => s === id));
   if (unknown.length) {
@@ -117,6 +122,7 @@ delete env.BLOB_READ_WRITE_TOKEN;
 
 const sha = gitSha();
 const results = [];
+let stoppedEarly = false;
 console.log(`[prod:verify] ${selected.length} step(s) at ${sha}${gitDirty() ? ' (+ uncommitted changes)' : ''}\n`);
 
 for (const [id, tier, area, [cmd, cmdArgs]] of selected) {
@@ -127,12 +133,15 @@ for (const [id, tier, area, [cmd, cmdArgs]] of selected) {
   const durationMs = Date.now() - started;
   results.push({ id, tier, area, status, exitCode: run.status, signal: run.signal, durationMs });
   console.log(`   ${status} ${id} in ${(durationMs / 1000).toFixed(1)} s\n`);
-  if (status === 'FAIL' && failFast) break;
+  if (status === 'FAIL' && failFast) { stoppedEarly = true; break; }
 }
 
 for (const [id, tier] of STEPS) {
   if (!results.some((r) => r.id === id)) {
-    results.push({ id, tier, status: 'NOT RUN', reason: only ? 'not selected' : `${tier} tier not enabled` });
+    const selectedStep = selected.some(([s]) => s === id);
+    const reason = selectedStep && stoppedEarly ? 'skipped after a failure (--fail-fast)'
+      : only ? 'not selected' : `${tier} tier not enabled`;
+    results.push({ id, tier, status: 'NOT RUN', reason });
   }
 }
 for (const [id, area, reason] of NOT_RUN_HERE) results.push({ id, tier: 'platform', area, status: 'NOT VERIFIED', reason });

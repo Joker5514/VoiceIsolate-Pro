@@ -38,10 +38,16 @@ function getFreePort() {
 function waitForServer(url, timeoutMs = 20000) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
-    const ping = () => http.get(`${url}/`, (res) => { res.resume(); resolve(); }).on('error', () => {
+    const retry = () => {
       if (Date.now() - start > timeoutMs) reject(new Error(`server did not start (${url})`));
       else setTimeout(ping, 250);
-    });
+    };
+    const ping = () => {
+      const req = http.get(`${url}/`, (res) => { res.resume(); resolve(); });
+      req.on('error', retry);
+      // A listener that accepts but never answers must not outlive the deadline.
+      req.setTimeout(1500, () => req.destroy(new Error('probe timeout')));
+    };
     ping();
   });
 }

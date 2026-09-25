@@ -47,35 +47,55 @@ describe('CI workflows', () => {
   const deploy = read('.github/workflows/deploy.yml');
   const release = read('.github/workflows/release-build.yml');
 
-  test('ci runs the production gate on PRs and main and is callable', () => {
+  test('ci runs every gate tier on PRs and main and is callable', () => {
     expect(ci).toMatch(/pull_request:/);
     expect(ci).toMatch(/workflow_call:/);
-    expect(ci).toContain('node scripts/prod-verify.mjs --network');
+    expect(ci).toContain('xvfb-run -a node scripts/prod-verify.mjs --network --desktop');
+    // The desktop tier needs the real Electron binary the dependency install skips.
+    expect(ci).toMatch(/ELECTRON_SKIP_BINARY_DOWNLOAD: ''\s*\n\s*run: node node_modules\/electron\/install\.js/);
   });
 
   test('no workflow suppresses a required failure', () => {
     for (const wf of [ci, deploy, release]) {
-      expect(wf).not.toMatch(/continue-on-error:\s*true/);
-      expect(wf).not.toMatch(/\|\|\s*true/);
+      // YAML 1.1 accepts True/TRUE/yes/on as booleans; the shell no-op `:` suppresses like `true`.
+      expect(wf).not.toMatch(/continue-on-error:\s*['"]?(?:true|yes|on)\b/i);
+      expect(wf).not.toMatch(/\|\|\s*(?:true\b|:(?:\s|$))/i);
     }
   });
 
-  test('deploys start only after a successful gate and use its exact SHA', () => {
+  test('production deploys start only after a successful main gate and use its exact SHA', () => {
     expect(deploy).toMatch(/workflow_run:\s*\n\s*workflows: \[ci\]/);
-    expect(deploy.match(/workflow_run\.conclusion == 'success'/g)).toHaveLength(2);
-    expect(deploy.match(/ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/g)).toHaveLength(2);
+    expect(deploy).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(deploy).toContain("github.event.workflow_run.event == 'push'");
+    expect(deploy).toContain('ref: ${{ github.event.workflow_run.head_sha }}');
   });
 
-  test('preview deploys never run fork code with secrets', () => {
-    expect(deploy).toContain('head_repository.full_name == github.repository');
+  test('production deploys are serialized and never roll main back', () => {
+    expect(deploy).toMatch(/concurrency:\s*\n\s*group: deploy-production\s*\n\s*cancel-in-progress: false/);
+    expect(deploy).toContain('git ls-remote origin refs/heads/main');
+    expect(deploy).toMatch(/Deploy Production\s*\n\s*if: steps\.tip\.outputs\.current == 'true'/);
   });
 
-  test('Android release is built only from a gated, pinned SHA with a hash manifest', () => {
+  test('the privileged workflow_run never builds or deploys pull-request code', () => {
+    expect(deploy).not.toMatch(/event == 'pull_request'/);
+    expect(deploy).not.toContain('--environment=preview');
+  });
+
+  test('Android release is built only from a gated, immutable SHA with a hash manifest', () => {
     expect(release).toContain('uses: ./.github/workflows/ci.yml');
     expect(release).toMatch(/needs: \[resolve, gate\]/);
+    expect(release).toContain('ref: ${{ inputs.tag || github.sha }}');
+    expect(release).not.toContain('github.ref }}');
     expect(release).toContain('ref: ${{ needs.resolve.outputs.sha }}');
     expect(release).toContain('SHA256SUMS');
     expect(release).toContain('release-manifest.json');
+  });
+
+  test('gate, deploy and release pin third-party actions to commit SHAs', () => {
+    for (const wf of [ci, deploy, release]) {
+      const refs = [...wf.matchAll(/uses:\s*([^\s#]+)/g)].map((m) => m[1]).filter((u) => !u.startsWith('./'));
+      for (const ref of refs) expect(ref).toMatch(/@[0-9a-f]{40}$/);
+    }
   });
 
   test('workflow copies under docs/ci-patches stay identical', () => {

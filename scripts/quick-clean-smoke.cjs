@@ -140,7 +140,10 @@ async function startServer() {
       const panel = document.querySelector('#sourceConfidencePanel');
       return { state: panel.dataset.state, text: panel.textContent.trim().slice(0, 160) };
     });
-    assert.notEqual(insights.state, 'failed', insights.text);
+    // The deterministic fixture (220 Hz tone + noise) always yields measured
+    // evidence, so anything but a rendered SNR reading is a regression.
+    assert.equal(insights.state, 'ready', insights.text);
+    assert.match(insights.text, /SNR -?\d+\.\d dB/, insights.text);
     check('On-device analysis panel renders a measured result', insights);
     await page.locator('#playBtn').click();
     await page.locator('#voiceLevelSlider').fill('85');

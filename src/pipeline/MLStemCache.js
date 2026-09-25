@@ -40,23 +40,42 @@ function contentDigest(channelData) {
 }
 
 /**
+ * Digests memoised per decoded buffer. Ingested channel arrays are never
+ * mutated after decode (callers copy before transferring them to a worker),
+ * so a repeat Process click on the same file skips the full-content pass.
+ * @type {WeakMap<Float32Array, { channels: Float32Array[], digest: string }>}
+ */
+const _digests = new WeakMap();
+
+function memoDigest(channelData) {
+  const hit = _digests.get(channelData[0]);
+  if (hit && hit.channels.length === channelData.length && hit.channels.every((ch, i) => ch === channelData[i])) {
+    return hit.digest;
+  }
+  const digest = contentDigest(channelData);
+  _digests.set(channelData[0], { channels: [...channelData], digest });
+  return digest;
+}
+
+/**
  * Deterministic key over every input that changes the raw stems: the full
  * sample content, sample rate, channel layout, model chain (ordered) and the
- * Process-time Engineer revision. `sourceName` is appended for readability
- * and never substitutes for the content digest.
+ * Process-time Engineer revision. The file name is deliberately not part of
+ * it: identical audio under another name reuses stems, and a name can never
+ * stand in for content.
  *
  * @param {Float32Array[]} channelData
  * @param {number} sampleRate
  * @param {string[]} modelIds
- * @param {string} [sourceName]
+ * @param {string} [_sourceName] Accepted for caller compatibility; unused.
  * @param {string} [processingRevision] Process-time Engineer configuration.
  */
-export function stemCacheKey(channelData, sampleRate, modelIds, sourceName = '', processingRevision = '') {
+export function stemCacheKey(channelData, sampleRate, modelIds, _sourceName = '', processingRevision = '') {
   const models = modelIds.join('→');
   const variant = processingRevision ? `|engineer:${processingRevision}` : '';
   const len = channelData[0]?.length || 0;
-  const digest = len ? contentDigest(channelData) : '0';
-  return `${KEY_SCHEMA}|${models}|${sampleRate}|${channelData.length}|${len}|${digest}|${sourceName}${variant}`;
+  const digest = len ? memoDigest(channelData) : '0';
+  return `${KEY_SCHEMA}|${models}|${sampleRate}|${channelData.length}|${len}|${digest}${variant}`;
 }
 
 export function getCachedStems(key) {

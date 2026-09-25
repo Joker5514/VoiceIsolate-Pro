@@ -1,8 +1,12 @@
 name: CI & Deploy
 
 # Deployments consume verified code; they do not decide whether it is
-# verified. This workflow starts only after the `ci` production gate finishes
-# and deploys the exact head SHA that gate passed.
+# verified. This workflow starts only after the `ci` production gate passes
+# on a main push and deploys that exact head SHA.
+#
+# PR previews are left to the Vercel Git integration, which builds in
+# Vercel's unprivileged preview environment. A workflow_run job holds
+# repository secrets, so it must never build or deploy pull-request code.
 on:
   workflow_run:
     workflows: [ci]
@@ -10,6 +14,12 @@ on:
 
 permissions:
   contents: read
+
+# Production deploys run one at a time, in order; a queued older run that
+# starts after a newer SHA reached main skips itself below.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -20,67 +30,46 @@ jobs:
   # NOTE: Do not use `secrets.*` in job-level `if:` — GitHub can fail the whole
   # workflow with "workflow file issue" and zero jobs. Gate on event/ref only;
   # skip inside steps when VERCEL_TOKEN is empty (Vercel Git integration still deploys).
-  deploy-preview:
-    name: Deploy Preview
-    # Same-repository PRs only: workflow_run carries secrets, so fork code is never deployed with them.
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
-    runs-on: ubuntu-latest
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '24'
-      - name: Record verified SHA
-        run: echo "Deploying ${{ github.event.workflow_run.head_sha }} verified by ci run ${{ github.event.workflow_run.id }}"
-      - name: Install Vercel CLI
-        if: env.VERCEL_TOKEN != ''
-        run: npm install -g vercel
-      - name: Pull Vercel Environment
-        if: env.VERCEL_TOKEN != ''
-        run: vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
-      - name: Deploy Preview
-        if: env.VERCEL_TOKEN != ''
-        run: vercel deploy --token=$VERCEL_TOKEN
-      - name: Skip deploy (no VERCEL_TOKEN configured)
-        if: env.VERCEL_TOKEN == ''
-        run: echo "⚠️  Skipping Vercel CLI preview — VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."
-
   deploy-production:
     name: Deploy Production
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      # Never roll production back: an older verified SHA that finishes after
+      # a newer push must not deploy over it.
+      - name: Skip unless this SHA is still the tip of main
+        id: tip
+        run: |
+          tip="$(git ls-remote origin refs/heads/main | cut -f1)"
+          echo "main tip: $tip, verified: $VERIFIED_SHA (ci run ${{ github.event.workflow_run.id }})"
+          if [ "$tip" = "$VERIFIED_SHA" ]; then echo "current=true" >> "$GITHUB_OUTPUT"; else echo "current=false" >> "$GITHUB_OUTPUT"; fi
+
       - name: Setup Node.js
+        if: steps.tip.outputs.current == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
-      - name: Record verified SHA
-        run: echo "Deploying ${{ github.event.workflow_run.head_sha }} verified by ci run ${{ github.event.workflow_run.id }}"
       - name: Install Vercel CLI
-        if: env.VERCEL_TOKEN != ''
+        if: steps.tip.outputs.current == 'true' && env.VERCEL_TOKEN != ''
         run: npm install -g vercel
       - name: Pull Vercel Environment
-        if: env.VERCEL_TOKEN != ''
+        if: steps.tip.outputs.current == 'true' && env.VERCEL_TOKEN != ''
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
       - name: Deploy Production
-        if: env.VERCEL_TOKEN != ''
+        if: steps.tip.outputs.current == 'true' && env.VERCEL_TOKEN != ''
         run: vercel deploy --prod --token=$VERCEL_TOKEN
-      - name: Skip deploy (no VERCEL_TOKEN configured)
-        if: env.VERCEL_TOKEN == ''
-        run: echo "⚠️  Skipping Vercel CLI production — VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."
+      - name: Skip deploy (superseded or no VERCEL_TOKEN)
+        if: steps.tip.outputs.current != 'true' || env.VERCEL_TOKEN == ''
+        run: echo "⚠️  Skipping Vercel CLI production — superseded SHA or VERCEL_TOKEN not set (Git-connected Vercel may still deploy)."

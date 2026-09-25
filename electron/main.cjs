@@ -26,7 +26,7 @@ const http = require('http');
 const { autoUpdater } = require('electron-updater');
 const { IPC } = require('./ipc-channels.cjs');
 const {
-  isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, resolveInside,
+  isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInsideReal,
 } = require('./navigation-policy.cjs');
 
 const ROOT = path.join(__dirname, '..');
@@ -292,11 +292,27 @@ function createWindow() {
   });
 
   // The preload bridge is attached to whatever document this window holds, so
-  // the window must never leave the app's own origin.
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  // the window must never leave the app's own origin — including through a
+  // server-side redirect, which fires will-redirect rather than will-navigate.
+  const keepOnAppOrigin = (event, url) => {
     if (isAppUrl(url, { isDev, devUrl: DEV_URL })) return;
     event.preventDefault();
     if (isSafeExternalUrl(url)) shell.openExternal(url);
+  };
+  mainWindow.webContents.on('will-navigate', keepOnAppOrigin);
+  mainWindow.webContents.on('will-redirect', keepOnAppOrigin);
+
+  // Sign-in popups stay inside the Firebase/Google OAuth flow and may not open
+  // further windows.
+  mainWindow.webContents.on('did-create-window', (popup) => {
+    const keepOnAuthFlow = (event, url) => {
+      if (isAllowedAuthNavigation(url)) return;
+      event.preventDefault();
+      if (isSafeExternalUrl(url)) shell.openExternal(url);
+    };
+    popup.webContents.on('will-navigate', keepOnAuthFlow);
+    popup.webContents.on('will-redirect', keepOnAuthFlow);
+    popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   });
 
   if (isDev) {
@@ -320,8 +336,13 @@ function createWindow() {
  */
 function handleTrusted(channel, fn) {
   ipcMain.handle(channel, (evt, ...args) => {
+    // Bound to the main window's top frame: a popup or subframe that reaches
+    // the app origin is still a different sender.
+    const fromMainFrame = Boolean(mainWindow)
+      && evt.sender === mainWindow.webContents
+      && evt.senderFrame === evt.sender.mainFrame;
     const senderUrl = evt.senderFrame?.url || '';
-    if (!isAppUrl(senderUrl, { isDev, devUrl: DEV_URL })) {
+    if (!fromMainFrame || !isAppUrl(senderUrl, { isDev, devUrl: DEV_URL })) {
       throw new Error(`[VIP] IPC ${channel} refused for untrusted sender`);
     }
     return fn(evt, ...args);
@@ -395,7 +416,7 @@ function registerIpc() {
   handleTrusted(IPC.MODEL_CACHE_PATH, async () => ensureModelCacheDir());
 
   handleTrusted(IPC.READ_MODEL_CACHE, async (_evt, relativePath) => {
-    const full = resolveInside(await ensureModelCacheDir(), relativePath);
+    const full = await resolveInsideReal(fs, await ensureModelCacheDir(), relativePath);
     if (!full) return null;
     try {
       const data = await fs.readFile(full);
@@ -406,9 +427,13 @@ function registerIpc() {
   });
 
   handleTrusted(IPC.WRITE_MODEL_CACHE, async (_evt, opts) => {
-    const full = resolveInside(await ensureModelCacheDir(), opts && opts.relativePath);
-    if (!full) return { ok: false, bytes: 0 };
+    const dir = await ensureModelCacheDir();
+    const rel = opts && opts.relativePath;
+    if (!(await resolveInsideReal(fs, dir, rel))) return { ok: false, bytes: 0 };
+    const full = path.resolve(dir, rel);
     await fs.mkdir(path.dirname(full), { recursive: true });
+    // Re-check after mkdir: a symlinked parent created in between must not redirect the write.
+    if (!(await resolveInsideReal(fs, dir, rel))) return { ok: false, bytes: 0 };
     const buf = Buffer.from(opts.buffer);
     await fs.writeFile(full, buf);
     return { ok: true, bytes: buf.byteLength };

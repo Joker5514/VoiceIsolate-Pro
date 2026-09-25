@@ -9,15 +9,19 @@
  * upload → Process on the Engineer Console, and records every network
  * surface a page, dedicated worker or service worker can use:
  *
+ *   - a browser-level recording proxy that every HTTP request, WebSocket
+ *     upgrade and CONNECT tunnel from any context (page, dedicated worker,
+ *     shared/service worker) must traverse — loopback included
  *   - context-level requests (fetch, XHR, workers, service worker, subresources)
- *   - WebSocket connections
+ *   - page WebSocket connections
  *   - navigator.sendBeacon, RTCPeerConnection, WebSocket constructor calls
+ *     (RTCPeerConnection and sendBeacon do not exist in workers)
  *
  * The trust boundary it enforces: while no user-initiated file-transfer
  * feature (e.g. Google Drive, ADR-002) is used, the app may only GET/HEAD
  * static assets from its own origin. Any request that carries a body, any
- * cross-origin request, any socket/beacon/peer connection, and any URL long
- * enough to smuggle sample data in a query string is a failure.
+ * cross-origin request, any non-static path or data-bearing query string, any
+ * socket/tunnel/beacon/peer connection is a failure.
  */
 
 const fs = require('fs');
@@ -28,7 +32,10 @@ const { spawn } = require('child_process');
 const { launchChromium } = require('./lib/launch-chromium.cjs');
 
 const ROOT = path.join(__dirname, '..');
-const MAX_URL_LENGTH = 2048;
+/** Static asset types the app legitimately loads; anything else is an API call. */
+const STATIC_EXT = /\.(?:html|js|mjs|cjs|css|json|webmanifest|wasm|onnx|svg|png|jpe?g|webp|gif|ico|woff2?|ttf|mp4|webm|txt|map)$/i;
+/** Cache-busting query strings (e.g. `?v=25.0.2`) are the only queries allowed. */
+const MAX_QUERY_LENGTH = 40;
 const fails = [];
 
 function check(ok, name, evidence) {
@@ -102,6 +109,37 @@ function instrumentEgress() {
   }
 }
 
+/**
+ * Forwarding HTTP proxy. Chromium sends every request from every context
+ * through it (`bypass: '<-loopback>'` removes the implicit localhost bypass),
+ * so worker and service-worker traffic cannot slip past the recorder. Upgrades
+ * (WebSocket) and CONNECT tunnels are recorded and refused.
+ */
+function startRecordingProxy(log) {
+  const server = http.createServer((req, res) => {
+    let bodyBytes = 0;
+    req.on('data', (chunk) => { bodyBytes += chunk.length; });
+    let target;
+    try { target = new URL(req.url); } catch { res.writeHead(400).end(); return; }
+    const upstream = http.request({
+      host: target.hostname, port: target.port, path: target.pathname + target.search,
+      method: req.method, headers: req.headers,
+    }, (up) => { res.writeHead(up.statusCode, up.headers); up.pipe(res); });
+    upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+    req.pipe(upstream);
+    req.on('end', () => log.push({ kind: 'http', method: req.method, url: req.url, bodyBytes }));
+  });
+  server.on('upgrade', (req, socket) => { log.push({ kind: 'upgrade', url: req.url }); socket.destroy(); });
+  server.on('connect', (req, socket) => { log.push({ kind: 'connect', url: req.url }); socket.destroy(); });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
+
+function isStaticAsset(url) {
+  const u = new URL(url);
+  const pathOk = u.pathname.endsWith('/') || STATIC_EXT.test(u.pathname);
+  return pathOk && u.search.length <= MAX_QUERY_LENGTH;
+}
+
 function attachRecorders(context, page, base, record) {
   const origin = new URL(base).origin;
   context.on('request', (req) => {
@@ -110,7 +148,7 @@ function attachRecorders(context, page, base, record) {
     const body = req.postDataBuffer();
     record.requests.push({
       url: url.slice(0, 300),
-      urlLength: url.length,
+      staticAsset: isStaticAsset(url),
       method: req.method(),
       type: req.resourceType(),
       bodyBytes: body ? body.length : 0,
@@ -127,15 +165,22 @@ function assertBoundary(label, record, egress) {
   check(writes.length === 0, `${label}: no request carries a body or uses a write method`, writes);
   const foreign = record.requests.filter((r) => !r.sameOrigin);
   check(foreign.length === 0, `${label}: every request stays on the app origin`, foreign);
-  const longUrls = record.requests.filter((r) => r.urlLength > MAX_URL_LENGTH);
-  check(longUrls.length === 0, `${label}: no URL is long enough to carry sample data`, longUrls);
+  const dynamic = record.requests.filter((r) => r.sameOrigin && !r.staticAsset);
+  check(dynamic.length === 0, `${label}: same-origin requests are static assets with no data-bearing query`, dynamic);
   check(record.sockets.length === 0, `${label}: no WebSocket connection opens`, record.sockets);
+  const origin = new URL(record.base).origin;
+  const proxied = record.proxy.filter((e) => e.kind !== 'http'
+    || !['GET', 'HEAD'].includes(e.method) || e.bodyBytes > 0
+    || new URL(e.url).origin !== origin || !isStaticAsset(e.url));
+  check(proxied.length === 0, `${label}: browser-level proxy saw only static same-origin GETs (all contexts)`, proxied);
+  check(record.proxy.length > 0, `${label}: browser-level proxy observed traffic`, record.proxy.length);
   check(egress.length === 0, `${label}: no sendBeacon / WebSocket / RTCPeerConnection call`, egress);
   check(record.requests.length > 0, `${label}: network recorder observed traffic`, record.requests.length);
 }
 
-async function landingJourney(browser, base, wav) {
-  const record = { requests: [], sockets: [], pageErrors: [] };
+async function landingJourney(browser, base, wav, proxyLog) {
+  proxyLog.length = 0;
+  const record = { base, proxy: proxyLog, requests: [], sockets: [], pageErrors: [] };
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   await context.addInitScript(instrumentEgress);
   const page = await context.newPage();
@@ -165,8 +210,9 @@ async function landingJourney(browser, base, wav) {
   await context.close();
 }
 
-async function engineerJourney(browser, base, wav) {
-  const record = { requests: [], sockets: [], pageErrors: [] };
+async function engineerJourney(browser, base, wav, proxyLog) {
+  proxyLog.length = 0;
+  const record = { base, proxy: proxyLog, requests: [], sockets: [], pageErrors: [] };
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await context.addInitScript(instrumentEgress);
   const page = await context.newPage();
@@ -212,18 +258,48 @@ async function engineerJourney(browser, base, wav) {
   delete env.BLOB_READ_WRITE_TOKEN;
   const server = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: 'ignore' });
   let browser;
+  let proxy;
   try {
     await waitForServer(base);
-    browser = await launchChromium({ headless: true });
+    const proxyLog = [];
+    proxy = await startRecordingProxy(proxyLog);
+    browser = await launchChromium({
+      headless: true,
+      // Silence Chromium's own background traffic (time sync, sign-in, GCM,
+      // safe browsing, variations, autofill, component updates) so everything
+      // the proxy sees comes from the app. A blank page with these flags makes
+      // zero proxied requests; without them it made eight to Google hosts.
+      args: [
+        '--no-sandbox',
+        '--disable-background-networking',
+        '--disable-component-update',
+        '--disable-sync',
+        '--disable-domain-reliability',
+        '--no-pings',
+        '--no-first-run',
+        '--disable-default-apps',
+        '--disable-client-side-phishing-detection',
+        '--safebrowsing-disable-auto-update',
+        '--disable-field-trial-config',
+        '--disable-features=AutofillServerCommunication,OptimizationHints,MediaRouter,'
+          + 'CertificateTransparencyComponentUpdater,NetworkTimeServiceQuerying,SafeBrowsing,Translate,PushMessaging',
+        // Point browser-internal Google endpoints at a closed loopback port; the
+        // proxy check would flag any of them, so a silent run proves they stayed off.
+        ...['google-base-url', 'gaia-url', 'variations-server-url', 'gcm-checkin-url',
+          'gcm-mcs-endpoint', 'gcm-registration-url'].map((flag) => `--${flag}=http://127.0.0.1:9`),
+      ],
+      proxy: { server: `http://127.0.0.1:${proxy.address().port}`, bypass: '<-loopback>' },
+    });
     console.log('[privacy] Landing: upload → Process → export');
-    await landingJourney(browser, base, wav);
+    await landingJourney(browser, base, wav, proxyLog);
     console.log('[privacy] Engineer: upload → Process → auto-analysis');
-    await engineerJourney(browser, base, wav);
+    await engineerJourney(browser, base, wav, proxyLog);
   } catch (err) {
     console.error(err);
     fails.push(String(err).split('\n')[0]);
   } finally {
     if (browser) await browser.close().catch(() => {});
+    proxy?.close();
     server.kill('SIGTERM');
     try { fs.unlinkSync(wav); } catch { /* already gone */ }
   }

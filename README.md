@@ -176,12 +176,15 @@ runtime privacy), then writes `output/prod-verify/report.json` tagged with the
 commit SHA. Individual commands (`pnpm lint`, `pnpm test`, `pnpm test:shell-qa`,
 `pnpm test:privacy-runtime`, …) remain available.
 
-CI: `.github/workflows/ci.yml` runs the gate on every PR and `main` push.
-`deploy.yml` deploys only the head SHA a successful gate run passed, and
-`release-build.yml` calls the gate on a pinned SHA before building the Android
-AAB, which ships with `SHA256SUMS` and `release-manifest.json`. Android and
-Windows packaging are not part of the local gate and are reported as
-`NOT VERIFIED` there.
+CI: `.github/workflows/ci.yml` runs every tier (static, browser, network,
+desktop under `xvfb-run`) on every PR and `main` push. `deploy.yml` deploys to
+production only the `main` SHA a successful gate run passed, one run at a time,
+and skips a SHA that is no longer the tip of `main`. PR previews come from the
+Vercel Git integration, never from a privileged workflow. `release-build.yml`
+calls the gate on the immutable triggering SHA before building the Android AAB,
+which ships with `SHA256SUMS` and `release-manifest.json`. Third-party actions
+are pinned to commit SHAs. Android and Windows packaging are not part of the
+local gate and are reported as `NOT VERIFIED` there.
 
 ## Builds
 

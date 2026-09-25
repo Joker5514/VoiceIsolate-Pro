@@ -45,17 +45,30 @@ function isSafeExternalUrl(url) {
   return Boolean(u) && EXTERNAL_PROTOCOLS.has(u.protocol);
 }
 
-/** Google / Firebase sign-in popups used by the optional Drive file I/O (ADR-002). */
+/** Firebase auth domain used by the optional Drive sign-in (public/app/firebase-config.js). */
+const DEFAULT_AUTH_DOMAIN = 'voiceisolate-pro.firebaseapp.com';
+
+function authDomain() {
+  return process.env.VIP_FIREBASE_AUTH_DOMAIN || DEFAULT_AUTH_DOMAIN;
+}
+
+/**
+ * A sign-in popup may only open on the app's own Firebase auth handler or
+ * Google's account page — not on any Firebase project or user-content host,
+ * which anyone can publish to.
+ */
 function isAllowedAuthPopup(url) {
   const u = parse(url);
   if (!u || u.protocol !== 'https:') return false;
+  return u.hostname === authDomain() || u.hostname === 'accounts.google.com';
+}
+
+/** Where an already-open sign-in popup may navigate during the OAuth flow. */
+function isAllowedAuthNavigation(url) {
+  const u = parse(url);
+  if (!u || u.protocol !== 'https:') return false;
   const host = u.hostname;
-  return host === 'accounts.google.com'
-    || host === 'apis.google.com'
-    || host.endsWith('.google.com')
-    || host.endsWith('.googleusercontent.com')
-    || host.endsWith('.firebaseapp.com')
-    || host === 'www.gstatic.com';
+  return host === authDomain() || host === 'google.com' || host.endsWith('.google.com');
 }
 
 /**
@@ -70,4 +83,32 @@ function resolveInside(dir, relativePath) {
   return full.startsWith(root + path.sep) ? full : null;
 }
 
-module.exports = { isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, resolveInside };
+/**
+ * `resolveInside` plus symlink/junction resolution: the canonical path of the
+ * target (or, for a file not yet written, of its deepest existing ancestor)
+ * must still sit inside the canonical cache directory.
+ *
+ * @param {typeof import('fs').promises} fsp
+ * @returns {Promise<string|null>}
+ */
+async function resolveInsideReal(fsp, dir, relativePath) {
+  const full = resolveInside(dir, relativePath);
+  if (!full) return null;
+  const realRoot = await fsp.realpath(dir);
+  let probe = full;
+  for (;;) {
+    try {
+      const real = await fsp.realpath(probe);
+      return real === realRoot || real.startsWith(realRoot + path.sep) ? full : null;
+    } catch (err) {
+      if (err && err.code !== 'ENOENT') return null;
+      const parent = path.dirname(probe);
+      if (parent === probe) return null;
+      probe = parent;
+    }
+  }
+}
+
+module.exports = {
+  isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInside, resolveInsideReal,
+};

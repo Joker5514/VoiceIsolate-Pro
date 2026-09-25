@@ -1,7 +1,7 @@
 name: ci
 
 # The single definition of "verified". Pull requests and main pushes run it
-# directly; deploy.yml deploys only a SHA this workflow passed, and
+# directly; deploy.yml deploys only a main SHA this workflow passed, and
 # release-build.yml calls it before building any release artifact.
 on:
   pull_request:
@@ -19,6 +19,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR supersedes the running gate. Main pushes are
+# never cancelled: every main SHA needs its own verdict before it can deploy.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   production-gate:
     name: production-gate
@@ -28,18 +34,18 @@ jobs:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.ref || github.sha }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 11.3.0
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
@@ -50,16 +56,23 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install chromium --with-deps
 
-      # Static + browser + network tiers. The script runs every step, prints a
-      # table, and exits non-zero if any step failed.
+      # The desktop tier drives the real Electron main process; install its
+      # binary explicitly (the dependency install above skips it).
+      - name: Install Electron binary
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: ''
+        run: node node_modules/electron/install.js
+
+      # Static + browser + network + desktop tiers. The script runs every step,
+      # prints a table, and exits non-zero if any step failed.
       - name: pnpm prod:verify
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/prod-verify.mjs --network
+        run: xvfb-run -a node scripts/prod-verify.mjs --network --desktop
 
       - name: Upload verification report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: prod-verify-report
           path: output/prod-verify/report.json

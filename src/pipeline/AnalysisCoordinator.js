@@ -76,9 +76,13 @@ export class AnalysisCoordinator {
     return Promise.resolve()
       .then(() => this.analyzeFn(input, { ...options, identity }))
       .then((snapshot) => {
-        validateAnalysisSnapshot(snapshot);
         if (options.signal?.aborted) throw abortError();
+        validateAnalysisSnapshot(snapshot);
         return { ...snapshot, freshness: 'fresh' };
+      }, (error) => {
+        // Report a caller's own cancellation the same way the shared path does.
+        if (options.signal?.aborted) throw abortError();
+        throw error;
       });
   }
 

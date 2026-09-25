@@ -58,7 +58,8 @@ describe('deterministic recommendation and bridge', () => {
     expect(first.plan.evidenceRefs).toEqual(['noise-0-3']);
     expect(first.plan.operations[0].parameters.nrAmount).toBe(42);
     expect(Object.isFrozen(first.plan.operations[0].parameters)).toBe(true);
-    expect(planToControlPatch(first.plan, { outGain: -2 }).outGain).toBe(-2);
+    const current = { sessionId: 'session-local-1', contentFingerprint: 'sha256-safe-fingerprint' };
+    expect(planToControlPatch(first.plan, { outGain: -2 }, current).outGain).toBe(-2);
   });
 
   test('does not create a plan for stale, unsupported, or no-material-problem analysis', () => {
@@ -98,7 +99,7 @@ describe('analysis coordinator cancellation and staleness', () => {
         reject(err);
       };
       if (signal.aborted) { cancel(); return; }
-      const timer = setTimeout(() => resolve(snapshot()), delayMs);
+      const timer = setTimeout(() => resolve(snapshot({ contentFingerprint: 'fp-1' })), delayMs);
       signal.addEventListener('abort', () => { clearTimeout(timer); cancel(); }, { once: true });
     });
     return { analyze, calls };
@@ -154,9 +155,18 @@ describe('analysis coordinator cancellation and staleness', () => {
     expect(coordinator.cache.size).toBe(0);
   });
 
+  test('an uncacheable request reports its own cancellation as CANCELLED', async () => {
+    const { analyze } = abortableAnalyzer();
+    const coordinator = new AnalysisCoordinator({ analyze });
+    const ctrl = new AbortController();
+    const pending = coordinator.analyze({ ...identity, contentFingerprint: undefined }, {}, { signal: ctrl.signal });
+    ctrl.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError', code: 'CANCELLED' });
+  });
+
   test('a failed run does not poison later requests', async () => {
     let n = 0;
-    const coordinator = new AnalysisCoordinator({ analyze: async () => { n += 1; if (n === 1) throw new Error('boom'); return snapshot(); } });
+    const coordinator = new AnalysisCoordinator({ analyze: async () => { n += 1; if (n === 1) throw new Error('boom'); return snapshot({ contentFingerprint: 'fp-1' }); } });
     await expect(coordinator.analyze(identity, {})).rejects.toThrow('boom');
     await expect(coordinator.analyze(identity, {})).resolves.toMatchObject({ freshness: 'fresh' });
   });
@@ -176,6 +186,15 @@ describe('processing plan session binding', () => {
     expect(() => planToControlPatch(plan, {}, { ...current, contentFingerprint: 'other-file' }))
       .toThrow(expect.objectContaining({ name: 'StalePlanError', code: 'STALE' }));
     expect(() => planToControlPatch(plan, {}, { ...current, sessionId: 'session-2' })).toThrow(/stale/);
+    expect(() => planToControlPatch(plan, {}, { sessionId: 'x', contentFingerprint: 'y' }))
+      .toThrow(/stale for the current session and input/);
+  });
+
+  test('the bridge refuses to compare against a missing or partial current identity', () => {
+    const { plan } = recommendation.recommendForGoal(snapshot(), 'reduce_background_noise');
+    expect(() => planToControlPatch(plan, {})).toThrow(/current identity/);
+    expect(() => planToControlPatch(plan, {}, { sessionId: 'session-local-1' })).toThrow(/contentFingerprint/);
+    expect(() => planToControlPatch(plan, {}, { contentFingerprint: 'sha256-safe-fingerprint' })).toThrow(/sessionId/);
   });
 
   test('a plan without session binding fails validation', () => {

@@ -7,10 +7,11 @@ import { assertPlanIsCurrent } from '../core/IntelligenceContracts.js';
 /**
  * @param {object} plan Validated ProcessingPlan.
  * @param {object} [currentControls]
- * @param {{ sessionId?: string, contentFingerprint?: string }} [current]
- *   Identity the caller holds now; a plan built for another session or input is rejected.
+ * @param {{ sessionId: string, contentFingerprint: string }} current
+ *   Identity the caller holds now (both required); a plan built for another
+ *   session or input is rejected.
  */
-export function planToControlPatch(plan, currentControls = {}, current = {}) {
+export function planToControlPatch(plan, currentControls, current) {
   assertPlanIsCurrent(plan, current);
   const patch = {};
   for (const operation of plan.operations) {
@@ -20,7 +21,7 @@ export function planToControlPatch(plan, currentControls = {}, current = {}) {
       patch[id] = clampParam(id, value);
     }
   }
-  return { ...currentControls, ...patch };
+  return { ...(currentControls || {}), ...patch };
 }
 
 export default { planToControlPatch };

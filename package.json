@@ -65,7 +65,9 @@
     "pretest:calibration": "playwright install chromium",
     "test:shell-qa": "node scripts/shell-qa-smoke.cjs",
     "test:privacy-runtime": "node scripts/privacy-runtime-smoke.cjs",
+    "pretest:privacy-runtime": "playwright install chromium",
     "test:tier-picker": "node scripts/tier-picker-smoke.cjs",
+    "pretest:tier-picker": "playwright install chromium",
     "test:electron-security": "node scripts/electron-security-smoke.cjs",
     "pretest:shell-qa": "playwright install chromium",
     "pretest:engineer": "playwright install chromium",
@@ -193,7 +195,9 @@
     "flatted": ">=3.4.2",
     "form-data": ">=4.0.6",
     "protobufjs": ">=8.4.1",
-    "qs": ">=6.15.2",
-    "ip-address": ">=10.1.1"
+    "qs": ">=6.16.0",
+    "ip-address": ">=10.3.1",
+    "body-parser@>=2.0.0 <2.3.0": "2.3.0",
+    "js-yaml@>=4.0.0 <4.3.2": "^4.3.2"
   }
 }
