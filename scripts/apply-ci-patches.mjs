@@ -17,6 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const patches = [
   ['docs/ci-patches/deploy.yml', '.github/workflows/deploy.yml'],
   ['docs/ci-patches/release-build.yml', '.github/workflows/release-build.yml'],
+  ['docs/ci-patches/ci.yml', '.github/workflows/ci.yml'],
 ];
 
 const checkOnly = process.argv.includes('--check');

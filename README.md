@@ -137,6 +137,7 @@ Supported repository guarantees include:
 - model integrity is validated against the repository's model metadata/validation path
 - Electron renderer isolation is enforced by the native shell
 - Android WebView debugging is tied to `BuildConfig.DEBUG`, not enabled unconditionally in release builds
+- runtime egress is verified, not only grepped: `pnpm test:privacy-runtime` drives Chromium through upload → Process → export on Landing and upload → Process → auto-analysis on the Engineer Console, recording every context-level request (pages, workers, service worker), WebSocket, `sendBeacon` and `RTCPeerConnection`. It fails on any request with a body, any cross-origin request, any socket/beacon/peer connection, or any URL over 2048 characters. User-initiated Google Drive transfer is outside that run by design.
 
 Do not infer regulatory compliance, cryptographic export features, secure-erasure guarantees, or signed binaries unless a specific implementation and verification artifact proves them.
 
@@ -159,18 +160,28 @@ Open `http://localhost:3000/` or `/app/`.
 
 ## Quality gates
 
+One command defines "verified" locally and in CI:
+
 ```bash
-pnpm ci:check-patches
-pnpm version:check
-pnpm worklets:verify
-pnpm lint
-pnpm test:ci
-pnpm validate
-pnpm check:privacy
-pnpm downloads:validate
+pnpm prod:verify                 # static + real-Chromium tiers
+pnpm prod:verify -- --no-browser # static tier only
+pnpm prod:verify -- --network    # adds the live download/release contract
+xvfb-run -a pnpm prod:verify -- --desktop  # adds the Electron runtime security smoke
 ```
 
-Shared UI/runtime changes should additionally pass the live DSP, Engineer controls, Engineer upload/decode, and desktop/mobile UI browser smokes used in CI.
+It runs repository integrity, version sync, lint, Jest, DSP isolation, static
+and runtime privacy checks, model and worklet integrity, provenance, the
+production build, and every browser smoke (Engineer, Landing, shell guards,
+runtime privacy), then writes `output/prod-verify/report.json` tagged with the
+commit SHA. Individual commands (`pnpm lint`, `pnpm test`, `pnpm test:shell-qa`,
+`pnpm test:privacy-runtime`, …) remain available.
+
+CI: `.github/workflows/ci.yml` runs the gate on every PR and `main` push.
+`deploy.yml` deploys only the head SHA a successful gate run passed, and
+`release-build.yml` calls the gate on a pinned SHA before building the Android
+AAB, which ships with `SHA256SUMS` and `release-manifest.json`. Android and
+Windows packaging are not part of the local gate and are reported as
+`NOT VERIFIED` there.
 
 ## Builds
 

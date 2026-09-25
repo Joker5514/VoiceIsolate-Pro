@@ -13,7 +13,32 @@ on:
         required: false
 
 jobs:
+  # Pin one SHA so the gate and the build see the same commit even if a tag moves.
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # Release artifacts are built only from a SHA the production gate passed.
+  gate:
+    needs: resolve
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+
   bundle-release:
+    needs: [resolve, gate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,7 +56,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ needs.resolve.outputs.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -81,8 +106,39 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon bundleRelease
 
+      # Traceability: version, exact commit, build environment, model manifest
+      # and artifact hash travel with the AAB.
+      - name: Write release manifest and SHA-256 sums
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=android/app/build/outputs/bundle/release
+          (cd "$out" && sha256sum *.aab > SHA256SUMS)
+          node -e '
+            const fs = require("fs"); const crypto = require("crypto"); const path = require("path");
+            const out = process.argv[1];
+            const sha = (f) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+            const artifacts = fs.readdirSync(out).filter((f) => f.endsWith(".aab"))
+              .map((f) => ({ name: f, bytes: fs.statSync(path.join(out, f)).size, sha256: sha(path.join(out, f)) }));
+            fs.writeFileSync(path.join(out, "release-manifest.json"), JSON.stringify({
+              version: require("./package.json").version,
+              commit: process.env.GITHUB_SHA_VERIFIED,
+              workflowRun: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              builtAt: new Date().toISOString(),
+              environment: { runner: process.env.RUNNER_OS, node: process.version, java: process.env.JAVA_HOME || null },
+              modelManifestSha256: sha("src/core/ModelManifest.js"),
+              artifacts,
+            }, null, 2) + "\n");
+          ' "$out"
+          cat "$out/release-manifest.json"
+        env:
+          GITHUB_SHA_VERIFIED: ${{ needs.resolve.outputs.sha }}
+
       - name: Upload release bundle artifact
         uses: actions/upload-artifact@v4
         with:
           name: voiceisolate-pro-release-aab
-          path: android/app/build/outputs/bundle/release/*.aab
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/bundle/release/SHA256SUMS
+            android/app/build/outputs/bundle/release/release-manifest.json

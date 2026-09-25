@@ -253,6 +253,24 @@ do not implement production defect fixes only there or silently migrate the
 shipping path to it. Any removal or canonical migration requires a separate,
 explicit architecture change.
 
+### 2.2 Intelligence boundary contracts
+
+- `AnalysisCoordinator` (`src/pipeline/`) is the only path from raw analysis to
+  a canonical `AnalysisSnapshot`. Its `analyze` callback must return a snapshot
+  that passes `validateAnalysisSnapshot` — adapt raw `FullAnalysis` output with
+  `adaptFullAnalysisToSnapshot` (core) inside the callback. Do not add a second
+  adapter in the presentation layer.
+- Concurrent callers for one identity share a run; each caller's `AbortSignal`
+  detaches only that caller, and the shared run aborts when no waiter remains.
+  `invalidate()`/`clear()` orphan in-flight runs, whose waiters reject with
+  `StaleAnalysisError` (`code: 'STALE'`). Requests without a content
+  fingerprint are never cached or shared — never key analysis by filename.
+- A `ProcessingPlan` carries the `sessionId` and `contentFingerprint` it was
+  derived from; `planToControlPatch(plan, controls, { sessionId, contentFingerprint })`
+  rejects a plan for another session/input (`StalePlanError`).
+- `stemCacheKey` digests every sample of every channel (schema `sk2`); a sparse
+  probe let an edited file with the same name and length reuse old stems.
+
 ## 3. Security Rules (Layer 0)
 
 - `server/securityHeaders.js` is the **only** place HTTP security headers are
@@ -417,7 +435,17 @@ pnpm provenance:validate  # provenance schema/claims; stale/unknown allowed
 pnpm test:live             # Playwright headless Engineer pipeline smoke
 pnpm test:shell-qa         # browser-driven shell guards + entry-point journey
 pnpm test:calibration      # upload -> Process -> DONE, slider calibration
+pnpm test:privacy-runtime  # Chromium egress recorder over Landing + Engineer journeys
+pnpm prod:verify           # THE production gate (static + browser; --network, --no-browser)
 ```
+
+**`pnpm prod:verify` is the single definition of "verified".** `ci.yml` runs it
+on every PR and `main` push; `deploy.yml` starts from a successful `ci` run and
+deploys that run's `head_sha`; `release-build.yml` calls `ci.yml` on a pinned
+SHA before building. Do not add a second, weaker success definition to another
+workflow, and do not suppress a gate step with `continue-on-error` or `|| true`.
+Workflow edits go in both `.github/workflows/` and `docs/ci-patches/`
+(`pnpm ci:check-patches` fails on drift).
 
 ---
 
@@ -485,6 +513,17 @@ webPreferences: {
 ```
 
 - All IPC via `contextBridge` → `window.vipDesktop` only. No `require` in renderer.
+- **The sandboxed preload may `require('electron')` and nothing else.** A local
+  `require` fails with "module not found" and silently removes the whole bridge
+  (this shipped: native open/save and the filesystem model cache were dead). The
+  IPC channel map is therefore inlined in `preload.cjs` and pinned equal to
+  `ipc-channels.cjs` by `tests/electron-navigation-policy.test.js`.
+- Trust policy lives in `electron/navigation-policy.cjs` (pure, unit-tested):
+  every handler registers through `handleTrusted` (sender frame must be
+  `vip://app` or, in dev, the dev-server origin); `will-navigate` keeps the main
+  window on the app origin; `shell.openExternal` only receives http/https/mailto;
+  model-cache paths resolve through `resolveInside`. Runtime proof:
+  `xvfb-run -a pnpm test:electron-security` (`prod:verify --desktop`).
 - File I/O and model cache: main process with native dialogs (`vip:open-file`, `vip:save-file`, `vip:model-cache-path`).
 - Stripe / payment keys: main process or server only — never exposed to renderer.
 - Packaging: `pnpm build:electron` → `electron-builder`; signing hooks may be configured, but verify the produced binary before claiming a signed artifact.
