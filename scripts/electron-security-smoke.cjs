@@ -19,6 +19,7 @@ const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 const { _electron } = require('playwright');
+const { authDomain } = require('../electron/navigation-policy.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const fails = [];
@@ -76,7 +77,9 @@ function waitForServer(url, timeoutMs = 20000) {
     check(preloadErrors.length === 0, 'sandboxed preload loads without errors', preloadErrors);
     check(await win.evaluate(() => typeof window.vipDesktop) === 'object', 'window.vipDesktop is exposed');
     const domain = await win.evaluate(() => window.vipDesktop.firebaseAuthDomain);
-    check(domain === 'voiceisolate-pro.firebaseapp.com', 'preload receives the main-process auth domain', domain);
+    // Same env, same resolver as the main process under test.
+    const expectedDomain = authDomain();
+    check(domain === expectedDomain, 'preload receives the main-process auth domain', { domain, expectedDomain });
     const platform = await win.evaluate(() => window.vipDesktop.platform());
     check(platform === process.platform, 'IPC answers the app document', platform);
     const traversal = await win.evaluate(() => window.vipDesktop.readModelCache('../../../../etc/passwd'));

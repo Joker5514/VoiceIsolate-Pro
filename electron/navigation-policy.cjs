@@ -55,9 +55,15 @@ function isSafeExternalUrl(url) {
 const DEFAULT_AUTH_DOMAIN = 'voiceisolate-pro.firebaseapp.com';
 const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 
+function isValidHostname(name) {
+  return name.length <= 253
+    && HOSTNAME.test(name)
+    && name.split('.').every((label) => label.length <= 63);
+}
+
 function authDomain() {
   const configured = (process.env.VIP_FIREBASE_AUTH_DOMAIN || '').trim().toLowerCase();
-  return HOSTNAME.test(configured) ? configured : DEFAULT_AUTH_DOMAIN;
+  return isValidHostname(configured) ? configured : DEFAULT_AUTH_DOMAIN;
 }
 
 /**

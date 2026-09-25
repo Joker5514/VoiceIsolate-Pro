@@ -48,11 +48,16 @@ describe('Electron navigation policy', () => {
     try {
       delete process.env.VIP_FIREBASE_AUTH_DOMAIN;
       expect(authDomain()).toBe('voiceisolate-pro.firebaseapp.com');
+      process.env.VIP_FIREBASE_AUTH_DOMAIN = `${'a'.repeat(63)}.firebaseapp.com`;
+      expect(authDomain()).toBe(`${'a'.repeat(63)}.firebaseapp.com`);
       process.env.VIP_FIREBASE_AUTH_DOMAIN = 'Custom-App.firebaseapp.com';
       expect(authDomain()).toBe('custom-app.firebaseapp.com');
       expect(isAllowedAuthPopup('https://custom-app.firebaseapp.com/__/auth/handler')).toBe(true);
       expect(isAllowedAuthPopup('https://voiceisolate-pro.firebaseapp.com/__/auth/handler')).toBe(false);
-      for (const bad of ['https://evil.example', 'evil.example/path', 'a b.com', '']) {
+      const longLabel = `${'a'.repeat(64)}.firebaseapp.com`;
+      const longName = `${Array(64).fill('abcd').join('.')}.com`;
+      expect(longName.length).toBeGreaterThan(253);
+      for (const bad of ['https://evil.example', 'evil.example/path', 'a b.com', '', longLabel, longName]) {
         process.env.VIP_FIREBASE_AUTH_DOMAIN = bad;
         expect(authDomain()).toBe('voiceisolate-pro.firebaseapp.com');
       }
