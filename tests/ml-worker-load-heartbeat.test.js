@@ -25,6 +25,14 @@ function loadWorker({ timers, getSessionImpl }) {
   return { sandbox, messages };
 }
 
+async function waitFor(predicate, label) {
+  for (let i = 0; i < 200; i++) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
 function manualTimers() {
   const pending = new Map();
   let seq = 0;
@@ -63,7 +71,7 @@ test('model load posts request-scoped heartbeats until the session resolves', as
     type: 'process', requestId: 7, modelIds: ['mask'],
     channelData: [new Float32Array(64).fill(0.1)], sampleRate: 48000,
   } });
-  while (!resolveSession) await Promise.resolve();
+  await waitFor(() => resolveSession, 'getSession call');
 
   timers.fireAll();
   timers.fireAll();
@@ -93,7 +101,7 @@ test('cancelled requests stop emitting heartbeats', async () => {
     type: 'process', requestId: 9, modelIds: ['mask'],
     channelData: [new Float32Array(64)], sampleRate: 48000,
   } });
-  while (!resolveSession) await Promise.resolve();
+  await waitFor(() => resolveSession, 'getSession call');
   await sandbox.self.onmessage({ data: { type: 'cancel', requestId: 9 } });
   timers.fireAll();
   expect(messages.filter((m) => m.type === 'heartbeat')).toHaveLength(0);
@@ -116,4 +124,33 @@ test('stereo progress reports the channel mean and never jumps to the last chann
   expect(pcts[0]).toBeLessThan(50);
   for (let i = 1; i < pcts.length; i++) expect(pcts[i]).toBeGreaterThanOrEqual(pcts[i - 1]);
   expect(pcts[pcts.length - 1]).toBe(100);
+});
+
+test('serial-mixed (waveform) stereo progress is the channel mean, monotonic and capped at 100', async () => {
+  const timers = manualTimers();
+  const wave = {
+    id: 'wave', strategy: 'waveform', sampleRate: 48000, segmentSamples: 100,
+    io: { input: 'in', output: 'out' },
+  };
+  const session = {
+    run: async (feeds) => ({ out: { data: new Float32Array(feeds.in.data.length).fill(1) } }),
+  };
+  const { sandbox, messages } = loadWorker({ timers, getSessionImpl: async () => session });
+  await sandbox.self.onmessage({ data: { type: 'init', manifest: [wave] } });
+  await sandbox.self.onmessage({ data: {
+    type: 'process', requestId: 4, modelIds: ['wave'],
+    channelData: [new Float32Array(1000).fill(0.2), new Float32Array(1000).fill(-0.2)],
+    sampleRate: 48000,
+  } });
+  const stems = messages.find((m) => m.type === 'stems' && m.requestId === 4);
+  expect(stems.pipelineMode).toBe('serial-mixed');
+  const pcts = messages.filter((m) => m.type === 'progress' && m.requestId === 4).map((m) => m.percent);
+  expect(pcts.length).toBeGreaterThan(3);
+  expect(pcts[0]).toBeLessThan(50);
+  for (let i = 1; i < pcts.length; i++) {
+    expect(pcts[i]).toBeGreaterThanOrEqual(pcts[i - 1]);
+    // 20 segments total: the mean advances ~5% per step, never by a whole channel.
+    expect(pcts[i] - pcts[i - 1]).toBeLessThanOrEqual(10);
+  }
+  expect(Math.max(...pcts)).toBe(100);
 });
