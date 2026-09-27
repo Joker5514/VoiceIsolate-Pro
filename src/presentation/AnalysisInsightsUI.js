@@ -17,121 +17,7 @@
 import { FullAnalysisHost } from '../pipeline/FullAnalysisHost.js';
 import { AnalysisCoordinator } from '../pipeline/AnalysisCoordinator.js';
 import { recommendForGoal, SUPPORTED_GOALS } from '../core/IntelligenceRecommendation.js';
-import { SAMPLE_RATE } from '../core/audio-config.js';
-
-/** Map a FullAnalysis result to an AnalysisSnapshot accepted by IntelligenceContracts. */
-function toSnapshot(analysis, { sessionId, contentFingerprint, analysisVersion = '1', backend: _backend = 'wasm' } = {}) {
-  const evidenceRegions = [];
-  let regionId = 0;
-
-  // Map detected sources with segment evidence to EvidenceRegions.
-  for (const src of analysis.detectedSources || []) {
-    const detectionType = src.id; // e.g. 'speech', 'noise', 'hum'
-    // Find a representative segment from the corresponding list.
-    const segKey = detectionType === 'lead_speech' ? 'speechSegments'
-      : detectionType === 'broadband_noise' || detectionType === 'noise' ? 'noiseSegments'
-        : detectionType === 'hum' ? 'humSegments'
-          : detectionType === 'ambience' ? 'reverbSegments'
-            : null;
-    const segs = segKey ? (analysis[segKey] || []) : [];
-    const start = segs[0]?.start ?? 0;
-    const end = segs[segs.length - 1]?.end ?? analysis.duration ?? 0;
-    if (end <= start) continue;
-
-    // Normalise detectionType to match IntelligenceRecommendation policy keys.
-    const normType = detectionType === 'broadband_noise' ? 'background_noise'
-      : detectionType === 'lead_speech' ? 'speech'
-        : detectionType === 'music' ? 'music_bleed'
-          : detectionType === 'hum' ? 'hum'
-            : detectionType === 'ambience' ? 'reverb'
-              : detectionType;
-
-    const certainty = src.confidence >= 0.7 ? 'high'
-      : src.confidence >= 0.4 ? 'medium'
-        : 'low';
-
-    evidenceRegions.push({
-      id: `ev-${regionId++}`,
-      startTime: start,
-      endTime: end,
-      detectionType: normType,
-      certainty,
-      evidence: { confidence: src.confidence, snrDb: analysis.snrDb ?? null },
-      responsible: { id: 'classical-analysis', version: analysisVersion },
-      availableActions: [],
-      explanation: src.label
-        ? `${src.label} detected (confidence ${Math.round(src.confidence * 100)}%).`
-        : `Detected: ${normType}.`,
-      support: 'supported',
-    });
-  }
-
-  // Include a stationary_noise region when SNR is low or noise floor is measurable.
-  const snrDb = analysis.snrDb ?? 0;
-  if ((snrDb < 20 || (analysis.noiseSegments || []).length > 0) && evidenceRegions.every((r) => r.detectionType !== 'stationary_noise')) {
-    evidenceRegions.push({
-      id: `ev-${regionId++}`,
-      startTime: 0,
-      endTime: analysis.duration ?? 0,
-      detectionType: 'stationary_noise',
-      certainty: snrDb < 10 ? 'high' : snrDb < 20 ? 'medium' : 'low',
-      evidence: { snrDb, noiseFloorDb: analysis.globalNoiseProfile?.floorDb ?? null },
-      responsible: { id: 'classical-analysis', version: analysisVersion },
-      availableActions: ['nrAmount'],
-      explanation: `Measured SNR ${snrDb.toFixed(1)} dB. Background noise detected.`,
-      support: 'supported',
-    });
-  }
-
-  // Include a bandwidth_limited region when rolloff is low.
-  if (analysis.confidenceScores?.bandwidthLimited && evidenceRegions.every((r) => r.detectionType !== 'bandwidth_limited')) {
-    evidenceRegions.push({
-      id: `ev-${regionId++}`,
-      startTime: 0,
-      endTime: analysis.duration ?? 0,
-      detectionType: 'bandwidth_limited',
-      certainty: 'medium',
-      evidence: {},
-      responsible: { id: 'classical-analysis', version: analysisVersion },
-      availableActions: ['eqPresence'],
-      explanation: 'Average spectral rolloff is below 4.5 kHz — speech may sound muffled.',
-      support: 'supported',
-    });
-  }
-
-  return {
-    sessionId: sessionId || 'landing-local',
-    contentFingerprint: contentFingerprint || 'unknown',
-    input: {
-      sampleRate: analysis.sampleRate ?? SAMPLE_RATE,
-      channels: analysis.channels ?? 1,
-      durationSeconds: analysis.duration ?? 0,
-    },
-    analysisVersion,
-    timestamp: new Date().toISOString(),
-    versions: {
-      analyzer: 'classical-vad',
-      rules: analysisVersion,
-      vadSource: analysis.confidenceScores?.vadSource ?? 'none',
-    },
-    capabilities: {
-      classicalDsp: { status: 'ready' },
-      mlVad: { status: analysis.confidenceScores?.classicalOnly ? 'unavailable' : 'ready' },
-    },
-    measurements: {
-      snrDb,
-      rms: analysis.rms ?? 0,
-      peak: analysis.peak ?? 0,
-      speechRatio: analysis.confidenceScores?.speechRatio ?? 0,
-      analysisQuality: analysis.confidenceScores?.analysisQuality ?? 0.55,
-    },
-    detectedSources: (analysis.detectedSources || []).map((s) => ({ id: s.id, label: s.label, confidence: s.confidence })),
-    evidenceRegions,
-    warnings: analysis.confidenceScores?.classicalOnly ? ['VAD uses classical features only; ML VAD unavailable.'] : [],
-    unsupportedAnalyses: [],
-    freshness: 'fresh',
-  };
-}
+import { adaptFullAnalysisToSnapshot } from '../core/AnalysisSnapshotAdapter.js';
 
 /** Derive a stable coordinator identity key from the analysis params. */
 function coordIdentity(contentFingerprint, analysisVersion, backend) {
@@ -158,6 +44,7 @@ function esc(text) { return String(text || '').trim(); }
  * @param {{ snapshot: object, recommendations: Array }} data
  */
 function renderInsights(container, { snapshot, recommendations }) {
+  const document = container.ownerDocument;
   container.dataset.state = 'ready';
 
   const sources = snapshot.detectedSources || [];
@@ -238,8 +125,17 @@ export class AnalysisInsightsUI {
     this.container = container;
     this.analysisVersion = analysisVersion;
     this._host = new FullAnalysisHost({ useWorker: true, enableMlVad: true });
+    // The coordinator validates canonical snapshots, so the raw FullAnalysis
+    // result is adapted inside the analysis callback, not after it.
     this._coordinator = new AnalysisCoordinator({
-      analyze: (input, opts) => this._host.analyze(input.channels, input.sampleRate, opts),
+      analyze: async (input, opts) => adaptFullAnalysisToSnapshot(
+        await this._host.analyze(input.channels, input.sampleRate, { signal: opts.signal }),
+        {
+          contentFingerprint: input.contentFingerprint,
+          analysisVersion: this.analysisVersion,
+          versions: { runtime: input.backend },
+        },
+      ),
     });
     this._seq = 0;
     this._controller = null;
@@ -257,7 +153,7 @@ export class AnalysisInsightsUI {
    * @param {string} [options.contentFingerprint] - stable ID for the source audio
    * @param {string} [options.backend] - 'wasm' or 'webgpu'
    */
-  async analyze(channels, sampleRate, { contentFingerprint = 'unknown', backend = 'wasm' } = {}) {
+  async analyze(channels, sampleRate, { contentFingerprint, backend = 'wasm' } = {}) {
     // Cancel any in-flight pass.
     this._controller?.abort();
     const controller = new AbortController();
@@ -270,22 +166,17 @@ export class AnalysisInsightsUI {
     }
 
     try {
-      const identity = coordIdentity(contentFingerprint, this.analysisVersion, backend);
-      const snapshot = await this._coordinator.analyze(
+      // A missing fingerprint must not collapse different files onto one
+      // cache entry; the coordinator bypasses its cache for such requests.
+      const fingerprint = contentFingerprint && contentFingerprint !== 'unknown' ? contentFingerprint : undefined;
+      const identity = coordIdentity(fingerprint, this.analysisVersion, backend);
+      const validatedSnapshot = await this._coordinator.analyze(
         identity,
-        { channels, sampleRate },
+        { channels, sampleRate, contentFingerprint: fingerprint, backend },
         { signal: controller.signal },
       );
 
       if (seq !== this._seq || controller.signal.aborted) return;
-
-      // Convert the raw FullAnalysis result to a validated AnalysisSnapshot,
-      // then run all three supported goal recommendations.
-      const validatedSnapshot = toSnapshot(snapshot, {
-        contentFingerprint,
-        analysisVersion: this.analysisVersion,
-        backend,
-      });
 
       const recommendations = SUPPORTED_GOALS.map((goal) => {
         try {

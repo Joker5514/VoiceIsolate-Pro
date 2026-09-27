@@ -2,10 +2,17 @@
 'use strict';
 
 import { clampParam, getParamSpec } from '../core/ParameterSchema.js';
-import { validateProcessingPlan } from '../core/IntelligenceContracts.js';
+import { assertPlanIsCurrent } from '../core/IntelligenceContracts.js';
 
-export function planToControlPatch(plan, currentControls = {}) {
-  validateProcessingPlan(plan);
+/**
+ * @param {object} plan Validated ProcessingPlan.
+ * @param {object} [currentControls]
+ * @param {{ sessionId: string, contentFingerprint: string }} current
+ *   Identity the caller holds now (both required); a plan built for another
+ *   session or input is rejected.
+ */
+export function planToControlPatch(plan, currentControls, current) {
+  assertPlanIsCurrent(plan, current);
   const patch = {};
   for (const operation of plan.operations) {
     if (operation.id !== 'process-controls') throw new Error(`[VIP][PlanBridge] Unsupported operation '${operation.id}'`);
@@ -14,7 +21,7 @@ export function planToControlPatch(plan, currentControls = {}) {
       patch[id] = clampParam(id, value);
     }
   }
-  return { ...currentControls, ...patch };
+  return { ...(currentControls || {}), ...patch };
 }
 
 export default { planToControlPatch };

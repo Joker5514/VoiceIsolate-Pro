@@ -134,6 +134,22 @@ function buildEvidenceRegions(rawAnalysis, analyzerVersion) {
     }, analyzerVersion));
   }
 
+  // A low measured SNR is evidence of background noise even when no segment
+  // was classified as noise; without it the reduce-noise goal has no evidence.
+  const snrDb = rawAnalysis.snrDb;
+  if (Number.isFinite(snrDb) && snrDb < 20
+    && !regions.some((region) => region.detectionType === 'background_noise')) {
+    const region = wholeFileEvidenceRegion(rawAnalysis, {
+      detectionType: 'stationary_noise',
+      evidence: { snrDb, noiseFloorDb: rawAnalysis.globalNoiseProfile?.floorDb ?? null },
+      availableActions: ['nrAmount', 'nrFloor'],
+      explanation: `The local analyzer measured an SNR of ${snrDb.toFixed(1)} dB across the file.`,
+    }, analyzerVersion);
+    // Certainty follows the measurement itself, not a classifier confidence.
+    region.certainty = snrDb < 10 ? 'high' : 'medium';
+    regions.push(region);
+  }
+
   if (rawAnalysis.confidenceScores?.bandwidthLimited) {
     regions.push(wholeFileEvidenceRegion(rawAnalysis, {
       detectionType: 'bandwidth_limited',

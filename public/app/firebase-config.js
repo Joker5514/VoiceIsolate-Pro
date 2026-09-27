@@ -23,7 +23,8 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query
 
 const firebaseConfig = {
   apiKey: window.FIREBASE_API_KEY || 'YOUR_API_KEY',
-  authDomain: window.FIREBASE_AUTH_DOMAIN || 'voiceisolate-pro.firebaseapp.com',
+  // In Electron the main process owns the auth domain its popup policy allows.
+  authDomain: window.vipDesktop?.firebaseAuthDomain || window.FIREBASE_AUTH_DOMAIN || 'voiceisolate-pro.firebaseapp.com',
   projectId: window.FIREBASE_PROJECT_ID || 'voiceisolate-pro',
   storageBucket: window.FIREBASE_STORAGE_BUCKET || 'voiceisolate-pro.appspot.com',
   messagingSenderId: window.FIREBASE_MESSAGING_SENDER_ID || 'YOUR_SENDER_ID',
