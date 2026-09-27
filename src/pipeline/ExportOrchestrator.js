@@ -353,10 +353,10 @@ export class ExportOrchestrator {
   }
 
   /**
-   * Apply per-speaker volume/mute automation offline.
+   * Apply per-speaker volume/mute automation offline, in place.
    * Renders the speaker automation lane's gain schedule into the audio data.
    * @private
-   * @param {Float32Array[]} channels
+   * @param {Float32Array[]} channels  owned copies from _extractChannels
    * @param {number} sampleRate
    * @returns {Float32Array[]}
    */
@@ -367,7 +367,7 @@ export class ExportOrchestrator {
     }
 
     const length = channels[0].length;
-    const output = channels.map((ch) => new Float32Array(ch)); // Copy channels
+    const output = channels;
 
     const gainEnvelope = buildSpeakerGainEnvelope({
       length,

@@ -174,8 +174,8 @@ export async function assertIngestibleAsync(blob, options = {}) {
 }
 
 /**
- * Resample an AudioBuffer to SAMPLE_RATE via OfflineAudioContext.
- * Returns the input untouched when it is already canonical.
+ * Resample an AudioBuffer to SAMPLE_RATE (and down-mix > MAX_CHANNELS) via
+ * OfflineAudioContext. Returns the input untouched when it is already canonical.
  * @param {AudioBuffer} buffer
  * @param {object} [options]
  * @param {AbortSignal} [options.signal]
@@ -185,7 +185,9 @@ export async function assertIngestibleAsync(blob, options = {}) {
 export async function resampleToCanonical(buffer, options = {}) {
   const signal = options.signal || null;
   throwIfCancelled(signal);
-  if (buffer.sampleRate === SAMPLE_RATE) return buffer;
+  // Surround sources still render: the stereo destination applies the
+  // speaker down-mix, so a 5.1 centre (dialogue) channel is not discarded.
+  if (buffer.sampleRate === SAMPLE_RATE && buffer.numberOfChannels <= MAX_CHANNELS) return buffer;
 
   const channels = Math.min(buffer.numberOfChannels, MAX_CHANNELS);
   const length = resampledLength(buffer.length, buffer.sampleRate);

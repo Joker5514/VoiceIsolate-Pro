@@ -287,6 +287,28 @@ describe('media decode lifecycle', () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  test('down-mixes a 48 kHz surround buffer instead of dropping its centre channel', async () => {
+    const rendered = { sampleRate: 48000, numberOfChannels: 2, length: 480 };
+    let offlineArgs = null;
+    class OfflineContext {
+      constructor(...args) {
+        offlineArgs = args;
+        this.destination = {};
+      }
+      createBufferSource() {
+        return { connect: jest.fn(), disconnect: jest.fn(), start: jest.fn(), buffer: null };
+      }
+      startRendering() { return Promise.resolve(rendered); }
+    }
+    replaceGlobal('OfflineAudioContext', OfflineContext);
+    const surround = { sampleRate: 48000, length: 480, duration: 0.01, numberOfChannels: 6 };
+    await expect(resampleToCanonical(surround)).resolves.toBe(rendered);
+    expect(offlineArgs).toEqual([2, 480, 48000]);
+
+    const stereo = { sampleRate: 48000, length: 480, duration: 0.01, numberOfChannels: 2 };
+    await expect(resampleToCanonical(stereo)).resolves.toBe(stereo);
+  });
+
   test('finalizes decode timing when ingestion fails', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(0);

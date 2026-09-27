@@ -563,6 +563,34 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
   return _sessionInflight[sessionKey];
 }
 
+/**
+ * Hosts fail a job after 45 s without a request-scoped message, but a first
+ * fetch + compile may legitimately run for up to SESSION_COMPILE_TIMEOUT_MS
+ * (and emits nothing at all when a quiet warmup already owns the compile).
+ * Heartbeats keep the watchdog fed without moving any progress bar.
+ */
+const LOAD_HEARTBEAT_MS = 10000;
+
+async function getSessionForRequest(entry, requestId) {
+  const pending = getSession(entry, entry.id);
+  if (requestId == null || typeof setTimeout !== 'function') return pending;
+  let timer = null;
+  const beat = () => {
+    timer = setTimeout(() => {
+      if (!_cancelledRequests.has(requestId)) {
+        self.postMessage({ type: 'heartbeat', requestId, stage: 'load', modelId: entry.id });
+      }
+      beat();
+    }, LOAD_HEARTBEAT_MS);
+  };
+  beat();
+  try {
+    return await pending;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Cache bytes + compile ONNX sessions off the hot path (boot / during decode). */
 async function warmupModels(modelIds) {
   const ids = (Array.isArray(modelIds) ? modelIds : [])
@@ -1336,12 +1364,20 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       const heads = [];
       for (const entry of entries) {
         checkCancelled(requestId);
-        const session = await getSession(entry, entry.id);
+        const session = await getSessionForRequest(entry, requestId);
         checkCancelled(requestId);
         heads.push({ entry, session });
       }
+      // Channels run concurrently; report their mean so the last channel's
+      // offset (e.g. 50%+ on stereo) is not shown before any real work.
+      const channelProgress = new Float32Array(channelData.length);
       clean = await Promise.all(channelData.map((samples, ch) => {
-        const progress = (p) => onProgress((ch + p) / channelData.length);
+        const progress = (p) => {
+          channelProgress[ch] = p;
+          let sum = 0;
+          for (let i = 0; i < channelProgress.length; i++) sum += channelProgress[i];
+          onProgress(sum / channelProgress.length);
+        };
         return runFusedSpectralMaskChain(heads, samples, progress, processingConfig, sampleRate, requestId);
       }));
     } else {
@@ -1358,11 +1394,16 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
           modelId: id,
           branch: entry.strategy === 'waveform' ? 'waveform-only' : entry.strategy,
         });
-        const session = await getSession(entry, entry.id);
+        const session = await getSessionForRequest(entry, requestId);
         checkCancelled(requestId);
+        const channelProgress = new Float32Array(current.length);
         const next = await Promise.all(current.map(async (samples, ch) => {
-          const step = stepBase + ch;
-          const progress = (p) => onProgress((step + p) / totalSteps);
+          const progress = (p) => {
+            channelProgress[ch] = p;
+            let sum = 0;
+            for (let i = 0; i < channelProgress.length; i++) sum += channelProgress[i];
+            onProgress((stepBase + sum) / totalSteps);
+          };
           if (entry.strategy === 'spectral-mask') {
             return runFusedSpectralMaskChain([{ entry, session }], samples, progress, processingConfig, sampleRate, requestId);
           }
