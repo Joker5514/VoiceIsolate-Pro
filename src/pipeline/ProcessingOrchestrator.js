@@ -389,7 +389,9 @@ export class ProcessingOrchestrator {
         const msg = event?.data;
         if (!msg || typeof msg !== 'object' || msg.requestId !== requestId) return;
 
-        if (msg.type === 'progress') {
+        if (msg.type === 'stage' || msg.type === 'heartbeat') {
+          lastProgressAt = Date.now();
+        } else if (msg.type === 'progress') {
           lastProgressAt = Date.now();
           const percent = Number.isFinite(msg.percent) ? Math.max(0, Math.min(100, msg.percent)) : 0;
           try {

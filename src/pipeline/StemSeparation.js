@@ -321,6 +321,9 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       if (m.type === 'progress' || m.type === 'stage') {
         lastProgressAt = Date.now();
         try { onProgress?.(m); } catch { /* UI callbacks must not strand worker settlement */ }
+      } else if (m.type === 'heartbeat') {
+        // Long model fetch/compile: alive, but no progress to report.
+        lastProgressAt = Date.now();
       } else if (m.type === 'stems') {
         // Late stems after user cancel must not become a false "complete" output.
         if (signal?.aborted || cancelPosted) {

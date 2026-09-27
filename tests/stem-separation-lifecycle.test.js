@@ -232,6 +232,35 @@ describe('StemSeparation worker lifecycle', () => {
     expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 
+  test('worker load heartbeats keep a long model compile alive past the stall window', async () => {
+    jest.useFakeTimers();
+    try {
+      const worker = await readyWorker();
+      const onProgress = jest.fn();
+      const pending = StemSeparation.separateStems(
+        [new Float32Array([0.3])],
+        48000,
+        { transferOwned: true, sourceName: 'slow-compile.wav', onProgress },
+      );
+      const requestId = (await waitForPost(worker, 'process'))[0].requestId;
+      for (let t = 0; t < 90000; t += 10000) {
+        worker.dispatch('message', { data: { type: 'heartbeat', requestId, stage: 'load' } });
+        await jest.advanceTimersByTimeAsync(10000);
+      }
+      expect(worker.terminate).not.toHaveBeenCalled();
+      expect(onProgress).not.toHaveBeenCalled();
+      worker.dispatch('message', {
+        data: {
+          type: 'stems', requestId, clean: [new Float32Array([0.3])],
+          noise: [new Float32Array([0])], sampleRate: 48000,
+        },
+      });
+      await expect(pending).resolves.toMatchObject({ sampleRate: 48000 });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('cleans up and rejects when process dispatch throws', async () => {
     const worker = await readyWorker();
     worker.postMessage.mockImplementationOnce(() => {
