@@ -4,6 +4,7 @@
 'use strict';
 
 import SpeakerDiarizer from '/app/speaker-diarizer.js';
+import { speakerLabel } from '../core/diarization.js';
 
 const MODEL_URLS = Object.freeze({
   segmentation: '/models/pyannote-segmentation-3.0.onnx',
@@ -81,13 +82,14 @@ function timelineToPlaybackSegments(timeline) {
   const analysisSr = timeline.analysisSampleRate || 16000;
   const segments = (timeline.segments || []).map((seg) => ({
     speakerId: seg.speakerId,
+    label: speakerLabel(seg.speakerId),
     start: seg.startSample / analysisSr,
     end: seg.endSample / analysisSr,
     confidence: seg.confidence,
   }));
   const speakers = [...(timeline.speakers?.keys?.() || [])].map((id) => ({
     speakerId: id,
-    label: `Speaker ${id}`,
+    label: speakerLabel(id),
     talkTime: segments
       .filter((s) => s.speakerId === id)
       .reduce((sum, s) => sum + (s.end - s.start), 0),

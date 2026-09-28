@@ -275,7 +275,7 @@
     diar.innerHTML = `
       <h3>Diarization · Voice Matrix</h3>
       <div class="ec-summary-body" id="ecDiarSummary">
-        Speakers detected after analysis populate this matrix.
+        Speakers are found and labeled automatically during Process.
       </div>
       <div class="ec-voice-matrix" id="ecVoiceMatrix" role="group" aria-label="Detected speakers"></div>`;
 
@@ -605,7 +605,7 @@
   }
 
   function refreshSummaryFromApp() {
-    const app = window.app;
+    const app = window._vipApp || window.app;
     const aEl = document.getElementById('ecAnalysisSummary');
     const dEl = document.getElementById('ecDiarSummary');
     const matrix = document.getElementById('ecVoiceMatrix');
@@ -630,11 +630,22 @@
         <div style="margin-top:6px;opacity:0.8">Analysis auto-runs after Process (or use Analyze Full Audio).</div>`;
     }
 
-    // Diarization matrix from analysis or USM labels
+    // Diarization matrix: speakers auto-detected during Process, else USM labels
     if (matrix) {
       matrix.textContent = '';
       const speakers = [];
-      const labels = typeof app?.getSourceLabels === 'function' ? app.getSourceLabels() : null;
+      const detected = typeof app?.getDetectedSpeakers === 'function' ? app.getDetectedSpeakers() : [];
+      const diarSegs = Array.isArray(app?._lastDiarizationSegments) ? app._lastDiarizationSegments : [];
+      detected.forEach((sp, i) => {
+        speakers.push({
+          id: sp.speakerId,
+          label: sp.label || `Speaker ${i + 1}`,
+          talkTime: sp.talkTime,
+          region: longestSegment(diarSegs, sp.speakerId),
+          primary: i === 0,
+        });
+      });
+      const labels = !speakers.length && typeof app?.getSourceLabels === 'function' ? app.getSourceLabels() : null;
       if (Array.isArray(labels)) {
         labels.forEach((L, i) => {
           speakers.push({
@@ -650,9 +661,15 @@
         speakers.push({ id: 'S1', label: 'Primary voice', conf: 0.8, primary: true });
       }
       if (dEl) {
-        dEl.textContent = speakers.length
-          ? `${speakers.length} source label(s) · click a pill to focus enrollment times`
-          : 'No diarization yet — will populate after analysis.';
+        if (detected.length) {
+          dEl.textContent = `${detected.length} speaker${detected.length === 1 ? '' : 's'} detected · ${diarSegs.length} segments · click a speaker to enroll their voice`;
+        } else if (app?._speakerDetectionState === 'running') {
+          dEl.textContent = 'Detecting speakers…';
+        } else {
+          dEl.textContent = speakers.length
+            ? `${speakers.length} source label(s) · click a pill to focus enrollment times`
+            : 'No speakers yet — detected automatically after Process.';
+        }
       }
       speakers.slice(0, 8).forEach((s, i) => {
         const pill = document.createElement('button');
@@ -660,7 +677,10 @@
         pill.className = 'ec-voice-pill';
         if (s.primary || i === 0) pill.dataset.role = 'primary';
         pill.setAttribute('aria-pressed', 'false');
-        pill.innerHTML = `<span class="ec-voice-dot" aria-hidden="true"></span>${escape(s.label)}${s.conf != null ? ` · ${Math.round(s.conf * 100)}%` : ''}`;
+        const meta = s.talkTime != null
+          ? ` · ${formatSec(s.talkTime)}`
+          : (s.conf != null ? ` · ${Math.round(s.conf * 100)}%` : '');
+        pill.innerHTML = `<span class="ec-voice-dot" aria-hidden="true"></span>${escape(s.label)}${meta}`;
         pill.addEventListener('click', () => {
           matrix.querySelectorAll('.ec-voice-pill').forEach((p) => p.setAttribute('aria-pressed', 'false'));
           pill.setAttribute('aria-pressed', 'true');
@@ -670,12 +690,14 @@
             sec.open = true;
             sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
-          // Prefill first 2s region
+          // Prefill this speaker's longest turn (≤3 s), else the first 2 s
           const start = document.getElementById('tsStart');
           const end = document.getElementById('tsEnd');
-          if (start) start.value = '0';
-          if (end) end.value = '2';
+          const r = s.region;
+          if (start) start.value = r ? r.start.toFixed(2) : '0';
+          if (end) end.value = r ? Math.min(r.end, r.start + 3).toFixed(2) : '2';
           start?.dispatchEvent(new Event('input', { bubbles: true }));
+          end?.dispatchEvent(new Event('input', { bubbles: true }));
         });
         matrix.appendChild(pill);
       });
@@ -708,6 +730,20 @@
       try { new ResizeObserver(publish).observe(hdr); return; } catch { /* fall through */ }
     }
     window.addEventListener('resize', publish, { passive: true });
+  }
+
+  function longestSegment(segments, speakerId) {
+    let best = null;
+    for (const seg of segments) {
+      if (seg?.speakerId !== speakerId) continue;
+      if (!best || seg.end - seg.start > best.end - best.start) best = seg;
+    }
+    return best;
+  }
+
+  function formatSec(sec) {
+    const t = Math.max(0, Math.round(Number(sec) || 0));
+    return t >= 60 ? `${Math.floor(t / 60)}m ${t % 60}s` : `${t}s`;
   }
 
   function el(tag, cls, text) {

@@ -3562,6 +3562,9 @@ class VoiceIsolatePro {
       this._lastVisualFp = null;
     }
     this._sourceName = file.name || '';
+    this._lastDiarizationSegments = null;
+    this._lastDetectedSpeakers = null;
+    this._speakerDetectionState = null;
     this._decodePromise = null;
     this._decodeReady = false;
     this._resetCollaborationState?.();
@@ -4288,6 +4291,9 @@ class VoiceIsolatePro {
     this._cleanStemChannels = null;
     this._noiseStemChannels = null;
     this._stemSampleRate = null;
+    this._lastDiarizationSegments = null;
+    this._lastDetectedSpeakers = null;
+    this._speakerDetectionState = null;
     this.noiseBuffer = null;
     this._bridgeBuf = null;
     FileLibrary.setSessionState({ activeFileId: null, updatedAt: Date.now() }).catch(() => {});
@@ -4648,6 +4654,8 @@ class VoiceIsolatePro {
       } catch (e) {
         console.warn('[VIP] vip:processed dispatch failed', e);
       }
+      // Find and label speakers on the clean stem. Off-thread, never blocks output.
+      void this._autoDetectSpeakers(fileSeq);
 
       if (this.outputBuffer) {
         const scheduleIdle = globalThis.requestIdleCallback
@@ -4745,6 +4753,49 @@ class VoiceIsolatePro {
         this.dom.mobileStopBtn.style.display='none';
       }
     }
+  }
+
+  /**
+   * Diarize the clean stem once per Process and label speakers (Speaker 1, 2, …).
+   * Runs in DiarizationWorker (or local ONNX when present); never re-runs
+   * separation and never blocks playable output.
+   * @param {number} fileSeq
+   */
+  async _autoDetectSpeakers(fileSeq) {
+    this._lastDiarizationSegments = null;
+    this._lastDetectedSpeakers = null;
+    this._speakerDetectionState = 'running';
+    const refresh = () => {
+      try { window.__VIP_ENGINEER_CONSOLE__?.refreshSummaryFromApp?.(); } catch { /* cosmetic */ }
+    };
+    refresh();
+    try {
+      const mono = this._cleanStemChannels?.[0] || this.outputBuffer?.getChannelData(0);
+      if (!mono?.length) throw new Error('no clean stem');
+      const sampleRate = this._stemSampleRate || this.outputBuffer?.sampleRate || 48000;
+      const { detectSpeakers } = await import('/src/pipeline/SpeakerDetection.js');
+      const { segments, speakers, method } = await detectSpeakers([mono], sampleRate);
+      if (fileSeq !== this._fileSeq) return;
+      this._lastDiarizationSegments = segments;
+      this._lastDetectedSpeakers = speakers;
+      this._speakerDetectionState = 'done';
+      try { this._bridge?.mixer?.loadSpeakerSegments?.(segments); } catch { /* optional lane */ }
+      structuredLog('info', '[VIP] speakers detected', { count: speakers.length, segments: segments.length, method });
+      try {
+        window.dispatchEvent(new CustomEvent('vip:speakersDetected', { detail: { segments, speakers, method } }));
+      } catch { /* ignore */ }
+      try { this.updateAudioMetrics(this._computeAudioMetricsState()); } catch { /* metrics only */ }
+    } catch (err) {
+      if (fileSeq !== this._fileSeq) return;
+      this._speakerDetectionState = 'error';
+      structuredLog('warn', '[VIP] speaker detection failed', { err: err?.message || String(err) });
+    }
+    refresh();
+  }
+
+  /** Speakers found by the last Process: [{ speakerId, label, talkTime, segmentCount }]. */
+  getDetectedSpeakers() {
+    return this._lastDetectedSpeakers || [];
   }
 
   /**
