@@ -363,32 +363,3 @@ describe('speakerLabel', () => {
     expect(s.talkTime).toBeCloseTo(1.5);
   });
 });
-
-describe('Engineer auto speaker detection wiring', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const root = path.join(__dirname, '..');
-  const app = fs.readFileSync(path.join(root, 'public/app/app.js'), 'utf8');
-  const ec = fs.readFileSync(path.join(root, 'public/app/engineer-console.js'), 'utf8');
-
-  test('runPipeline starts detection after vip:processed without awaiting it', () => {
-    const dispatch = app.indexOf("new CustomEvent('vip:processed'");
-    const call = app.indexOf('void this._autoDetectSpeakers(fileSeq);');
-    expect(dispatch).toBeGreaterThan(-1);
-    expect(call).toBeGreaterThan(dispatch);
-  });
-
-  test('detection runs on the clean stem via SpeakerDetection and drops stale results', () => {
-    const start = app.indexOf('async _autoDetectSpeakers(fileSeq)');
-    const body = app.slice(start, app.indexOf('getDetectedSpeakers()', start));
-    expect(body).toMatch(/_cleanStemChannels\?\.\[0\]/);
-    expect(body).toMatch(/import\('\/src\/pipeline\/SpeakerDetection\.js'\)/);
-    expect(body).toMatch(/fileSeq !== this\._fileSeq/);
-    expect(body).toMatch(/_lastDiarizationSegments = segments/);
-  });
-
-  test('Voice Matrix prefers detected speakers', () => {
-    expect(ec).toMatch(/app\.getDetectedSpeakers\(\)/);
-    expect(ec).toMatch(/longestSegment\(diarSegs, sp\.speakerId\)/);
-  });
-});

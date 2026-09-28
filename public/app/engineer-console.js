@@ -635,7 +635,8 @@
       matrix.textContent = '';
       const speakers = [];
       const detected = typeof app?.getDetectedSpeakers === 'function' ? app.getDetectedSpeakers() : [];
-      const diarSegs = Array.isArray(app?._lastDiarizationSegments) ? app._lastDiarizationSegments : [];
+      const diarSegs = typeof app?.getDiarizationSegments === 'function' ? app.getDiarizationSegments() : [];
+      const detectState = app?._speakerDetection?.state || null;
       detected.forEach((sp, i) => {
         speakers.push({
           id: sp.speakerId,
@@ -663,8 +664,12 @@
       if (dEl) {
         if (detected.length) {
           dEl.textContent = `${detected.length} speaker${detected.length === 1 ? '' : 's'} detected · ${diarSegs.length} segments · click a speaker to enroll their voice`;
-        } else if (app?._speakerDetectionState === 'running') {
+        } else if (detectState === 'running') {
           dEl.textContent = 'Detecting speakers…';
+        } else if (detectState === 'error' && !speakers.length) {
+          dEl.textContent = 'Speaker detection failed for this file.';
+        } else if (detectState === 'done' && !speakers.length) {
+          dEl.textContent = 'No distinct speakers detected.';
         } else {
           dEl.textContent = speakers.length
             ? `${speakers.length} source label(s) · click a pill to focus enrollment times`

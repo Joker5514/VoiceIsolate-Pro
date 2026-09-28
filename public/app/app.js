@@ -2407,7 +2407,8 @@ class VoiceIsolatePro {
           const fromMixer = this._bridge?.mixer?._segments || this._playbackMixer?._segments;
           if (Array.isArray(fromMixer) && fromMixer.length) return fromMixer;
         } catch { /* ignore */ }
-        return this._lastDiarizationSegments || null;
+        const segs = this.getDiarizationSegments();
+        return segs.length ? segs : null;
       },
       getDurationSec: () => {
         const buf = this.outputBuffer || this.procBuffer || this.origBuffer || this.inputBuffer;
@@ -3562,9 +3563,7 @@ class VoiceIsolatePro {
       this._lastVisualFp = null;
     }
     this._sourceName = file.name || '';
-    this._lastDiarizationSegments = null;
-    this._lastDetectedSpeakers = null;
-    this._speakerDetectionState = null;
+    this._speakerDetection?.reset();
     this._decodePromise = null;
     this._decodeReady = false;
     this._resetCollaborationState?.();
@@ -4291,9 +4290,7 @@ class VoiceIsolatePro {
     this._cleanStemChannels = null;
     this._noiseStemChannels = null;
     this._stemSampleRate = null;
-    this._lastDiarizationSegments = null;
-    this._lastDetectedSpeakers = null;
-    this._speakerDetectionState = null;
+    this._speakerDetection?.reset();
     this.noiseBuffer = null;
     this._bridgeBuf = null;
     FileLibrary.setSessionState({ activeFileId: null, updatedAt: Date.now() }).catch(() => {});
@@ -4654,7 +4651,9 @@ class VoiceIsolatePro {
       } catch (e) {
         console.warn('[VIP] vip:processed dispatch failed', e);
       }
-      // Find and label speakers on the clean stem. Off-thread, never blocks output.
+      // Find and label speakers on the clean stem. Not awaited, so it never
+      // delays playable output (k-means runs in a Worker; the optional ONNX
+      // path runs on the main thread when its models are installed).
       void this._autoDetectSpeakers(fileSeq);
 
       if (this.outputBuffer) {
@@ -4756,46 +4755,54 @@ class VoiceIsolatePro {
   }
 
   /**
-   * Diarize the clean stem once per Process and label speakers (Speaker 1, 2, …).
-   * Runs in DiarizationWorker (or local ONNX when present); never re-runs
-   * separation and never blocks playable output.
+   * Label speakers (Speaker 1, 2, …) on the clean stem once per Process.
+   * State lives in src/pipeline/SpeakerDetectionSession.js; this is wiring only.
    * @param {number} fileSeq
    */
   async _autoDetectSpeakers(fileSeq) {
-    this._lastDiarizationSegments = null;
-    this._lastDetectedSpeakers = null;
-    this._speakerDetectionState = 'running';
-    const refresh = () => {
-      try { window.__VIP_ENGINEER_CONSOLE__?.refreshSummaryFromApp?.(); } catch { /* cosmetic */ }
-    };
-    refresh();
+    if (fileSeq !== this._fileSeq) return;
+    const mono = this._cleanStemChannels?.[0] || this.outputBuffer?.getChannelData(0);
+    const sampleRate = this._stemSampleRate || this.outputBuffer?.sampleRate || 48000;
     try {
-      const mono = this._cleanStemChannels?.[0] || this.outputBuffer?.getChannelData(0);
-      if (!mono?.length) throw new Error('no clean stem');
-      const sampleRate = this._stemSampleRate || this.outputBuffer?.sampleRate || 48000;
-      const { detectSpeakers } = await import('/src/pipeline/SpeakerDetection.js');
-      const { segments, speakers, method } = await detectSpeakers([mono], sampleRate);
-      if (fileSeq !== this._fileSeq) return;
-      this._lastDiarizationSegments = segments;
-      this._lastDetectedSpeakers = speakers;
-      this._speakerDetectionState = 'done';
-      try { this._bridge?.mixer?.loadSpeakerSegments?.(segments); } catch { /* optional lane */ }
-      structuredLog('info', '[VIP] speakers detected', { count: speakers.length, segments: segments.length, method });
+      if (!this._speakerDetection) {
+        const { SpeakerDetectionSession } = await import('/src/pipeline/SpeakerDetectionSession.js');
+        this._speakerDetection ||= new SpeakerDetectionSession({
+          onChange: (session) => this._onSpeakerDetectionChange(session),
+        });
+        if (fileSeq !== this._fileSeq) return;
+      }
+      await this._speakerDetection.run(mono, sampleRate);
+    } catch (err) {
+      structuredLog('warn', '[VIP] speaker detection unavailable', { err: err?.message || String(err) });
+    }
+  }
+
+  _onSpeakerDetectionChange(session) {
+    if (session.state === 'done' || session.state === null) {
+      try { this._bridge?.mixer?.loadSpeakerSegments?.(session.segments); } catch { /* optional lane */ }
+    }
+    if (session.state === 'done') {
+      structuredLog('info', '[VIP] speakers detected', {
+        count: session.speakers.length, segments: session.segments.length, method: session.method,
+      });
       try {
-        window.dispatchEvent(new CustomEvent('vip:speakersDetected', { detail: { segments, speakers, method } }));
+        window.dispatchEvent(new CustomEvent('vip:speakersDetected', {
+          detail: { segments: session.segments, speakers: session.speakers, method: session.method },
+        }));
       } catch { /* ignore */ }
       try { this.updateAudioMetrics(this._computeAudioMetricsState()); } catch { /* metrics only */ }
-    } catch (err) {
-      if (fileSeq !== this._fileSeq) return;
-      this._speakerDetectionState = 'error';
-      structuredLog('warn', '[VIP] speaker detection failed', { err: err?.message || String(err) });
     }
-    refresh();
+    try { window.__VIP_ENGINEER_CONSOLE__?.refreshSummaryFromApp?.(); } catch { /* cosmetic */ }
   }
 
   /** Speakers found by the last Process: [{ speakerId, label, talkTime, segmentCount }]. */
   getDetectedSpeakers() {
-    return this._lastDetectedSpeakers || [];
+    return this._speakerDetection?.speakers || [];
+  }
+
+  /** Diarization segments from the last Process (empty until detection finishes). */
+  getDiarizationSegments() {
+    return this._speakerDetection?.segments || [];
   }
 
   /**
@@ -7248,7 +7255,7 @@ class VoiceIsolatePro {
       // Voices: distinct diarization speakers when available, otherwise a
       // speech-energy presence call.
       let voices = null;
-      const segs = this._lastDiarizationSegments;
+      const segs = this.getDiarizationSegments();
       if (Array.isArray(segs) && segs.length) {
         voices = new Set(segs.map((sg) => sg.speakerId || sg.speaker || sg.id).filter(Boolean)).size;
       } else if (voiceClarity >= 15) {
