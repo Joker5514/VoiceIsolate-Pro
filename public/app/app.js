@@ -4774,7 +4774,17 @@ class VoiceIsolatePro {
       await this._speakerDetection.run(mono, sampleRate);
     } catch (err) {
       structuredLog('warn', '[VIP] speaker detection unavailable', { err: err?.message || String(err) });
+      if (fileSeq !== this._fileSeq) return;
+      // The session never loaded, so record the failure against this file.
+      this._speakerDetectionFailedSeq = fileSeq;
+      try { window.__VIP_ENGINEER_CONSOLE__?.refreshSummaryFromApp?.(); } catch { /* cosmetic */ }
     }
+  }
+
+  /** 'running' | 'done' | 'error' | null for the current file. */
+  getSpeakerDetectionState() {
+    if (this._speakerDetectionFailedSeq === this._fileSeq) return 'error';
+    return this._speakerDetection?.state || null;
   }
 
   _onSpeakerDetectionChange(session) {

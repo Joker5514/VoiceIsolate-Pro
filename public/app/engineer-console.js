@@ -636,7 +636,7 @@
       const speakers = [];
       const detected = typeof app?.getDetectedSpeakers === 'function' ? app.getDetectedSpeakers() : [];
       const diarSegs = typeof app?.getDiarizationSegments === 'function' ? app.getDiarizationSegments() : [];
-      const detectState = app?._speakerDetection?.state || null;
+      const detectState = typeof app?.getSpeakerDetectionState === 'function' ? app.getSpeakerDetectionState() : null;
       detected.forEach((sp, i) => {
         speakers.push({
           id: sp.speakerId,

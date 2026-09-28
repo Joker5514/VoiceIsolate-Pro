@@ -125,6 +125,14 @@ describe('Engineer wiring', () => {
     expect(body).toMatch(/_cleanStemChannels\?\.\[0\]/);
   });
 
+  test('a failed session import reports error for that file only', () => {
+    const body = methodBody(app, 'async _autoDetectSpeakers(fileSeq)');
+    expect(body).toMatch(/this\._speakerDetectionFailedSeq = fileSeq/);
+    expect(methodBody(app, 'getSpeakerDetectionState() {'))
+      .toMatch(/_speakerDetectionFailedSeq === this\._fileSeq\) return 'error'/);
+    expect(ec).toMatch(/app\.getSpeakerDetectionState\(\)/);
+  });
+
   test('Voice Matrix prefers detected speakers and reports failure', () => {
     expect(ec).toMatch(/app\.getDetectedSpeakers\(\)/);
     expect(ec).toMatch(/longestSegment\(diarSegs, sp\.speakerId\)/);
