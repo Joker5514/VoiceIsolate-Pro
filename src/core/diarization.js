@@ -26,7 +26,7 @@
  *
  * Output contract (shared with PlaybackMixer.loadSpeakerSegments and the
  * presentation layer): non-overlapping, time-ordered segments
- *   { speakerId: 'S1', label: 'Speaker S1', start: s, end: s, confidence: 0..1 }
+ *   { speakerId: 'S1', label: 'Speaker 1', start: s, end: s, confidence: 0..1 }
  *
  * Pure module: no DOM, no Web Audio, no I/O, no side effects — importable in
  * Node (tests), workers, and the browser.
@@ -484,12 +484,22 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
     const speakerId = idByCluster.get(s.cluster);
     return {
       speakerId,
-      label: `Speaker ${speakerId}`,
+      label: speakerLabel(speakerId),
       start: s.start,
       end: s.end,
       confidence: s.confidence,
     };
   });
+}
+
+/**
+ * Human-readable label for a compact speaker id: 'S2' → 'Speaker 2'.
+ * @param {string} speakerId
+ * @returns {string}
+ */
+export function speakerLabel(speakerId) {
+  const m = /^S(\d+)$/.exec(String(speakerId));
+  return `Speaker ${m ? m[1] : speakerId}`;
 }
 
 /**
@@ -503,7 +513,7 @@ export function summarizeSpeakers(segments) {
     if (!seg || typeof seg.speakerId !== 'string') continue;
     const entry = byId.get(seg.speakerId) || {
       speakerId: seg.speakerId,
-      label: seg.label || `Speaker ${seg.speakerId}`,
+      label: seg.label || speakerLabel(seg.speakerId),
       talkTime: 0,
       segmentCount: 0,
     };

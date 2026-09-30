@@ -205,7 +205,7 @@ describe('diarizeChannel', () => {
       const s = segments[i];
       expect(s.end - s.start).toBeGreaterThanOrEqual(diar.MIN_SEGMENT_SEC);
       expect(s.speakerId).toMatch(/^S\d$/);
-      expect(s.label).toBe(`Speaker ${s.speakerId}`);
+      expect(s.label).toBe(`Speaker ${s.speakerId.slice(1)}`);
       expect(s.confidence).toBeGreaterThan(0);
       expect(s.confidence).toBeLessThanOrEqual(1);
       if (i > 0) expect(s.start).toBeGreaterThanOrEqual(segments[i - 1].end);
@@ -295,7 +295,7 @@ describe('diarizeChannel', () => {
     expect(total).toBeLessThan(6.6);
     for (const s of speakers) {
       expect(s.segmentCount).toBeGreaterThan(0);
-      expect(s.label).toBe(`Speaker ${s.speakerId}`);
+      expect(s.label).toBe(`Speaker ${s.speakerId.slice(1)}`);
     }
   });
 
@@ -347,5 +347,19 @@ describe('diarizeChannel', () => {
     const segments = diar.diarizeChannel(samples, SR, { maxSpeakers: 2 });
     const ids = new Set(segments.map((s) => s.speakerId));
     expect(ids.size).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('speakerLabel', () => {
+  test('maps compact ids to numbered labels', () => {
+    expect(diar.speakerLabel('S1')).toBe('Speaker 1');
+    expect(diar.speakerLabel('S12')).toBe('Speaker 12');
+    expect(diar.speakerLabel('host')).toBe('Speaker host');
+  });
+
+  test('summarizeSpeakers labels unlabeled segments', () => {
+    const [s] = diar.summarizeSpeakers([{ speakerId: 'S3', start: 0, end: 1.5 }]);
+    expect(s.label).toBe('Speaker 3');
+    expect(s.talkTime).toBeCloseTo(1.5);
   });
 });
