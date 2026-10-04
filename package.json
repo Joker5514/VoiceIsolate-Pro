@@ -171,7 +171,7 @@
   },
   "dependencies": {
     "@capacitor/core": "^8.3.1",
-    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/grpc-js": "^1.14.5",
     "@grpc/proto-loader": "^0.8.0",
     "@vercel/analytics": "^2.0.1",
     "electron-updater": "^6.8.9",
