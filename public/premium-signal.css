@@ -490,7 +490,7 @@
 .vip-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 28px;
+  gap: 8px 20px;
   list-style: none;
   margin: 28px 0 0;
   padding: 18px 0 0;
@@ -500,6 +500,7 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
+  white-space: nowrap;
 }
 .vip-facts__item strong {
   font-size: 1rem;
@@ -512,5 +513,3 @@
 
 /* Hero copy starts at the top of the hero, level with the workspace panel. */
 .vip-hero.ps-hero { align-items: start; }
-.vip-facts { gap: 8px 20px; }
-.vip-facts__item { white-space: nowrap; }
