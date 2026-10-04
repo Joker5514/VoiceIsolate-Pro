@@ -47,6 +47,20 @@ const HEADED = has('headed');
 const PROFILE = has('profile');
 const TRACE = has('trace');
 const MARKER = `vip-perf-${process.pid}-${Date.now()}`;
+const SETTLE = Number(arg('settle', '0'));
+{
+  const bad = [];
+  if (!['engineer', 'landing'].includes(SURFACE)) bad.push(`--surface ${SURFACE}`);
+  if (!SECS.length || SECS.some((n) => !Number.isFinite(n))) bad.push('--secs (positive numbers, comma separated)');
+  if (![8000, 16000, 22050, 32000, 44100, 48000, 96000].includes(SR)) bad.push(`--sr ${SR}`);
+  if (![1, 2].includes(CH)) bad.push(`--channels ${CH}`);
+  if (!Number.isInteger(CYCLES) || CYCLES < 1) bad.push(`--cycles ${CYCLES}`);
+  if (!Number.isFinite(SETTLE) || SETTLE < 0) bad.push(`--settle ${SETTLE}`);
+  if (bad.length) {
+    console.error(`invalid arguments: ${bad.join(', ')}`);
+    process.exit(2);
+  }
+}
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -69,9 +83,11 @@ function waitForServer(base, timeoutMs = 30000) {
   });
 }
 
+const fixtures = [];
+
 /** Speech-like fixture: harmonic voiced bursts with pauses over broadband noise. */
 function makeWav(secs, sr, ch) {
-  const file = path.join(os.tmpdir(), `vip-perf-${secs}s-${sr}-${ch}ch.wav`);
+  const file = path.join(os.tmpdir(), `vip-perf-${process.pid}-${secs}s-${sr}-${ch}ch.wav`);
   if (fs.existsSync(file)) return file;
   const n = Math.round(sr * secs);
   const pcm = new Int16Array(n * ch);
@@ -92,7 +108,9 @@ function makeWav(secs, sr, ch) {
   h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(ch, 22); h.writeUInt32LE(sr, 24);
   h.writeUInt32LE(sr * ch * 2, 28); h.writeUInt16LE(ch * 2, 32); h.writeUInt16LE(16, 34);
   h.write('data', 36); h.writeUInt32LE(data.length, 40);
-  fs.writeFileSync(file, Buffer.concat([h, data]));
+  fs.writeFileSync(`${file}.tmp`, Buffer.concat([h, data]));
+  fs.renameSync(`${file}.tmp`, file);
+  fixtures.push(file);
   return file;
 }
 
@@ -362,118 +380,133 @@ async function main() {
     headless: !HEADED,
     args: ['--no-sandbox', '--enable-precise-memory-info', '--js-flags=--expose-gc', `--${MARKER}`],
   });
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
-  await page.addInitScript(instrument);
-  // Optional ad-hoc probe (diagnostics only): VIP_PERF_PROBE=/path/probe.js
-  if (process.env.VIP_PERF_PROBE) await page.addInitScript({ path: process.env.VIP_PERF_PROBE });
-  const cdp = await ctx.newCDPSession(page);
+  const runs = [];
   const errors = [];
   let crashed = false;
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text().slice(0, 300)}`); });
-  page.on('crash', () => { crashed = true; });
+  let baseline = null;
+  let fatal = null;
+  let page = null;
+  // Teardown and the report always happen, including after a renderer crash.
+  try {
+    const ctx = await browser.newContext();
+    page = await ctx.newPage();
+    await page.addInitScript(instrument);
+    // Optional ad-hoc probe (diagnostics only): VIP_PERF_PROBE=/path/probe.js
+    if (process.env.VIP_PERF_PROBE) await page.addInitScript({ path: process.env.VIP_PERF_PROBE });
+    const cdp = await ctx.newCDPSession(page);
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text().slice(0, 300)}`); });
+    page.on('crash', () => { crashed = true; });
 
-  await page.goto(`${BASE}${S.url}`, { waitUntil: 'load' });
-  await S.ready(page);
-  await page.waitForTimeout(1500);
-  const baseline = { heapMb: await gcHeapMb(cdp), rssMb: chromiumRssMb(), res: await page.evaluate(() => ({ ...window.__vipPerf, longTasks: undefined, gaps: undefined })) };
+    await page.goto(`${BASE}${S.url}`, { waitUntil: 'load' });
+    await S.ready(page);
+    await page.waitForTimeout(1500);
+    baseline = { heapMb: await gcHeapMb(cdp), rssMb: chromiumRssMb(), res: await page.evaluate(() => ({ ...window.__vipPerf, longTasks: undefined, gaps: undefined })) };
 
-  const runs = [];
-  for (const secs of SECS) {
-    const file = makeWav(secs, SR, CH);
-    for (let cycle = 1; cycle <= CYCLES; cycle++) {
-      const run = { secs, cycle, sr: SR, channels: CH };
-      const tUp = Date.now();
-      await S.upload(page, file);
-      run.uploadMs = Date.now() - tUp;
+    for (const secs of SECS) {
+      const file = makeWav(secs, SR, CH);
+      for (let cycle = 1; cycle <= CYCLES; cycle++) {
+        const run = { secs, cycle, sr: SR, channels: CH };
+        const tUp = Date.now();
+        await S.upload(page, file);
+        run.uploadMs = Date.now() - tUp;
 
-      if (DO_CANCEL) {
-        await S.start(page);
-        await page.waitForTimeout(Number(arg('cancel-after', String(Math.min(4000, 600 + secs * 40)))));
+        if (DO_CANCEL) {
+          await S.start(page);
+          await page.waitForTimeout(Number(arg('cancel-after', String(Math.min(4000, 600 + secs * 40)))));
+          const t0 = Date.now();
+          await S.cancel(page);
+          const w = await waitFor(page, S, S.idle, 60000);
+          run.cancelMs = w.ms ?? Date.now() - t0;
+          run.cancelSettled = w.ms != null;
+          run.cancelStatus = w.s?.status;
+          await page.waitForTimeout(300);
+          await page.waitForFunction(() => { const b = document.getElementById('processBtn'); return b && !b.disabled; }, null, { timeout: 30000 }).catch(() => {});
+        }
+
+        const pt0 = await page.evaluate(() => performance.now());
+        let peakRss = chromiumRssMb() || 0;
+        if (TRACE) await browser.startTracing(page, { categories: ['devtools.timeline', 'v8', 'v8.execute', 'blink.user_timing', 'disabled-by-default-devtools.timeline'] });
+        if (PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }
         const t0 = Date.now();
-        await S.cancel(page);
-        const w = await waitFor(page, S, S.idle, 60000);
-        run.cancelMs = w.ms ?? Date.now() - t0;
-        run.cancelSettled = w.ms != null;
-        run.cancelStatus = w.s?.status;
-        await page.waitForTimeout(300);
-        await page.waitForFunction(() => { const b = document.getElementById('processBtn'); return b && !b.disabled; }, null, { timeout: 30000 }).catch(() => {});
-      }
+        await S.start(page);
+        const timeout = Math.max(240000, secs * 8000);
+        let s;
+        let lastRss = 0;
+        while (Date.now() - t0 < timeout && !crashed) {
+          s = await S.state(page);
+          if (S.done(s) && Date.now() - t0 > 300) break;
+          // `ps` is a full process-table scan: sample RSS once a second.
+          if (Date.now() - lastRss >= 1000) {
+            peakRss = Math.max(peakRss, chromiumRssMb() || 0);
+            lastRss = Date.now();
+          }
+          await page.waitForTimeout(100);
+        }
+        run.processMs = Date.now() - t0;
+        run.ptEnd = await page.evaluate(() => performance.now());
+        if (TRACE) run.traceTasks = summarizeTrace(JSON.parse((await browser.stopTracing()).toString()));
+        if (PROFILE) {
+          // --settle: keep sampling through the post-Process idle work.
+          if (SETTLE > 0) await page.waitForTimeout(SETTLE);
+          // Read long tasks first: serialising the profile is itself a long task.
+          const PL = await page.evaluate(() => window.__vipPerf.longTasks);
+          const { profile } = await cdp.send('Profiler.stop');
+          run.hotspots = hotspots(profile, pt0, PL.filter((x) => x.t >= pt0));
+          const dir = path.join(ROOT, 'output', 'performance');
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, `${SURFACE}-${secs}s-c${cycle}.cpuprofile`), JSON.stringify(profile));
+        }
+        run.rtf = +(run.processMs / 1000 / secs).toFixed(4);
+        run.final = s;
+        run.success = Boolean(s && S.success(s));
+        run.hung = !s || !S.done(s);
+        const pt1 = run.ptEnd ?? await page.evaluate(() => performance.now());
+        delete run.ptEnd;
+        const P = await page.evaluate(() => window.__vipPerf);
+        run.longTasks = summarize(P.longTasks, pt0, pt1);
+        run.heartbeatGaps = summarize(P.gaps, pt0, pt1);
+        run.peakRssMb = peakRss;
 
-      const pt0 = await page.evaluate(() => performance.now());
-      let peakRss = chromiumRssMb() || 0;
-      if (TRACE) await browser.startTracing(page, { categories: ['devtools.timeline', 'v8', 'v8.execute', 'blink.user_timing', 'disabled-by-default-devtools.timeline'] });
-      if (PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }
-      const t0 = Date.now();
-      await S.start(page);
-      const timeout = Math.max(240000, secs * 8000);
-      let s;
-      while (Date.now() - t0 < timeout && !crashed) {
-        s = await S.state(page);
-        if (S.done(s) && Date.now() - t0 > 300) break;
-        peakRss = Math.max(peakRss, chromiumRssMb() || 0);
-        await page.waitForTimeout(100);
+        // Let post-Process idle work (auto-calibrate, analysis) run as it would
+        // for a user who keeps the file loaded: it is part of the Process cost.
+        // (With --profile the settle window already elapsed above.)
+        if (!PROFILE) await page.waitForTimeout(SETTLE);
+        if (SETTLE > 0) {
+          const late = await page.evaluate(() => window.__vipPerf.longTasks);
+          run.settleLongTaskMax = Math.max(0, ...late.filter((x) => x.t >= pt1 - 1).map((x) => x.d));
+        }
+        await S.clear(page);
+        await page.waitForTimeout(500);
+        const R = await page.evaluate(() => window.__vipPerf);
+        run.workersLive = R.workersLive;
+        run.workersMade = R.workersMade;
+        run.audioCtxLive = R.ctxLive;
+        run.audioCtxMade = R.ctxMade;
+        run.offlineCtxMade = R.offlineMade;
+        run.heapAfterGcMb = await gcHeapMb(cdp);
+        run.rssAfterMb = chromiumRssMb();
+        runs.push(run);
+        console.log(JSON.stringify({
+          secs, cycle, ok: run.success, ms: run.processMs, rtf: run.rtf, cancelMs: run.cancelMs,
+          lt: run.longTasks.max, settleLt: run.settleLongTaskMax, lt100: run.longTasks.count100, gap: run.heartbeatGaps.max,
+          heap: run.heapAfterGcMb, rss: run.rssAfterMb, peakRss, w: run.workersLive, ctx: run.audioCtxLive, st: s?.status,
+        }));
+        if (crashed) break;
       }
-      run.processMs = Date.now() - t0;
-      run.ptEnd = await page.evaluate(() => performance.now());
-      if (TRACE) run.traceTasks = summarizeTrace(JSON.parse((await browser.stopTracing()).toString()));
-      if (PROFILE) {
-        // --settle: keep sampling through the post-Process idle work.
-        if (Number(arg('settle', '0')) > 0) await page.waitForTimeout(Number(arg('settle', '0')));
-        // Read long tasks first: serialising the profile is itself a long task.
-        const PL = await page.evaluate(() => window.__vipPerf.longTasks);
-        const { profile } = await cdp.send('Profiler.stop');
-        run.hotspots = hotspots(profile, pt0, PL.filter((x) => x.t >= pt0));
-        const dir = path.join(ROOT, 'output', 'performance');
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, `${SURFACE}-${secs}s-c${cycle}.cpuprofile`), JSON.stringify(profile));
-      }
-      run.rtf = +(run.processMs / 1000 / secs).toFixed(4);
-      run.final = s;
-      run.success = Boolean(s && S.success(s));
-      run.hung = !s || !S.done(s);
-      const pt1 = run.ptEnd ?? await page.evaluate(() => performance.now());
-      delete run.ptEnd;
-      const P = await page.evaluate(() => window.__vipPerf);
-      run.longTasks = summarize(P.longTasks, pt0, pt1);
-      run.heartbeatGaps = summarize(P.gaps, pt0, pt1);
-      run.peakRssMb = peakRss;
-
-      // Let post-Process idle work (auto-calibrate, analysis) run as it would
-      // for a user who keeps the file loaded: it is part of the Process cost.
-      await page.waitForTimeout(Number(arg('settle', '0')));
-      if (Number(arg('settle', '0')) > 0) {
-        const late = await page.evaluate(() => window.__vipPerf.longTasks);
-        run.settleLongTaskMax = Math.max(0, ...late.filter((x) => x.t >= pt1 - 1).map((x) => x.d));
-      }
-      await S.clear(page);
-      await page.waitForTimeout(500);
-      const R = await page.evaluate(() => window.__vipPerf);
-      run.workersLive = R.workersLive;
-      run.workersMade = R.workersMade;
-      run.audioCtxLive = R.ctxLive;
-      run.audioCtxMade = R.ctxMade;
-      run.offlineCtxMade = R.offlineMade;
-      run.heapAfterGcMb = await gcHeapMb(cdp);
-      run.rssAfterMb = chromiumRssMb();
-      runs.push(run);
-      console.log(JSON.stringify({
-        secs, cycle, ok: run.success, ms: run.processMs, rtf: run.rtf, cancelMs: run.cancelMs,
-        lt: run.longTasks.max, settleLt: run.settleLongTaskMax, lt100: run.longTasks.count100, gap: run.heartbeatGaps.max,
-        heap: run.heapAfterGcMb, rss: run.rssAfterMb, peakRss, w: run.workersLive, ctx: run.audioCtxLive, st: s?.status,
-      }));
       if (crashed) break;
     }
-    if (crashed) break;
+  } catch (err) {
+    fatal = err;
   }
 
-  const probe = await page.evaluate(() => window.__vipProbe || null).catch(() => null);
-  const workerUrls = await page.evaluate(() => window.__vipPerf.workerUrls || []).catch(() => []);
+  // Never evaluate in a crashed page; it would hang until the protocol timeout.
+  const probe = crashed || !page ? null : await page.evaluate(() => window.__vipProbe || null).catch(() => null);
+  const workerUrls = crashed || !page ? [] : await page.evaluate(() => window.__vipPerf.workerUrls || []).catch(() => []);
   const report = {
     surface: SURFACE, sr: SR, channels: CH, cancel: DO_CANCEL, cycles: CYCLES, headed: HEADED,
     commit: (() => { try { return execSync('git rev-parse --short HEAD', { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return null; } })(),
-    crashed, baseline, runs, workerUrls, probe, errors: errors.slice(0, 50),
+    crashed, fatal: fatal ? String(fatal.stack || fatal) : null, baseline, runs, workerUrls, probe, errors: errors.slice(0, 50),
   };
   const outDir = path.join(ROOT, 'output', 'performance');
   fs.mkdirSync(outDir, { recursive: true });
@@ -481,10 +514,12 @@ async function main() {
   fs.writeFileSync(out, JSON.stringify(report, null, 2));
   console.log(`report: ${path.relative(ROOT, out)}`);
 
-  await browser.close();
+  await browser.close().catch(() => {});
   cleanup();
+  for (const f of fixtures) { try { fs.unlinkSync(f); } catch { /* already gone */ } }
 
   const failures = [];
+  if (fatal) failures.push(`harness error: ${fatal.message || fatal}`);
   if (crashed) failures.push('renderer crashed');
   for (const r of runs) {
     if (r.hung) failures.push(`${r.secs}s cycle ${r.cycle}: did not finish (${r.final?.status})`);

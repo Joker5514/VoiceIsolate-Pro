@@ -204,8 +204,12 @@ export async function warmupModels(modelIds = DEFAULT_ML_MODEL_IDS) {
 }
 
 /** Channel copier that yields on a time budget for long stems. */
-function budgetedChannelCopy() {
-  const yieldBudget = createYieldBudget();
+function budgetedChannelCopy(signal = null) {
+  const budget = createYieldBudget();
+  const yieldBudget = async () => {
+    await budget();
+    if (signal?.aborted) throw createAbortError();
+  };
   return (src) => copyFloat32Channel(src, { yieldBudget });
 }
 
@@ -358,9 +362,16 @@ export async function separateStems(channelData, sampleRate, options = {}) {
           // Cache an independent copy before handing the arrays to the caller
           // (who may mutate or transfer them). Copied cooperatively: a 15-min
           // stem pair is ~350 MB and one synchronous copy froze the tab.
-          setCachedStemsAsync(cacheKey, out, budgetedChannelCopy())
-            .catch((err) => console.warn('[VIP][StemSeparation] stem cache store failed:', err?.message || err))
-            .then(() => resolve(out));
+          // Cancel during the copy settles at the next slice, as AbortError.
+          setCachedStemsAsync(cacheKey, out, budgetedChannelCopy(signal))
+            .then(() => (signal?.aborted ? reject(abortError()) : resolve(out)), (err) => {
+              if (signal?.aborted || err?.name === 'AbortError') {
+                reject(abortError());
+                return;
+              }
+              console.warn('[VIP][StemSeparation] stem cache store failed:', err?.message || err);
+              resolve(out);
+            });
         });
       } else if (m.type === 'cancelled') {
         finish(() => reject(abortError()));

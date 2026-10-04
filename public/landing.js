@@ -168,6 +168,8 @@ let ingested = null;
 /** @type {File|Blob|null} original upload retained for video remux export */
 let sourceFile = null;
 let requestSeq = 0;
+/** True while a stems result is being installed (cooperative copies). */
+let stemsInstalling = false;
 let ingestSeq = 0;
 let ingestInFlight = false;
 let processingInFlight = false;
@@ -203,7 +205,7 @@ async function refreshPreflight() {
   if (seq !== preflightSeq) return;
   const available = quickClean.preflight(device, ingested);
   ui.modelSelect.disabled = !['wasm', 'webgpu'].includes(quickClean.backend) || processingInFlight || ingestInFlight;
-  ui.processBtn.disabled = (!available && worker !== null) || !ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight;
+  ui.processBtn.disabled = (!available && worker !== null) || !ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight || reviewInFlight;
 }
 
 function clearProcessWatch() { clearInterval(processWatch); processWatch = null; }
@@ -899,7 +901,7 @@ async function ensureTargetSpeakerUi() {
           ? Array.from({ length: mixer.noiseBuffer.numberOfChannels }, (_, c) =>
             mixer.noiseBuffer.getChannelData(c).slice())
           : channels.map((ch) => new Float32Array(ch.length));
-        mixer.loadStems(channels, noise, sampleRate);
+        if (!(await mixer.loadStemsAsync(channels, noise, sampleRate))) return;
         if (segs.length) mixer.loadSpeakerSegments(segs);
         visualizer?.loadStems?.(channels, noise, mixer.duration());
         setStatus('Target isolation applied on clean stem (local voiceprint). Press Play.', 'active');
@@ -1293,7 +1295,7 @@ function warnIfNotServed() {
 }
 
 async function onProcess() {
-  if (!ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
+  if (!ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight || reviewInFlight) return;
   processingInFlight = true;
   try {
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
@@ -1361,8 +1363,24 @@ function onStems(msg) {
  * on a 5-minute file and 20 s on a 15-minute one. A newer request or file
  * (requestSeq bump) stops a stale install between slices.
  */
-async function applyStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
-  if (!processingInFlight || requestId !== requestSeq) return; // stale response
+async function applyStems(msg) {
+  if (!processingInFlight || msg.requestId !== requestSeq) return; // stale response
+  // Process stays unavailable until the install finishes, so a second click
+  // cannot start a duplicate separation mid-install.
+  stemsInstalling = true;
+  try {
+    await installStems(msg);
+  } finally {
+    stemsInstalling = false;
+    // File/model pickers also wait for the install: a new file mid-install
+    // would race the mixer's pending stem swap.
+    ui.fileInput.disabled = false;
+    ui.modelSelect.disabled = false;
+    void refreshPreflight();
+  }
+}
+
+async function installStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
   clearProcessWatch();
   processingInFlight = false;
   stageEnd('isolate');
@@ -1377,9 +1395,6 @@ async function applyStems({ requestId, clean, noise, sampleRate, passthrough, _c
   const yieldBudget = createYieldBudget();
   const copyChannel = (channel) => copyFloat32Channel(channel, { yieldBudget });
   const current = () => requestId === requestSeq;
-  ui.processBtn.disabled = false;
-  ui.fileInput.disabled = false;
-  ui.modelSelect.disabled = false;
 
   if (passthrough) {
     failProcessing(new Error('Models could not run; no cleaned result was produced.'));
@@ -1421,26 +1436,14 @@ async function applyStems({ requestId, clean, noise, sampleRate, passthrough, _c
   invalidateComparison();
   // Unified: set processed and compute Removed delta
   try {
-    await processingController.setProcessedAsync(clean, sampleRate, yieldBudget);
-    if (!current()) return;
-    // Also store noise as part of removed if available
-    const processedBuffer = [];
-    for (const c of clean) processedBuffer.push(await copyChannel(c));
-    let removedBuffer = null;
-    if (noise) {
-      removedBuffer = [];
-      for (const c of noise) removedBuffer.push(await copyChannel(c));
-    } else {
-      removedBuffer = processingController.getRemoved();
-    }
-    if (!current()) return;
-    sessionStore.applyProcessing({
-      processedBuffer,
-      removedBuffer,
-      sampleRate,
-      channels: clean.length,
+    // One store update: the published removed buffer is the worker's
+    // residual (noise) stem when present, as the second update used to set.
+    await processingController.setProcessedAsync(clean, sampleRate, yieldBudget, {
+      isCurrent: current,
+      storeRemoved: noise || null,
     });
   } catch {}
+  if (!current()) return;
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
   startOutputMeter();
@@ -1677,7 +1680,8 @@ for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedB
             await mixer.pause();
             // Store for restore
             window.__vipRemovedAudition = { clean: currentClean, noise: currentNoise };
-            mixer.loadStems(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.duration() || (removed[0].length / 48000));
+            // Third argument is the sample rate (it was passed the duration).
+            await mixer.loadStemsAsync(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.cleanBuffer?.sampleRate || 48000);
             await mixer.play();
           }
         }

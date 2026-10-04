@@ -2941,6 +2941,8 @@ class VoiceIsolatePro {
         this._cleanStemChannels,
         this._noiseStemChannels || null,
         this._stemSampleRate || this.ctx?.sampleRate || 48000,
+        // Cancel reaches the copy while Process runs; afterwards no job owns it.
+        { signal: this.isProcessing ? this._processAbortSignal() : null },
       );
       if (!loaded) return null;
     } else if (typeof bridge.loadStemPair === 'function') {

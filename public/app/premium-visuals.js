@@ -355,11 +355,17 @@
 
     const generation = ++staticSpectrogramGeneration;
     const isCurrent = () => generation === staticSpectrogramGeneration;
-    const data = audioBuf.getChannelData(0);
     const fftSize = 1024;
     const hopSize = 256;
-    const frames = data.length >= fftSize ? Math.floor((data.length - fftSize) / hopSize) + 1 : 0;
-    if (!frames) return false;
+    let data = audioBuf.getChannelData(0);
+    if (!data.length) return false;
+    if (data.length < fftSize) {
+      // Sub-frame clip: one zero-padded frame, as the legacy helper drew.
+      const padded = new Float32Array(fftSize);
+      padded.set(data);
+      data = padded;
+    }
+    const frames = Math.floor((data.length - fftSize) / hopSize) + 1;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return false;

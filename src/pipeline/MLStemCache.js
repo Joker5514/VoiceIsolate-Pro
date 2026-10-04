@@ -9,6 +9,8 @@ const MAX_ENTRIES = 2;
 
 /** @type {Map<string, { clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>} */
 const _cache = new Map();
+/** Bumped by clearStemCache so an in-flight async store is discarded. */
+let _cacheGen = 0;
 
 /** Bumped whenever the key derivation changes so old entries never alias. */
 const KEY_SCHEMA = 'sk2';
@@ -112,10 +114,13 @@ export function setCachedStems(key, result) {
  */
 export async function setCachedStemsAsync(key, result, copyChannel) {
   if (!key || !result || result.passthrough) return;
+  // clearStemCache() during the copy (source changed) must not be undone.
+  const gen = _cacheGen;
   const clean = [];
   for (const c of result.clean) clean.push(await copyChannel(c));
   const noise = [];
   for (const c of result.noise || []) noise.push(await copyChannel(c));
+  if (gen !== _cacheGen) return;
   storeEntry(key, clean, noise, result.sampleRate);
 }
 
@@ -134,6 +139,7 @@ function storeEntry(key, clean, noise, sampleRate) {
 }
 
 export function clearStemCache() {
+  _cacheGen += 1;
   _cache.clear();
 }
 

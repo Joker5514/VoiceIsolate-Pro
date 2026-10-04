@@ -117,6 +117,15 @@ describe('Engineer static spectrogram responsiveness', () => {
     expect(b.ctx.puts).toBe(1);
   });
 
+  test('a clip shorter than one FFT frame still renders (zero-padded)', async () => {
+    const { draw, calls } = load();
+    const canvas = makeCanvas(200, 80);
+    const short = { getChannelData: () => new Float32Array(300).fill(0.2) };
+    await expect(draw(canvas, short)).resolves.toBe(true);
+    expect(calls.frames).toBe(1);
+    expect(canvas.ctx.puts).toBe(1);
+  });
+
   test('is still installed over the legacy synchronous helper', () => {
     expect(SRC).toContain('global.VIP_drawStaticSpectrogram = drawStaticSpectrogramCooperative;');
   });

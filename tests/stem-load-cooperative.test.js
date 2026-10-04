@@ -191,3 +191,48 @@ describe('calcDownmixRms', () => {
     expect(calcDownmixRms([new Float32Array(0)])).toBe(0);
   });
 });
+
+describe('review follow-ups: supersede, dispose, cache invalidation', () => {
+  test('a superseded loadStemsAsync stops between slices, not after the whole pair', async () => {
+    const mixer = new PlaybackMixer({ context: mockContext() });
+    const big = [ramp(5_000_000)];
+    const first = mixer.loadStemsAsync(big, big, 48000);
+    mixer.loadStems([ramp(10)], [ramp(10)], 48000);
+    await expect(first).resolves.toBe(false);
+    expect(mixer.cleanBuffer.length).toBe(10);
+  });
+
+  test('an already-loaded source does not bypass a different pending load', async () => {
+    const mixer = new PlaybackMixer({ context: mockContext() });
+    const bridge = new EngineerModeBridge({ mixer });
+    const a = [ramp(100, 1)];
+    const b = [ramp(100, 2)];
+    await bridge.loadStemPairAsync(a, null, 48000);
+    const pendingB = bridge.loadStemPairAsync(b, null, 48000);
+    const backToA = bridge.loadStemPairAsync(a, null, 48000);
+    await expect(pendingB).resolves.toBe(false); // superseded by the later A request
+    await expect(backToA).resolves.toBe(true);
+    expect(mixer.cleanBuffer.getChannelData(0)).toEqual(a[0]);
+  });
+
+  test('a load that completes after dispose() does not mark the bridge loaded', async () => {
+    const mixer = new PlaybackMixer({ context: mockContext() });
+    const bridge = new EngineerModeBridge({ mixer });
+    const pending = bridge.loadStemPairAsync([ramp(100)], null, 48000);
+    await bridge.dispose();
+    await expect(pending).resolves.toBe(false);
+    expect(bridge.isLoaded()).toBe(false);
+  });
+
+  test('clearStemCache during an async store discards that store', async () => {
+    MLStemCache.clearStemCache();
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const pending = MLStemCache.setCachedStemsAsync('stale', { clean: [ramp(10)], noise: [ramp(10)], sampleRate: 48000 },
+      async (c) => { await gate; return c.slice(); });
+    MLStemCache.clearStemCache();
+    release();
+    await pending;
+    expect(MLStemCache.getCachedStems('stale')).toBeNull();
+  });
+});

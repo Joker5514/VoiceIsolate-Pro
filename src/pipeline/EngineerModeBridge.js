@@ -179,18 +179,21 @@ export class EngineerModeBridge {
   async loadStemPairAsync(clean, noise = null, sampleRate, opts = {}) {
     const sr = stemSampleRate(clean, noise, sampleRate);
     const same = (src) => src && src.clean === clean && src.noise === noise && src.sr === sr;
-    if (this._loaded && same(this._stemSource)) return true;
     if (same(this._pendingStemSource)) return this._pendingStemSource.promise;
+    // A different pending load would install after us; only skip when idle.
+    if (!this._pendingStemSource && this._loaded && same(this._stemSource)) return true;
     if (typeof this.mixer.loadStemsAsync !== 'function') {
       this.loadStemPair(clean, noise, sampleRate);
       return true;
     }
     const pair = this._resolveStemPair(clean, noise, sampleRate);
+    const mixer = this.mixer;
     const pending = { clean, noise, sr: pair.sr };
     pending.promise = (async () => {
       try {
-        const ok = await this.mixer.loadStemsAsync(pair.cleanCh, pair.noiseCh, pair.sr, opts);
-        if (!ok) return false;
+        const ok = await mixer.loadStemsAsync(pair.cleanCh, pair.noiseCh, pair.sr, opts);
+        // dispose() during the copy released this mixer: do not resurrect state.
+        if (!ok || this.mixer !== mixer) return false;
         this._hasNoiseStem = pair.hasNoise;
         this._loaded = true;
         this._stemSource = { clean, noise, sr: pair.sr };

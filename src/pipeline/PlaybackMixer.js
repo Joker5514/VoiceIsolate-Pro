@@ -609,15 +609,23 @@ export class PlaybackMixer {
       throw new TypeError('[VIP][PlaybackMixer] loadStems requires non-empty channel arrays.');
     }
     const gen = this._stemLoadGen = (this._stemLoadGen || 0) + 1;
+    const superseded = () => gen !== this._stemLoadGen;
+    // Stop between slices once superseded, not only between stems.
+    const outer = opts.signal || null;
+    const signal = { get aborted() { return superseded() || Boolean(outer?.aborted); } };
     const len = cleanChannels[0].length;
-    const clean = this.ctx.createBuffer(cleanChannels.length, len, sampleRate);
-    await copyChannelsToAudioBuffer(clean, cleanChannels, opts);
-    if (gen !== this._stemLoadGen) return false;
-    const noise = this.ctx.createBuffer(noiseChannels.length, noiseChannels[0].length, sampleRate);
-    await copyChannelsToAudioBuffer(noise, noiseChannels, opts);
-    if (gen !== this._stemLoadGen) return false;
-    this._installStems(clean, noise);
-    return true;
+    try {
+      const clean = this.ctx.createBuffer(cleanChannels.length, len, sampleRate);
+      await copyChannelsToAudioBuffer(clean, cleanChannels, { signal });
+      const noise = this.ctx.createBuffer(noiseChannels.length, noiseChannels[0].length, sampleRate);
+      await copyChannelsToAudioBuffer(noise, noiseChannels, { signal });
+      if (superseded()) return false;
+      this._installStems(clean, noise);
+      return true;
+    } catch (err) {
+      if (superseded()) return false;
+      throw err;
+    }
   }
 
   _installStems(cleanBuffer, noiseBuffer) {

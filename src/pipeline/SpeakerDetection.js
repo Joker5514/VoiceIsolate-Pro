@@ -130,16 +130,21 @@ export async function detectSpeakers(clean, sampleRate, { signal = null } = {}) 
   const mono = clean[0];
   if (!mono?.length) return { segments: [], speakers: [], method: 'none' };
 
+  const throwIfAborted = () => { if (signal?.aborted) throw abortError(); };
   try {
+    throwIfAborted();
     const { seg, emb, vad } = await loadOnnxSessions();
+    throwIfAborted();
     const diarizer = new SpeakerDiarizer(seg, emb, vad, 16000);
     const ctx = new OfflineAudioContext(1, mono.length, sampleRate);
     const buf = ctx.createBuffer(1, mono.length, sampleRate);
     buf.copyToChannel(mono, 0);
     const timeline = await diarizer.diarize(buf);
+    throwIfAborted();
     const mapped = timelineToPlaybackSegments(timeline);
     return { ...mapped, method: 'onnx' };
   } catch (onnxErr) {
+    if (onnxErr?.name === 'AbortError') throw onnxErr;
     console.warn('[VIP][SpeakerDetection] ONNX path unavailable:', onnxErr.message);
     const km = await kMeansDiarize(mono, sampleRate, signal);
     return { segments: km.segments, speakers: km.speakers, method: 'kmeans' };

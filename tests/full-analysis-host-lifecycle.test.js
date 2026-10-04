@@ -276,6 +276,17 @@ describe('FullAnalysisHost worker lifecycle', () => {
     expect(workers[0].terminate).toHaveBeenCalled();
   });
 
+  test('cancelActive() during worker feature extraction settles analyze promptly', async () => {
+    const host = makeHost({ enableMlVad: true, buildVadHints: jest.fn() });
+    const pending = host.analyze([new Float32Array(8000 * 12)], 8000, {});
+    for (let attempt = 0; attempt < 200 && !workers[0]?.postMessage.mock.calls.length; attempt++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    host.cancelActive('user');
+    await expect(pending).rejects.toMatchObject({ name: expect.stringMatching(/Cancel|Abort/) });
+    expect(workers[0].terminate).toHaveBeenCalled();
+  });
+
   test('passes cancellation into VAD preparation', async () => {
     const controller = new AbortController();
     const buildVadHints = jest.fn((mono, sampleRate, extraction, options) => new Promise((resolve, reject) => {

@@ -81,10 +81,17 @@ export class ProcessingController {
    * @param {Float32Array[]} processed
    * @param {number} sampleRate
    * @param {() => Promise<void>} [maybeYield] e.g. ui-yield createYieldBudget()
+   * @param {object} [opts]
+   * @param {() => boolean} [opts.isCurrent] caller's request is still current
+   * @param {Float32Array[]|null} [opts.storeRemoved] removed buffer to publish
+   *   instead of the raw − processed delta (e.g. the worker's residual stem),
+   *   so the caller does not publish a second, overriding update
    * @returns {Promise<object|null>}
    */
-  async setProcessedAsync(processed, sampleRate, maybeYield = async () => {}) {
+  async setProcessedAsync(processed, sampleRate, maybeYield = async () => {}, opts = {}) {
     const gen = this._asyncGen = (this._asyncGen || 0) + 1;
+    const isCurrent = typeof opts.isCurrent === 'function' ? opts.isCurrent : () => true;
+    const live = () => gen === this._asyncGen && isCurrent();
     const SLICE = 1 << 20;
     const clone = async (channels) => {
       const out = [];
@@ -100,6 +107,7 @@ export class ProcessingController {
     };
     const raw = this._raw || await clone(processed);
     const processedCopy = await clone(processed);
+    if (!live()) return null;
     const removed = [];
     for (let idx = 0; idx < raw.length; idx++) {
       const rawCh = raw[idx];
@@ -113,15 +121,15 @@ export class ProcessingController {
       }
       removed.push(out);
     }
-    if (gen !== this._asyncGen) return null;
+    if (!live()) return null;
     const update = {
       rawBuffer: await clone(raw),
       processedBuffer: await clone(processedCopy),
-      removedBuffer: await clone(removed),
+      removedBuffer: await clone(opts.storeRemoved || removed),
       sampleRate,
       channels: processed.length,
     };
-    if (gen !== this._asyncGen) return null;
+    if (!live()) return null;
     this._raw = raw;
     this._processed = processedCopy;
     this._removed = removed;

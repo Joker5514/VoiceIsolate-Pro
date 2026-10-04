@@ -30,6 +30,7 @@ export class FullAnalysisHost {
     this._activeRequestId = null;
     this._activeSettlement = null;
     this._analysisGeneration = 0;
+    this._featureSettlement = null;
   }
 
   _recycleWorker(worker = this._worker) {
@@ -74,7 +75,11 @@ export class FullAnalysisHost {
     }
     return new Promise((resolve, reject) => {
       let timer = null;
+      let settled = false;
       const done = (fn) => {
+        if (settled) return;
+        settled = true;
+        if (this._featureSettlement === settlement) this._featureSettlement = null;
         clearTimeout(timer);
         signal?.removeEventListener?.('abort', onAbort);
         worker.removeEventListener('message', onMessage);
@@ -96,6 +101,14 @@ export class FullAnalysisHost {
         if (msg.type === 'features') done(() => resolve({ mono: msg.mono, extraction: msg.extraction }));
         else if (msg.type === 'error') done(() => reject(new Error(msg.message || 'Feature extraction failed')));
       };
+      // cancelActive()/dispose() settle this stage too, not only analyze.
+      const settlement = {
+        cancel: (reason) => done(() => {
+          this._recycleWorker(worker);
+          reject(new CancellationError(reason));
+        }),
+      };
+      this._featureSettlement = settlement;
       timer = setTimeout(() => done(() => {
         this._recycleWorker(worker);
         reject(new Error('Feature extraction timed out'));
@@ -342,6 +355,7 @@ export class FullAnalysisHost {
 
   cancelActive(reason = 'Cancelled') {
     this._analysisGeneration += 1;
+    this._featureSettlement?.cancel(reason);
     this._cancelWorkerRequest(reason);
   }
 
