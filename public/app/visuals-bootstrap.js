@@ -36,6 +36,10 @@
   let _freqScratch = null;
   let _timeScratch = null;
   let _waveBaseCache = new WeakMap();
+  // Per-buffer min/max column envelope: waveCanvas and waveOrigCanvas draw the
+  // same input buffer, so scan each buffer once per width (~100 ms per scan on
+  // a 15-minute file). Reset together with _waveBaseCache.
+  let _waveEnvCache = new WeakMap();
   let _playheadPxCache = new WeakMap();
 
   function _getPlayOffset() {
@@ -89,6 +93,29 @@
     return (audioBuf.length || 0) + ':' + (audioBuf.sampleRate || 0) + ':' + (color || '');
   }
 
+  function _waveEnvelope(audioBuf, w) {
+    const hit = _waveEnvCache.get(audioBuf);
+    if (hit && hit.w === w) return hit;
+    const data = audioBuf.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / w));
+    const env = { w, min: new Float32Array(w), max: new Float32Array(w) };
+    for (let x = 0; x < w; x++) {
+      let min = 1.0;
+      let max = -1.0;
+      const base = x * step;
+      const end = Math.min(base + step, data.length);
+      for (let i = base; i < end; i++) {
+        const v = data[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      env.min[x] = min;
+      env.max[x] = max;
+    }
+    _waveEnvCache.set(audioBuf, env);
+    return env;
+  }
+
   function _drawWaveformBase(canvas, audioBuf, color) {
     if (!canvas || !audioBuf || !audioBuf.getChannelData) return false;
     const ctx = canvas.getContext('2d');
@@ -101,8 +128,7 @@
       return true;
     }
 
-    const data = audioBuf.getChannelData(0);
-    const step = Math.max(1, Math.floor(data.length / w));
+    const env = _waveEnvelope(audioBuf, w);
     const mid = h / 2;
 
     ctx.fillStyle = '#030306';
@@ -112,17 +138,8 @@
     ctx.beginPath();
     ctx.moveTo(0, mid);
     for (let x = 0; x < w; x++) {
-      let min = 1.0;
-      let max = -1.0;
-      const base = x * step;
-      const end = Math.min(base + step, data.length);
-      for (let i = base; i < end; i++) {
-        const v = data[i];
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-      const yMin = mid - max * mid * 0.92;
-      const yMax = mid - min * mid * 0.92;
+      const yMin = mid - env.max[x] * mid * 0.92;
+      const yMax = mid - env.min[x] * mid * 0.92;
       ctx.moveTo(x + 0.5, yMin);
       ctx.lineTo(x + 0.5, yMax);
     }
@@ -188,6 +205,7 @@
 
   function drawStaticVisuals() {
     _waveBaseCache = new WeakMap();
+    _waveEnvCache = new WeakMap();
     _playheadPxCache = new WeakMap();
     _resetCanvasDimCache();
     const app = global._vipApp;
@@ -1085,9 +1103,22 @@
   }
 
   /* ── Event wiring ─────────────────────────────────────────────────────── */
+  let _staticVisualsTimer = 0;
+  function _scheduleStaticVisuals() {
+    if (_staticVisualsTimer) return;
+    _staticVisualsTimer = setTimeout(() => {
+      _staticVisualsTimer = 0;
+      drawStaticVisuals();
+      // Mirrors (app.js) copy these canvases; tell them the new frame exists.
+      try { window.dispatchEvent(new CustomEvent('vip:staticVisualsDrawn')); } catch (_) {}
+    }, 0);
+  }
+
   function _bindEvents() {
-    window.addEventListener('vip:fileLoaded', drawStaticVisuals);
-    window.addEventListener('vip:processingDone', drawStaticVisuals);
+    // Draw in a task of its own: these events fire inside the pipeline's
+    // completion task, and the full-buffer scans then stacked onto it.
+    window.addEventListener('vip:fileLoaded', _scheduleStaticVisuals);
+    window.addEventListener('vip:processingDone', _scheduleStaticVisuals);
     window.addEventListener('vip:playStarted', () => {
       _lufsShortBuf = [];
       _lufsIntBuf = [];

@@ -196,7 +196,7 @@ describe('landing.js PlaybackMixer init guarded', () => {
     // Verify return statement is inside the catch block before mixer.loadStems
     const catchIdx = src.indexOf('catch (err) {', src.indexOf('mixer = new PlaybackMixer()'));
     const returnIdx = src.indexOf('return;', catchIdx);
-    const loadStemsIdx = src.indexOf('mixer.loadStems(', catchIdx);
+    const loadStemsIdx = src.indexOf('mixer.loadStemsAsync(', catchIdx);
     expect(returnIdx).toBeGreaterThan(catchIdx);
     expect(returnIdx).toBeLessThan(loadStemsIdx);
   });

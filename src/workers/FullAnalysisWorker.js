@@ -13,6 +13,7 @@
 'use strict';
 
 import { analyzeAudio } from '../core/FullAnalysis.js';
+import { downmixToMono, extractFrameFeatures } from '../core/FeatureExtractor.js';
 
 /** @type {number|null} */
 let _activeAnalyzeId = null;
@@ -28,6 +29,21 @@ self.onmessage = (event) => {
       _activeAnalyzeId = null;
     }
     self.postMessage({ type: 'cancelled', requestId: id ?? null });
+    return;
+  }
+  if (msg.type === 'features') {
+    // VAD-hint frame features for FullAnalysisHost (kept off the main thread).
+    try {
+      const channels = (msg.channels || []).map((c) => (c instanceof Float32Array ? c : new Float32Array(c)));
+      const mono = downmixToMono(channels);
+      const extraction = extractFrameFeatures(mono, msg.sampleRate || 48000, {
+        frameSec: msg.frameSec,
+        hopSec: msg.hopSec,
+      });
+      self.postMessage({ type: 'features', requestId: msg.requestId, mono, extraction }, [mono.buffer]);
+    } catch (err) {
+      self.postMessage({ type: 'error', requestId: msg.requestId, message: err?.message || String(err) });
+    }
     return;
   }
   if (msg.type !== 'analyze') return;

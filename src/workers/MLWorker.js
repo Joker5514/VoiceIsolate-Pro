@@ -95,8 +95,28 @@ function inferenceQueueKey(sessionKey) {
   return sessionBackend(sessionKey) === 'webgpu' ? sessionKey : '__wasm_global__';
 }
 
-async function queuedSessionRun(sessionKey, session, feeds, requestId) {
+/**
+ * Inference loops only await ORT promises, which settle as microtasks, so a
+ * 'cancel' message (a macrotask) was not dispatched until the whole file had
+ * been processed. The host's 1.5 s cancel grace then expired and recycled the
+ * worker, and the next Process paid a full model reload. Yield one macrotask
+ * per CANCEL_POLL_MS of work so cancel is seen between batches.
+ */
+const CANCEL_POLL_MS = 100;
+let _lastCancelPoll = null;
+const pollNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+async function cancellationPoint(requestId) {
   checkCancelled(requestId);
+  if (_lastCancelPoll == null) _lastCancelPoll = pollNow();
+  if (pollNow() - _lastCancelPoll >= CANCEL_POLL_MS && typeof setTimeout === 'function') {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    _lastCancelPoll = pollNow();
+  }
+  checkCancelled(requestId);
+}
+
+async function queuedSessionRun(sessionKey, session, feeds, requestId) {
+  await cancellationPoint(requestId);
   const key = inferenceQueueKey(sessionKey);
   const prev = _runQueues[key] || Promise.resolve();
   let release;

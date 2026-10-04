@@ -276,3 +276,49 @@ describe('visuals-bootstrap module evaluated in jsdom-like sandbox', () => {
     }
   });
 });
+
+describe('visuals-bootstrap static redraw cost (jsdom)', () => {
+  test('Process completion draws in its own task and scans each buffer once', async () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM(
+      '<!doctype html><html><body>'
+      + '<canvas id="waveCanvas"></canvas><canvas id="waveOrigCanvas"></canvas><canvas id="waveProcCanvas"></canvas>'
+      + '</body></html>',
+      { runScripts: 'outside-only' },
+    );
+    const { window } = dom;
+    const noop = () => {};
+    window.HTMLCanvasElement.prototype.getContext = () => ({
+      fillRect: noop, beginPath: noop, moveTo: noop, lineTo: noop, stroke: noop,
+      clearRect: noop, drawImage: noop, putImageData: noop,
+      getImageData: () => ({}),
+    });
+    const scans = { input: 0, output: 0 };
+    const buffer = (key) => {
+      const data = new Float32Array(48000);
+      return {
+        length: data.length, sampleRate: 48000, numberOfChannels: 1, duration: 1,
+        getChannelData: () => { scans[key] += 1; return data; },
+      };
+    };
+    try {
+      window.eval(fs.readFileSync(VISUALS_BOOT_PATH, 'utf8'));
+      if (window.document.readyState === 'loading') {
+        await new Promise((r) => window.document.addEventListener('DOMContentLoaded', r, { once: true }));
+      }
+      window._vipApp = { inputBuffer: buffer('input'), outputBuffer: buffer('output') };
+      let drawnEvents = 0;
+      window.addEventListener('vip:staticVisualsDrawn', () => { drawnEvents += 1; });
+      window.dispatchEvent(new window.CustomEvent('vip:processingDone'));
+      window.dispatchEvent(new window.CustomEvent('vip:processingDone'));
+      // Nothing heavy inside the dispatching (pipeline completion) task.
+      expect(scans).toEqual({ input: 0, output: 0 });
+      await new Promise((r) => window.setTimeout(r, 0));
+      // Coalesced to one redraw; waveCanvas + waveOrigCanvas share one input scan.
+      expect(scans).toEqual({ input: 1, output: 1 });
+      expect(drawnEvents).toBe(1);
+    } finally {
+      window.close();
+    }
+  });
+});

@@ -145,7 +145,8 @@ describe('Engineer spectral worker helper', () => {
 describe('Engineer result lifecycle safeguards', () => {
   test('fresh and durable ML paths both transform cloned raw stems through the same cleanup', () => {
     expect(appSource).toContain('let clean = durable.clean.map((channel) => new Float32Array(channel));');
-    expect(appSource).toContain('let clean = result.clean.map((channel) => new Float32Array(channel));');
+    // Fresh path clones cooperatively (copyFloat32Channel allocates a new array).
+    expect(appSource).toMatch(/for \(const channel of result\.clean\) \{\s*clean\.push\(await copyFloat32Channel\(channel, \{ yieldBudget: cloneBudget \}\)\);/);
     expect(appSource).toContain('await this._applyPostIsolationCleanup(clean, durable.sampleRate || buf.sampleRate);');
     expect(appSource).toContain('await this._applyPostIsolationCleanup(clean, result.sampleRate || buf.sampleRate);');
     expect(appSource).toContain('const durableClean = result.clean;');

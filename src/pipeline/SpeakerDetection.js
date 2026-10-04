@@ -52,25 +52,47 @@ async function loadOnnxSessions() {
   return _sessionPromise;
 }
 
-function kMeansDiarize(cleanChannel, sampleRate) {
+function abortError() {
+  return typeof DOMException === 'function'
+    ? new DOMException('Speaker detection superseded', 'AbortError')
+    : Object.assign(new Error('Speaker detection superseded'), { name: 'AbortError' });
+}
+
+function kMeansDiarize(cleanChannel, sampleRate, signal = null) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
     const w = new Worker('/src/workers/DiarizationWorker.js', { type: 'module' });
     const requestId = 1;
     const timer = setTimeout(() => {
+      done();
       w.terminate();
       reject(new Error('K-means diarization timeout'));
     }, 60000);
+    // A superseded run (file cleared, re-Process) terminates its worker at
+    // once instead of finishing a full-file clustering pass nobody will read.
+    const onAbort = () => {
+      clearTimeout(timer);
+      w.terminate();
+      reject(abortError());
+    };
+    const done = () => signal?.removeEventListener?.('abort', onAbort);
+    signal?.addEventListener?.('abort', onAbort, { once: true });
     const samples = new Float32Array(cleanChannel);
     w.onmessage = (ev) => {
       const msg = ev.data || {};
       if (msg.requestId !== requestId) return;
       clearTimeout(timer);
+      done();
       w.terminate();
       if (msg.type === 'segments') resolve(msg);
       else reject(new Error(msg.message || 'Diarization failed'));
     };
     w.onerror = (e) => {
       clearTimeout(timer);
+      done();
       w.terminate();
       reject(new Error(e.message || 'Diarization worker error'));
     };
@@ -101,9 +123,10 @@ function timelineToPlaybackSegments(timeline) {
  * Detect speakers on the clean stem. Tries ONNX diarization when models exist.
  * @param {Float32Array[]} clean
  * @param {number} sampleRate
+ * @param {{ signal?: AbortSignal }} [opts] aborting terminates the k-means worker
  * @returns {Promise<{ segments: object[], speakers: object[], method: string }>}
  */
-export async function detectSpeakers(clean, sampleRate) {
+export async function detectSpeakers(clean, sampleRate, { signal = null } = {}) {
   const mono = clean[0];
   if (!mono?.length) return { segments: [], speakers: [], method: 'none' };
 
@@ -118,7 +141,7 @@ export async function detectSpeakers(clean, sampleRate) {
     return { ...mapped, method: 'onnx' };
   } catch (onnxErr) {
     console.warn('[VIP][SpeakerDetection] ONNX path unavailable:', onnxErr.message);
-    const km = await kMeansDiarize(mono, sampleRate);
+    const km = await kMeansDiarize(mono, sampleRate, signal);
     return { segments: km.segments, speakers: km.speakers, method: 'kmeans' };
   }
 }

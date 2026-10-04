@@ -34,6 +34,7 @@
 import { effectiveSpeakerGain, SPEAKER_GAIN_RAMP_SEC } from '../core/SpeakerGainEnvelope.js';
 
 import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/audio-config.js';
+import { copyChannelsToAudioBuffer } from './ui-yield.js';
 
 /** Crossfade duration (seconds) for speaker solo/mute/segment boundaries. */
 const SPEAKER_RAMP_SEC = SPEAKER_GAIN_RAMP_SEC;
@@ -585,10 +586,45 @@ export class PlaybackMixer {
     if (!cleanChannels?.length || !noiseChannels?.length) {
       throw new TypeError('[VIP][PlaybackMixer] loadStems requires non-empty channel arrays.');
     }
+    this._stemLoadGen = (this._stemLoadGen || 0) + 1;
+    this._installStems(
+      this._toAudioBuffer(cleanChannels, sampleRate),
+      this._toAudioBuffer(noiseChannels, sampleRate),
+    );
+  }
+
+  /**
+   * {@link loadStems} without a blocking copy: the stems are copied into new
+   * AudioBuffers in budgeted slices, then swapped in at once. Playback state is
+   * untouched until the swap. A newer loadStems/loadStemsAsync supersedes this
+   * one, which then resolves false and installs nothing.
+   * @param {Float32Array[]} cleanChannels
+   * @param {Float32Array[]} noiseChannels
+   * @param {number} [sampleRate]
+   * @param {{ signal?: AbortSignal }} [opts]
+   * @returns {Promise<boolean>} true when these stems were installed
+   */
+  async loadStemsAsync(cleanChannels, noiseChannels, sampleRate = SAMPLE_RATE, opts = {}) {
+    if (!cleanChannels?.length || !noiseChannels?.length) {
+      throw new TypeError('[VIP][PlaybackMixer] loadStems requires non-empty channel arrays.');
+    }
+    const gen = this._stemLoadGen = (this._stemLoadGen || 0) + 1;
+    const len = cleanChannels[0].length;
+    const clean = this.ctx.createBuffer(cleanChannels.length, len, sampleRate);
+    await copyChannelsToAudioBuffer(clean, cleanChannels, opts);
+    if (gen !== this._stemLoadGen) return false;
+    const noise = this.ctx.createBuffer(noiseChannels.length, noiseChannels[0].length, sampleRate);
+    await copyChannelsToAudioBuffer(noise, noiseChannels, opts);
+    if (gen !== this._stemLoadGen) return false;
+    this._installStems(clean, noise);
+    return true;
+  }
+
+  _installStems(cleanBuffer, noiseBuffer) {
     this.stop();
     this._resetGateWorklet();
-    this.cleanBuffer = this._toAudioBuffer(cleanChannels, sampleRate);
-    this.noiseBuffer = this._toAudioBuffer(noiseChannels, sampleRate);
+    this.cleanBuffer = cleanBuffer;
+    this.noiseBuffer = noiseBuffer;
     this._offset = 0;
     this.clearCrop();
     // New stems invalidate any previous diarization.

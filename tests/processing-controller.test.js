@@ -126,3 +126,48 @@ describe('store integration', () => {
     expect(toFixed(controller.getRemoved()[0])).toEqual([0.25, 0.25]);
   });
 });
+
+describe('setProcessedAsync (cooperative, long stems)', () => {
+  const rand = (n, seed) => Float32Array.from({ length: n }, (_, i) => Math.sin(i * 0.37 + seed) * 0.5);
+
+  test('matches setProcessed sample for sample, including a shorter processed stem', async () => {
+    const raw = [rand(3_000_001, 1), rand(3_000_001, 2)];
+    const processed = [rand(2_999_000, 3), rand(2_999_000, 4)];
+    const syncStore = makeStoreStub();
+    const asyncStore = makeStoreStub();
+    const a = new ProcessingController(syncStore);
+    const b = new ProcessingController(asyncStore);
+    a.setRaw(raw, 48000);
+    b.setRaw(raw, 48000);
+    a.setProcessed(processed, 48000);
+    let yields = 0;
+    const result = await b.setProcessedAsync(processed, 48000, async () => { yields += 1; });
+    expect(result).not.toBeNull();
+    expect(yields).toBeGreaterThan(4);
+    for (let c = 0; c < 2; c++) {
+      expect(b.getRemoved()[c]).toEqual(a.getRemoved()[c]);
+      expect(b.getProcessed()[c]).toEqual(a.getProcessed()[c]);
+      expect(asyncStore.calls.applyProcessing[0].removedBuffer[c]).toEqual(syncStore.calls.applyProcessing[0].removedBuffer[c]);
+    }
+    expect(asyncStore.calls.applyProcessing[0]).toMatchObject({ sampleRate: 48000, channels: 2 });
+    // Store receives clones, not the controller's arrays.
+    asyncStore.calls.applyProcessing[0].removedBuffer[0][0] = 999;
+    expect(b.getRemoved()[0][0]).not.toBe(999);
+  });
+
+  test('a newer setRaw/setProcessed supersedes an in-flight async call', async () => {
+    const store = makeStoreStub();
+    const controller = new ProcessingController(store);
+    controller.setRaw([rand(2_100_000, 1)], 48000);
+    let once = false;
+    const pending = controller.setProcessedAsync([rand(2_100_000, 2)], 48000, async () => {
+      if (once) return;
+      once = true;
+      controller.setRaw([Float32Array.from([1, 1])], 48000);
+    });
+    await expect(pending).resolves.toBeNull();
+    expect(store.calls.applyProcessing).toHaveLength(0);
+    expect(toFixed(controller.getRaw()[0])).toEqual([1, 1]);
+    expect(controller.getProcessed()).toBeNull();
+  });
+});

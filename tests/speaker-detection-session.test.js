@@ -39,7 +39,7 @@ describe('SpeakerDetectionSession', () => {
     const s = new SpeakerDetectionSession({ detect, onChange: (x) => states.push(x.state) });
     const ch = new Float32Array(48000);
     await expect(s.run(ch, 48000)).resolves.toBe(true);
-    expect(detect).toHaveBeenCalledWith([ch], 48000);
+    expect(detect).toHaveBeenCalledWith([ch], 48000, expect.objectContaining({ signal: expect.anything() }));
     expect(states).toEqual(['running', 'done']);
     expect(s.speakers.map((sp) => sp.label)).toEqual(['Speaker 1', 'Speaker 2']);
     expect(s.segments).toHaveLength(2);
@@ -55,6 +55,29 @@ describe('SpeakerDetectionSession', () => {
     await expect(pending).resolves.toBe(false);
     expect(s.state).toBeNull();
     expect(s.speakers).toEqual([]);
+  });
+
+  test('reset and a newer run abort the in-flight detector', async () => {
+    const signals = [];
+    const pending = [];
+    const s = new SpeakerDetectionSession({
+      detect: (_c, _sr, { signal }) => {
+        signals.push(signal);
+        const d = deferred();
+        pending.push(d);
+        return d.promise;
+      },
+    });
+    const first = s.run(new Float32Array(10), 48000);
+    const second = s.run(new Float32Array(10), 48000);
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+    s.reset();
+    expect(signals[1].aborted).toBe(true);
+    pending.forEach((d) => d.reject(new Error('aborted')));
+    await expect(first).resolves.toBe(false);
+    await expect(second).resolves.toBe(false);
+    expect(s.state).toBeNull();
   });
 
   test('a newer run wins over an older one that resolves later', async () => {

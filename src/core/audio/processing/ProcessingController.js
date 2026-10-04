@@ -15,6 +15,7 @@ export class ProcessingController {
   }
 
   setRaw(channelData, _sampleRate) {
+    this._asyncGen = (this._asyncGen || 0) + 1;
     // Deep clone to preserve immutable raw
     this._raw = channelData.map((ch) => ch.slice());
     this.store?.setProcessingState('idle', 0, 'raw_set');
@@ -31,6 +32,7 @@ export class ProcessingController {
    * @param {number} sampleRate
    */
   setProcessed(processed, sampleRate) {
+    this._asyncGen = (this._asyncGen || 0) + 1;
     if (!this._raw) {
       // If no raw yet, raw = processed for first import
       this._raw = processed.map((ch) => ch.slice());
@@ -60,10 +62,75 @@ export class ProcessingController {
       channels: processed.length,
     });
 
+    // Copies are made only if a caller reads them: no caller does, and three
+    // eager full-length clones per Process were pure allocation.
+    const self = this;
     return {
-      raw: this.getRaw(),
-      processed: this.getProcessed(),
-      removed: this.getRemoved(),
+      get raw() { return self.getRaw(); },
+      get processed() { return self.getProcessed(); },
+      get removed() { return self.getRemoved(); },
+    };
+  }
+
+  /**
+   * {@link setProcessed} for long stems on the main thread: identical results,
+   * but every full-length copy and the delta pass run in slices with
+   * `maybeYield()` between them. On a 15-minute stereo file the synchronous
+   * version was ~10 s of one task. A newer call supersedes an in-flight one,
+   * which then commits nothing and resolves null.
+   * @param {Float32Array[]} processed
+   * @param {number} sampleRate
+   * @param {() => Promise<void>} [maybeYield] e.g. ui-yield createYieldBudget()
+   * @returns {Promise<object|null>}
+   */
+  async setProcessedAsync(processed, sampleRate, maybeYield = async () => {}) {
+    const gen = this._asyncGen = (this._asyncGen || 0) + 1;
+    const SLICE = 1 << 20;
+    const clone = async (channels) => {
+      const out = [];
+      for (const ch of channels) {
+        const copy = new Float32Array(ch.length);
+        for (let i = 0; i < ch.length; i += SLICE) {
+          copy.set(ch.subarray(i, Math.min(ch.length, i + SLICE)), i);
+          await maybeYield();
+        }
+        out.push(copy);
+      }
+      return out;
+    };
+    const raw = this._raw || await clone(processed);
+    const processedCopy = await clone(processed);
+    const removed = [];
+    for (let idx = 0; idx < raw.length; idx++) {
+      const rawCh = raw[idx];
+      const procCh = processedCopy[idx] || processedCopy[0] || new Float32Array(rawCh.length);
+      const out = new Float32Array(rawCh.length);
+      const len = Math.min(rawCh.length, procCh.length);
+      for (let start = 0; start < rawCh.length; start += SLICE) {
+        const end = Math.min(rawCh.length, start + SLICE);
+        for (let i = start; i < end; i++) out[i] = i < len ? rawCh[i] - procCh[i] : rawCh[i];
+        await maybeYield();
+      }
+      removed.push(out);
+    }
+    if (gen !== this._asyncGen) return null;
+    const update = {
+      rawBuffer: await clone(raw),
+      processedBuffer: await clone(processedCopy),
+      removedBuffer: await clone(removed),
+      sampleRate,
+      channels: processed.length,
+    };
+    if (gen !== this._asyncGen) return null;
+    this._raw = raw;
+    this._processed = processedCopy;
+    this._removed = removed;
+    this.store?.applyProcessing(update);
+    const self = this;
+    return {
+      get raw() { return self.getRaw(); },
+      get processed() { return self.getProcessed(); },
+      get removed() { return self.getRemoved(); },
     };
   }
 
@@ -185,6 +252,7 @@ export class ProcessingController {
   }
 
   clear() {
+    this._asyncGen = (this._asyncGen || 0) + 1;
     this._raw = null;
     this._processed = null;
     this._removed = null;

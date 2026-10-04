@@ -99,11 +99,32 @@ export function setCachedStems(key, result) {
   // Always store independent copies so callers can mutate/transfer sources safely.
   const clean = result.clean.map((c) => new Float32Array(c));
   const noise = (result.noise || []).map((c) => new Float32Array(c));
+  storeEntry(key, clean, noise, result.sampleRate);
+}
+
+/**
+ * {@link setCachedStems} with a caller-supplied (cooperative) channel copy,
+ * e.g. ui-yield's copyFloat32Channel. The stored arrays are still independent
+ * copies; only the copy is spread across tasks instead of blocking one.
+ * @param {string} key
+ * @param {{ clean: Float32Array[], noise?: Float32Array[], sampleRate: number, passthrough?: boolean }} result
+ * @param {(src: Float32Array) => Promise<Float32Array>} copyChannel
+ */
+export async function setCachedStemsAsync(key, result, copyChannel) {
+  if (!key || !result || result.passthrough) return;
+  const clean = [];
+  for (const c of result.clean) clean.push(await copyChannel(c));
+  const noise = [];
+  for (const c of result.noise || []) noise.push(await copyChannel(c));
+  storeEntry(key, clean, noise, result.sampleRate);
+}
+
+function storeEntry(key, clean, noise, sampleRate) {
   if (_cache.has(key)) _cache.delete(key);
   _cache.set(key, {
     clean,
     noise,
-    sampleRate: result.sampleRate,
+    sampleRate,
     passthrough: false,
   });
   while (_cache.size > MAX_ENTRIES) {

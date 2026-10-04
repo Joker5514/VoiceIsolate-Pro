@@ -8,9 +8,9 @@
  */
 'use strict';
 
-const defaultDetect = async (clean, sampleRate) => {
+const defaultDetect = async (clean, sampleRate, opts) => {
   const { detectSpeakers } = await import('./SpeakerDetection.js');
-  return detectSpeakers(clean, sampleRate);
+  return detectSpeakers(clean, sampleRate, opts);
 };
 
 export class SpeakerDetectionSession {
@@ -39,9 +39,16 @@ export class SpeakerDetectionSession {
     }
   }
 
+  /** Abort the in-flight detector so a superseded run stops burning CPU. */
+  _abortInFlight() {
+    try { this._abort?.abort(); } catch { /* already aborted */ }
+    this._abort = null;
+  }
+
   /** Drop results and invalidate any in-flight run (file changed or cleared). */
   reset() {
     this._seq++;
+    this._abortInFlight();
     this._clear(null);
     this._emit();
   }
@@ -54,11 +61,14 @@ export class SpeakerDetectionSession {
    */
   async run(channel, sampleRate) {
     const seq = ++this._seq;
+    this._abortInFlight();
+    const abort = typeof AbortController === 'function' ? new AbortController() : null;
+    this._abort = abort;
     this._clear('running');
     this._emit();
     try {
       if (!channel?.length) throw new Error('no clean stem');
-      const { segments, speakers, method } = await this._detect([channel], sampleRate);
+      const { segments, speakers, method } = await this._detect([channel], sampleRate, { signal: abort?.signal });
       if (seq !== this._seq) return false;
       this.segments = segments || [];
       this.speakers = speakers || [];
@@ -70,6 +80,7 @@ export class SpeakerDetectionSession {
       this.error = err;
       console.warn('[VIP][SpeakerDetectionSession] speaker detection failed:', err?.message || err);
     }
+    if (this._abort === abort) this._abort = null;
     this._emit();
     return this.state === 'done';
   }

@@ -163,6 +163,27 @@ export function calcRms(audio) {
   return Math.sqrt(sum / count);
 }
 
+/**
+ * calcRms(downmixToMono(channels)) without building the mono track: calcRms
+ * reads ~48 000 points, so only those are downmixed (with the same float32
+ * rounding). The full downmix was 0.3 s per 5 minutes of stereo after Process.
+ */
+export function calcDownmixRms(channels) {
+  const len = channels?.[0]?.length || 0;
+  if (!len) return 0;
+  const inv = 1 / channels.length;
+  const step = Math.max(1, Math.floor(len / 48000));
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < len; i += step) {
+    let m = 0;
+    for (let ch = 0; ch < channels.length; ch++) m = Math.fround(m + channels[ch][i] * inv);
+    sum += m * m;
+    count++;
+  }
+  return Math.sqrt(sum / count);
+}
+
 /** Downmix channel arrays to mono for analysis. */
 export function downmixToMono(channels) {
   if (!channels?.length) return new Float32Array(0);
@@ -276,11 +297,11 @@ export function engineerLevelOverrides(level, rmsDb) {
  * @param {Float32Array[]} channels
  */
 export function recommendEngineerPreset(channels) {
-  const mono = downmixToMono(channels);
-  if (mono.length === 0) {
+  const len = channels?.length ? channels[0].length : 0;
+  if (len === 0) {
     return { preset: 'Voice Clarity', level: 'normal', rmsDb: -60, overrides: {} };
   }
-  const rms = calcRms(mono);
+  const rms = calcDownmixRms(channels);
   const rmsDb = 20 * Math.log10(rms + 1e-10);
   const level = classifyLevel(rms);
   const preset = SCENE_TO_ENGINEER_PRESET[level] || 'Voice Clarity';
@@ -294,6 +315,7 @@ export default {
   LANDING_PRESET_NAMES,
   buildPreset,
   calcRms,
+  calcDownmixRms,
   downmixToMono,
   classifyLevel,
   levelOverrides,

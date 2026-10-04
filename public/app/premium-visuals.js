@@ -332,42 +332,34 @@
   // implementation. No audio-processing output is changed.
   let staticSpectrogramGeneration = 0;
 
+  // Budgeted yield: a macrotask is enough for the browser to paint, so no rAF
+  // await (that cost a whole frame per yield).
   function yieldVisualWork() {
     if (global.scheduler && typeof global.scheduler.yield === 'function') {
       return global.scheduler.yield();
     }
-    return new Promise((resolve) => {
-      const finish = () => global.setTimeout(resolve, 0);
-      if (typeof global.requestAnimationFrame === 'function') global.requestAnimationFrame(finish);
-      else finish();
-    });
+    return new Promise((resolve) => global.setTimeout(resolve, 0));
   }
 
+  const VISUAL_SLICE_MS = 12;
+  const nowMs = () => (global.performance && global.performance.now ? global.performance.now() : Date.now());
+
+  // Only one STFT frame per canvas column is ever painted, so transform just
+  // those frames: work scales with canvas width, not audio duration. The old
+  // path transformed every hop of the file (11k FFTs for 60 s) and, because
+  // dsp-bootstrap's sync DSP shim shadows DSPCore, did it in one blocking task.
   async function drawStaticSpectrogramCooperative(canvas, audioBuf) {
     if (!canvas || !audioBuf || typeof audioBuf.getChannelData !== 'function') return false;
-    const dsp = global.DSP || global.DSPCore;
-    if (!dsp || (typeof dsp.forwardSTFTAsync !== 'function' && typeof dsp.forwardSTFT !== 'function')) {
-      return false;
-    }
+    const dsp = global.DSPCore || global.DSP;
+    if (!dsp || typeof dsp.forwardSTFT !== 'function') return false;
 
     const generation = ++staticSpectrogramGeneration;
     const isCurrent = () => generation === staticSpectrogramGeneration;
     const data = audioBuf.getChannelData(0);
     const fftSize = 1024;
     const hopSize = 256;
-    let spec;
-
-    try {
-      spec = typeof dsp.forwardSTFTAsync === 'function'
-        ? await dsp.forwardSTFTAsync(data, fftSize, hopSize, {
-            yieldEvery: 8,
-            shouldAbort: () => !isCurrent(),
-          })
-        : dsp.forwardSTFT(data, fftSize, hopSize);
-    } catch (_) {
-      return false;
-    }
-    if (!isCurrent() || !spec?.mag?.length) return false;
+    const frames = data.length >= fftSize ? Math.floor((data.length - fftSize) / hopSize) + 1 : 0;
+    if (!frames) return false;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return false;
@@ -376,30 +368,50 @@
     const w = Math.floor(rect.width > 0 ? rect.width : (canvas.offsetWidth || 800));
     const h = Math.floor(rect.height > 0 ? rect.height : (cssH || canvas.offsetHeight || 240));
     if (w < 2 || h < 2) return false;
-    canvas.width = w;
-    canvas.height = h;
-
-    const frames = spec.mag.length;
-    const bins = spec.mag[0].length;
-    const img = ctx.createImageData(w, h);
     const lut = global.VIP_INFERNO_LUT;
     if (!lut) return false;
 
-    let maxMag = 1e-9;
-    for (let f = 0; f < frames; f++) {
-      const frame = spec.mag[f];
-      for (let b = 0; b < bins; b++) {
-        if (frame[b] > maxMag) maxMag = frame[b];
-      }
-      if ((f & 15) === 15) {
-        if (!isCurrent()) return false;
-        await yieldVisualWork();
-      }
-    }
+    let sliceStart = nowMs();
+    const maybeYield = async () => {
+      if (nowMs() - sliceStart < VISUAL_SLICE_MS) return true;
+      if (!isCurrent()) return false;
+      await yieldVisualWork();
+      sliceStart = nowMs();
+      return isCurrent();
+    };
 
+    const cols = new Array(w);
+    let maxMag = 1e-9;
+    let bins = 0;
+    let lastFrame = -1;
     for (let x = 0; x < w; x++) {
       const frameIndex = Math.min(frames - 1, Math.floor((x / w) * frames));
-      const frame = spec.mag[frameIndex];
+      if (frameIndex !== lastFrame) {
+        const off = frameIndex * hopSize;
+        let spec;
+        try {
+          spec = dsp.forwardSTFT(data.subarray(off, off + fftSize), fftSize, fftSize);
+        } catch (_) {
+          return false;
+        }
+        const frame = spec && spec.mag && spec.mag[0];
+        if (!frame) return false;
+        bins = frame.length;
+        for (let b = 0; b < bins; b++) if (frame[b] > maxMag) maxMag = frame[b];
+        cols[x] = frame;
+        lastFrame = frameIndex;
+      } else {
+        cols[x] = cols[x - 1];
+      }
+      if (!(await maybeYield())) return false;
+    }
+    if (!isCurrent()) return false;
+
+    canvas.width = w;
+    canvas.height = h;
+    const img = ctx.createImageData(w, h);
+    for (let x = 0; x < w; x++) {
+      const frame = cols[x];
       for (let y = 0; y < h; y++) {
         const t = 1 - (y / h);
         const bin = Math.min(bins - 1, Math.floor(Math.pow(t, 2.0) * (bins - 1)));
@@ -411,10 +423,7 @@
         img.data[px + 2] = lut[li + 2];
         img.data[px + 3] = 255;
       }
-      if ((x & 15) === 15) {
-        if (!isCurrent()) return false;
-        await yieldVisualWork();
-      }
+      if (!(await maybeYield())) return false;
     }
 
     if (!isCurrent()) return false;

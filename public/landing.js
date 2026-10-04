@@ -32,7 +32,8 @@ import {
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
-import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from '/src/pipeline/MLStemCache.js';
+import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKey } from '/src/pipeline/MLStemCache.js';
+import { copyFloat32Channel, createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
@@ -1311,15 +1312,25 @@ async function onProcess() {
     setProcStage('separate', 0, currentJobLabel);
     const id = ++requestSeq;
     ingested._stemCacheKey = cacheKey;
+    // Full-length copies run in budgeted slices (0.3 s per copy at 15 min).
+    const yieldBudget = createYieldBudget();
+    const copyAll = async (channels) => {
+      const out = [];
+      for (const c of channels) out.push(await copyFloat32Channel(c, { yieldBudget }));
+      return out;
+    };
     const cached = getCachedStems(cacheKey);
     if (cached) {
-      onStems({ requestId: id, clean: cached.clean.map((c) => c.slice()),
-        noise: cached.noise.map((c) => c.slice()), sampleRate: cached.sampleRate,
+      const clean = await copyAll(cached.clean);
+      const noise = await copyAll(cached.noise);
+      onStems({ requestId: id, clean, noise, sampleRate: cached.sampleRate,
         passthrough: false, _cacheKey: cacheKey });
       return;
     }
     stageStart('model_load');
-    const channelData = ingested.channelData.map((channel) => channel.slice());
+    const source = ingested;
+    const channelData = await copyAll(source.channelData);
+    if (id !== requestSeq || !processingInFlight) return;
     const startedAt = Date.now();
     lastProcessProgress = startedAt;
     clearProcessWatch();
@@ -1337,7 +1348,20 @@ async function onProcess() {
   } catch (err) { failProcessing(err); }
 }
 
-function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
+function onStems(msg) {
+  void applyStems(msg).catch((err) => {
+    if (msg.requestId === requestSeq) failProcessing(err);
+  });
+}
+
+/**
+ * Install a stems result. Everything that touches the full-length stems
+ * (cache copy, mixer AudioBuffers, Raw/Processed/Removed bookkeeping) is
+ * copied in time-budgeted slices: done in one task it froze the tab for 5.6 s
+ * on a 5-minute file and 20 s on a 15-minute one. A newer request or file
+ * (requestSeq bump) stops a stale install between slices.
+ */
+async function applyStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
   if (!processingInFlight || requestId !== requestSeq) return; // stale response
   clearProcessWatch();
   processingInFlight = false;
@@ -1350,9 +1374,9 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   window.__vipLandingJobId = null;
 
   const cacheKey = _cacheKey || ingested?._stemCacheKey;
-  if (!passthrough && cacheKey) {
-    setCachedStems(cacheKey, { clean, noise, sampleRate, passthrough: false });
-  }
+  const yieldBudget = createYieldBudget();
+  const copyChannel = (channel) => copyFloat32Channel(channel, { yieldBudget });
+  const current = () => requestId === requestSeq;
   ui.processBtn.disabled = false;
   ui.fileInput.disabled = false;
   ui.modelSelect.disabled = false;
@@ -1364,6 +1388,10 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     return;
   }
 
+  if (cacheKey) {
+    await setCachedStemsAsync(cacheKey, { clean, noise, sampleRate, passthrough: false }, copyChannel);
+    if (!current()) return;
+  }
   if (!mixer) {
     try {
       mixer = new PlaybackMixer();
@@ -1388,16 +1416,27 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     // Read-only diagnostics handle for smoke tests and the debug console.
     globalThis.__vipDiagnostics = { mixer, sliderUI, speakerControls, visualizer };
   }
-  mixer.loadStems(clean, noise, sampleRate);
+  if (!(await mixer.loadStemsAsync(clean, noise, sampleRate)) || !current()) return;
   hasProcessed = true;
   invalidateComparison();
   // Unified: set processed and compute Removed delta
   try {
-    processingController.setProcessed(clean, sampleRate);
+    await processingController.setProcessedAsync(clean, sampleRate, yieldBudget);
+    if (!current()) return;
     // Also store noise as part of removed if available
+    const processedBuffer = [];
+    for (const c of clean) processedBuffer.push(await copyChannel(c));
+    let removedBuffer = null;
+    if (noise) {
+      removedBuffer = [];
+      for (const c of noise) removedBuffer.push(await copyChannel(c));
+    } else {
+      removedBuffer = processingController.getRemoved();
+    }
+    if (!current()) return;
     sessionStore.applyProcessing({
-      processedBuffer: clean.map((c) => c.slice()),
-      removedBuffer: noise ? noise.map((c) => c.slice()) : processingController.getRemoved(),
+      processedBuffer,
+      removedBuffer,
       sampleRate,
       channels: clean.length,
     });
