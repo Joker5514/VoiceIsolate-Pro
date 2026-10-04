@@ -397,14 +397,57 @@ const AIIntelligence = {
 
   _calcDynamicRange(audio) {
     // Compute dynamic range in dB using percentile method
-    const sorted = new Float32Array(audio.length);
-    for (let i = 0; i < audio.length; i++) sorted[i] = Math.abs(audio[i]);
-    sorted.sort();
-
-    const p95 = sorted[Math.floor(0.95 * sorted.length)];
-    const p05 = sorted[Math.floor(0.05 * sorted.length)] + 1e-10;
+    let p95;
+    let p05;
+    if (audio instanceof Float32Array && audio.length > 0) {
+      [p05, p95] = this._absOrderStats(audio, [Math.floor(0.05 * audio.length), Math.floor(0.95 * audio.length)]);
+    } else {
+      const sorted = new Float32Array(audio.length);
+      for (let i = 0; i < audio.length; i++) sorted[i] = Math.abs(audio[i]);
+      sorted.sort();
+      p95 = sorted[Math.floor(0.95 * sorted.length)];
+      p05 = sorted[Math.floor(0.05 * sorted.length)];
+    }
+    p05 += 1e-10;
 
     return 20 * Math.log10(p95 / p05);
+  },
+
+  /**
+   * k-th smallest |x| for each k — the same values as sorting a full |x| copy,
+   * in two linear passes. The bit pattern of a non-negative float orders like
+   * the float, so a 16-bit histogram of |x|'s bits finds each k's bucket and a
+   * second pass resolves the low 15 bits. Sorting the track (the previous
+   * method) ran in the post-Process idle callback: 2.2 s for 5 minutes.
+   * @param {Float32Array} audio
+   * @param {number[]} ks 0-based ranks, each < audio.length
+   * @returns {number[]}
+   */
+  _absOrderStats(audio, ks) {
+    const n = audio.length;
+    const bits = new Uint32Array(audio.buffer, audio.byteOffset, n);
+    const hi = new Uint32Array(65536);
+    for (let i = 0; i < n; i++) hi[(bits[i] & 0x7fffffff) >>> 15]++;
+    const targets = ks.map((k) => {
+      let acc = 0;
+      let bucket = 0;
+      while (acc + hi[bucket] <= k) acc += hi[bucket++];
+      return { bucket, rank: k - acc, lo: new Uint32Array(32768) };
+    });
+    for (let i = 0; i < n; i++) {
+      const b = bits[i] & 0x7fffffff;
+      const bucket = b >>> 15;
+      for (const t of targets) if (t.bucket === bucket) t.lo[b & 0x7fff]++;
+    }
+    const word = new Uint32Array(1);
+    const asFloat = new Float32Array(word.buffer);
+    return targets.map((t) => {
+      let acc = 0;
+      let low = 0;
+      while (acc + t.lo[low] <= t.rank) acc += t.lo[low++];
+      word[0] = (t.bucket << 15) | low;
+      return asFloat[0];
+    });
   },
 
   _calcNoiseRMS(audio) {

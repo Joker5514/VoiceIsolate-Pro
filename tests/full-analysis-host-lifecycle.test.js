@@ -239,6 +239,54 @@ describe('FullAnalysisHost worker lifecycle', () => {
     await expect(pending).resolves.toEqual({ ok: true });
   });
 
+  test('long clips extract VAD features in the worker, not on the main thread', async () => {
+    const buildVadHints = jest.fn(async () => ({ vadScores: new Float32Array(1), vadActive: [true] }));
+    const host = makeHost({ enableMlVad: true, buildVadHints });
+    const sampleRate = 8000;
+    const channel = new Float32Array(sampleRate * 12).fill(0.25);
+    const pending = host.analyze([channel], sampleRate, {});
+    let call;
+    for (let attempt = 0; attempt < 200 && !call; attempt++) {
+      call = workers[0]?.postMessage.mock.calls.find(([m]) => m.type === 'features');
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(call).toBeDefined();
+    const [message, transfer] = call;
+    expect(message.channels[0]).not.toBe(channel);
+    expect(message.channels[0]).toEqual(channel);
+    expect(transfer).toEqual([message.channels[0].buffer]);
+    const extraction = { frames: [{ t: 0 }], hopSec: 0.01 };
+    const mono = new Float32Array(4);
+    workers[0].dispatch('message', { data: { type: 'features', requestId: message.requestId, mono, extraction } });
+    const { call: analyzeCall } = await waitForAnalyzePost();
+    expect(buildVadHints).toHaveBeenCalledWith(mono, sampleRate, extraction, expect.any(Object));
+    workers[0].dispatch('message', { data: { type: 'result', requestId: analyzeCall[0].requestId, analysis: { ok: 1 } } });
+    await expect(pending).resolves.toEqual({ ok: 1 });
+  });
+
+  test('aborting during worker feature extraction recycles the worker', async () => {
+    const controller = new AbortController();
+    const host = makeHost({ enableMlVad: true, buildVadHints: jest.fn() });
+    const pending = host.analyze([new Float32Array(8000 * 12)], 8000, { signal: controller.signal });
+    for (let attempt = 0; attempt < 200 && !workers[0]?.postMessage.mock.calls.length; attempt++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    controller.abort('user');
+    await expect(pending).rejects.toMatchObject({ name: expect.stringMatching(/Cancel|Abort/) });
+    expect(workers[0].terminate).toHaveBeenCalled();
+  });
+
+  test('cancelActive() during worker feature extraction settles analyze promptly', async () => {
+    const host = makeHost({ enableMlVad: true, buildVadHints: jest.fn() });
+    const pending = host.analyze([new Float32Array(8000 * 12)], 8000, {});
+    for (let attempt = 0; attempt < 200 && !workers[0]?.postMessage.mock.calls.length; attempt++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    host.cancelActive('user');
+    await expect(pending).rejects.toMatchObject({ name: expect.stringMatching(/Cancel|Abort/) });
+    expect(workers[0].terminate).toHaveBeenCalled();
+  });
+
   test('passes cancellation into VAD preparation', async () => {
     const controller = new AbortController();
     const buildVadHints = jest.fn((mono, sampleRate, extraction, options) => new Promise((resolve, reject) => {

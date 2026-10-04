@@ -69,6 +69,8 @@
     "test:tier-picker": "node scripts/tier-picker-smoke.cjs",
     "pretest:tier-picker": "playwright install chromium",
     "test:electron-security": "node scripts/electron-security-smoke.cjs",
+    "perf:browser": "node scripts/perf/perf-harness.cjs",
+    "preperf:browser": "playwright install chromium",
     "pretest:shell-qa": "playwright install chromium",
     "pretest:engineer": "playwright install chromium",
     "pretest:live": "playwright install chromium",

@@ -312,9 +312,16 @@ async function main() {
     ];
     for (const [id, v, key, expected] of sweep) {
       await drive(id, v);
-      await page.waitForTimeout(350); // > 5× the 30 ms smoothing constant
-      const p = await params();
       const tol = Math.abs(expected) > 2 ? 1.5 : 0.06; // dB params get dB tolerance
+      // Settle on the value, not a fixed sleep: the update is rAF-coalesced and
+      // the 30 ms ramp runs on the audio clock, which lags wall time when
+      // post-Process idle work shares the CPU (flaked ~1 in 5 at 350 ms).
+      await page.waitForTimeout(350); // > 5× the 30 ms smoothing constant
+      let p = await params();
+      for (let waited = 350; !near(p[key], expected, tol) && waited < 3000; waited += 100) {
+        await page.waitForTimeout(100);
+        p = await params();
+      }
       check(near(p[key], expected, tol), `${id}=${v} → ${key} gain ${p[key].toFixed(3)} (expect ${expected})`);
     }
 

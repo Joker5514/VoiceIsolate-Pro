@@ -57,11 +57,42 @@ export class SourceAuditionEngine {
       buffer: null,
       label: layer.id,
       ...prev,
+      // A replaced layer drops any pending lazy build of the previous buffer.
+      _build: null,
       ...layer,
     });
     if (layer.buffer) {
       this._duration = Math.max(this._duration, layer.buffer.duration);
     }
+  }
+
+  /**
+   * Register a derived layer whose buffer is built on first audition.
+   * buildFromAnalysis used to run every reconstruction (hum resonator bank,
+   * residual, transients, ambience — each a full-length pass) synchronously
+   * right after auto-analysis: 1.7 s of main thread for a 2-minute file, for
+   * layers most sessions never play.
+   * @param {AuditionLayer} layer metadata (buffer omitted)
+   * @param {() => AudioBuffer} build
+   * @param {number} durationSec length of the buffer build() will return
+   */
+  setLazyLayer(layer, build, durationSec) {
+    this.setLayer({ ...layer, buffer: null });
+    this.layers.get(layer.id)._build = build;
+    this._duration = Math.max(this._duration, durationSec || 0);
+  }
+
+  /** Materialise a lazy layer's buffer (no-op for built layers). */
+  _ensureBuffer(L) {
+    if (!L.buffer && typeof L._build === 'function') {
+      L.buffer = L._build();
+      L._build = null;
+    }
+    return L.buffer;
+  }
+
+  _hasBuffer(L) {
+    return !!L && (!!L.buffer || typeof L._build === 'function');
   }
 
   /**
@@ -147,14 +178,12 @@ export class SourceAuditionEngine {
 
     if (clean && original) {
       // Music-ish residual approximation: original − clean (clipped)
-      const musicBuf = this._residualBuffer(original, clean, ctx);
-      this.setLayer({
+      this.setLazyLayer({
         id: 'music',
         label: 'Music / other residual',
-        buffer: musicBuf,
         confidence: analysis?.confidenceScores?.musicRatio ?? 0.4,
         quality: 'low',
-      });
+      }, () => this._residualBuffer(original, clean, ctx), Math.min(original.duration, clean.duration));
     }
 
     // Whisper-enhanced: clean with region gain (metadata only until play applies)
@@ -187,33 +216,27 @@ export class SourceAuditionEngine {
     if (noise || original) {
       const humSrc = noise || original;
       const humFreq = analysis?.humProfile?.freq || 60;
-      const humBuf = this._extractHumBuffer(humSrc, ctx, humFreq);
-      this.setLayer({
+      this.setLazyLayer({
         id: 'hum',
         label: 'Hum (reconstructed)',
-        buffer: humBuf,
         confidence: analysis?.humProfile?.strength ?? 0.3,
         quality: analysis?.humProfile?.present ? 'medium' : 'low',
-      });
+      }, () => this._extractHumBuffer(humSrc, ctx, humFreq), humSrc.duration);
 
-      const transientBuf = this._extractTransientBuffer(original, ctx);
-      this.setLayer({
+      this.setLazyLayer({
         id: 'transients',
         label: 'Transients (reconstructed)',
-        buffer: transientBuf,
         confidence: 0.45,
         quality: 'medium',
-      });
+      }, () => this._extractTransientBuffer(original, ctx), original.duration);
 
-      const ambSrc = noise || this._residualBuffer(original, clean || original, ctx);
-      const ambBuf = this._extractAmbienceBuffer(ambSrc, ctx);
-      this.setLayer({
+      const ambDuration = noise ? noise.duration : Math.min(original.duration, (clean || original).duration);
+      this.setLazyLayer({
         id: 'ambience',
         label: 'Ambience / room',
-        buffer: ambBuf,
         confidence: analysis?.roomEstimate ?? 0.3,
         quality: (analysis?.roomEstimate || 0) > 0.25 ? 'medium' : 'low',
-      });
+      }, () => this._extractAmbienceBuffer(noise || this._residualBuffer(original, clean || original, ctx), ctx), ambDuration);
     }
 
     if (args.processed) {
@@ -380,21 +403,25 @@ export class SourceAuditionEngine {
   }
 
   _activeLayers() {
-    const all = [...this.layers.values()].filter((L) => L.buffer);
+    const all = [...this.layers.values()].filter((L) => this._hasBuffer(L));
+    let picked;
     if (this._mode === 'original') {
       const o = this.layers.get('original');
-      return o?.buffer ? [o] : all.slice(0, 1);
-    }
-    if (this._mode === 'processed') {
+      picked = this._hasBuffer(o) ? [o] : all.slice(0, 1);
+    } else if (this._mode === 'processed') {
       const p = this.layers.get('processed') || this.layers.get('lead_speech');
-      return p?.buffer ? [p] : all.slice(0, 1);
+      picked = this._hasBuffer(p) ? [p] : all.slice(0, 1);
+    } else {
+      const anySolo = all.some((L) => L.solo);
+      picked = all.filter((L) => {
+        if (L.id === 'original' && this._mode === 'layer') return false;
+        if (anySolo) return L.solo && !L.muted;
+        return !L.muted;
+      });
     }
-    const anySolo = all.some((L) => L.solo);
-    return all.filter((L) => {
-      if (L.id === 'original' && this._mode === 'layer') return false;
-      if (anySolo) return L.solo && !L.muted;
-      return !L.muted;
-    });
+    // Only layers that will actually sound are built.
+    for (const L of picked) this._ensureBuffer(L);
+    return picked;
   }
 
   /**
@@ -506,7 +533,7 @@ export class SourceAuditionEngine {
       pan: L.pan ?? 0,
       confidence: L.confidence,
       quality: L.quality,
-      hasBuffer: !!L.buffer,
+      hasBuffer: this._hasBuffer(L),
     }));
   }
 

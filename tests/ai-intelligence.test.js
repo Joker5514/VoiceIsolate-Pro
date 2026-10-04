@@ -282,3 +282,30 @@ describe('AIIntelligence — Private Helpers', () => {
     expect(score).toBeLessThan(0.1);
   });
 });
+
+describe('_calcDynamicRange order statistics (no full-track sort)', () => {
+  const AI = require('../public/app/ai-intelligence.js');
+  const sortedAbs = (a) => Float32Array.from(a, Math.abs).sort();
+
+  test('_absOrderStats returns exactly the sorted |x| at each rank', () => {
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const a = new Float32Array(50_000);
+    for (let i = 0; i < a.length; i++) {
+      const r = rnd();
+      a[i] = r < 0.05 ? 0 : r < 0.07 ? -0 : r < 0.1 ? 1e-40 * (rnd() - 0.5) : (rnd() - 0.5) * 2 ** (rnd() * 20 - 18);
+    }
+    const sorted = sortedAbs(a);
+    const ks = [0, 1, 2499, 25_000, 47_500, a.length - 1];
+    const got = AI._absOrderStats(a, ks);
+    ks.forEach((k, i) => expect(Object.is(got[i], sorted[k]) || got[i] === sorted[k]).toBe(true));
+  });
+
+  test('matches the sort-based dynamic range on a subarray view', () => {
+    const base = new Float32Array(9000).map((_, i) => Math.sin(i * 0.013) * (i % 900 < 600 ? 0.5 : 0.01));
+    const view = base.subarray(1000, 8000);
+    const s = sortedAbs(view);
+    const expected = 20 * Math.log10(s[Math.floor(0.95 * s.length)] / (s[Math.floor(0.05 * s.length)] + 1e-10));
+    expect(AI._calcDynamicRange(view)).toBe(expected);
+  });
+});

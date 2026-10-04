@@ -97,6 +97,13 @@ const PARAM_MAP = Object.freeze({
   },
 });
 
+function stemSampleRate(clean, noise, sampleRate) {
+  return sampleRate
+    || (clean && clean.sampleRate)
+    || (noise && noise.sampleRate)
+    || 48000;
+}
+
 export class EngineerModeBridge {
   /**
    * @param {object} [options]
@@ -138,6 +145,8 @@ export class EngineerModeBridge {
     this.mixer.loadStems(clean, silent, audioBuffer.sampleRate);
     this._loaded = true;
     this._hasNoiseStem = false;
+    this._stemSource = null;
+    this._pendingStemSource = null;
   }
 
   /**
@@ -149,6 +158,55 @@ export class EngineerModeBridge {
    * @param {number} [sampleRate]
    */
   loadStemPair(clean, noise = null, sampleRate) {
+    const pair = this._resolveStemPair(clean, noise, sampleRate);
+    this.mixer.loadStems(pair.cleanCh, pair.noiseCh, pair.sr);
+    this._hasNoiseStem = pair.hasNoise;
+    this._loaded = true;
+    this._stemSource = { clean, noise, sr: pair.sr };
+  }
+
+  /**
+   * {@link loadStemPair} with a cooperative copy. Reloading the exact stems
+   * that are already loaded (same channel arrays, same rate) is a no-op: the
+   * mixer holds its own copy, and a second full-length copy per Process was
+   * pure main-thread cost.
+   * @param {Float32Array[]|AudioBuffer} clean
+   * @param {Float32Array[]|AudioBuffer|null} [noise]
+   * @param {number} [sampleRate]
+   * @param {{ signal?: AbortSignal }} [opts]
+   * @returns {Promise<boolean>} true when these stems are loaded
+   */
+  async loadStemPairAsync(clean, noise = null, sampleRate, opts = {}) {
+    const sr = stemSampleRate(clean, noise, sampleRate);
+    const same = (src) => src && src.clean === clean && src.noise === noise && src.sr === sr;
+    if (same(this._pendingStemSource)) return this._pendingStemSource.promise;
+    // A different pending load would install after us; only skip when idle.
+    if (!this._pendingStemSource && this._loaded && same(this._stemSource)) return true;
+    if (typeof this.mixer.loadStemsAsync !== 'function') {
+      this.loadStemPair(clean, noise, sampleRate);
+      return true;
+    }
+    const pair = this._resolveStemPair(clean, noise, sampleRate);
+    const mixer = this.mixer;
+    const pending = { clean, noise, sr: pair.sr };
+    pending.promise = (async () => {
+      try {
+        const ok = await mixer.loadStemsAsync(pair.cleanCh, pair.noiseCh, pair.sr, opts);
+        // dispose() during the copy released this mixer: do not resurrect state.
+        if (!ok || this.mixer !== mixer) return false;
+        this._hasNoiseStem = pair.hasNoise;
+        this._loaded = true;
+        this._stemSource = { clean, noise, sr: pair.sr };
+        return true;
+      } finally {
+        if (this._pendingStemSource === pending) this._pendingStemSource = null;
+      }
+    })();
+    this._pendingStemSource = pending;
+    return pending.promise;
+  }
+
+  _resolveStemPair(clean, noise, sampleRate) {
     const toChannels = (src) => {
       if (!src) return null;
       if (Array.isArray(src) && src[0] instanceof Float32Array) return src;
@@ -165,9 +223,9 @@ export class EngineerModeBridge {
       throw new TypeError('[VIP][EngineerModeBridge] loadStemPair requires clean stem channels.');
     }
     let noiseCh = toChannels(noise);
+    let hasNoise = false;
     if (!noiseCh?.length) {
       noiseCh = cleanCh.map((ch) => new Float32Array(ch.length));
-      this._hasNoiseStem = false;
     } else {
       // Match lengths
       const n = cleanCh[0].length;
@@ -180,14 +238,9 @@ export class EngineerModeBridge {
       while (noiseCh.length < cleanCh.length) {
         noiseCh.push(new Float32Array(n));
       }
-      this._hasNoiseStem = true;
+      hasNoise = true;
     }
-    const sr = sampleRate
-      || (clean && clean.sampleRate)
-      || (noise && noise.sampleRate)
-      || 48000;
-    this.mixer.loadStems(cleanCh, noiseCh, sr);
-    this._loaded = true;
+    return { cleanCh, noiseCh, sr: stemSampleRate(clean, noise, sampleRate), hasNoise };
   }
 
   /** True when a real residual/noise stem was loaded (vs silent placeholder). */
@@ -259,6 +312,8 @@ export class EngineerModeBridge {
   /** Release the underlying mixer and its AudioContext. Idempotent. */
   async dispose() {
     this._loaded = false;
+    this._stemSource = null;
+    this._pendingStemSource = null;
     // Null the reference synchronously before awaiting so a concurrent
     // dispose()/transport call can't touch a mixer mid-teardown.
     const mixer = this.mixer;

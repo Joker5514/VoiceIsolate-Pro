@@ -20,7 +20,6 @@ import { ComparisonToggle } from '/src/ui/components/ComparisonToggle/Comparison
 import { LiveMeters } from '/src/ui/components/LiveMeters/LiveMeters.js';
 import { OnDeviceBadge } from '/src/ui/components/OnDeviceBadge/OnDeviceBadge.js';
 import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
-import { ProcessingController } from '/src/core/audio/processing/ProcessingController.js';
 import { Profiles, ComparisonModes } from '/src/ui/tokens/design-tokens.js';
 
 const $ = (id) => document.getElementById(id);
@@ -433,23 +432,10 @@ function initUnifiedWorkspace() {
     }
   });
 
-  // Raw / Processed / Removed handling
-  const processingController = new ProcessingController(sessionStore);
-  window.__vipProcessingController = processingController;
-
-  // Hook into existing mixer if available
-  const checkMixer = setInterval(() => {
-    const mixer = window.__vipDiagnostics?.mixer || window.mixer;
-    if (mixer?.cleanBuffer) {
-      clearInterval(checkMixer);
-      // When processed ready, set in controller
-      const cleanChannels = [];
-      for (let c = 0; c < mixer.cleanBuffer.numberOfChannels; c++) {
-        cleanChannels.push(mixer.cleanBuffer.getChannelData(c).slice());
-      }
-      processingController.setProcessed(cleanChannels, mixer.cleanBuffer.sampleRate);
-    }
-  }, 1000);
+  // Raw / Processed / Removed is owned by landing.js (setRaw at import,
+  // setProcessed on stems). A second controller here used to poll the mixer
+  // and re-clone every stem ~9x in one task (5.6 s on a 5-minute file), then
+  // overwrote the store's raw buffer with the processed one.
 
   // Keyboard shortcuts via platform adapter
   platform.setupKeyboardShortcuts({

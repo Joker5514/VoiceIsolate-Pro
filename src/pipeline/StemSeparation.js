@@ -9,8 +9,8 @@
 import { DEFAULT_ML_MODEL_IDS } from '../core/ml-defaults.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
-import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from './MLStemCache.js';
-import { copyFloat32Channel, createYieldBudget } from './ui-yield.js';
+import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKey } from './MLStemCache.js';
+import { copyChannelsToAudioBuffer, copyFloat32Channel, createYieldBudget } from './ui-yield.js';
 
 let _worker = null;
 let _ready = null;
@@ -203,6 +203,16 @@ export async function warmupModels(modelIds = DEFAULT_ML_MODEL_IDS) {
   });
 }
 
+/** Channel copier that yields on a time budget for long stems. */
+function budgetedChannelCopy(signal = null) {
+  const budget = createYieldBudget();
+  const yieldBudget = async () => {
+    await budget();
+    if (signal?.aborted) throw createAbortError();
+  };
+  return (src) => copyFloat32Channel(src, { yieldBudget });
+}
+
 export async function separateStems(channelData, sampleRate, options = {}) {
   const modelIds = options.modelIds?.length
     ? options.modelIds
@@ -225,9 +235,14 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const cached = getCachedStems(cacheKey);
   if (cached) {
     options.onProgress?.({ type: 'stage', stage: 'separate', percent: 100, label: 'Using cached stems…' });
+    const copyChannel = budgetedChannelCopy();
+    const clean = [];
+    for (const c of cached.clean) clean.push(await copyChannel(c));
+    const noise = [];
+    for (const c of cached.noise) noise.push(await copyChannel(c));
     return {
-      clean: cached.clean.map((c) => new Float32Array(c)),
-      noise: cached.noise.map((c) => new Float32Array(c)),
+      clean,
+      noise,
       sampleRate: cached.sampleRate,
       passthrough: cached.passthrough,
       fromCache: true,
@@ -340,8 +355,23 @@ export async function separateStems(channelData, sampleRate, options = {}) {
             backend: m.backend || null,
             appliedProcessingConfigRevision: m.appliedProcessingConfigRevision || null,
           };
-          if (!out.passthrough) setCachedStems(cacheKey, out);
-          resolve(out);
+          if (out.passthrough) {
+            resolve(out);
+            return;
+          }
+          // Cache an independent copy before handing the arrays to the caller
+          // (who may mutate or transfer them). Copied cooperatively: a 15-min
+          // stem pair is ~350 MB and one synchronous copy froze the tab.
+          // Cancel during the copy settles at the next slice, as AbortError.
+          setCachedStemsAsync(cacheKey, out, budgetedChannelCopy(signal))
+            .then(() => (signal?.aborted ? reject(abortError()) : resolve(out)), (err) => {
+              if (signal?.aborted || err?.name === 'AbortError') {
+                reject(abortError());
+                return;
+              }
+              console.warn('[VIP][StemSeparation] stem cache store failed:', err?.message || err);
+              resolve(out);
+            });
         });
       } else if (m.type === 'cancelled') {
         finish(() => reject(abortError()));
@@ -433,6 +463,20 @@ export function stemsToAudioBuffer(ctx, clean, sampleRate) {
 }
 
 /**
+ * {@link stemsToAudioBuffer} with budgeted yields, for main-thread callers
+ * holding long stems. Same bytes; the copy never runs as one blocking task.
+ * @param {BaseAudioContext} ctx
+ * @param {Float32Array[]} clean
+ * @param {number} sampleRate
+ * @param {{ signal?: AbortSignal }} [opts]
+ * @returns {Promise<AudioBuffer>}
+ */
+export async function stemsToAudioBufferAsync(ctx, clean, sampleRate, opts = {}) {
+  const buf = ctx.createBuffer(clean.length, clean[0].length, sampleRate);
+  return copyChannelsToAudioBuffer(buf, clean, opts);
+}
+
+/**
  * Recycle the ML worker after stall/timeout.
  * Does NOT clear MLStemCache — successful stem results must survive worker death
  * so reprocess can hit cache instead of re-burning ONNX.
@@ -449,6 +493,7 @@ export default {
   warmupModels,
   separateStems,
   stemsToAudioBuffer,
+  stemsToAudioBufferAsync,
   resetStemSeparation,
   cancelStemSeparation,
   clearStemCache,

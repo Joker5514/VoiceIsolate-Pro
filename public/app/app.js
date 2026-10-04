@@ -72,6 +72,7 @@ import {
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
 import {
   createYieldBudget,
+  copyFloat32Channel,
   yieldToBrowser,
   throwIfAborted,
   processInChunks,
@@ -472,6 +473,7 @@ const HeroExperience = (() => {
         syncStatStrip(app.inputBuffer || app.origBuffer, 'File loaded');
         mirrorWaveCanvases();
       });
+      window.addEventListener('vip:staticVisualsDrawn', mirrorWaveCanvases);
       window.addEventListener('vip:processingDone', () => {
         setUiState('processed');
         setHeroCopy('Processing complete — playback and export ready', true);
@@ -2933,7 +2935,17 @@ class VoiceIsolatePro {
     await this.ensureCtx();
     const bridge = this._bridge || await this._ensureBridge();
     if (!bridge) return null;
-    if (typeof bridge.loadStemPair === 'function') {
+    if (typeof bridge.loadStemPairAsync === 'function') {
+      // Cooperative copy; a repeat load of the same stems is a no-op.
+      const loaded = await bridge.loadStemPairAsync(
+        this._cleanStemChannels,
+        this._noiseStemChannels || null,
+        this._stemSampleRate || this.ctx?.sampleRate || 48000,
+        // Cancel reaches the copy while Process runs; afterwards no job owns it.
+        { signal: this.isProcessing ? this._processAbortSignal() : null },
+      );
+      if (!loaded) return null;
+    } else if (typeof bridge.loadStemPair === 'function') {
       bridge.loadStemPair(
         this._cleanStemChannels,
         this._noiseStemChannels || null,
@@ -5086,6 +5098,16 @@ class VoiceIsolatePro {
     return residual;
   }
 
+  /** Cooperative stem → AudioBuffer builder (sync fallback for older modules/mocks). */
+  _stemsToAudioBufferFn(stemMod) {
+    if (typeof stemMod.stemsToAudioBufferAsync === 'function') {
+      return (ctx, channels, sr) => stemMod.stemsToAudioBufferAsync(ctx, channels, sr, {
+        signal: this._processAbortSignal(),
+      });
+    }
+    return async (ctx, channels, sr) => stemMod.stemsToAudioBuffer(ctx, channels, sr);
+  }
+
   /**
    * Offline ML isolation — BS-RNN vocals (DEFAULT_ML_CHAIN). Stereo files are
    * reduced to mid for a single inference pass (≈2× faster than per-channel).
@@ -5129,7 +5151,8 @@ class VoiceIsolatePro {
         );
         if (durable?.clean?.length) {
           await this.ensureCtx();
-          const { stemsToAudioBuffer } = await this._loadStemSeparationModule();
+          const stemMod = await this._loadStemSeparationModule();
+          const toAudioBuffer = this._stemsToAudioBufferFn(stemMod);
           // Durable cache stores immutable, pre-post-processing worker stems.
           // Clone before post-stem shaping/dewhistling so a cache hit equals a
           // fresh result and never mutates the retained cache backing.
@@ -5156,7 +5179,7 @@ class VoiceIsolatePro {
           noise = await this._reconcileLiveMixNoiseStem(clean, buf);
           this.updatePipelineProgress(19, 'Building output…', 89);
           await yieldToBrowser();
-          this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, durable.sampleRate || buf.sampleRate);
+          this.outputBuffer = await toAudioBuffer(this.ctx, clean, durable.sampleRate || buf.sampleRate);
           this.procBuffer = this.outputBuffer;
           this._stemFileSeq = fileSeq;
           this._stemProcessingRevision = processingRevision;
@@ -5166,7 +5189,7 @@ class VoiceIsolatePro {
           this._stemSampleRate = durable.sampleRate || buf.sampleRate;
           this._durableStemBacking = durable._backing || null;
           if (this._noiseStemChannels) {
-            this.noiseBuffer = stemsToAudioBuffer(this.ctx, this._noiseStemChannels, this._stemSampleRate);
+            this.noiseBuffer = await toAudioBuffer(this.ctx, this._noiseStemChannels, this._stemSampleRate);
           } else {
             this.noiseBuffer = null;
           }
@@ -5187,7 +5210,9 @@ class VoiceIsolatePro {
       // Warmup may already run from handleFile — keep it in flight but never block
       // pipeline start on full ONNX compile (can take 30–120s on first load).
       void this._warmupMLModels().catch(() => {});
-      const { separateStems, stemsToAudioBuffer } = await this._loadStemSeparationModule();
+      const stemMod = await this._loadStemSeparationModule();
+      const { separateStems } = stemMod;
+      const toAudioBuffer = this._stemsToAudioBufferFn(stemMod);
       await yieldToBrowser();
       const plan = await this._mlChannelPlan(buf);
       await yieldToBrowser();
@@ -5260,7 +5285,11 @@ class VoiceIsolatePro {
       await yieldToBrowser();
       // Keep result.clean immutable for durable cache persistence. The output
       // copy receives expansion, post-stem controls, and dewhistling.
-      let clean = result.clean.map((channel) => new Float32Array(channel));
+      const cloneBudget = createYieldBudget();
+      let clean = [];
+      for (const channel of result.clean) {
+        clean.push(await copyFloat32Channel(channel, { yieldBudget: cloneBudget }));
+      }
       if (plan.expandStereo && clean?.[0] && plan.left && plan.right) {
         this.updatePipelineProgress(18, 'Expanding stereo…', 83);
         await yieldToBrowser();
@@ -5286,7 +5315,7 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(19, 'Building output…', 96);
       this._logProgressDiag('build-output');
       await yieldToBrowser();
-      this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
+      this.outputBuffer = await toAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       this._stemFileSeq = fileSeq;
       this._stemProcessingRevision = processingRevision;
@@ -5295,7 +5324,7 @@ class VoiceIsolatePro {
       try {
         const noise = await this._reconcileLiveMixNoiseStem(clean, buf);
         if (noise?.length && noise[0]?.length) {
-          this.noiseBuffer = stemsToAudioBuffer(this.ctx, noise, result.sampleRate || buf.sampleRate);
+          this.noiseBuffer = await toAudioBuffer(this.ctx, noise, result.sampleRate || buf.sampleRate);
           // Keep references without cloning when arrays are already owned.
           this._cleanStemChannels = clean;
           this._noiseStemChannels = noise;

@@ -9,6 +9,8 @@ const MAX_ENTRIES = 2;
 
 /** @type {Map<string, { clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>} */
 const _cache = new Map();
+/** Bumped by clearStemCache so an in-flight async store is discarded. */
+let _cacheGen = 0;
 
 /** Bumped whenever the key derivation changes so old entries never alias. */
 const KEY_SCHEMA = 'sk2';
@@ -99,11 +101,35 @@ export function setCachedStems(key, result) {
   // Always store independent copies so callers can mutate/transfer sources safely.
   const clean = result.clean.map((c) => new Float32Array(c));
   const noise = (result.noise || []).map((c) => new Float32Array(c));
+  storeEntry(key, clean, noise, result.sampleRate);
+}
+
+/**
+ * {@link setCachedStems} with a caller-supplied (cooperative) channel copy,
+ * e.g. ui-yield's copyFloat32Channel. The stored arrays are still independent
+ * copies; only the copy is spread across tasks instead of blocking one.
+ * @param {string} key
+ * @param {{ clean: Float32Array[], noise?: Float32Array[], sampleRate: number, passthrough?: boolean }} result
+ * @param {(src: Float32Array) => Promise<Float32Array>} copyChannel
+ */
+export async function setCachedStemsAsync(key, result, copyChannel) {
+  if (!key || !result || result.passthrough) return;
+  // clearStemCache() during the copy (source changed) must not be undone.
+  const gen = _cacheGen;
+  const clean = [];
+  for (const c of result.clean) clean.push(await copyChannel(c));
+  const noise = [];
+  for (const c of result.noise || []) noise.push(await copyChannel(c));
+  if (gen !== _cacheGen) return;
+  storeEntry(key, clean, noise, result.sampleRate);
+}
+
+function storeEntry(key, clean, noise, sampleRate) {
   if (_cache.has(key)) _cache.delete(key);
   _cache.set(key, {
     clean,
     noise,
-    sampleRate: result.sampleRate,
+    sampleRate,
     passthrough: false,
   });
   while (_cache.size > MAX_ENTRIES) {
@@ -113,6 +139,7 @@ export function setCachedStems(key, result) {
 }
 
 export function clearStemCache() {
+  _cacheGen += 1;
   _cache.clear();
 }
 

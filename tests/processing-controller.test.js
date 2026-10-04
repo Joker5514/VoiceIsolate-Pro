@@ -126,3 +126,94 @@ describe('store integration', () => {
     expect(toFixed(controller.getRemoved()[0])).toEqual([0.25, 0.25]);
   });
 });
+
+describe('setProcessedAsync (cooperative, long stems)', () => {
+  const rand = (n, seed) => Float32Array.from({ length: n }, (_, i) => Math.sin(i * 0.37 + seed) * 0.5);
+
+  // Just past two 1 Mi-sample slices; compared on a stride plus the tails.
+  const sample = (arr) => {
+    const out = [];
+    for (let i = 0; i < arr.length; i += 997) out.push(arr[i]);
+    out.push(...arr.subarray(arr.length - 5));
+    return out;
+  };
+
+  test('matches setProcessed sample for sample, including a shorter processed stem', async () => {
+    const raw = [rand(2_100_001, 1), rand(2_100_001, 2)];
+    const processed = [rand(2_099_000, 3), rand(2_099_000, 4)];
+    const syncStore = makeStoreStub();
+    const asyncStore = makeStoreStub();
+    const a = new ProcessingController(syncStore);
+    const b = new ProcessingController(asyncStore);
+    a.setRaw(raw, 48000);
+    b.setRaw(raw, 48000);
+    a.setProcessed(processed, 48000);
+    let yields = 0;
+    const result = await b.setProcessedAsync(processed, 48000, async () => { yields += 1; });
+    expect(result).not.toBeNull();
+    expect(yields).toBeGreaterThan(4);
+    for (let c = 0; c < 2; c++) {
+      expect(sample(b.getRemoved()[c])).toEqual(sample(a.getRemoved()[c]));
+      expect(sample(b.getProcessed()[c])).toEqual(sample(a.getProcessed()[c]));
+      expect(b.getRemoved()[c].length).toBe(a.getRemoved()[c].length);
+      expect(sample(asyncStore.calls.applyProcessing[0].removedBuffer[c]))
+        .toEqual(sample(syncStore.calls.applyProcessing[0].removedBuffer[c]));
+    }
+    expect(asyncStore.calls.applyProcessing[0]).toMatchObject({ sampleRate: 48000, channels: 2 });
+    // Store receives clones, not the controller's arrays.
+    asyncStore.calls.applyProcessing[0].removedBuffer[0][0] = 999;
+    expect(b.getRemoved()[0][0]).not.toBe(999);
+  });
+
+  test('a synchronous setProcessed during the async call wins (double Process)', async () => {
+    const store = makeStoreStub();
+    const controller = new ProcessingController(store);
+    controller.setRaw([rand(2_100_000, 1)], 48000);
+    let once = false;
+    const pending = controller.setProcessedAsync([rand(2_100_000, 2)], 48000, async () => {
+      if (once) return;
+      once = true;
+      controller.setProcessed([Float32Array.from([0.5, 0.5])], 48000);
+    });
+    await expect(pending).resolves.toBeNull();
+    expect(store.calls.applyProcessing).toHaveLength(1); // the sync call's update only
+    expect(toFixed(controller.getProcessed()[0])).toEqual([0.5, 0.5]);
+  });
+
+  test('isCurrent() false (caller request superseded) commits nothing', async () => {
+    const store = makeStoreStub();
+    const controller = new ProcessingController(store);
+    controller.setRaw([rand(1000, 1)], 48000);
+    await expect(controller.setProcessedAsync([rand(1000, 2)], 48000, undefined, { isCurrent: () => false }))
+      .resolves.toBeNull();
+    expect(store.calls.applyProcessing).toHaveLength(0);
+    expect(controller.getProcessed()).toBeNull();
+  });
+
+  test('storeRemoved publishes the given residual; getRemoved stays raw − processed', async () => {
+    const store = makeStoreStub();
+    const controller = new ProcessingController(store);
+    controller.setRaw([Float32Array.from([1, 1])], 48000);
+    const residual = [Float32Array.from([0.25, 0.75])];
+    await controller.setProcessedAsync([Float32Array.from([0.5, 0.5])], 48000, undefined, { storeRemoved: residual });
+    expect(toFixed(store.calls.applyProcessing[0].removedBuffer[0])).toEqual([0.25, 0.75]);
+    expect(store.calls.applyProcessing[0].removedBuffer[0]).not.toBe(residual[0]);
+    expect(toFixed(controller.getRemoved()[0])).toEqual([0.5, 0.5]);
+  });
+
+  test('a newer setRaw supersedes an in-flight async call', async () => {
+    const store = makeStoreStub();
+    const controller = new ProcessingController(store);
+    controller.setRaw([rand(2_100_000, 1)], 48000);
+    let once = false;
+    const pending = controller.setProcessedAsync([rand(2_100_000, 2)], 48000, async () => {
+      if (once) return;
+      once = true;
+      controller.setRaw([Float32Array.from([1, 1])], 48000);
+    });
+    await expect(pending).resolves.toBeNull();
+    expect(store.calls.applyProcessing).toHaveLength(0);
+    expect(toFixed(controller.getRaw()[0])).toEqual([1, 1]);
+    expect(controller.getProcessed()).toBeNull();
+  });
+});

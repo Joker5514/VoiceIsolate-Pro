@@ -47,3 +47,36 @@ test('cancellation during awaited inference stops later batches and permits a su
   )).resolves.toBeInstanceOf(Float32Array);
   expect(session.run).toHaveBeenCalledTimes(2);
 });
+
+test('a cancel message posted mid-run is dispatched between batches (no full-file run)', async () => {
+  const messages = [];
+  let clock = 0;
+  const source = fs.readFileSync(path.join(__dirname, '../src/workers/MLWorker.js'), 'utf8') + `
+    self.__cancelTest = { runWaveformMask };
+  `;
+  const sandbox = {
+    importScripts() {}, console, Promise, Error, Object, Set, Map, ArrayBuffer,
+    Float32Array, Uint8Array, Uint32Array, Int32Array, BigInt64Array,
+    setTimeout, clearTimeout,
+    performance: { now: () => clock },
+    ort: { env: { wasm: {} }, Tensor: class Tensor {}, InferenceSession: {} },
+    self: { navigator: {}, postMessage: (m) => messages.push(m) },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox);
+  const entry = { id: 'wave', sampleRate: 4, segmentSamples: 4, io: { input: 'in', output: 'out' } };
+  // ORT promises settle as microtasks: without a macrotask yield in the loop,
+  // a 'cancel' message (a macrotask) could not run until every batch finished.
+  const session = { run: jest.fn(async () => {
+    clock += 40;
+    return { out: { data: new Float32Array([1, 1, 1, 1]) } };
+  }) };
+  const segments = 400;
+  const active = sandbox.self.__cancelTest.runWaveformMask(
+    entry, session, new Float32Array(segments * 4).fill(1), 4, () => {}, 'job-long',
+  );
+  setTimeout(() => { void sandbox.self.onmessage({ data: { type: 'cancel', requestId: 'job-long' } }); }, 0);
+  await expect(active).rejects.toMatchObject({ name: 'AbortError', code: 'VIP_CANCELLED' });
+  expect(session.run.mock.calls.length).toBeLessThan(10);
+  expect(messages).toContainEqual({ type: 'cancelled', requestId: 'job-long' });
+});

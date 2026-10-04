@@ -10,10 +10,14 @@ import { analyzeAudio } from '../core/FullAnalysis.js';
 import { extractFrameFeatures, downmixToMono } from '../core/FeatureExtractor.js';
 import { buildVadHints } from './VadAnalysis.js';
 import { debugLog } from '../core/debug.js';
+import { copyFloat32Channel, createYieldBudget } from './ui-yield.js';
 import {
   CancellationError,
   throwIfAborted,
 } from './JobController.js';
+
+/** Clips at least this long extract VAD features in the worker. */
+const FEATURE_OFFLOAD_SEC = 10;
 
 export class FullAnalysisHost {
   constructor(options = {}) {
@@ -26,6 +30,7 @@ export class FullAnalysisHost {
     this._activeRequestId = null;
     this._activeSettlement = null;
     this._analysisGeneration = 0;
+    this._featureSettlement = null;
   }
 
   _recycleWorker(worker = this._worker) {
@@ -48,14 +53,97 @@ export class FullAnalysisHost {
     }
   }
 
+  /**
+   * Frame features for the VAD hints, computed in the analysis worker. On the
+   * main thread this pass blocked for ~6 s per 5 minutes of audio, in the
+   * idle callback right after Process. Short clips (< FEATURE_OFFLOAD_SEC)
+   * stay inline, where the copy + message round-trip would cost more.
+   * @returns {Promise<{ mono: Float32Array, extraction: object }|null>} null = compute inline
+   */
+  async _featuresInWorker(channels, sampleRate, opts = {}) {
+    const n = channels[0]?.length || 0;
+    if (n < sampleRate * FEATURE_OFFLOAD_SEC) return null;
+    const worker = this._ensureWorker();
+    if (!worker) return null;
+    const signal = opts.signal;
+    const requestId = ++this._requestId;
+    const yieldBudget = createYieldBudget();
+    const payload = [];
+    for (const ch of channels) {
+      payload.push(await copyFloat32Channel(ch, { yieldBudget }));
+      throwIfAborted(signal);
+    }
+    return new Promise((resolve, reject) => {
+      let timer = null;
+      let settled = false;
+      const done = (fn) => {
+        if (settled) return;
+        settled = true;
+        if (this._featureSettlement === settlement) this._featureSettlement = null;
+        clearTimeout(timer);
+        signal?.removeEventListener?.('abort', onAbort);
+        worker.removeEventListener('message', onMessage);
+        worker.removeEventListener('error', onError);
+        fn();
+      };
+      const onAbort = () => done(() => {
+        // Feature extraction is one synchronous pass: stop it by recycling.
+        this._recycleWorker(worker);
+        reject(new CancellationError('Cancelled'));
+      });
+      const onError = (err) => done(() => {
+        this._recycleWorker(worker);
+        reject(new Error(`Feature worker failed: ${err?.message || 'worker error'}`));
+      });
+      const onMessage = (event) => {
+        const msg = event?.data;
+        if (!msg || msg.requestId !== requestId) return;
+        if (msg.type === 'features') done(() => resolve({ mono: msg.mono, extraction: msg.extraction }));
+        else if (msg.type === 'error') done(() => reject(new Error(msg.message || 'Feature extraction failed')));
+      };
+      // cancelActive()/dispose() settle this stage too, not only analyze.
+      const settlement = {
+        cancel: (reason) => done(() => {
+          this._recycleWorker(worker);
+          reject(new CancellationError(reason));
+        }),
+      };
+      this._featureSettlement = settlement;
+      timer = setTimeout(() => done(() => {
+        this._recycleWorker(worker);
+        reject(new Error('Feature extraction timed out'));
+      }), opts.featureTimeoutMs ?? 120000);
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener?.('abort', onAbort, { once: true });
+      worker.addEventListener('message', onMessage);
+      worker.addEventListener('error', onError);
+      try {
+        worker.postMessage({
+          type: 'features',
+          requestId,
+          channels: payload,
+          sampleRate,
+          frameSec: opts.frameSec,
+          hopSec: opts.hopSec,
+        }, payload.map((c) => c.buffer));
+      } catch (err) {
+        done(() => reject(err));
+      }
+    });
+  }
+
   async _withVadHints(channels, sampleRate, opts = {}) {
     if (opts.mlHints?.vadScores || opts.skipVad) return opts;
     throwIfAborted(opts.signal);
     try {
       const reportProgress = typeof opts.onProgress === 'function' ? opts.onProgress : this.onProgress;
       try { reportProgress(8, 'vad'); } catch { /* UI callbacks must not stop analysis */ }
-      const mono = downmixToMono(channels);
-      const extraction = extractFrameFeatures(mono, sampleRate, {
+      const offloaded = await this._featuresInWorker(channels, sampleRate, opts);
+      const mono = offloaded ? offloaded.mono : downmixToMono(channels);
+      const extraction = offloaded ? offloaded.extraction : extractFrameFeatures(mono, sampleRate, {
         frameSec: opts.frameSec,
         hopSec: opts.hopSec,
       });
@@ -267,6 +355,7 @@ export class FullAnalysisHost {
 
   cancelActive(reason = 'Cancelled') {
     this._analysisGeneration += 1;
+    this._featureSettlement?.cancel(reason);
     this._cancelWorkerRequest(reason);
   }
 

@@ -62,7 +62,8 @@ describe('Engineer Mode hardening', () => {
   });
 
   test('premium static spectrogram aborts stale async STFT work', () => {
-    expect(PREMIUM_VISUALS).toMatch(/forwardSTFTAsync[\s\S]*shouldAbort:\s*\(\)\s*=>\s*!isCurrent\(\)/);
+    // Behaviour is covered in engineer-static-spectrogram-responsiveness.test.js.
+    expect(PREMIUM_VISUALS).toMatch(/maybeYield[\s\S]*if \(!isCurrent\(\)\) return false;/);
   });
 
   test('diarization-timeline debounces ResizeObserver', () => {

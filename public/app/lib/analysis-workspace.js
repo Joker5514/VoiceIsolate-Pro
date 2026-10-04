@@ -631,10 +631,12 @@ export function installAnalysisWorkspace(app) {
 
       const channels = [];
       for (let c = 0; c < buf.numberOfChannels; c++) {
-        channels.push(buf.getChannelData(c).slice());
+        channels.push(buf.getChannelData(c));
       }
-      // Use mono mix for speed on long files — still multi-channel aware via count
-      const mono = downmixToMono(channels);
+      // Use mono mix for speed on long files — still multi-channel aware via count.
+      // downmixToMono already allocates for 2+ channels; copying each channel
+      // first doubled this synchronous pass (0.5 s per 5 min of stereo).
+      const mono = channels.length === 1 ? channels[0].slice() : downmixToMono(channels);
       const prevProgress = host.onProgress;
       const reportProgress = (pct, stage) => {
         try { prevProgress?.(pct, stage); } catch { /* ignore */ }

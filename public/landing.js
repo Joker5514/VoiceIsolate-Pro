@@ -32,7 +32,8 @@ import {
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
-import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from '/src/pipeline/MLStemCache.js';
+import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKey } from '/src/pipeline/MLStemCache.js';
+import { copyFloat32Channel, createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
@@ -167,6 +168,8 @@ let ingested = null;
 /** @type {File|Blob|null} original upload retained for video remux export */
 let sourceFile = null;
 let requestSeq = 0;
+/** True while a stems result is being installed (cooperative copies). */
+let stemsInstalling = false;
 let ingestSeq = 0;
 let ingestInFlight = false;
 let processingInFlight = false;
@@ -202,7 +205,7 @@ async function refreshPreflight() {
   if (seq !== preflightSeq) return;
   const available = quickClean.preflight(device, ingested);
   ui.modelSelect.disabled = !['wasm', 'webgpu'].includes(quickClean.backend) || processingInFlight || ingestInFlight;
-  ui.processBtn.disabled = (!available && worker !== null) || !ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight;
+  ui.processBtn.disabled = (!available && worker !== null) || !ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight || reviewInFlight;
 }
 
 function clearProcessWatch() { clearInterval(processWatch); processWatch = null; }
@@ -891,6 +894,12 @@ async function ensureTargetSpeakerUi() {
         }
       },
       onIsolated: async (channels, sampleRate) => {
+        // A Process result still installing owns the mixer; replacing its
+        // stems now would make that install drop its result.
+        // Throwing (not returning) keeps TargetSpeakerUI from reporting success.
+        if (stemsInstalling) {
+          throw new Error('Process is still finishing — apply target isolation when it completes');
+        }
         invalidateComparison();
         // Replace clean stem; preserve diarization (loadStems clears segments).
         const segs = mixer.getSpeakerSegments?.() || [];
@@ -898,7 +907,9 @@ async function ensureTargetSpeakerUi() {
           ? Array.from({ length: mixer.noiseBuffer.numberOfChannels }, (_, c) =>
             mixer.noiseBuffer.getChannelData(c).slice())
           : channels.map((ch) => new Float32Array(ch.length));
-        mixer.loadStems(channels, noise, sampleRate);
+        if (!(await mixer.loadStemsAsync(channels, noise, sampleRate))) {
+          throw new Error('Superseded by a newer stem load — apply target isolation again');
+        }
         if (segs.length) mixer.loadSpeakerSegments(segs);
         visualizer?.loadStems?.(channels, noise, mixer.duration());
         setStatus('Target isolation applied on clean stem (local voiceprint). Press Play.', 'active');
@@ -1292,7 +1303,7 @@ function warnIfNotServed() {
 }
 
 async function onProcess() {
-  if (!ingested || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
+  if (!ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight || reviewInFlight) return;
   processingInFlight = true;
   try {
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
@@ -1311,15 +1322,25 @@ async function onProcess() {
     setProcStage('separate', 0, currentJobLabel);
     const id = ++requestSeq;
     ingested._stemCacheKey = cacheKey;
+    // Full-length copies run in budgeted slices (0.3 s per copy at 15 min).
+    const yieldBudget = createYieldBudget();
+    const copyAll = async (channels) => {
+      const out = [];
+      for (const c of channels) out.push(await copyFloat32Channel(c, { yieldBudget }));
+      return out;
+    };
     const cached = getCachedStems(cacheKey);
     if (cached) {
-      onStems({ requestId: id, clean: cached.clean.map((c) => c.slice()),
-        noise: cached.noise.map((c) => c.slice()), sampleRate: cached.sampleRate,
+      const clean = await copyAll(cached.clean);
+      const noise = await copyAll(cached.noise);
+      onStems({ requestId: id, clean, noise, sampleRate: cached.sampleRate,
         passthrough: false, _cacheKey: cacheKey });
       return;
     }
     stageStart('model_load');
-    const channelData = ingested.channelData.map((channel) => channel.slice());
+    const source = ingested;
+    const channelData = await copyAll(source.channelData);
+    if (id !== requestSeq || !processingInFlight) return;
     const startedAt = Date.now();
     lastProcessProgress = startedAt;
     clearProcessWatch();
@@ -1337,8 +1358,37 @@ async function onProcess() {
   } catch (err) { failProcessing(err); }
 }
 
-function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
-  if (!processingInFlight || requestId !== requestSeq) return; // stale response
+function onStems(msg) {
+  void applyStems(msg).catch((err) => {
+    if (msg.requestId === requestSeq) failProcessing(err);
+  });
+}
+
+/**
+ * Install a stems result. Everything that touches the full-length stems
+ * (cache copy, mixer AudioBuffers, Raw/Processed/Removed bookkeeping) is
+ * copied in time-budgeted slices: done in one task it froze the tab for 5.6 s
+ * on a 5-minute file and 20 s on a 15-minute one. A newer request or file
+ * (requestSeq bump) stops a stale install between slices.
+ */
+async function applyStems(msg) {
+  if (!processingInFlight || msg.requestId !== requestSeq) return; // stale response
+  // Process stays unavailable until the install finishes, so a second click
+  // cannot start a duplicate separation mid-install.
+  stemsInstalling = true;
+  try {
+    await installStems(msg);
+  } finally {
+    stemsInstalling = false;
+    // File/model pickers also wait for the install: a new file mid-install
+    // would race the mixer's pending stem swap.
+    ui.fileInput.disabled = false;
+    ui.modelSelect.disabled = false;
+    void refreshPreflight();
+  }
+}
+
+async function installStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
   clearProcessWatch();
   processingInFlight = false;
   stageEnd('isolate');
@@ -1350,12 +1400,9 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   window.__vipLandingJobId = null;
 
   const cacheKey = _cacheKey || ingested?._stemCacheKey;
-  if (!passthrough && cacheKey) {
-    setCachedStems(cacheKey, { clean, noise, sampleRate, passthrough: false });
-  }
-  ui.processBtn.disabled = false;
-  ui.fileInput.disabled = false;
-  ui.modelSelect.disabled = false;
+  const yieldBudget = createYieldBudget();
+  const copyChannel = (channel) => copyFloat32Channel(channel, { yieldBudget });
+  const current = () => requestId === requestSeq;
 
   if (passthrough) {
     failProcessing(new Error('Models could not run; no cleaned result was produced.'));
@@ -1364,6 +1411,10 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     return;
   }
 
+  if (cacheKey) {
+    await setCachedStemsAsync(cacheKey, { clean, noise, sampleRate, passthrough: false }, copyChannel);
+    if (!current()) return;
+  }
   if (!mixer) {
     try {
       mixer = new PlaybackMixer();
@@ -1388,20 +1439,19 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     // Read-only diagnostics handle for smoke tests and the debug console.
     globalThis.__vipDiagnostics = { mixer, sliderUI, speakerControls, visualizer };
   }
-  mixer.loadStems(clean, noise, sampleRate);
+  if (!(await mixer.loadStemsAsync(clean, noise, sampleRate)) || !current()) return;
   hasProcessed = true;
   invalidateComparison();
   // Unified: set processed and compute Removed delta
   try {
-    processingController.setProcessed(clean, sampleRate);
-    // Also store noise as part of removed if available
-    sessionStore.applyProcessing({
-      processedBuffer: clean.map((c) => c.slice()),
-      removedBuffer: noise ? noise.map((c) => c.slice()) : processingController.getRemoved(),
-      sampleRate,
-      channels: clean.length,
+    // One store update: the published removed buffer is the worker's
+    // residual (noise) stem when present, as the second update used to set.
+    await processingController.setProcessedAsync(clean, sampleRate, yieldBudget, {
+      isCurrent: current,
+      storeRemoved: noise || null,
     });
   } catch {}
+  if (!current()) return;
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
   startOutputMeter();
@@ -1638,7 +1688,9 @@ for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedB
             await mixer.pause();
             // Store for restore
             window.__vipRemovedAudition = { clean: currentClean, noise: currentNoise };
-            mixer.loadStems(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.duration() || (removed[0].length / 48000));
+            // Third argument is the sample rate (it was passed the duration).
+            // Superseded by a newer stem load: do not play or mark Removed active.
+            if (!(await mixer.loadStemsAsync(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.cleanBuffer?.sampleRate || 48000))) return;
             await mixer.play();
           }
         }

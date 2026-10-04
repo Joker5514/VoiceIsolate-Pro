@@ -302,9 +302,39 @@ export async function copyFloat32Channel(src, opts = {}) {
   return out;
 }
 
+/**
+ * Fill an AudioBuffer from Float32Array channels in budgeted slices.
+ *
+ * One copyToChannel of a long stem also commits its freshly allocated pages,
+ * and blocked the main thread for ~1 s per AudioBuffer on a 15-minute stereo
+ * file. copyToChannel takes a destination offset, so the same bytes can be
+ * written slice by slice with time-budgeted yields in between.
+ * @param {AudioBuffer} buf destination (length/channel count already sized)
+ * @param {Float32Array[]} channels one source per destination channel
+ * @param {{ signal?: AbortSignal, chunkSize?: number }} [opts]
+ * @returns {Promise<AudioBuffer>}
+ */
+export async function copyChannelsToAudioBuffer(buf, channels, opts = {}) {
+  const { signal = null, chunkSize = COPY_CHUNK_SAMPLES } = opts;
+  const count = Math.min(buf.numberOfChannels, channels.length);
+  await processInChunks({
+    total: buf.length,
+    chunkSize,
+    signal,
+    runChunk: (start, end) => {
+      for (let ch = 0; ch < count; ch++) {
+        const src = channels[ch];
+        if (start < src.length) buf.copyToChannel(src.subarray(start, Math.min(end, src.length)), ch, start);
+      }
+    },
+  });
+  return buf;
+}
+
 export default {
   createYieldBudget,
   copyFloat32Channel,
+  copyChannelsToAudioBuffer,
   yieldToBrowser,
   throwIfAborted,
   processInChunks,

@@ -102,6 +102,19 @@ engine without `scheduler.yield`. Do not "restore" a yield after every chunk, an
 do not reintroduce a per-yield rAF await. Cancellation stays bounded by the
 budget window (measured ~21 ms), not by the chunk count.
 
+**Full-length buffers never move in one task.** Measured in Chromium on a
+15-minute stereo file, single synchronous passes over the whole track froze the
+tab for 4–20 s after Process (stem → AudioBuffer copies, stem-cache copies,
+Raw/Processed/Removed clones, a full-file spectrogram STFT, a full-track sort,
+main-thread VAD feature extraction). Main-thread code that copies or scans a
+whole stem uses the cooperative helpers (`copyChannelsToAudioBuffer`,
+`copyFloat32Channel` with a yield budget, `PlaybackMixer.loadStemsAsync`,
+`EngineerModeBridge.loadStemPairAsync`, `ProcessingController.setProcessedAsync`),
+or moves the pass into a worker. Re-measure with
+`node scripts/perf/perf-harness.cjs --surface engineer|landing --secs 60,300 --settle 10000`
+(records long tasks, heartbeat gaps, cancel latency, live Workers/AudioContexts,
+heap and RSS; it asserts stability only, never machine-specific timings).
+
 **Timelines (realistic):** Electron MVP 3–4 weeks (signing + auto-update); Android hardening 5–6 weeks.
 
 ### 1.3 Engineer Console UI (layout rules)
