@@ -894,6 +894,12 @@ async function ensureTargetSpeakerUi() {
         }
       },
       onIsolated: async (channels, sampleRate) => {
+        // A Process result still installing owns the mixer; replacing its
+        // stems now would make that install drop its result.
+        if (stemsInstalling) {
+          setStatus('Wait for Process to finish, then apply target isolation.', 'active');
+          return;
+        }
         invalidateComparison();
         // Replace clean stem; preserve diarization (loadStems clears segments).
         const segs = mixer.getSpeakerSegments?.() || [];
@@ -1681,7 +1687,8 @@ for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedB
             // Store for restore
             window.__vipRemovedAudition = { clean: currentClean, noise: currentNoise };
             // Third argument is the sample rate (it was passed the duration).
-            await mixer.loadStemsAsync(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.cleanBuffer?.sampleRate || 48000);
+            // Superseded by a newer stem load: do not play or mark Removed active.
+            if (!(await mixer.loadStemsAsync(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.cleanBuffer?.sampleRate || 48000))) return;
             await mixer.play();
           }
         }
