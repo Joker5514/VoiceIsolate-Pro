@@ -485,3 +485,31 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Hero facts: a plain row, not the bottom Trust panel (.vip-trust). */
+.vip-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--vip-border-subtle);
+}
+.vip-facts__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.vip-facts__item strong {
+  font-size: 1rem;
+  color: var(--vip-text-primary, #f4f7fa);
+}
+.vip-facts__item span {
+  font-size: 0.8125rem;
+  color: var(--vip-text-secondary);
+}
+
+/* Hero copy starts at the top of the hero, level with the workspace panel. */
+.vip-hero.ps-hero { align-items: start; }
