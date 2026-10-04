@@ -896,9 +896,9 @@ async function ensureTargetSpeakerUi() {
       onIsolated: async (channels, sampleRate) => {
         // A Process result still installing owns the mixer; replacing its
         // stems now would make that install drop its result.
+        // Throwing (not returning) keeps TargetSpeakerUI from reporting success.
         if (stemsInstalling) {
-          setStatus('Wait for Process to finish, then apply target isolation.', 'active');
-          return;
+          throw new Error('Process is still finishing — apply target isolation when it completes');
         }
         invalidateComparison();
         // Replace clean stem; preserve diarization (loadStems clears segments).
@@ -907,7 +907,9 @@ async function ensureTargetSpeakerUi() {
           ? Array.from({ length: mixer.noiseBuffer.numberOfChannels }, (_, c) =>
             mixer.noiseBuffer.getChannelData(c).slice())
           : channels.map((ch) => new Float32Array(ch.length));
-        if (!(await mixer.loadStemsAsync(channels, noise, sampleRate))) return;
+        if (!(await mixer.loadStemsAsync(channels, noise, sampleRate))) {
+          throw new Error('Superseded by a newer stem load — apply target isolation again');
+        }
         if (segs.length) mixer.loadSpeakerSegments(segs);
         visualizer?.loadStems?.(channels, noise, mixer.duration());
         setStatus('Target isolation applied on clean stem (local voiceprint). Press Play.', 'active');
