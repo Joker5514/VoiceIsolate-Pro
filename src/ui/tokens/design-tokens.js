@@ -82,8 +82,8 @@ export const Tokens = Object.freeze({
   },
   font: {
     // Single quotes only: these strings are interpolated into style="..." attributes.
-    ui: "Geist, ui-sans-serif, system-ui, 'Segoe UI', sans-serif",
-    mono: "'Geist Mono', ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Consolas, monospace",
+    ui: "ui-sans-serif, system-ui, 'Segoe UI', sans-serif",
+    mono: "ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Consolas, monospace",
   },
   spacing: {
     1: '4px',

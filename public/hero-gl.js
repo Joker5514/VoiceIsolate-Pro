@@ -13,7 +13,7 @@ export async function mountHero(canvas) {
 
   const H = `
     uniform float uTime;
-    float band(float z){ return exp(-pow(z/1.15,2.0)); }
+    float band(float z){ float q = z/1.15; return exp(-q*q); }
     float hgt(vec2 p){
       float b = band(p.y);
       float env = 0.5 + 0.5*sin(p.x*0.32 - uTime*0.55);
@@ -39,7 +39,7 @@ export async function mountHero(canvas) {
         vec3 violet = vec3(0.55,0.38,1.0); vec3 cyan = vec3(0.18,0.84,0.9);
         vec3 c = mix(violet, cyan, smoothstep(0.15,0.85,vB));
         float br = 0.28 + vH*0.55 + vB*0.35;
-        float s = exp(-pow((vX-uScan)/0.55,2.0));
+        float d = (vX-uScan)/0.55; float s = exp(-d*d);
         c = c*br + s*vec3(0.55,0.95,1.0)*(0.4+vB);
         float a = (1.0 - smoothstep(6.5,11.5,abs(vX))) * (1.0 - smoothstep(2.0,7.0,abs(vZ)+0.6));
         gl_FragColor = vec4(c, a);
