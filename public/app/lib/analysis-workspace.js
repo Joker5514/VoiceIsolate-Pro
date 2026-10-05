@@ -722,6 +722,9 @@ export function installAnalysisWorkspace(app) {
       if (els.root) els.root.dataset.state = cancelledErr ? 'idle' : 'error';
       return null;
     } finally {
+      // Stale/superseded exits return early without ending the job; settle it
+      // here (endJob is a no-op unless this job is still the current one).
+      if (job && job.status === 'running' && jobs?.endJob) jobs.endJob(job.id, 'cancelled');
       const activeJob = jobs?.getCurrentJob?.() || null;
       const newerAnalysisOwnsWorkspace = Boolean(
         activeJob

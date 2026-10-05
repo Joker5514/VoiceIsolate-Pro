@@ -43,6 +43,12 @@ describe('analysis collaboration reset wiring', () => {
     );
   });
 
+  test('every runAnalysis exit settles its job, including stale-source returns', () => {
+    expect(workspaceJs).toMatch(
+      /\} finally \{\s*(?:\/\/[^\n]*\n\s*)*if \(job && job\.status === 'running' && jobs\?\.endJob\) jobs\.endJob\(job\.id, 'cancelled'\);\s*const activeJob = jobs\?\.getCurrentJob/
+    );
+  });
+
   test('superseded analysis releases local busy state unless another analysis owns it', () => {
     expect(workspaceJs).toContain("activeJob.meta?.kind === 'analysis'");
     expect(workspaceJs).toMatch(/if \(!newerAnalysisOwnsWorkspace\)\s*\{[\s\S]*?setBusy\(false\)/);
