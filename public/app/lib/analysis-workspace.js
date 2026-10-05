@@ -101,6 +101,8 @@ export function installAnalysisWorkspace(app) {
   let timeline = null;
   let lastAnalysis = null;
   let cancelled = false;
+  // Bumped by clearState(): a run that started on an older source is stale.
+  let sourceGeneration = 0;
   let usmBusy = false;
 
   if (els.timeline) {
@@ -472,6 +474,7 @@ export function installAnalysisWorkspace(app) {
   }
 
   function clearState() {
+    sourceGeneration += 1;
     cancelled = false;
     lastAnalysis = null;
     app._lastFullAnalysis = null;
@@ -574,6 +577,7 @@ export function installAnalysisWorkspace(app) {
   async function runAnalysis() {
     showError('');
     cancelled = false;
+    const runSource = sourceGeneration;
     const jobs = globalThis.__VIP_JOBS__;
     let job = null;
     // Decode on the analyzer path (not at upload) — keeps the tab responsive.
@@ -597,7 +601,9 @@ export function installAnalysisWorkspace(app) {
     const signal = job?.controller?.signal || jobs?.getCurrentSignal?.() || null;
     const superseded = () => {
       const activeJobId = jobs?.getCurrentJobId?.() || null;
-      return job?.cancelReason === 'superseded'
+      // clearState() (file change/clear) does not abort this run's signal.
+      return runSource !== sourceGeneration
+        || job?.cancelReason === 'superseded'
         || signal?.reason === 'superseded'
         || Boolean(activeJobId && job && activeJobId !== job.id);
     };
@@ -638,6 +644,7 @@ export function installAnalysisWorkspace(app) {
       // Use mono mix for speed on long files — still multi-channel aware via count.
       // Budgeted: a synchronous downmix froze the tab ~0.7 s per 5 min of stereo.
       const mono = await downmixToMonoAsync(channels, { signal });
+      if (superseded()) return null;
       const prevProgress = host.onProgress;
       const reportProgress = (pct, stage) => {
         try { prevProgress?.(pct, stage); } catch { /* ignore */ }

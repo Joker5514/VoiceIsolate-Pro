@@ -32,6 +32,17 @@ describe('analysis collaboration reset wiring', () => {
     expect(workspaceJs).toContain('clearState,');
   });
 
+  test('a file change or clear during the async downmix invalidates the run', () => {
+    // clearState() does not abort the run's job signal, so the run must notice
+    // the source changed before it analyzes or renders the old samples.
+    expect(workspaceJs).toMatch(/function clearState\(\)\s*\{\s*sourceGeneration \+= 1;/);
+    expect(workspaceJs).toContain('const runSource = sourceGeneration;');
+    expect(workspaceJs).toMatch(/return runSource !== sourceGeneration\s*\|\|/);
+    expect(workspaceJs).toMatch(
+      /const mono = await downmixToMonoAsync\(channels, \{ signal \}\);\s*if \(superseded\(\)\) return null;[\s\S]*?host\.analyze\(/
+    );
+  });
+
   test('superseded analysis releases local busy state unless another analysis owns it', () => {
     expect(workspaceJs).toContain("activeJob.meta?.kind === 'analysis'");
     expect(workspaceJs).toMatch(/if \(!newerAnalysisOwnsWorkspace\)\s*\{[\s\S]*?setBusy\(false\)/);
