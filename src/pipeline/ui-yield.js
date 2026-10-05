@@ -331,8 +331,43 @@ export async function copyChannelsToAudioBuffer(buf, channels, opts = {}) {
   return buf;
 }
 
+/**
+ * Average channels into a new mono Float32Array in budgeted slices.
+ *
+ * A synchronous downmix of a 5-minute stereo stem held the main thread
+ * ~0.7 s in the post-Process auto-analysis (the fresh output pages commit
+ * inside the same task). A single channel is copied, never aliased.
+ * @param {Float32Array[]} channels
+ * @param {{ signal?: AbortSignal, chunkSize?: number }} [opts]
+ * @returns {Promise<Float32Array>}
+ */
+export async function downmixToMonoAsync(channels, opts = {}) {
+  const { signal = null, chunkSize = 48000 * 2 } = opts;
+  if (!channels?.length) return new Float32Array(0);
+  const n = channels[0].length;
+  const out = new Float32Array(n);
+  const inv = 1 / channels.length;
+  await processInChunks({
+    total: n,
+    chunkSize,
+    signal,
+    runChunk: (start, end) => {
+      if (channels.length === 1) {
+        out.set(channels[0].subarray(start, end), start);
+        return;
+      }
+      for (let ch = 0; ch < channels.length; ch++) {
+        const c = channels[ch];
+        for (let i = start; i < end; i++) out[i] += c[i] * inv;
+      }
+    },
+  });
+  return out;
+}
+
 export default {
   createYieldBudget,
+  downmixToMonoAsync,
   copyFloat32Channel,
   copyChannelsToAudioBuffer,
   yieldToBrowser,

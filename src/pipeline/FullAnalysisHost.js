@@ -206,6 +206,18 @@ export class FullAnalysisHost {
       return analysis;
     }
 
+    // Copy before the request goes live: a synchronous slice() of a long
+    // channel blocked the main thread right after Process.
+    const yieldBudget = createYieldBudget();
+    const payloadChannels = [];
+    for (const ch of channels) {
+      payloadChannels.push(await copyFloat32Channel(ch, { yieldBudget }));
+      throwIfAborted(signal);
+    }
+    if (generation !== this._analysisGeneration) {
+      throw new CancellationError('Superseded by a newer analysis');
+    }
+
     const requestId = ++this._requestId;
     this._activeRequestId = requestId;
     return new Promise((resolve, reject) => {
@@ -314,12 +326,7 @@ export class FullAnalysisHost {
           optsForWorker.mlHints = h;
         }
 
-        const transfer = [];
-        const payloadChannels = channels.map((ch) => {
-          const copy = ch.slice();
-          transfer.push(copy.buffer);
-          return copy;
-        });
+        const transfer = payloadChannels.map((c) => c.buffer);
 
         reportProgressSafely(15, 'dispatch');
         worker.postMessage(

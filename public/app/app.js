@@ -142,6 +142,23 @@ function resolvePresetNameLocal(name) {
   return redirects[name] || name || 'Voice Clarity';
 }
 
+/**
+ * AudioBuffer.getChannelData, memoised per buffer. Chromium returns the same
+ * aliased Float32Array on every call yet charges a linear pass each time
+ * (~12 ms per call per 5-minute channel). The metrics writers run on every
+ * pipeline progress tick and slider flush, so uncached calls added up to
+ * 0.5 s of main-thread stalls per Process on a 5-minute file.
+ */
+const _channelDataCache = new WeakMap();
+function cachedChannelData(buf, ch) {
+  let arr = _channelDataCache.get(buf);
+  if (!arr) {
+    arr = [];
+    _channelDataCache.set(buf, arr);
+  }
+  return arr[ch] || (arr[ch] = buf.getChannelData(ch));
+}
+
 const LARGE_FILE_WARNING_BYTES = 500 * 1024 * 1024;
 const EXTENSION_MIME_TYPES = Object.freeze({
   mp3: 'audio/mpeg',
@@ -1787,8 +1804,8 @@ class VoiceIsolatePro {
       return { stereoActive: false, channelDiff: 0 };
     }
     try {
-      const L = buf.getChannelData(0);
-      const R = buf.getChannelData(1);
+      const L = cachedChannelData(buf, 0);
+      const R = cachedChannelData(buf, 1);
       const n = Math.min(L.length, R.length, 48000);
       let lRms = 0;
       let rRms = 0;
@@ -7119,8 +7136,8 @@ class VoiceIsolatePro {
       return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
     }
     try {
-      const o = orig.getChannelData(0);
-      const p = (proc && proc.getChannelData) ? proc.getChannelData(0) : o;
+      const o = cachedChannelData(orig, 0);
+      const p = (proc && proc.getChannelData) ? cachedChannelData(proc, 0) : o;
       const n = Math.min(o.length, p.length);
       if (n < 32) return { voicePct: null, noisePct: null, snrDb: null };
 
@@ -7188,8 +7205,8 @@ class VoiceIsolatePro {
     if (!orig || typeof orig.getChannelData !== 'function') return null;
     if (!proc || proc === orig || typeof proc.getChannelData !== 'function') return null;
     try {
-      const o = orig.getChannelData(0);
-      const p = proc.getChannelData(0);
+      const o = cachedChannelData(orig, 0);
+      const p = cachedChannelData(proc, 0);
       const n = Math.min(o.length, p.length);
       const sampleRate = proc.sampleRate || orig.sampleRate || 48000;
       if (n < 256) return null;
@@ -7197,7 +7214,7 @@ class VoiceIsolatePro {
       // Identity cache: updateAudioMetrics() fires hundreds of times per
       // Process pass; recompute only when the stems actually changed.
       const stamp = (buf) => {
-        const d = buf.getChannelData(0);
+        const d = cachedChannelData(buf, 0);
         const L = d.length;
         return `${L}@${buf.sampleRate}:${d[0]}|${d[L >> 1]}|${d[L - 1]}`;
       };
@@ -7234,10 +7251,15 @@ class VoiceIsolatePro {
       snrDb = Math.max(-40, Math.min(60, snrDb));
 
       // Pass 2 (20 ms frames): noise floor reduction + whisper-band retention.
+      // Evenly spaced frames, at most SESSION_METRIC_FRAMES: this runs
+      // synchronously inside a pipeline progress tick, and scanning every
+      // frame cost ~130 ms per 5 minutes of audio.
+      const SESSION_METRIC_FRAMES = 6000;
       const frame = Math.max(64, Math.floor(sampleRate * 0.02));
+      const frameStride = frame * Math.max(1, Math.ceil(Math.floor(n / frame) / SESSION_METRIC_FRAMES));
       const preFrames = [];
       const postFrames = [];
-      for (let pos = 0; pos + frame <= n; pos += frame) {
+      for (let pos = 0; pos + frame <= n; pos += frameStride) {
         let ePre = 0;
         let ePost = 0;
         for (let i = 0; i < frame; i++) {

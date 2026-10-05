@@ -98,13 +98,17 @@
     if (hit && hit.w === w) return hit;
     const data = audioBuf.getChannelData(0);
     const step = Math.max(1, Math.floor(data.length / w));
+    // At most ~1024 reads per pixel column: scanning every sample of a long
+    // stem held the main thread ~120 ms per 5 minutes in the post-Process
+    // idle callback, for no visible difference at canvas resolution.
+    const stride = Math.max(1, Math.floor(step / 1024));
     const env = { w, min: new Float32Array(w), max: new Float32Array(w) };
     for (let x = 0; x < w; x++) {
       let min = 1.0;
       let max = -1.0;
       const base = x * step;
       const end = Math.min(base + step, data.length);
-      for (let i = base; i < end; i++) {
+      for (let i = base; i < end; i += stride) {
         const v = data[i];
         if (v < min) min = v;
         if (v > max) max = v;

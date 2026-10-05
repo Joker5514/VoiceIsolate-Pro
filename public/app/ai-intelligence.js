@@ -105,6 +105,7 @@ const AIIntelligence = {
    * @returns {{ scene: string, confidence: number, scores: Object }}
    */
   classifyScene(audio, sr = 48000) {
+    audio = this._sceneExcerpt(audio, sr);
     const len = audio.length;
     if (len < 1024) return { scene: 'podcast', confidence: 0.5, scores: {}, features: { rms: 0, peak: 0, crestFactor: 0, zcr: 0, spectralCentroid: 0, spectralFlux: 0, dynamicRange: 0 } };
 
@@ -321,6 +322,30 @@ const AIIntelligence = {
   },
 
   // ── Private Helpers ────────────────────────────────────────────────────
+  /**
+   * Evenly spaced contiguous blocks covering at most SCENE_EXCERPT_SEC of a
+   * long track. classifyScene runs synchronously in the post-Process idle
+   * callback; five full-track passes held the main thread ~0.6 s per 5 min of
+   * audio. Contiguous 1 s blocks keep RMS, ZCR and the level percentiles
+   * representative of the whole file at a bounded cost.
+   * @param {Float32Array} audio
+   * @param {number} sr
+   * @returns {Float32Array}
+   */
+  _sceneExcerpt(audio, sr) {
+    const SCENE_EXCERPT_SEC = 30;
+    const block = Math.max(1024, Math.round(sr || 48000));
+    const blocks = SCENE_EXCERPT_SEC;
+    if (!(audio instanceof Float32Array) || audio.length <= block * blocks) return audio;
+    const out = new Float32Array(block * blocks);
+    const stride = (audio.length - block) / (blocks - 1);
+    for (let b = 0; b < blocks; b++) {
+      const start = Math.floor(b * stride);
+      out.set(audio.subarray(start, start + block), b * block);
+    }
+    return out;
+  },
+
   _calcRMS(audio) {
     let sum = 0;
     for (let i = 0; i < audio.length; i++) sum += audio[i] * audio[i];

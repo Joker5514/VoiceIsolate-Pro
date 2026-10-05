@@ -18,14 +18,14 @@ import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityCh
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
 import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
-import { downmixToMono } from '/src/core/FeatureExtractor.js';
+import { downmixToMonoAsync } from '/src/pipeline/ui-yield.js';
 import {
   enrichAnalysisWithCollaboration,
   applyHunterFeedbackToAnalysis,
   analysisToHunterSliderTargets,
 } from '/src/core/AnalyzerWhisperBridge.js';
 import { analyzeAcousticEnvironment } from '../whisper-hunter.js';
-import { USMNode, usmSourcesToAudioBuffers } from '/src/pipeline/USMNode.js';
+import { USMNode, usmSourcesToAudioBuffersAsync } from '/src/pipeline/USMNode.js';
 
 /**
  * @param {object} app VoiceIsolatePro instance (legacy Engineer shell)
@@ -210,7 +210,7 @@ export function installAnalysisWorkspace(app) {
     if (!ctx) return;
     if (ctx.state === 'suspended') await ctx.resume();
     const original = app.origBuffer || app.inputBuffer;
-    const packed = usmSourcesToAudioBuffers(ctx, usmNode.sources, usmNode.sampleRate);
+    const packed = await usmSourcesToAudioBuffersAsync(ctx, usmNode.sources, usmNode.sampleRate);
     audition.buildFromUSM(packed, ctx, original || null);
     transport.attachClock(() => audition.getCurrentTime());
     renderAuditionStrip();
@@ -634,9 +634,8 @@ export function installAnalysisWorkspace(app) {
         channels.push(buf.getChannelData(c));
       }
       // Use mono mix for speed on long files — still multi-channel aware via count.
-      // downmixToMono already allocates for 2+ channels; copying each channel
-      // first doubled this synchronous pass (0.5 s per 5 min of stereo).
-      const mono = channels.length === 1 ? channels[0].slice() : downmixToMono(channels);
+      // Budgeted: a synchronous downmix froze the tab ~0.7 s per 5 min of stereo.
+      const mono = await downmixToMonoAsync(channels, { signal });
       const prevProgress = host.onProgress;
       const reportProgress = (pct, stage) => {
         try { prevProgress?.(pct, stage); } catch { /* ignore */ }

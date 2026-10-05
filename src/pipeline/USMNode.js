@@ -24,6 +24,7 @@ import {
   USM_MAX_SOURCES,
 } from '../core/UniversalSourceMatrix.js';
 import { SAMPLE_RATE } from '../core/audio-config.js';
+import { copyChannelsToAudioBuffer } from './ui-yield.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 
 /**
@@ -545,6 +546,33 @@ export function usmSourcesToAudioBuffers(ctx, sources, sampleRate) {
     if (!s?.pcm || !(s.pcm.length > 0)) continue;
     const buf = ctx.createBuffer(1, s.pcm.length, sr);
     buf.copyToChannel(s.pcm, 0);
+    out.push({
+      id: s.id,
+      label: s.label,
+      buffer: buf,
+      confidence: s.confidence,
+      quality: s.quality || 'medium',
+    });
+  }
+  return out;
+}
+
+/**
+ * Cooperative usmSourcesToAudioBuffers: one copyToChannel per full-length
+ * source blocked ~0.3 s per 5 minutes after the background USM pass.
+ * @param {AudioContext} ctx
+ * @param {USMSourceState[]} sources
+ * @param {number} sampleRate
+ * @param {{ signal?: AbortSignal }} [opts]
+ */
+export async function usmSourcesToAudioBuffersAsync(ctx, sources, sampleRate, opts = {}) {
+  if (!ctx) throw new TypeError('[VIP][USMNode] AudioContext required');
+  const sr = sampleRate || SAMPLE_RATE;
+  const out = [];
+  for (const s of sources || []) {
+    if (!s?.pcm || !(s.pcm.length > 0)) continue;
+    const buf = ctx.createBuffer(1, s.pcm.length, sr);
+    await copyChannelsToAudioBuffer(buf, [s.pcm], { signal: opts.signal });
     out.push({
       id: s.id,
       label: s.label,
