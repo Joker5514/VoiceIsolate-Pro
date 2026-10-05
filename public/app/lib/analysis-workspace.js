@@ -112,6 +112,10 @@ export function installAnalysisWorkspace(app) {
   let sourceGeneration = 0;
   let sourceAbort = new AbortController();
   let usmBusy = false;
+  // Source signal of the in-flight USM run, and a request that arrived for a
+  // newer source while that run (now stale) still held usmBusy.
+  let usmRunSignal = null;
+  let usmQueued = null;
 
   if (els.timeline) {
     timeline = new TimelineRenderer(els.timeline, {
@@ -254,6 +258,12 @@ export function installAnalysisWorkspace(app) {
    * Never called from mute/solo/slider. Progress updates chips only.
    */
   async function runUsmBackend(opts = {}) {
+    if (usmBusy && usmRunSignal?.aborted) {
+      // The busy run belongs to a file that is gone: replay this request for
+      // the current file once it settles, instead of dropping it.
+      usmQueued = opts;
+      return null;
+    }
     if (usmBusy) return usmNode.isReady?.() ? {
       sources: usmNode.sources,
       method: usmNode._lastResult?.method,
@@ -263,9 +273,10 @@ export function installAnalysisWorkspace(app) {
     const buf = app.origBuffer || app.inputBuffer;
     if (!buf) return null;
     // Bound to the source this run started on: clearState() swaps sourceAbort,
-    // so reading it after an await would pick up the next file's signal.
+    // so reading it later would pick up the next file's signal.
     const sourceSignal = sourceAbort.signal;
     usmBusy = true;
+    usmRunSignal = sourceSignal;
     if (els.usmProgress) els.usmProgress.hidden = false;
     try {
       // Budgeted copies: a synchronous slice() per channel was another
@@ -314,7 +325,13 @@ export function installAnalysisWorkspace(app) {
       return null;
     } finally {
       usmBusy = false;
+      usmRunSignal = null;
       if (els.usmProgress) els.usmProgress.hidden = true;
+      if (usmQueued) {
+        const queued = usmQueued;
+        usmQueued = null;
+        void runUsmBackend(queued).catch((e) => console.warn('[VIP] queued USM run failed:', e?.message || e));
+      }
     }
   }
 

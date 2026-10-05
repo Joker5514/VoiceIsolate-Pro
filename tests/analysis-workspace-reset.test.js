@@ -49,12 +49,15 @@ describe('analysis collaboration reset wiring', () => {
     expect(workspaceJs).toMatch(/usmSourcesToAudioBuffersAsync\(ctx, usmNode\.sources, usmNode\.sampleRate, \{\s*signal: sourceSignal,/);
     // USM binds the source before its first await and drops stale stems.
     expect(workspaceJs).toMatch(
-      /async function runUsmBackend[\s\S]*?const sourceSignal = sourceAbort\.signal;[\s\S]*?usmBusy = true;/
+      /async function runUsmBackend(?:(?!\bawait\b)[\s\S])*?const buf = app\.origBuffer \|\| app\.inputBuffer;(?:(?!\bawait\b)[\s\S])*?const sourceSignal = sourceAbort\.signal;(?:(?!\bawait\b)[\s\S])*?usmBusy = true;/
     );
     expect(workspaceJs).toMatch(
       /usmNode\.process\(channels, buf\.sampleRate, config\);\s*if \(sourceSignal\.aborted\) \{[\s\S]*?usmNode\.clear\?\.\(\);\s*return null;/
     );
     expect(workspaceJs).toContain('await pushUsmToAudition(sourceSignal, buf);');
+    // A request for the new file that hits a stale busy run is replayed.
+    expect(workspaceJs).toMatch(/if \(usmBusy && usmRunSignal\?\.aborted\) \{[\s\S]*?usmQueued = opts;\s*return null;/);
+    expect(workspaceJs).toMatch(/usmRunSignal = null;[\s\S]*?if \(usmQueued\) \{[\s\S]*?runUsmBackend\(queued\)/);
     // A decode that lost a file switch must not report "no file loaded".
     expect(workspaceJs).toMatch(/await app\.ensureDecoded\(\);\s*\/\/[^\n]*\n\s*if \(runSource !== sourceGeneration\) return null;/);
   });
