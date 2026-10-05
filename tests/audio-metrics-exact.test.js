@@ -96,3 +96,73 @@ test('A/B toggle back to a computed pair is served from cache', async () => {
   app.abMode = 'processed';
   expect(app._computeAudioMetricsState().voicePct).toBeCloseTo(exact(o, p).voicePct, 9);
 });
+
+describe('session metrics (async, every sample)', () => {
+  let Session;
+  let updates;
+
+  beforeAll(async () => {
+    const { processInChunks } = await import(
+      pathToFileURL(path.join(__dirname, '../src/pipeline/ui-yield.js')).href
+    );
+    const body = extractMethod(appSrc, 'async _computeSessionMetricsAsync(orig, o, p, n, sampleRate, key) {');
+    Session = new Function('processInChunks', 'getAudioSessionStore',
+      `return class { getDiarizationSegments() { return []; } ${body} };`)(
+      processInChunks,
+      () => ({ updateMetrics: (m) => updates.push(m) }),
+    );
+  });
+
+  beforeEach(() => { updates = []; });
+
+  function stems(n) {
+    const o = new Float32Array(n);
+    const p = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      o[i] = Math.sin(i * 0.013) * (i % 9600 < 4800 ? 0.4 : 0.01) + ((i * 7919) % 11) / 900;
+      p[i] = o[i] * (i % 9600 < 4800 ? 0.9 : 0.2);
+    }
+    return { o, p };
+  }
+
+  test('publishes exact metrics over every sample when the source is unchanged', async () => {
+    const n = 48000 * 30;
+    const { o, p } = stems(n);
+    const app = new Session();
+    app._fileSeq = 1;
+    app._sessionMetricsPendingKey = 'k';
+    await app._computeSessionMetricsAsync({ duration: 30 }, o, p, n, 48000, 'k');
+    expect(updates).toHaveLength(1);
+    let pSq = 0;
+    let peak = 0;
+    for (let i = 0; i < n; i++) { pSq += p[i] * p[i]; peak = Math.max(peak, Math.abs(p[i])); }
+    expect(updates[0].rms).toBeCloseTo(Math.sqrt(pSq / n), 12);
+    expect(updates[0].peak).toBe(peak);
+    expect(app._sessionMetricsCache).toBe(updates[0]);
+  });
+
+  test('a file change mid-run never publishes the old file’s metrics', async () => {
+    const n = 48000 * 30;
+    const { o, p } = stems(n);
+    const app = new Session();
+    app._fileSeq = 1;
+    app._sessionMetricsPendingKey = 'k';
+    const run = app._computeSessionMetricsAsync({ duration: 30 }, o, p, n, 48000, 'k');
+    app._fileSeq = 2; // file replaced/cleared while the pass is in flight
+    await run;
+    expect(updates).toHaveLength(0);
+    expect(app._sessionMetricsCache).toBeUndefined();
+  });
+
+  test('a newer stem pair supersedes the pending run', async () => {
+    const n = 48000 * 30;
+    const { o, p } = stems(n);
+    const app = new Session();
+    app._fileSeq = 1;
+    app._sessionMetricsPendingKey = 'old';
+    const run = app._computeSessionMetricsAsync({ duration: 30 }, o, p, n, 48000, 'old');
+    app._sessionMetricsPendingKey = 'new';
+    await run;
+    expect(updates).toHaveLength(0);
+  });
+});
