@@ -44,6 +44,29 @@ describe('downmixToMonoAsync', () => {
       .rejects.toThrow();
   });
 
+  test('stops between chunks when aborted after processing starts', async () => {
+    const ctrl = new AbortController();
+    let lastRead = -1;
+    // Abort from inside the downmix, on the first read of sample 25 000.
+    const tripwire = new Proxy(signal(200_000, 1), {
+      get(target, prop) {
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) {
+          const i = Number(prop);
+          if (i === 25_000) ctrl.abort();
+          lastRead = Math.max(lastRead, i);
+        }
+        const v = Reflect.get(target, prop);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    await expect(uiYield.downmixToMonoAsync([tripwire, signal(200_000, 2)], {
+      signal: ctrl.signal,
+      chunkSize: 10_000,
+    })).rejects.toThrow();
+    // The chunk holding the abort finishes; no later chunk starts.
+    expect(lastRead).toBe(29_999);
+  });
+
   test('empty input returns an empty array', async () => {
     expect((await uiYield.downmixToMonoAsync([])).length).toBe(0);
   });
