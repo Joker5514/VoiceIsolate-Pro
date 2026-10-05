@@ -800,11 +800,12 @@ export class PlaybackMixer {
    * before the end would otherwise stay frozen mid-way until the next play.
    */
   _settleRampingParams() {
-    const now = Math.max(this.ctx.currentTime, 0);
     for (const param of this._rampingParams) {
       const target = this._parameterTargets.get(param);
       if (target === undefined) continue;
-      param.cancelScheduledValues(now);
+      // From 0, not currentTime: cancelScheduledValues(t) only drops events at
+      // or after t, and the in-flight setTargetAtTime started before now.
+      param.cancelScheduledValues(0);
       param.value = target;
     }
     this._rampingParams.clear();
