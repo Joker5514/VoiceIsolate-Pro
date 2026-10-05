@@ -586,3 +586,9 @@ body.v3 .hint-toward em, body.v3 .hint-dir-both, body.v3 .hint-chip-both { color
 body.v3 .hint-dir-both, body.v3 .hint-chip-both { border-color: rgba(46, 213, 229, .3); background: rgba(46, 213, 229, .08); }
 body.v3 .hint-range-thumb { border-color: var(--v3-cyan); }
 body.v3 .hint-example-pill { border-color: rgba(46, 213, 229, .3); background: rgba(46, 213, 229, .08); color: var(--v3-fg-2); }
+body.v3 .hint-example-pill:hover { background: rgba(46, 213, 229, .16); color: var(--v3-fg); }
+body.v3 .slider-hint-btn:focus-visible, body.v3 .hint-example-pill:focus-visible { outline: 2px solid var(--v3-cyan); outline-offset: 2px; box-shadow: none; }
+/* Direction cues: lower = violet, raise = cyan (no red outside destructive states). */
+body.v3 .hint-range-track { background: linear-gradient(90deg, rgba(155, 108, 255, .4), rgba(46, 213, 229, .4)); }
+body.v3 .hint-dir-down, body.v3 .hint-chip-down { color: #c4a8ff; border-color: rgba(155, 108, 255, .35); background: rgba(155, 108, 255, .1); }
+body.v3 .hint-dir-up, body.v3 .hint-chip-up { color: var(--v3-cyan); border-color: rgba(46, 213, 229, .35); background: rgba(46, 213, 229, .1); }

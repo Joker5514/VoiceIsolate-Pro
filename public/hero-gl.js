@@ -80,8 +80,9 @@ export async function mountHero(canvas) {
   const onMove = (e) => {
     if (e.pointerType !== 'mouse') return;
     const r = canvas.getBoundingClientRect();
-    mouse.tx = ((e.clientX - r.left) / r.width - 0.5) * 2;
-    mouse.ty = ((e.clientY - r.top) / r.height - 0.5) * 2;
+    const clamp = (v) => Math.max(-1, Math.min(1, v)); // pointer may be outside the canvas
+    mouse.tx = clamp(((e.clientX - r.left) / r.width - 0.5) * 2);
+    mouse.ty = clamp(((e.clientY - r.top) / r.height - 0.5) * 2);
   };
   window.addEventListener('pointermove', onMove, { passive: true });
 
