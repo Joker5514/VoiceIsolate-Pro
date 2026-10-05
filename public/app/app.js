@@ -3204,18 +3204,26 @@ class VoiceIsolatePro {
       this._setSliderUi(key, val);
     }
 
-    const AI = globalThis.AIIntelligence;
-    if (AI && typeof AI.autoTuneParams === 'function') {
-      const mono = channels[0];
-      const tune = AI.autoTuneParams(mono, buffer.sampleRate, this.params);
-      for (const [key, val] of Object.entries(tune.suggestions || {})) {
-        if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
-        if (this._shouldPreserveSlider(key)) continue;
-        this._setSliderUi(key, val);
-      }
-    }
-
     this._syncBridgeParams();
+
+    // Scene auto-tune reads every sample of the track. Run synchronously it
+    // held the main thread ~0.6 s per 5 min of audio, so it runs in yielding
+    // chunks and applies its suggestions when done (if the file is unchanged).
+    const AI = globalThis.AIIntelligence;
+    if (AI && typeof AI.autoTuneParamsAsync === 'function') {
+      const fileSeq = this._fileSeq;
+      AI.autoTuneParamsAsync(channels[0], buffer.sampleRate, this.params, { yieldBudget: createYieldBudget() })
+        .then((tune) => {
+          if (fileSeq !== this._fileSeq || this.outputBuffer !== buffer) return;
+          for (const [key, val] of Object.entries(tune.suggestions || {})) {
+            if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
+            if (this._shouldPreserveSlider(key)) continue;
+            this._setSliderUi(key, val);
+          }
+          this._syncBridgeParams();
+        })
+        .catch((err) => structuredLog('warn', '[VIP] scene auto-tune failed', { err: err?.message }));
+    }
 
     const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
     structuredLog('info', '[VIP] Auto-calibrated mix', { preset, level, rmsDb });
@@ -7222,127 +7230,156 @@ class VoiceIsolatePro {
       if (key === this._sessionMetricsKey && this._sessionMetricsCache) {
         return this._sessionMetricsCache;
       }
-
-      // Pass 1 (subsampled): processed RMS/peak + retained-vs-removed energy.
-      const step = Math.max(1, Math.floor(n / 16000));
-      let pSum = 0;
-      let pCount = 0;
-      let peak = 0;
-      let voiceEnergy = 0;
-      let noiseEnergy = 0;
-      for (let i = 0; i < n; i += step) {
-        const ov = o[i];
-        const pv = p[i];
-        pSum += pv * pv;
-        pCount += 1;
-        const abs = pv < 0 ? -pv : pv;
-        if (abs > peak) peak = abs;
-        // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
-        // retained energy ≈ voice.
-        const resid = ov - pv;
-        noiseEnergy += resid * resid;
-        voiceEnergy += pv * pv;
+      // Every sample is used, so a long file is computed in yielding chunks
+      // rather than inside this progress tick; the result is pushed to the
+      // session store when ready. Until then callers get null (no update).
+      if (this._sessionMetricsPendingKey !== key) {
+        this._sessionMetricsPendingKey = key;
+        this._computeSessionMetricsAsync(orig, o, p, n, sampleRate, key)
+          .catch((err) => structuredLog('warn', '[VIP] session metrics failed', { err: err?.message }));
       }
-      const rms = Math.sqrt(pSum / Math.max(1, pCount));
-      const total = voiceEnergy + noiseEnergy + 1e-12;
-      const voiceClarity = Math.max(0, Math.min(100, (voiceEnergy / total) * 100));
-      let snrDb = 20 * Math.log10((Math.sqrt(voiceEnergy) + 1e-10) / (Math.sqrt(noiseEnergy) + 1e-10));
-      if (!Number.isFinite(snrDb)) snrDb = 0;
-      snrDb = Math.max(-40, Math.min(60, snrDb));
-
-      // Pass 2 (20 ms frames): noise floor reduction + whisper-band retention.
-      // Evenly spaced frames, at most SESSION_METRIC_FRAMES: this runs
-      // synchronously inside a pipeline progress tick, and scanning every
-      // frame cost ~130 ms per 5 minutes of audio.
-      const SESSION_METRIC_FRAMES = 6000;
-      const frame = Math.max(64, Math.floor(sampleRate * 0.02));
-      const frameStride = frame * Math.max(1, Math.ceil(Math.floor(n / frame) / SESSION_METRIC_FRAMES));
-      const preFrames = [];
-      const postFrames = [];
-      for (let pos = 0; pos + frame <= n; pos += frameStride) {
-        let ePre = 0;
-        let ePost = 0;
-        for (let i = 0; i < frame; i++) {
-          const ov = o[pos + i];
-          const pv = p[pos + i];
-          ePre += ov * ov;
-          ePost += pv * pv;
-        }
-        preFrames.push(ePre / frame);
-        postFrames.push(ePost / frame);
-      }
-      const dbOf = (v) => (v <= 1e-12 ? -120 : 10 * Math.log10(v));
-      const percentileDb = (arr) => {
-        if (!arr.length) return -120;
-        const sorted = [...arr].sort((a, b) => a - b);
-        return dbOf(sorted[Math.max(0, Math.floor(sorted.length * 0.1))]);
-      };
-      const floorPreDb = percentileDb(preFrames);
-      const floorPostDb = percentileDb(postFrames);
-      // Noise Reduction: how far the noise floor dropped, in dB (≥ 0).
-      let noiseReduction = Math.max(0, Math.min(60, floorPreDb - floorPostDb));
-      if (!preFrames.length) noiseReduction = Math.max(0, snrDb);
-
-      // Whisper Retention: energy kept in quiet (floor+2..floor+12 dB) frames.
-      let whisperPre = 0;
-      let whisperPost = 0;
-      for (let f = 0; f < preFrames.length; f++) {
-        const frameDb = dbOf(preFrames[f]);
-        if (frameDb > floorPreDb + 2 && frameDb < floorPreDb + 12) {
-          whisperPre += preFrames[f];
-          whisperPost += postFrames[f];
-        }
-      }
-      let whisperRetention;
-      if (whisperPre > 1e-12) {
-        whisperRetention = Math.max(0, Math.min(100, (whisperPost / whisperPre) * 100));
-      } else {
-        // No whisper-band frames: fall back to overall energy retention.
-        let ePre = 0;
-        let ePost = 0;
-        for (let f = 0; f < preFrames.length; f++) {
-          ePre += preFrames[f];
-          ePost += postFrames[f];
-        }
-        whisperRetention = ePre > 1e-12
-          ? Math.max(0, Math.min(100, (ePost / ePre) * 100))
-          : voiceClarity;
-      }
-
-      const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
-      // Simplified ungated LUFS (moment-based; K-weighting omitted).
-      const lufs = Math.max(-120, Math.min(0, -0.691 + 10 * Math.log10(pSum / Math.max(1, pCount) + 1e-12)));
-
-      // Voices: distinct diarization speakers when available, otherwise a
-      // speech-energy presence call.
-      let voices = null;
-      const segs = this.getDiarizationSegments();
-      if (Array.isArray(segs) && segs.length) {
-        voices = new Set(segs.map((sg) => sg.speakerId || sg.speaker || sg.id).filter(Boolean)).size;
-      } else if (voiceClarity >= 15) {
-        voices = 1;
-      } else {
-        voices = 0;
-      }
-
-      const metrics = {
-        voiceClarity,
-        noiseReduction,
-        whisperRetention,
-        outputLevelDb,
-        snrDb,
-        rms,
-        peak,
-        lufs,
-        voices,
-        duration: Number.isFinite(orig.duration) ? orig.duration : n / sampleRate,
-      };
-      this._sessionMetricsKey = key;
-      this._sessionMetricsCache = metrics;
-      return metrics;
+      return null;
     } catch (_) {
       return null;
     }
+  }
+
+  /**
+   * Exact session metrics over every sample and every 20 ms frame, in
+   * budgeted chunks. Superseded runs (stems changed again) are dropped.
+   */
+  async _computeSessionMetricsAsync(orig, o, p, n, sampleRate, key) {
+    const stale = () => this._sessionMetricsPendingKey !== key;
+
+    // Pass 1: processed RMS/peak + retained-vs-removed energy.
+    let pSum = 0;
+    let peak = 0;
+    let voiceEnergy = 0;
+    let noiseEnergy = 0;
+    await processInChunks({
+      total: n,
+      chunkSize: 48000 * 2,
+      runChunk: (start, end) => {
+        for (let i = start; i < end; i++) {
+          const ov = o[i];
+          const pv = p[i];
+          pSum += pv * pv;
+          const abs = pv < 0 ? -pv : pv;
+          if (abs > peak) peak = abs;
+          // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
+          // retained energy ≈ voice.
+          const resid = ov - pv;
+          noiseEnergy += resid * resid;
+          voiceEnergy += pv * pv;
+        }
+      },
+    });
+    if (stale()) return;
+    const pCount = n;
+    const rms = Math.sqrt(pSum / Math.max(1, pCount));
+    const total = voiceEnergy + noiseEnergy + 1e-12;
+    const voiceClarity = Math.max(0, Math.min(100, (voiceEnergy / total) * 100));
+    let snrDb = 20 * Math.log10((Math.sqrt(voiceEnergy) + 1e-10) / (Math.sqrt(noiseEnergy) + 1e-10));
+    if (!Number.isFinite(snrDb)) snrDb = 0;
+    snrDb = Math.max(-40, Math.min(60, snrDb));
+
+    // Pass 2 (every 20 ms frame): noise floor reduction + whisper-band retention.
+    const frame = Math.max(64, Math.floor(sampleRate * 0.02));
+    const frameCount = Math.floor(n / frame);
+    const preFrames = new Float64Array(frameCount);
+    const postFrames = new Float64Array(frameCount);
+    await processInChunks({
+      total: frameCount,
+      chunkSize: 100,
+      runChunk: (fStart, fEnd) => {
+        for (let f = fStart; f < fEnd; f++) {
+          const pos = f * frame;
+          let ePre = 0;
+          let ePost = 0;
+          for (let i = 0; i < frame; i++) {
+            const ov = o[pos + i];
+            const pv = p[pos + i];
+            ePre += ov * ov;
+            ePost += pv * pv;
+          }
+          preFrames[f] = ePre / frame;
+          postFrames[f] = ePost / frame;
+        }
+      },
+    });
+    if (stale()) return;
+    const dbOf = (v) => (v <= 1e-12 ? -120 : 10 * Math.log10(v));
+    const percentileDb = (arr) => {
+      if (!arr.length) return -120;
+      const sorted = Float64Array.from(arr).sort();
+      return dbOf(sorted[Math.max(0, Math.floor(sorted.length * 0.1))]);
+    };
+    const floorPreDb = percentileDb(preFrames);
+    const floorPostDb = percentileDb(postFrames);
+    // Noise Reduction: how far the noise floor dropped, in dB (≥ 0).
+    let noiseReduction = Math.max(0, Math.min(60, floorPreDb - floorPostDb));
+    if (!preFrames.length) noiseReduction = Math.max(0, snrDb);
+
+    // Whisper Retention: energy kept in quiet (floor+2..floor+12 dB) frames.
+    let whisperPre = 0;
+    let whisperPost = 0;
+    for (let f = 0; f < preFrames.length; f++) {
+      const frameDb = dbOf(preFrames[f]);
+      if (frameDb > floorPreDb + 2 && frameDb < floorPreDb + 12) {
+        whisperPre += preFrames[f];
+        whisperPost += postFrames[f];
+      }
+    }
+    let whisperRetention;
+    if (whisperPre > 1e-12) {
+      whisperRetention = Math.max(0, Math.min(100, (whisperPost / whisperPre) * 100));
+    } else {
+      // No whisper-band frames: fall back to overall energy retention.
+      let ePre = 0;
+      let ePost = 0;
+      for (let f = 0; f < preFrames.length; f++) {
+        ePre += preFrames[f];
+        ePost += postFrames[f];
+      }
+      whisperRetention = ePre > 1e-12
+        ? Math.max(0, Math.min(100, (ePost / ePre) * 100))
+        : voiceClarity;
+    }
+
+    const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
+    // Simplified ungated LUFS (moment-based; K-weighting omitted).
+    const lufs = Math.max(-120, Math.min(0, -0.691 + 10 * Math.log10(pSum / Math.max(1, pCount) + 1e-12)));
+
+    // Voices: distinct diarization speakers when available, otherwise a
+    // speech-energy presence call.
+    let voices = null;
+    const segs = this.getDiarizationSegments();
+    if (Array.isArray(segs) && segs.length) {
+      voices = new Set(segs.map((sg) => sg.speakerId || sg.speaker || sg.id).filter(Boolean)).size;
+    } else if (voiceClarity >= 15) {
+      voices = 1;
+    } else {
+      voices = 0;
+    }
+
+    const metrics = {
+      voiceClarity,
+      noiseReduction,
+      whisperRetention,
+      outputLevelDb,
+      snrDb,
+      rms,
+      peak,
+      lufs,
+      voices,
+      duration: Number.isFinite(orig.duration) ? orig.duration : n / sampleRate,
+    };
+    if (stale()) return;
+    this._sessionMetricsKey = key;
+    this._sessionMetricsCache = metrics;
+    try {
+      getAudioSessionStore().updateMetrics(metrics);
+    } catch (_) { /* session metrics must never fail the pipeline */ }
   }
 
   _setScrubPos(frac) {

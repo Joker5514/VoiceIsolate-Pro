@@ -105,18 +105,95 @@ const AIIntelligence = {
    * @returns {{ scene: string, confidence: number, scores: Object }}
    */
   classifyScene(audio, sr = 48000) {
-    audio = this._sceneExcerpt(audio, sr);
-    const len = audio.length;
-    if (len < 1024) return { scene: 'podcast', confidence: 0.5, scores: {}, features: { rms: 0, peak: 0, crestFactor: 0, zcr: 0, spectralCentroid: 0, spectralFlux: 0, dynamicRange: 0 } };
-
-    // Feature extraction
+    if (audio.length < 1024) return this._defaultScene();
     const rms = this._calcRMS(audio);
     const peak = this._calcPeak(audio);
-    const crestFactor = peak / (rms + 1e-10);
-    const zcr = this._calcZCR(audio);
-    const spectralCentroid = this._calcSpectralCentroid(audio, sr);
-    const spectralFlux = this._calcSpectralFlux(audio);
-    const dynamicRange = this._calcDynamicRange(audio);
+    return this._classifyFromFeatures({
+      rms,
+      peak,
+      crestFactor: peak / (rms + 1e-10),
+      zcr: this._calcZCR(audio),
+      spectralCentroid: this._calcSpectralCentroid(audio, sr),
+      spectralFlux: this._calcSpectralFlux(audio),
+      dynamicRange: this._calcDynamicRange(audio),
+    });
+  },
+
+  /**
+   * classifyScene over the whole track without blocking the main thread:
+   * the same features from every sample, accumulated in chunks with
+   * `opts.yieldBudget` awaited between them. Results equal classifyScene.
+   * @param {Float32Array} audio
+   * @param {number} sr
+   * @param {{ yieldBudget?: () => Promise<void> }} [opts]
+   */
+  async classifySceneAsync(audio, sr = 48000, opts = {}) {
+    if (audio.length < 1024) return this._defaultScene();
+    if (!(audio instanceof Float32Array)) return this.classifyScene(audio, sr);
+    const yieldBudget = opts.yieldBudget || (() => Promise.resolve());
+    const n = audio.length;
+    const CHUNK = 1 << 17;
+    const bits = new Uint32Array(audio.buffer, audio.byteOffset, n);
+    const hi = new Uint32Array(65536);
+    // Pass 1: RMS, peak, ZCR and the high-bits histogram for the percentiles.
+    let sumSq = 0;
+    let peak = 0;
+    let crossings = 0;
+    for (let start = 0; start < n; start += CHUNK) {
+      const end = Math.min(n, start + CHUNK);
+      for (let i = start; i < end; i++) {
+        const v = audio[i];
+        sumSq += v * v;
+        const abs = Math.abs(v);
+        if (abs > peak) peak = abs;
+        if (i > 0 && (v >= 0) !== (audio[i - 1] >= 0)) crossings++;
+        hi[(bits[i] & 0x7fffffff) >>> 15]++;
+      }
+      await yieldBudget();
+    }
+    // Pass 2: resolve the 5th/95th percentile of |x| (as _absOrderStats).
+    const targets = [Math.floor(0.05 * n), Math.floor(0.95 * n)].map((k) => {
+      let acc = 0;
+      let bucket = 0;
+      while (acc + hi[bucket] <= k) acc += hi[bucket++];
+      return { bucket, rank: k - acc, lo: new Uint32Array(32768) };
+    });
+    for (let start = 0; start < n; start += CHUNK) {
+      const end = Math.min(n, start + CHUNK);
+      for (let i = start; i < end; i++) {
+        const b = bits[i] & 0x7fffffff;
+        const bucket = b >>> 15;
+        for (const t of targets) if (t.bucket === bucket) t.lo[b & 0x7fff]++;
+      }
+      await yieldBudget();
+    }
+    const word = new Uint32Array(1);
+    const asFloat = new Float32Array(word.buffer);
+    const [p05raw, p95] = targets.map((t) => {
+      let acc = 0;
+      let low = 0;
+      while (acc + t.lo[low] <= t.rank) acc += t.lo[low++];
+      word[0] = (t.bucket << 15) | low;
+      return asFloat[0];
+    });
+    const rms = Math.sqrt(sumSq / n);
+    return this._classifyFromFeatures({
+      rms,
+      peak,
+      crestFactor: peak / (rms + 1e-10),
+      zcr: crossings / n,
+      spectralCentroid: this._calcSpectralCentroid(audio, sr),
+      spectralFlux: this._calcSpectralFlux(audio),
+      dynamicRange: 20 * Math.log10(p95 / (p05raw + 1e-10)),
+    });
+  },
+
+  _defaultScene() {
+    return { scene: 'podcast', confidence: 0.5, scores: {}, features: { rms: 0, peak: 0, crestFactor: 0, zcr: 0, spectralCentroid: 0, spectralFlux: 0, dynamicRange: 0 } };
+  },
+
+  _classifyFromFeatures(features) {
+    const { rms, peak, crestFactor, zcr, spectralCentroid, spectralFlux, dynamicRange } = features;
 
     // Heuristic scoring for each scene type
     const scores = {};
@@ -195,7 +272,15 @@ const AIIntelligence = {
    * @returns {Object} suggested parameter overrides
    */
   autoTuneParams(audio, sr, currentParams = {}) {
-    const analysis = this.classifyScene(audio, sr);
+    return this._tuneFromAnalysis(this.classifyScene(audio, sr));
+  },
+
+  /** autoTuneParams over the whole track, yielding between chunks. */
+  async autoTuneParamsAsync(audio, sr, _currentParams = {}, opts = {}) {
+    return this._tuneFromAnalysis(await this.classifySceneAsync(audio, sr, opts));
+  },
+
+  _tuneFromAnalysis(analysis) {
     const { features } = analysis;
     const suggestions = {};
 
@@ -322,37 +407,6 @@ const AIIntelligence = {
   },
 
   // ── Private Helpers ────────────────────────────────────────────────────
-  /**
-   * Evenly spaced contiguous blocks covering at most SCENE_EXCERPT_SEC of a
-   * long track. classifyScene runs synchronously in the post-Process idle
-   * callback; five full-track passes held the main thread ~0.6 s per 5 min of
-   * audio. Contiguous 1 s blocks keep RMS, ZCR and the level percentiles
-   * representative of the whole file at a bounded cost.
-   *
-   * On long input every feature is an estimate from these blocks, including
-   * peak and crest factor: a transient between blocks is not seen. The
-   * Engineer caller passes the output stem, which has already been through
-   * the true-peak limiter: that bounds how far the excerpt peak can fall
-   * short, but does not normalize quieter stems, so a missed transient can
-   * still shift crest factor and, rarely, the chosen scene.
-   * @param {Float32Array} audio
-   * @param {number} sr
-   * @returns {Float32Array}
-   */
-  _sceneExcerpt(audio, sr) {
-    const SCENE_EXCERPT_SEC = 30;
-    const block = Math.max(1024, Math.round(sr || 48000));
-    const blocks = SCENE_EXCERPT_SEC;
-    if (!(audio instanceof Float32Array) || audio.length <= block * blocks) return audio;
-    const out = new Float32Array(block * blocks);
-    const stride = (audio.length - block) / (blocks - 1);
-    for (let b = 0; b < blocks; b++) {
-      const start = Math.floor(b * stride);
-      out.set(audio.subarray(start, start + block), b * block);
-    }
-    return out;
-  },
-
   _calcRMS(audio) {
     let sum = 0;
     for (let i = 0; i < audio.length; i++) sum += audio[i] * audio[i];
