@@ -208,14 +208,22 @@ export class FullAnalysisHost {
 
     // Copy before the request goes live: a synchronous slice() of a long
     // channel blocked the main thread right after Process.
-    const yieldBudget = createYieldBudget();
+    const budget = createYieldBudget();
+    const throwIfStale = () => {
+      throwIfAborted(signal);
+      if (generation !== this._analysisGeneration) {
+        throw new CancellationError('Superseded by a newer analysis');
+      }
+    };
+    const yieldBudget = async () => {
+      throwIfStale();
+      await budget();
+      throwIfStale();
+    };
     const payloadChannels = [];
     for (const ch of channels) {
       payloadChannels.push(await copyFloat32Channel(ch, { yieldBudget }));
-      throwIfAborted(signal);
-    }
-    if (generation !== this._analysisGeneration) {
-      throw new CancellationError('Superseded by a newer analysis');
+      throwIfStale();
     }
 
     const requestId = ++this._requestId;

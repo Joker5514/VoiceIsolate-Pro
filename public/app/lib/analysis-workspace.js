@@ -211,6 +211,8 @@ export function installAnalysisWorkspace(app) {
     if (ctx.state === 'suspended') await ctx.resume();
     const original = app.origBuffer || app.inputBuffer;
     const packed = await usmSourcesToAudioBuffersAsync(ctx, usmNode.sources, usmNode.sampleRate);
+    // The copy yields: a different file may have been loaded meanwhile.
+    if ((app.origBuffer || app.inputBuffer) !== original) return;
     audition.buildFromUSM(packed, ctx, original || null);
     transport.attachClock(() => audition.getCurrentTime());
     renderAuditionStrip();
