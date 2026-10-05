@@ -18,7 +18,7 @@ import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityCh
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
 import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
-import { downmixToMonoAsync } from '/src/pipeline/ui-yield.js';
+import { anySignal, downmixToMonoAsync } from '/src/pipeline/ui-yield.js';
 import {
   enrichAnalysisWithCollaboration,
   applyHunterFeedbackToAnalysis,
@@ -660,9 +660,7 @@ export function installAnalysisWorkspace(app) {
       }
       // Use mono mix for speed on long files — still multi-channel aware via count.
       // Budgeted: a synchronous downmix froze the tab ~0.7 s per 5 min of stereo.
-      const downmixSignal = signal && typeof AbortSignal.any === 'function'
-        ? AbortSignal.any([signal, sourceSignal])
-        : (signal || sourceSignal);
+      const downmixSignal = anySignal([signal, sourceSignal]);
       const mono = await downmixToMonoAsync(channels, { signal: downmixSignal });
       if (superseded()) return null;
       const prevProgress = host.onProgress;

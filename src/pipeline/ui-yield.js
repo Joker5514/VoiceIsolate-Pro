@@ -332,6 +332,35 @@ export async function copyChannelsToAudioBuffer(buf, channels, opts = {}) {
 }
 
 /**
+ * One signal that aborts when any input aborts. AbortSignal.any where the
+ * engine has it (Chromium 116+); otherwise a listener-based composite, so
+ * older WebViews still cancel on either source. Null inputs are ignored.
+ * @param {(AbortSignal|null|undefined)[]} signals
+ * @returns {AbortSignal|null}
+ */
+export function anySignal(signals) {
+  const list = (signals || []).filter(Boolean);
+  if (list.length <= 1) return list[0] || null;
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
+    return AbortSignal.any(list);
+  }
+  const ctrl = new AbortController();
+  const onAbort = (e) => {
+    for (const s of list) s.removeEventListener('abort', onAbort);
+    ctrl.abort(e?.target?.reason);
+  };
+  for (const s of list) {
+    if (s.aborted) {
+      ctrl.abort(s.reason);
+      break;
+    }
+    s.addEventListener('abort', onAbort, { once: true });
+  }
+  if (ctrl.signal.aborted) for (const s of list) s.removeEventListener('abort', onAbort);
+  return ctrl.signal;
+}
+
+/**
  * Average channels into a new mono Float32Array in budgeted slices.
  *
  * A synchronous downmix of a 5-minute stereo stem held the main thread
@@ -367,6 +396,7 @@ export async function downmixToMonoAsync(channels, opts = {}) {
 
 export default {
   createYieldBudget,
+  anySignal,
   downmixToMonoAsync,
   copyFloat32Channel,
   copyChannelsToAudioBuffer,

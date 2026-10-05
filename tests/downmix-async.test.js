@@ -71,3 +71,56 @@ describe('downmixToMonoAsync', () => {
     expect((await uiYield.downmixToMonoAsync([])).length).toBe(0);
   });
 });
+
+describe('anySignal', () => {
+  const realAny = AbortSignal.any;
+  afterEach(() => { AbortSignal.any = realAny; });
+
+  for (const mode of ['native', 'fallback']) {
+    describe(mode, () => {
+      beforeEach(() => { if (mode === 'fallback') AbortSignal.any = undefined; });
+
+      test('aborts when either input aborts', () => {
+        for (const which of [0, 1]) {
+          const a = new AbortController();
+          const b = new AbortController();
+          const s = uiYield.anySignal([a.signal, b.signal]);
+          expect(s.aborted).toBe(false);
+          (which ? b : a).abort('stop');
+          expect(s.aborted).toBe(true);
+          expect(s.reason).toBe('stop');
+        }
+      });
+
+      test('is already aborted when an input already is', () => {
+        const a = new AbortController();
+        a.abort('early');
+        const s = uiYield.anySignal([new AbortController().signal, a.signal]);
+        expect(s.aborted).toBe(true);
+        expect(s.reason).toBe('early');
+      });
+
+      test('stops a running downmix when the second signal aborts', async () => {
+        const job = new AbortController();
+        const source = new AbortController();
+        const ch = new Proxy(signal(100_000, 1), {
+          get(t, p) {
+            if (p === '20000') source.abort();
+            const v = Reflect.get(t, p);
+            return typeof v === 'function' ? v.bind(t) : v;
+          },
+        });
+        await expect(uiYield.downmixToMonoAsync([ch, signal(100_000, 2)], {
+          signal: uiYield.anySignal([job.signal, source.signal]),
+          chunkSize: 10_000,
+        })).rejects.toThrow();
+      });
+    });
+  }
+
+  test('passes a single signal through and ignores nulls', () => {
+    const a = new AbortController();
+    expect(uiYield.anySignal([null, a.signal, undefined])).toBe(a.signal);
+    expect(uiYield.anySignal([null])).toBe(null);
+  });
+});
