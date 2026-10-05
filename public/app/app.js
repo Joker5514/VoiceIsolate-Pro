@@ -7149,27 +7149,15 @@ class VoiceIsolatePro {
       const n = Math.min(o.length, p.length);
       if (n < 32) return { voicePct: null, noisePct: null, snrDb: null };
 
-      // Subsample for UI speed.
-      const step = Math.max(1, Math.floor(n / 8000));
-      let oRms = 0;
-      let pRms = 0;
-      let oCount = 0;
-      let voiceEnergy = 0;
-      let noiseEnergy = 0;
-      for (let i = 0; i < n; i += step) {
-        const ov = o[i];
-        const pv = p[i];
-        oRms += ov * ov;
-        pRms += pv * pv;
-        oCount += 1;
-        // Proxy: residual |orig-proc| ≈ noise removed; retained energy ≈ voice.
-        const resid = ov - pv;
-        noiseEnergy += resid * resid;
-        voiceEnergy += pv * pv;
-      }
-      if (!oCount) return { voicePct: null, noisePct: null, snrDb: null };
-      oRms = Math.sqrt(oRms / oCount);
-      pRms = Math.sqrt(pRms / oCount);
+      // Exact sums over every sample, computed off the progress tick and
+      // cached per stem pair; until ready the header shows "--".
+      const sums = this._audioMetricSums(orig, proc, o, p, n);
+      if (!sums) return { voicePct: null, noisePct: null, snrDb: null };
+      const { oSq, pSq, noiseEnergy } = sums;
+      const voiceEnergy = pSq;
+      const oCount = n;
+      const oRms = Math.sqrt(oSq / oCount);
+      const pRms = Math.sqrt(pSq / oCount);
       const total = voiceEnergy + noiseEnergy + 1e-12;
       let voicePct = (voiceEnergy / total) * 100;
       let noisePct = (noiseEnergy / total) * 100;
@@ -7196,6 +7184,54 @@ class VoiceIsolatePro {
     } catch (_) {
       return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
     }
+  }
+
+  /**
+   * Exact energy sums for the Voice/Noise/SNR header, over every sample of
+   * the stem pair, in yielding chunks. Cached by a content stamp (stems can
+   * be refilled in place) for the last few pairs, so A/B toggles are
+   * instant. Returns null while a pass is running; when it finishes the
+   * header is repainted through updateAudioMetrics().
+   */
+  _audioMetricSums(orig, proc, o, p, n) {
+    const stamp = (buf, d) => `${d.length}@${buf.sampleRate}:${d[0]}|${d[d.length >> 1]}|${d[d.length - 1]}`;
+    const key = `${stamp(orig, o)}|${proc === orig ? '=' : stamp(proc, p)}`;
+    if (!this._audioMetricSumsCache) this._audioMetricSumsCache = new Map();
+    const cache = this._audioMetricSumsCache;
+    if (cache.has(key)) return cache.get(key);
+    if (!this._audioMetricSumsPending) this._audioMetricSumsPending = new Set();
+    if (this._audioMetricSumsPending.has(key)) return null;
+    this._audioMetricSumsPending.add(key);
+    let oSq = 0;
+    let pSq = 0;
+    let noiseEnergy = 0;
+    processInChunks({
+      total: n,
+      chunkSize: 48000 * 2,
+      runChunk: (start, end) => {
+        for (let i = start; i < end; i++) {
+          const ov = o[i];
+          const pv = p[i];
+          oSq += ov * ov;
+          pSq += pv * pv;
+          // Proxy: residual |orig-proc| ≈ noise removed; retained energy ≈ voice.
+          const resid = ov - pv;
+          noiseEnergy += resid * resid;
+        }
+      },
+    }).then(() => {
+      cache.set(key, { oSq, pSq, noiseEnergy });
+      while (cache.size > 4) cache.delete(cache.keys().next().value);
+      // Repaint only if these are still the stems on screen.
+      const curOrig = this.origBuffer || this.inputBuffer;
+      const curProc = this.abMode === 'original' ? curOrig : (this.outputBuffer || this.procBuffer || curOrig);
+      if (curOrig === orig && curProc === proc) this.updateAudioMetrics();
+    }).catch((err) => {
+      structuredLog('warn', '[VIP] audio metrics failed', { err: err?.message });
+    }).finally(() => {
+      this._audioMetricSumsPending.delete(key);
+    });
+    return null;
   }
 
   /**
