@@ -93,13 +93,14 @@
     return (audioBuf.length || 0) + ':' + (audioBuf.sampleRate || 0) + ':' + (color || '');
   }
 
-  function _waveEnvelope(audioBuf, w) {
-    const hit = _waveEnvCache.get(audioBuf);
-    if (hit && hit.w === w) return hit;
-    const data = audioBuf.getChannelData(0);
-    const step = Math.max(1, Math.floor(data.length / w));
-    const env = { w, min: new Float32Array(w), max: new Float32Array(w) };
-    for (let x = 0; x < w; x++) {
+  // Exact min/max per pixel column over every sample. Long stems are scanned
+  // in time-budgeted chunks (one blocking pass was ~120 ms per 5 min of
+  // audio); until then callers get null and are redrawn when it is ready.
+  const WAVE_SYNC_MAX_SAMPLES = 48000 * 30;
+  const _waveEnvPending = new WeakMap();
+
+  function _scanEnvelopeColumns(data, step, env, x0, x1) {
+    for (let x = x0; x < x1; x++) {
       let min = 1.0;
       let max = -1.0;
       const base = x * step;
@@ -112,8 +113,50 @@
       env.min[x] = min;
       env.max[x] = max;
     }
-    _waveEnvCache.set(audioBuf, env);
-    return env;
+  }
+
+  function _waveEnvelope(audioBuf, w, canvas, onReady) {
+    const hit = _waveEnvCache.get(audioBuf);
+    if (hit && hit.w === w) return hit;
+    const data = audioBuf.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / w));
+    const env = { w, min: new Float32Array(w), max: new Float32Array(w) };
+    if (data.length <= WAVE_SYNC_MAX_SAMPLES) {
+      _scanEnvelopeColumns(data, step, env, 0, w);
+      _waveEnvCache.set(audioBuf, env);
+      return env;
+    }
+    let pending = _waveEnvPending.get(audioBuf);
+    // One redraw per canvas: the playhead loop asks again every frame.
+    if (pending && pending.w === w) {
+      if (onReady && canvas) pending.waiters.set(canvas, onReady);
+      return null;
+    }
+    pending = { w, waiters: new Map() };
+    if (onReady && canvas) pending.waiters.set(canvas, onReady);
+    _waveEnvPending.set(audioBuf, pending);
+    const BUDGET_MS = 8;
+    let x = 0;
+    const runSlice = () => {
+      if (_waveEnvPending.get(audioBuf) !== pending) return; // superseded width
+      const t0 = performance.now();
+      while (x < w && performance.now() - t0 < BUDGET_MS) {
+        const x1 = Math.min(w, x + 16);
+        _scanEnvelopeColumns(data, step, env, x, x1);
+        x = x1;
+      }
+      if (x < w) {
+        setTimeout(runSlice, 0);
+        return;
+      }
+      _waveEnvPending.delete(audioBuf);
+      _waveEnvCache.set(audioBuf, env);
+      for (const cb of pending.waiters.values()) {
+        try { cb(); } catch (_) { /* a stale canvas must not block others */ }
+      }
+    };
+    setTimeout(runSlice, 0);
+    return null;
   }
 
   function _drawWaveformBase(canvas, audioBuf, color) {
@@ -128,11 +171,20 @@
       return true;
     }
 
-    const env = _waveEnvelope(audioBuf, w);
+    const env = _waveEnvelope(audioBuf, w, canvas, () => _drawWaveformBase(canvas, audioBuf, color));
     const mid = h / 2;
 
     ctx.fillStyle = '#030306';
     ctx.fillRect(0, 0, w, h);
+    if (!env) {
+      // Envelope still being built: background + centre line, not cached.
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.beginPath();
+      ctx.moveTo(0, mid);
+      ctx.lineTo(w, mid);
+      ctx.stroke();
+      return false;
+    }
     ctx.strokeStyle = color || '#22d3ee';
     ctx.lineWidth = 1;
     ctx.beginPath();
