@@ -39,8 +39,16 @@ describe('analysis collaboration reset wiring', () => {
     expect(workspaceJs).toContain('const runSource = sourceGeneration;');
     expect(workspaceJs).toMatch(/return runSource !== sourceGeneration\s*\|\|/);
     expect(workspaceJs).toMatch(
-      /const mono = await downmixToMonoAsync\(channels, \{ signal \}\);\s*if \(superseded\(\)\) return null;[\s\S]*?host\.analyze\(/
+      /const mono = await downmixToMonoAsync\(channels, \{ signal: downmixSignal \}\);\s*if \(superseded\(\)\) return null;[\s\S]*?host\.analyze\(/
     );
+  });
+
+  test('a file change aborts stale downmix and USM packing mid-way', () => {
+    expect(workspaceJs).toMatch(/sourceGeneration \+= 1;\s*sourceAbort\.abort\(\);\s*sourceAbort = new AbortController\(\);/);
+    expect(workspaceJs).toContain('AbortSignal.any([signal, sourceSignal])');
+    expect(workspaceJs).toMatch(/usmSourcesToAudioBuffersAsync\(ctx, usmNode\.sources, usmNode\.sampleRate, \{\s*signal: sourceSignal,/);
+    // A decode that lost a file switch must not report "no file loaded".
+    expect(workspaceJs).toMatch(/await app\.ensureDecoded\(\);\s*\/\/[^\n]*\n\s*if \(runSource !== sourceGeneration\) return null;/);
   });
 
   test('every runAnalysis exit settles its job, including stale-source returns', () => {

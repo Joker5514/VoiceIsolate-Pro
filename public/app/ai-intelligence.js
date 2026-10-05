@@ -332,8 +332,9 @@ const AIIntelligence = {
    * On long input every feature is an estimate from these blocks, including
    * peak and crest factor: a transient between blocks is not seen. The
    * Engineer caller passes the output stem, which has already been through
-   * the true-peak limiter, so its global peak sits near the limiter ceiling
-   * and the excerpt peak rarely differs in a way that changes the scene.
+   * the true-peak limiter: that bounds how far the excerpt peak can fall
+   * short, but does not normalize quieter stems, so a missed transient can
+   * still shift crest factor and, rarely, the chosen scene.
    * @param {Float32Array} audio
    * @param {number} sr
    * @returns {Float32Array}

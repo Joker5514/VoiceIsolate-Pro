@@ -101,8 +101,11 @@ export function installAnalysisWorkspace(app) {
   let timeline = null;
   let lastAnalysis = null;
   let cancelled = false;
-  // Bumped by clearState(): a run that started on an older source is stale.
+  // Bumped/aborted by clearState(): work started on an older source is stale.
+  // The job signal is not aborted by a file change, so long copies also
+  // listen to sourceAbort and stop mid-way instead of finishing for nothing.
   let sourceGeneration = 0;
+  let sourceAbort = new AbortController();
   let usmBusy = false;
 
   if (els.timeline) {
@@ -212,9 +215,18 @@ export function installAnalysisWorkspace(app) {
     if (!ctx) return;
     if (ctx.state === 'suspended') await ctx.resume();
     const original = app.origBuffer || app.inputBuffer;
-    const packed = await usmSourcesToAudioBuffersAsync(ctx, usmNode.sources, usmNode.sampleRate);
+    const sourceSignal = sourceAbort.signal;
+    let packed;
+    try {
+      packed = await usmSourcesToAudioBuffersAsync(ctx, usmNode.sources, usmNode.sampleRate, {
+        signal: sourceSignal,
+      });
+    } catch (err) {
+      if (sourceSignal.aborted) return; // file changed mid-copy: not an error
+      throw err;
+    }
     // The copy yields: a different file may have been loaded meanwhile.
-    if ((app.origBuffer || app.inputBuffer) !== original) return;
+    if (sourceSignal.aborted || (app.origBuffer || app.inputBuffer) !== original) return;
     audition.buildFromUSM(packed, ctx, original || null);
     transport.attachClock(() => audition.getCurrentTime());
     renderAuditionStrip();
@@ -475,6 +487,8 @@ export function installAnalysisWorkspace(app) {
 
   function clearState() {
     sourceGeneration += 1;
+    sourceAbort.abort();
+    sourceAbort = new AbortController();
     cancelled = false;
     lastAnalysis = null;
     app._lastFullAnalysis = null;
@@ -578,11 +592,14 @@ export function installAnalysisWorkspace(app) {
     showError('');
     cancelled = false;
     const runSource = sourceGeneration;
+    const sourceSignal = sourceAbort.signal;
     const jobs = globalThis.__VIP_JOBS__;
     let job = null;
     // Decode on the analyzer path (not at upload) — keeps the tab responsive.
     if (typeof app.ensureDecoded === 'function') {
       const decoded = await app.ensureDecoded();
+      // A file switch mid-decode is not "no file loaded".
+      if (runSource !== sourceGeneration) return null;
       if (!decoded) {
         showError('Load an audio or video file first, then analyze.');
         return null;
@@ -643,7 +660,10 @@ export function installAnalysisWorkspace(app) {
       }
       // Use mono mix for speed on long files — still multi-channel aware via count.
       // Budgeted: a synchronous downmix froze the tab ~0.7 s per 5 min of stereo.
-      const mono = await downmixToMonoAsync(channels, { signal });
+      const downmixSignal = signal && typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([signal, sourceSignal])
+        : (signal || sourceSignal);
+      const mono = await downmixToMonoAsync(channels, { signal: downmixSignal });
       if (superseded()) return null;
       const prevProgress = host.onProgress;
       const reportProgress = (pct, stage) => {
