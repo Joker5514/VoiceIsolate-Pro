@@ -17,7 +17,7 @@ export async function mountHero(canvas) {
     float hgt(vec2 p){
       float b = band(p.y);
       float env = 0.5 + 0.5*sin(p.x*0.32 - uTime*0.55);
-      float edge = smoothstep(11.5, 3.5, abs(p.x));
+      float edge = 1.0 - smoothstep(3.5, 11.5, abs(p.x));
       float v = (abs(sin(p.x*1.6 + uTime*1.25))*0.55 + abs(sin(p.x*3.3 - uTime*0.85))*0.3 + abs(sin(p.x*6.1 + uTime*2.1))*0.15) * env * edge;
       float g = (sin(p.x*0.85 + p.y*1.3 + uTime*0.45)*0.5+0.5)*0.32 + (sin(p.x*2.2 - p.y*0.8 - uTime*0.7)*0.5+0.5)*0.14;
       return b*v*2.6 + (1.0-b)*g*0.7*edge;
@@ -41,7 +41,7 @@ export async function mountHero(canvas) {
         float br = 0.28 + vH*0.55 + vB*0.35;
         float s = exp(-pow((vX-uScan)/0.55,2.0));
         c = c*br + s*vec3(0.55,0.95,1.0)*(0.4+vB);
-        float a = smoothstep(11.5,6.5,abs(vX)) * smoothstep(7.0,2.0,abs(vZ)+0.6);
+        float a = (1.0 - smoothstep(6.5,11.5,abs(vX))) * (1.0 - smoothstep(2.0,7.0,abs(vZ)+0.6));
         gl_FragColor = vec4(c, a);
       }`,
   });
@@ -85,16 +85,24 @@ export async function mountHero(canvas) {
   };
   window.addEventListener('pointermove', onMove, { passive: true });
 
+  let redrawStill = null; // set when the scene is a single still frame
   const resize = () => {
     const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.fov = w / h < 1.2 ? 48 : 34;
     camera.updateProjectionMatrix();
+    if (redrawStill) redrawStill(); // setSize clears the drawing buffer
   };
   const ro = new ResizeObserver(resize); ro.observe(canvas); resize();
 
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // A software rasterizer (no GPU) would spend the CPU that local audio playback and
+  // inference need, so it gets one still frame, as with reduced motion.
+  const gl = renderer.getContext();
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpu = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+  const software = /swiftshader|llvmpipe|softpipe|software/i.test(gpu);
+  const reduce = software || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let visible = true, raf = 0;
   const t0 = performance.now();
 
@@ -115,7 +123,7 @@ export async function mountHero(canvas) {
     if (visible && !raf && !reduce) raf = requestAnimationFrame(loop);
   });
   io.observe(canvas);
-  if (reduce) frame(t0 + 4000); else raf = requestAnimationFrame(loop);
+  if (reduce) { redrawStill = () => frame(t0 + 4000); redrawStill(); } else raf = requestAnimationFrame(loop);
 
   return () => {
     cancelAnimationFrame(raf); ro.disconnect(); io.disconnect();

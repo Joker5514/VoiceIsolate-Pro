@@ -265,6 +265,7 @@ body.v3 .v3-sculpt__bar {
   background: linear-gradient(to top, rgba(155, 108, 255, .08), rgba(155, 108, 255, .75));
   animation: v3Rise 2.8s cubic-bezier(.45, 0, .55, 1) infinite;
 }
+body.v3 .v3-sculpt--paused .v3-sculpt__drift, body.v3 .v3-sculpt--paused .v3-sculpt__scan, body.v3 .v3-sculpt--paused .v3-sculpt__bar { animation-play-state: paused; }
 body.v3 .v3-sculpt__bar--voice { background: linear-gradient(to top, rgba(46, 213, 229, .08), rgba(46, 213, 229, 1)); box-shadow: 0 0 14px rgba(46, 213, 229, .55); animation-duration: 1.9s; }
 @keyframes v3Rise { 0%, 100% { transform: rotateX(-90deg) scaleY(.14); } 50% { transform: rotateX(-90deg) scaleY(1); } }
 
@@ -400,11 +401,13 @@ body.v3 .v3-lane .vip-switch--on .vip-switch__thumb { transform: translateX(10px
 
 /* Slider rows (lanes, volume, advanced) */
 body.v3 .v3-workspace .slider-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label val" "input input";
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "label val hint" "input input input" "panel panel panel";
   align-items: center; gap: 4px 8px; margin: 0; padding: 0; background: none; border: 0;
 }
 body.v3 .v3-workspace .slider-row label { grid-area: label; font: 500 12px/1.2 var(--v3-sans); color: var(--v3-fg-3); }
 body.v3 .v3-workspace .slider-row input[type='range'] { grid-area: input; width: 100%; min-width: 0; margin: 0; }
+body.v3 .v3-workspace .slider-row .slider-hint-btn { grid-area: hint; align-self: center; }
+body.v3 .v3-workspace .slider-row .slider-hint { grid-area: panel; }
 body.v3 .v3-workspace .slider-row .slider-val { grid-area: val; min-width: 38px; text-align: right; font: 400 12px/1 var(--v3-mono); font-variant-numeric: tabular-nums; color: var(--v3-fg-2); }
 body.v3 .v3-lane--bg input[type='range'] { --v3-range: var(--v3-violet); }
 body.v3 .v3-workspace .slider-row:hover .slider-val { color: var(--v3-fg); }
@@ -572,3 +575,14 @@ body.v3 .v3-modes .ps-chip--live { color: var(--v3-cyan); background: rgba(46, 2
 body.v3 #archBadgeMount { background: none; border: 0; padding: 0; box-shadow: none; }
 body.v3 #archBadgeMount .vip-badge { color: var(--v3-cyan); background: rgba(46, 213, 229, .08); border-color: rgba(46, 213, 229, .25); font-family: var(--v3-mono); }
 body.v3 #archBadgeMount .vip-badge__dot { background: var(--v3-cyan); box-shadow: 0 0 6px var(--v3-cyan); }
+
+/* Slider hint panels (landing.js wireSliderHints): v3 cyan instead of the legacy red. */
+body.v3 .slider-hint-btn:hover,
+body.v3 .slider-row.hint-open .slider-hint-btn { color: var(--v3-cyan); border-color: rgba(46, 213, 229, .5); background: rgba(46, 213, 229, .1); }
+body.v3 .slider-hint { background: rgba(7, 11, 16, .6); border: 1px solid var(--v3-line-2); border-radius: 8px; color: var(--v3-fg-3); }
+body.v3 .hint-body { color: var(--v3-fg-3); font-family: var(--v3-sans); }
+body.v3 .hint-toward { background: rgba(46, 213, 229, .08); color: var(--v3-fg-2); }
+body.v3 .hint-toward em, body.v3 .hint-dir-both, body.v3 .hint-chip-both { color: var(--v3-cyan); }
+body.v3 .hint-dir-both, body.v3 .hint-chip-both { border-color: rgba(46, 213, 229, .3); background: rgba(46, 213, 229, .08); }
+body.v3 .hint-range-thumb { border-color: var(--v3-cyan); }
+body.v3 .hint-example-pill { border-color: rgba(46, 213, 229, .3); background: rgba(46, 213, 229, .08); color: var(--v3-fg-2); }

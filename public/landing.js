@@ -969,7 +969,8 @@ function resolveLandingHint(sliderId) {
 
 /** Collapsed hint panels — tap “i” after each value readout to expand. */
 function wireSliderHints() {
-  const grid = document.querySelector('.slider-grid');
+  // Slider rows live in the stem lanes, the transport and the advanced grid.
+  const grid = document.getElementById('workspace') || document.querySelector('.slider-grid');
   if (!grid) return;
 
   grid.querySelectorAll('.slider-row').forEach((row) => {

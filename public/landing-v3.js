@@ -56,6 +56,12 @@ function mountFallback(host, stage) {
   hero?.addEventListener('pointerleave', () => { tx = 0; ty = 0; apply(); });
   window.addEventListener('resize', apply);
   apply();
+
+  // Pause the 484 bar animations when the hero is offscreen or the tab is hidden.
+  let onScreen = true;
+  const syncPaused = () => field.classList.toggle('v3-sculpt--paused', !onScreen || document.hidden);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; syncPaused(); }).observe(stage);
+  document.addEventListener('visibilitychange', syncPaused);
 }
 
 async function mountHeroStage() {
