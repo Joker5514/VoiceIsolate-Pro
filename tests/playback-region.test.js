@@ -104,6 +104,7 @@ describe('PlaybackMixer settles in-flight ramps when playback stops', () => {
     const mixer = loaded();
     await mixer.play();
     mixer.setVoiceLevel(50);
+    expect(mixer.cleanGain.gain.value).toBe(1); // ramp scheduled, not applied yet
     mixer[method]();
     expect(mixer.cleanGain.gain.value).toBe(0.5);
   });
