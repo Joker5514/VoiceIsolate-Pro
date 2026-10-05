@@ -159,6 +159,28 @@ function cachedChannelData(buf, ch) {
   return arr[ch] || (arr[ch] = buf.getChannelData(ch));
 }
 
+/**
+ * Identity + content revision of an AudioBuffer, for the metric caches.
+ * Code that rewrites a live buffer's samples in place (the output limiter,
+ * the fallback gain trim) calls bumpBufferRevision() before and after, so a
+ * cached or in-flight result for the old content is never reused. A sample
+ * stamp cannot see interior changes.
+ */
+const _bufferRevisions = new WeakMap();
+let _nextBufferId = 1;
+function bufferRevisionKey(buf) {
+  let e = _bufferRevisions.get(buf);
+  if (!e) {
+    e = { id: _nextBufferId++, rev: 0 };
+    _bufferRevisions.set(buf, e);
+  }
+  return `${e.id}.${e.rev}`;
+}
+function bumpBufferRevision(buf) {
+  const e = buf && _bufferRevisions.get(buf);
+  if (e) e.rev += 1;
+}
+
 const LARGE_FILE_WARNING_BYTES = 500 * 1024 * 1024;
 const EXTENSION_MIME_TYPES = Object.freeze({
   mp3: 'audio/mpeg',
@@ -5614,6 +5636,7 @@ class VoiceIsolatePro {
     const outGainDb = p.outGain ?? 0;
     if (outGainDb !== 0) {
       const gain = Math.pow(10, outGainDb / 20);
+      bumpBufferRevision(processed);
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         const out = processed.getChannelData(ch);
         await processInChunks({
@@ -5625,6 +5648,7 @@ class VoiceIsolatePro {
           },
         });
       }
+      bumpBufferRevision(processed);
       await yieldToBrowser();
     }
 
@@ -5651,6 +5675,15 @@ class VoiceIsolatePro {
    */
   _applyOutputSafetyLimit(buf, params) {
     if (!buf || typeof buf.numberOfChannels !== 'number') return buf;
+    // Synchronous in-place rewrite: one bump after it covers every reader.
+    try {
+      return this._applyOutputSafetyLimitInPlace(buf, params);
+    } finally {
+      bumpBufferRevision(buf);
+    }
+  }
+
+  _applyOutputSafetyLimitInPlace(buf, params) {
     const DSP = this._resolveDSP?.() || (typeof globalThis !== 'undefined' ? globalThis.DSP : null);
     if (!DSP || typeof DSP.truePeakLimit !== 'function') {
       // Fallback hard clamp to full-scale if DSP core not loaded.
@@ -5685,6 +5718,17 @@ class VoiceIsolatePro {
    * does not freeze at 98% during brickwall limiting.
    */
   async _applyOutputSafetyLimitAsync(buf, params) {
+    // Rewrites the live buffer in place: invalidate metric caches before the
+    // first write and after the last, including an aborted run.
+    bumpBufferRevision(buf);
+    try {
+      return await this._applyOutputSafetyLimitAsyncInPlace(buf, params);
+    } finally {
+      bumpBufferRevision(buf);
+    }
+  }
+
+  async _applyOutputSafetyLimitAsyncInPlace(buf, params) {
     if (!buf || typeof buf.numberOfChannels !== 'number') return buf;
     const DSP = this._resolveDSP?.() || (typeof globalThis !== 'undefined' ? globalThis.DSP : null);
     let p = params;
@@ -7188,14 +7232,13 @@ class VoiceIsolatePro {
 
   /**
    * Exact energy sums for the Voice/Noise/SNR header, over every sample of
-   * the stem pair, in yielding chunks. Cached by a content stamp (stems can
-   * be refilled in place) for the last few pairs, so A/B toggles are
+   * the stem pair, in yielding chunks. Cached by buffer identity + content
+   * revision for the last few pairs, so A/B toggles are
    * instant. Returns null while a pass is running; when it finishes the
    * header is repainted through updateAudioMetrics().
    */
   _audioMetricSums(orig, proc, o, p, n) {
-    const stamp = (buf, d) => `${d.length}@${buf.sampleRate}:${d[0]}|${d[d.length >> 1]}|${d[d.length - 1]}`;
-    const key = `${stamp(orig, o)}|${proc === orig ? '=' : stamp(proc, p)}`;
+    const key = `${bufferRevisionKey(orig)}|${proc === orig ? '=' : bufferRevisionKey(proc)}`;
     if (!this._audioMetricSumsCache) this._audioMetricSumsCache = new Map();
     const cache = this._audioMetricSumsCache;
     if (cache.has(key)) return cache.get(key);
@@ -7257,12 +7300,7 @@ class VoiceIsolatePro {
 
       // Identity cache: updateAudioMetrics() fires hundreds of times per
       // Process pass; recompute only when the stems actually changed.
-      const stamp = (buf) => {
-        const d = cachedChannelData(buf, 0);
-        const L = d.length;
-        return `${L}@${buf.sampleRate}:${d[0]}|${d[L >> 1]}|${d[L - 1]}`;
-      };
-      const key = `${stamp(orig)}|${stamp(proc)}`;
+      const key = `${bufferRevisionKey(orig)}|${bufferRevisionKey(proc)}`;
       if (key === this._sessionMetricsKey && this._sessionMetricsCache) {
         return this._sessionMetricsCache;
       }

@@ -24,6 +24,7 @@ function extractMethod(src, signature) {
 }
 
 let Metrics;
+let bump;
 
 beforeAll(async () => {
   const { processInChunks } = await import(
@@ -31,8 +32,14 @@ beforeAll(async () => {
   );
   const body = extractMethod(appSrc, '_audioMetricSums(orig, proc, o, p, n) {')
     + extractMethod(appSrc, '_computeAudioMetricsState() {');
-  Metrics = new Function('processInChunks', 'cachedChannelData', 'structuredLog',
-    `return class { ${body} };`)(processInChunks, (buf, ch) => buf.getChannelData(ch), () => {});
+  // The real identity + revision helpers, lifted from app.js.
+  const helpers = appSrc.slice(appSrc.indexOf('const _bufferRevisions = new WeakMap();'),
+    appSrc.indexOf('const LARGE_FILE_WARNING_BYTES'));
+  const made = new Function('processInChunks', 'cachedChannelData', 'structuredLog',
+    `${helpers}; return { Metrics: class { ${body} }, bumpBufferRevision };`)(
+    processInChunks, (buf, ch) => buf.getChannelData(ch), () => {});
+  Metrics = made.Metrics;
+  bump = made.bumpBufferRevision;
 });
 
 const buf = (d) => ({ sampleRate: 48000, duration: d.length / 48000, getChannelData: () => d });
@@ -58,8 +65,9 @@ test('header metrics equal a full-sample computation, then repaint', async () =>
     o[i] = Math.sin(i * 0.02) * 0.3 + ((i * 7919) % 17) / 400;
     p[i] = Math.sin(i * 0.02) * 0.28;
   }
-  // A burst between the old 1-in-120 sample points: subsampling misses it.
-  for (let i = 500_001; i < 500_119; i++) o[i] = 0.95;
+  // A burst strictly between two points of the old 1-in-120 grid
+  // (500040 and 500160 are on it): subsampling never sees it.
+  for (let i = 500_041; i < 500_160; i++) o[i] = 0.95;
 
   const app = new Metrics();
   app.origBuffer = buf(o);
@@ -80,6 +88,25 @@ test('header metrics equal a full-sample computation, then repaint', async () =>
   let sv = 0; let sn = 0;
   for (let i = 0; i < n; i += step) { sv += p[i] * p[i]; const r = o[i] - p[i]; sn += r * r; }
   expect(Math.abs((sv / (sv + sn)) * 100 - want.voicePct)).toBeGreaterThan(1e-3);
+});
+
+test('an in-place rewrite with a revision bump is recomputed, not served stale', async () => {
+  const o = new Float32Array(48000 * 2).map((_, i) => Math.sin(i * 0.01) * 0.2);
+  const p = o.map((v) => v * 0.5);
+  const app = new Metrics();
+  app.origBuffer = buf(o);
+  app.outputBuffer = buf(p);
+  app.abMode = 'processed';
+  await new Promise((r) => { app.updateAudioMetrics = r; app._computeAudioMetricsState(); });
+  const before = app._computeAudioMetricsState().voicePct;
+  // Interior-only rewrite (as the limiter does): first/mid/last unchanged.
+  for (let i = 1000; i < 40000; i++) p[i] *= 0.1;
+  bump(app.outputBuffer);
+  expect(app._computeAudioMetricsState()).toEqual({ voicePct: null, noisePct: null, snrDb: null });
+  await new Promise((r) => { app.updateAudioMetrics = r; });
+  const after = app._computeAudioMetricsState().voicePct;
+  expect(after).toBeCloseTo(exact(o, p).voicePct, 9);
+  expect(after).not.toBeCloseTo(before, 3);
 });
 
 test('A/B toggle back to a computed pair is served from cache', async () => {
