@@ -335,20 +335,26 @@ export async function copyChannelsToAudioBuffer(buf, channels, opts = {}) {
  * One signal that aborts when any input aborts. AbortSignal.any where the
  * engine has it (Chromium 116+); otherwise a listener-based composite, so
  * older WebViews still cancel on either source. Null inputs are ignored.
+ * Call dispose() once the guarded work settles: the fallback's listeners
+ * would otherwise pin each composite to a long-lived input signal.
  * @param {(AbortSignal|null|undefined)[]} signals
- * @returns {AbortSignal|null}
+ * @returns {{ signal: AbortSignal|null, dispose: () => void }}
  */
 export function anySignal(signals) {
   const list = (signals || []).filter(Boolean);
-  if (list.length <= 1) return list[0] || null;
+  const noop = () => {};
+  if (list.length <= 1) return { signal: list[0] || null, dispose: noop };
   if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
-    return AbortSignal.any(list);
+    return { signal: AbortSignal.any(list), dispose: noop };
   }
   const ctrl = new AbortController();
-  const onAbort = (e) => {
+  const dispose = () => {
     for (const s of list) s.removeEventListener('abort', onAbort);
-    ctrl.abort(e?.target?.reason);
   };
+  function onAbort(e) {
+    dispose();
+    ctrl.abort(e?.target?.reason);
+  }
   for (const s of list) {
     if (s.aborted) {
       ctrl.abort(s.reason);
@@ -356,8 +362,8 @@ export function anySignal(signals) {
     }
     s.addEventListener('abort', onAbort, { once: true });
   }
-  if (ctrl.signal.aborted) for (const s of list) s.removeEventListener('abort', onAbort);
-  return ctrl.signal;
+  if (ctrl.signal.aborted) dispose();
+  return { signal: ctrl.signal, dispose };
 }
 
 /**

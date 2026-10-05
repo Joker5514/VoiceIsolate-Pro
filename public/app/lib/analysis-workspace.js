@@ -661,7 +661,12 @@ export function installAnalysisWorkspace(app) {
       // Use mono mix for speed on long files — still multi-channel aware via count.
       // Budgeted: a synchronous downmix froze the tab ~0.7 s per 5 min of stereo.
       const downmixSignal = anySignal([signal, sourceSignal]);
-      const mono = await downmixToMonoAsync(channels, { signal: downmixSignal });
+      let mono;
+      try {
+        mono = await downmixToMonoAsync(channels, { signal: downmixSignal.signal });
+      } finally {
+        downmixSignal.dispose();
+      }
       if (superseded()) return null;
       const prevProgress = host.onProgress;
       const reportProgress = (pct, stage) => {

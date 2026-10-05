@@ -39,7 +39,7 @@ describe('analysis collaboration reset wiring', () => {
     expect(workspaceJs).toContain('const runSource = sourceGeneration;');
     expect(workspaceJs).toMatch(/return runSource !== sourceGeneration\s*\|\|/);
     expect(workspaceJs).toMatch(
-      /const mono = await downmixToMonoAsync\(channels, \{ signal: downmixSignal \}\);\s*if \(superseded\(\)\) return null;[\s\S]*?host\.analyze\(/
+      /mono = await downmixToMonoAsync\(channels, \{ signal: downmixSignal\.signal \}\);\s*\} finally \{\s*downmixSignal\.dispose\(\);\s*\}\s*if \(superseded\(\)\) return null;[\s\S]*?host\.analyze\(/
     );
   });
 

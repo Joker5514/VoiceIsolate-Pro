@@ -84,7 +84,7 @@ describe('anySignal', () => {
         for (const which of [0, 1]) {
           const a = new AbortController();
           const b = new AbortController();
-          const s = uiYield.anySignal([a.signal, b.signal]);
+          const s = uiYield.anySignal([a.signal, b.signal]).signal;
           expect(s.aborted).toBe(false);
           (which ? b : a).abort('stop');
           expect(s.aborted).toBe(true);
@@ -95,7 +95,7 @@ describe('anySignal', () => {
       test('is already aborted when an input already is', () => {
         const a = new AbortController();
         a.abort('early');
-        const s = uiYield.anySignal([new AbortController().signal, a.signal]);
+        const s = uiYield.anySignal([new AbortController().signal, a.signal]).signal;
         expect(s.aborted).toBe(true);
         expect(s.reason).toBe('early');
       });
@@ -111,7 +111,7 @@ describe('anySignal', () => {
           },
         });
         await expect(uiYield.downmixToMonoAsync([ch, signal(100_000, 2)], {
-          signal: uiYield.anySignal([job.signal, source.signal]),
+          signal: uiYield.anySignal([job.signal, source.signal]).signal,
           chunkSize: 10_000,
         })).rejects.toThrow();
       });
@@ -120,7 +120,25 @@ describe('anySignal', () => {
 
   test('passes a single signal through and ignores nulls', () => {
     const a = new AbortController();
-    expect(uiYield.anySignal([null, a.signal, undefined])).toBe(a.signal);
-    expect(uiYield.anySignal([null])).toBe(null);
+    expect(uiYield.anySignal([null, a.signal, undefined]).signal).toBe(a.signal);
+    expect(uiYield.anySignal([null]).signal).toBe(null);
+  });
+
+  test('fallback dispose() releases the listeners on its inputs', () => {
+    AbortSignal.any = undefined;
+    const source = new AbortController();
+    const added = [];
+    const removed = [];
+    const add = source.signal.addEventListener.bind(source.signal);
+    const remove = source.signal.removeEventListener.bind(source.signal);
+    source.signal.addEventListener = (t, fn, o) => { added.push(fn); add(t, fn, o); };
+    source.signal.removeEventListener = (t, fn, o) => { removed.push(fn); remove(t, fn, o); };
+    const composite = uiYield.anySignal([new AbortController().signal, source.signal]);
+    expect(added).toHaveLength(1);
+    composite.dispose();
+    expect(removed).toEqual(added);
+    // After dispose, the input aborting no longer reaches the composite.
+    source.abort();
+    expect(composite.signal.aborted).toBe(false);
   });
 });
