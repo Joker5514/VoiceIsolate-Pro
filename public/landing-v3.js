@@ -68,12 +68,29 @@ function mountFallback(host, stage) {
   document.addEventListener('visibilitychange', syncPaused);
 }
 
+/**
+ * The WebGL hero is opt-in, like the Engineer shell's hero video
+ * (app.js#shouldLoadHeroVideo, CLAUDE.md): skip the ~750 KB Three.js download
+ * on reduced motion, Save-Data, 2G and offline, and use the CSS fallback instead.
+ */
+function shouldLoadHeroScene() {
+  try {
+    if (reduceMotion) return false;
+    const conn = navigator.connection;
+    if (conn?.saveData) return false;
+    if (typeof conn?.effectiveType === 'string' && /^(slow-)?2g$/.test(conn.effectiveType)) return false;
+    if (navigator.onLine === false) return false;
+  } catch { /* capability probe only, default to loading */ }
+  return true;
+}
+
 async function mountHeroStage() {
   const stage = $('heroStage');
   const canvas = $('heroGl');
   const fallback = $('heroFallback');
   if (!stage || !canvas || !fallback) return;
   try {
+    if (!shouldLoadHeroScene()) throw new Error('hero scene skipped (motion/data preference)');
     if (!hasWebGL2()) throw new Error('WebGL2 unavailable');
     const mod = await import('/hero-gl.js');
     await mod.mountHero(canvas);

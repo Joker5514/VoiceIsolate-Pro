@@ -84,7 +84,9 @@ export async function mountHero(canvas) {
     mouse.tx = clamp(((e.clientX - r.left) / r.width - 0.5) * 2);
     mouse.ty = clamp(((e.clientY - r.top) / r.height - 0.5) * 2);
   };
-  window.addEventListener('pointermove', onMove, { passive: true });
+  // Track only over the hero, so offscreen pointer moves (e.g. slider drags) never measure the canvas.
+  const pointerHost = canvas.closest('section') || canvas;
+  pointerHost.addEventListener('pointermove', onMove, { passive: true });
 
   let redrawStill = null; // set when the scene is a single still frame
   const resize = () => {
@@ -128,7 +130,7 @@ export async function mountHero(canvas) {
 
   return () => {
     cancelAnimationFrame(raf); ro.disconnect(); io.disconnect();
-    window.removeEventListener('pointermove', onMove);
+    pointerHost.removeEventListener('pointermove', onMove);
     group.traverse((o) => o.geometry && o.geometry.dispose());
     lineMat.dispose(); fillMat.dispose(); renderer.dispose();
   };
