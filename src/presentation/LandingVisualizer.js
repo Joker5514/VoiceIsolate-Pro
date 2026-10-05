@@ -15,13 +15,13 @@
 
 import { createYieldBudget } from '../pipeline/ui-yield.js';
 
-const ACCENT = '#ef4444';
-const NOISE_COLOR = 'rgba(154, 154, 164, 0.55)';
-const GRID = 'rgba(80, 80, 90, 0.5)';
-const PLAYHEAD = '#34d399';
-const CROP_FILL = 'rgba(52, 211, 153, 0.14)';
-const CROP_EDGE = 'rgba(52, 211, 153, 0.75)';
-const LOOP_COLOR = 'rgba(239, 68, 68, 0.35)';
+const ACCENT = '#2ed5e5';
+const NOISE_COLOR = 'rgba(155, 108, 255, 0.55)';
+const GRID = 'rgba(38, 50, 61, 0.6)';
+const PLAYHEAD = '#f4f7fa';
+const CROP_FILL = 'rgba(155, 108, 255, 0.14)';
+const CROP_EDGE = 'rgba(155, 108, 255, 0.75)';
+const LOOP_COLOR = 'rgba(46, 213, 229, 0.35)';
 const IDLE_FRAME_MS = 250;
 
 export class LandingVisualizer {
@@ -293,13 +293,13 @@ export class LandingVisualizer {
       this._barPeak[i] = Math.max(this._barSmooth[i], this._barPeak[i] * 0.94);
       const h = Math.max(1, this._barSmooth[i] * H * 0.92);
       const g = ctx.createLinearGradient(0, H - h, 0, H);
-      g.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
-      g.addColorStop(1, 'rgba(239, 68, 68, 0.08)');
+      g.addColorStop(0, 'rgba(46, 213, 229, 0.9)');
+      g.addColorStop(1, 'rgba(46, 213, 229, 0.08)');
       ctx.fillStyle = g;
       ctx.fillRect(i * (barW + 1), H - h, barW, h);
       const peakH = this._barPeak[i] * H * 0.92;
       if (peakH > h + 2) {
-        ctx.fillStyle = 'rgba(52, 211, 153, 0.75)';
+        ctx.fillStyle = 'rgba(155, 108, 255, 0.75)';
         ctx.fillRect(i * (barW + 1), H - peakH, barW, 1.5);
       }
     }
@@ -363,8 +363,8 @@ function drawGrid(ctx, W, H) {
 
 function drawIdleText(ctx, W, H, text) {
   if (!text) return;
-  ctx.fillStyle = 'rgba(154, 154, 164, 0.8)';
-  ctx.font = '12px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(141, 154, 170, 0.9)';
+  ctx.font = '12px Geist, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(text, W / 2, H / 2);
 }

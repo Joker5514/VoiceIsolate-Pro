@@ -52,6 +52,7 @@ describe('`hidden` attribute stays authoritative', () => {
       'public/ps-shell.css',
       'public/transport-polish.css',
       'public/premium-refresh.css',
+      'public/landing-v3.css',
       'public/app/style.css',
       'public/app/ds-tokens.css',
       'public/app/ds-overrides.css',

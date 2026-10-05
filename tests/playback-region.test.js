@@ -80,3 +80,51 @@ describe('PlaybackMixer loop + crop', () => {
     expect(mixer.currentTime()).toBeCloseTo(0.5, 3);
   });
 });
+describe('PlaybackMixer settles in-flight ramps when playback stops', () => {
+  // The mock's setTargetAtTime is a no-op, which models a ramp frozen mid-way
+  // because the graph stopped processing when the sources ended.
+  const loaded = () => {
+    const mixer = new PlaybackMixer({ context: mockCtx() });
+    mixer.loadStems([new Float32Array(48000 * 3)], [new Float32Array(48000 * 3)], 48000);
+    return mixer;
+  };
+
+  test('natural end snaps the voice level to its target', async () => {
+    const mixer = loaded();
+    await mixer.play();
+    expect(mixer.isPlaying()).toBe(true);
+    mixer.setVoiceLevel(200);
+    expect(mixer.cleanGain.gain.value).toBe(1); // ramp scheduled, not applied yet
+    mixer._cleanSource.onended();
+    expect(mixer.isPlaying()).toBe(false);
+    expect(mixer.cleanGain.gain.value).toBe(2);
+  });
+
+  test('settling cancels the in-flight setTargetAtTime event, not just later ones', async () => {
+    const mixer = loaded();
+    // Model the AudioParam timeline: cancelScheduledValues(t) drops events at or after t.
+    const events = [];
+    const gain = mixer.cleanGain.gain;
+    gain.setTargetAtTime = (target, time) => events.push({ target, time });
+    gain.cancelScheduledValues = (t) => {
+      for (let i = events.length - 1; i >= 0; i--) if (events[i].time >= t) events.splice(i, 1);
+    };
+    await mixer.play();
+    mixer.ctx.currentTime = 1; // ramp starts at t=1
+    mixer.setVoiceLevel(150);
+    expect(events).toHaveLength(1);
+    mixer.ctx.currentTime = 1.05; // playback ends mid-ramp
+    mixer.pause();
+    expect(events).toHaveLength(0);
+    expect(gain.value).toBe(1.5);
+  });
+
+  test.each(['pause', 'stop'])('%s snaps the voice level to its target', async (method) => {
+    const mixer = loaded();
+    await mixer.play();
+    mixer.setVoiceLevel(50);
+    expect(mixer.cleanGain.gain.value).toBe(1); // ramp scheduled, not applied yet
+    mixer[method]();
+    expect(mixer.cleanGain.gain.value).toBe(0.5);
+  });
+});

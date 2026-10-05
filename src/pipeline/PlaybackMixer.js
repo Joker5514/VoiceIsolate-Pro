@@ -213,6 +213,8 @@ export class PlaybackMixer {
     this.ctx = options.context || new Ctx({ sampleRate: SAMPLE_RATE });
     verifyContextSampleRate(this.ctx);
     this._parameterTargets = new WeakMap();
+    /** Params with a setTargetAtTime ramp in flight; settled when playback stops. */
+    this._rampingParams = new Set();
 
     // ── Persistent graph (built once) ────────────────────────────────────
     this.speakerGain = this.ctx.createGain();
@@ -750,6 +752,7 @@ export class PlaybackMixer {
       if (!this._isPlaying) return;
       this._isPlaying = false;
       this._teardownSources();
+      this._settleRampingParams();
       if (this._loopEnabled) {
         this._offset = regionStart;
         this.play().catch(() => {});
@@ -768,6 +771,7 @@ export class PlaybackMixer {
     this._offset = this.currentTime();
     this._teardownSources();
     this._isPlaying = false;
+    this._settleRampingParams();
     this._scheduleSpeakerAutomation(); // clear stale ramps from the old timeline
   }
 
@@ -775,6 +779,7 @@ export class PlaybackMixer {
   stop() {
     this._teardownSources();
     this._isPlaying = false;
+    this._settleRampingParams();
     this._offset = this._regionStart();
     this._scheduleSpeakerAutomation();
   }
@@ -787,6 +792,23 @@ export class PlaybackMixer {
     this._isPlaying = false;
     this._offset = target;
     if (wasPlaying) await this.play();
+  }
+
+  /**
+   * Snap params whose ramp was cut short by a stop to their targets. Once the
+   * sources end, Chrome stops processing the graph, so a ramp scheduled just
+   * before the end would otherwise stay frozen mid-way until the next play.
+   */
+  _settleRampingParams() {
+    for (const param of this._rampingParams) {
+      const target = this._parameterTargets.get(param);
+      if (target === undefined) continue;
+      // From 0, not currentTime: cancelScheduledValues(t) only drops events at
+      // or after t, and the in-flight setTargetAtTime started before now.
+      param.cancelScheduledValues(0);
+      param.value = target;
+    }
+    this._rampingParams.clear();
   }
 
   _teardownSources() {
@@ -822,6 +844,7 @@ export class PlaybackMixer {
     const now = this.ctx.currentTime;
     if (this._isPlaying && this.ctx.state === 'running') {
       param.setTargetAtTime(target, now, PARAM_SMOOTHING);
+      this._rampingParams.add(param);
     } else {
       // Suspended Electron contexts can hold currentTime at zero. Snap rather
       // than scheduling automation so pre-playback changes are retained.
