@@ -181,6 +181,29 @@ describe('session metrics (async, every sample)', () => {
     expect(app._sessionMetricsCache).toBeUndefined();
   });
 
+  test('a stale run clears its pending key and stops mid-pass', async () => {
+    const n = 48000 * 30;
+    const { o, p } = stems(n);
+    let reads = 0;
+    const counted = new Proxy(p, {
+      get(t, k) {
+        if (typeof k === 'string' && /^\d+$/.test(k)) reads++;
+        return Reflect.get(t, k);
+      },
+    });
+    const app = new Session();
+    app._fileSeq = 1;
+    app._sessionMetricsPendingKey = 'k';
+    const run = app._computeSessionMetricsAsync({ duration: 30 }, o, counted, n, 48000, 'k');
+    app._fileSeq = 2;
+    await run;
+    // Same stems requested again must be able to start a fresh pass.
+    expect(app._sessionMetricsPendingKey).toBeNull();
+    expect(updates).toHaveLength(0);
+    // Stopped within the first chunk's worth of reads, not a full pass.
+    expect(reads).toBeLessThan(n);
+  });
+
   test('a newer stem pair supersedes the pending run', async () => {
     const n = 48000 * 30;
     const { o, p } = stems(n);

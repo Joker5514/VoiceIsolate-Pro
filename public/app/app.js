@@ -7326,136 +7326,149 @@ class VoiceIsolatePro {
     // Stale when the stems changed again or the file was replaced/cleared.
     const fileSeq = this._fileSeq;
     const stale = () => this._fileSeq !== fileSeq || this._sessionMetricsPendingKey !== key;
-
-    // Pass 1: processed RMS/peak + retained-vs-removed energy.
-    let pSum = 0;
-    let peak = 0;
-    let voiceEnergy = 0;
-    let noiseEnergy = 0;
-    await processInChunks({
-      total: n,
-      chunkSize: 48000 * 2,
-      runChunk: (start, end) => {
-        for (let i = start; i < end; i++) {
-          const ov = o[i];
-          const pv = p[i];
-          pSum += pv * pv;
-          const abs = pv < 0 ? -pv : pv;
-          if (abs > peak) peak = abs;
-          // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
-          // retained energy ≈ voice.
-          const resid = ov - pv;
-          noiseEnergy += resid * resid;
-          voiceEnergy += pv * pv;
-        }
-      },
-    });
-    if (stale()) return;
-    const pCount = n;
-    const rms = Math.sqrt(pSum / Math.max(1, pCount));
-    const total = voiceEnergy + noiseEnergy + 1e-12;
-    const voiceClarity = Math.max(0, Math.min(100, (voiceEnergy / total) * 100));
-    let snrDb = 20 * Math.log10((Math.sqrt(voiceEnergy) + 1e-10) / (Math.sqrt(noiseEnergy) + 1e-10));
-    if (!Number.isFinite(snrDb)) snrDb = 0;
-    snrDb = Math.max(-40, Math.min(60, snrDb));
-
-    // Pass 2 (every 20 ms frame): noise floor reduction + whisper-band retention.
-    const frame = Math.max(64, Math.floor(sampleRate * 0.02));
-    const frameCount = Math.floor(n / frame);
-    const preFrames = new Float64Array(frameCount);
-    const postFrames = new Float64Array(frameCount);
-    await processInChunks({
-      total: frameCount,
-      chunkSize: 100,
-      runChunk: (fStart, fEnd) => {
-        for (let f = fStart; f < fEnd; f++) {
-          const pos = f * frame;
-          let ePre = 0;
-          let ePost = 0;
-          for (let i = 0; i < frame; i++) {
-            const ov = o[pos + i];
-            const pv = p[pos + i];
-            ePre += ov * ov;
-            ePost += pv * pv;
-          }
-          preFrames[f] = ePre / frame;
-          postFrames[f] = ePost / frame;
-        }
-      },
-    });
-    if (stale()) return;
-    const dbOf = (v) => (v <= 1e-12 ? -120 : 10 * Math.log10(v));
-    const percentileDb = (arr) => {
-      if (!arr.length) return -120;
-      const sorted = Float64Array.from(arr).sort();
-      return dbOf(sorted[Math.max(0, Math.floor(sorted.length * 0.1))]);
-    };
-    const floorPreDb = percentileDb(preFrames);
-    const floorPostDb = percentileDb(postFrames);
-    // Noise Reduction: how far the noise floor dropped, in dB (≥ 0).
-    let noiseReduction = Math.max(0, Math.min(60, floorPreDb - floorPostDb));
-    if (!preFrames.length) noiseReduction = Math.max(0, snrDb);
-
-    // Whisper Retention: energy kept in quiet (floor+2..floor+12 dB) frames.
-    let whisperPre = 0;
-    let whisperPost = 0;
-    for (let f = 0; f < preFrames.length; f++) {
-      const frameDb = dbOf(preFrames[f]);
-      if (frameDb > floorPreDb + 2 && frameDb < floorPreDb + 12) {
-        whisperPre += preFrames[f];
-        whisperPost += postFrames[f];
-      }
-    }
-    let whisperRetention;
-    if (whisperPre > 1e-12) {
-      whisperRetention = Math.max(0, Math.min(100, (whisperPost / whisperPre) * 100));
-    } else {
-      // No whisper-band frames: fall back to overall energy retention.
-      let ePre = 0;
-      let ePost = 0;
-      for (let f = 0; f < preFrames.length; f++) {
-        ePre += preFrames[f];
-        ePost += postFrames[f];
-      }
-      whisperRetention = ePre > 1e-12
-        ? Math.max(0, Math.min(100, (ePost / ePre) * 100))
-        : voiceClarity;
-    }
-
-    const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
-    // Simplified ungated LUFS (moment-based; K-weighting omitted).
-    const lufs = Math.max(-120, Math.min(0, -0.691 + 10 * Math.log10(pSum / Math.max(1, pCount) + 1e-12)));
-
-    // Voices: distinct diarization speakers when available, otherwise a
-    // speech-energy presence call.
-    let voices = null;
-    const segs = this.getDiarizationSegments();
-    if (Array.isArray(segs) && segs.length) {
-      voices = new Set(segs.map((sg) => sg.speakerId || sg.speaker || sg.id).filter(Boolean)).size;
-    } else if (voiceClarity >= 15) {
-      voices = 1;
-    } else {
-      voices = 0;
-    }
-
-    const metrics = {
-      voiceClarity,
-      noiseReduction,
-      whisperRetention,
-      outputLevelDb,
-      snrDb,
-      rms,
-      peak,
-      lufs,
-      voices,
-      duration: Number.isFinite(orig.duration) ? orig.duration : n / sampleRate,
-    };
-    if (stale()) return;
-    this._sessionMetricsKey = key;
-    this._sessionMetricsCache = metrics;
+    // Thrown from a chunk to stop work for a replaced source mid-pass.
+    const STALE = {};
+    let published = false;
     try {
-      getAudioSessionStore().updateMetrics(metrics);
-    } catch (_) { /* session metrics must never fail the pipeline */ }
+      // Pass 1: processed RMS/peak + retained-vs-removed energy.
+      let pSum = 0;
+      let peak = 0;
+      let voiceEnergy = 0;
+      let noiseEnergy = 0;
+      await processInChunks({
+        total: n,
+        chunkSize: 48000 * 2,
+        runChunk: (start, end) => {
+          if (stale()) throw STALE;
+          for (let i = start; i < end; i++) {
+            const ov = o[i];
+            const pv = p[i];
+            pSum += pv * pv;
+            const abs = pv < 0 ? -pv : pv;
+            if (abs > peak) peak = abs;
+            // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
+            // retained energy ≈ voice.
+            const resid = ov - pv;
+            noiseEnergy += resid * resid;
+            voiceEnergy += pv * pv;
+          }
+        },
+      });
+      if (stale()) return;
+      const pCount = n;
+      const rms = Math.sqrt(pSum / Math.max(1, pCount));
+      const total = voiceEnergy + noiseEnergy + 1e-12;
+      const voiceClarity = Math.max(0, Math.min(100, (voiceEnergy / total) * 100));
+      let snrDb = 20 * Math.log10((Math.sqrt(voiceEnergy) + 1e-10) / (Math.sqrt(noiseEnergy) + 1e-10));
+      if (!Number.isFinite(snrDb)) snrDb = 0;
+      snrDb = Math.max(-40, Math.min(60, snrDb));
+
+      // Pass 2 (every 20 ms frame): noise floor reduction + whisper-band retention.
+      const frame = Math.max(64, Math.floor(sampleRate * 0.02));
+      const frameCount = Math.floor(n / frame);
+      const preFrames = new Float64Array(frameCount);
+      const postFrames = new Float64Array(frameCount);
+      await processInChunks({
+        total: frameCount,
+        chunkSize: 100,
+        runChunk: (fStart, fEnd) => {
+          if (stale()) throw STALE;
+          for (let f = fStart; f < fEnd; f++) {
+            const pos = f * frame;
+            let ePre = 0;
+            let ePost = 0;
+            for (let i = 0; i < frame; i++) {
+              const ov = o[pos + i];
+              const pv = p[pos + i];
+              ePre += ov * ov;
+              ePost += pv * pv;
+            }
+            preFrames[f] = ePre / frame;
+            postFrames[f] = ePost / frame;
+          }
+        },
+      });
+      if (stale()) return;
+      const dbOf = (v) => (v <= 1e-12 ? -120 : 10 * Math.log10(v));
+      const percentileDb = (arr) => {
+        if (!arr.length) return -120;
+        const sorted = Float64Array.from(arr).sort();
+        return dbOf(sorted[Math.max(0, Math.floor(sorted.length * 0.1))]);
+      };
+      const floorPreDb = percentileDb(preFrames);
+      const floorPostDb = percentileDb(postFrames);
+      // Noise Reduction: how far the noise floor dropped, in dB (≥ 0).
+      let noiseReduction = Math.max(0, Math.min(60, floorPreDb - floorPostDb));
+      if (!preFrames.length) noiseReduction = Math.max(0, snrDb);
+
+      // Whisper Retention: energy kept in quiet (floor+2..floor+12 dB) frames.
+      let whisperPre = 0;
+      let whisperPost = 0;
+      for (let f = 0; f < preFrames.length; f++) {
+        const frameDb = dbOf(preFrames[f]);
+        if (frameDb > floorPreDb + 2 && frameDb < floorPreDb + 12) {
+          whisperPre += preFrames[f];
+          whisperPost += postFrames[f];
+        }
+      }
+      let whisperRetention;
+      if (whisperPre > 1e-12) {
+        whisperRetention = Math.max(0, Math.min(100, (whisperPost / whisperPre) * 100));
+      } else {
+        // No whisper-band frames: fall back to overall energy retention.
+        let ePre = 0;
+        let ePost = 0;
+        for (let f = 0; f < preFrames.length; f++) {
+          ePre += preFrames[f];
+          ePost += postFrames[f];
+        }
+        whisperRetention = ePre > 1e-12
+          ? Math.max(0, Math.min(100, (ePost / ePre) * 100))
+          : voiceClarity;
+      }
+
+      const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
+      // Simplified ungated LUFS (moment-based; K-weighting omitted).
+      const lufs = Math.max(-120, Math.min(0, -0.691 + 10 * Math.log10(pSum / Math.max(1, pCount) + 1e-12)));
+
+      // Voices: distinct diarization speakers when available, otherwise a
+      // speech-energy presence call.
+      let voices = null;
+      const segs = this.getDiarizationSegments();
+      if (Array.isArray(segs) && segs.length) {
+        voices = new Set(segs.map((sg) => sg.speakerId || sg.speaker || sg.id).filter(Boolean)).size;
+      } else if (voiceClarity >= 15) {
+        voices = 1;
+      } else {
+        voices = 0;
+      }
+
+      const metrics = {
+        voiceClarity,
+        noiseReduction,
+        whisperRetention,
+        outputLevelDb,
+        snrDb,
+        rms,
+        peak,
+        lufs,
+        voices,
+        duration: Number.isFinite(orig.duration) ? orig.duration : n / sampleRate,
+      };
+      if (stale()) return;
+      this._sessionMetricsKey = key;
+      this._sessionMetricsCache = metrics;
+      published = true;
+      try {
+        getAudioSessionStore().updateMetrics(metrics);
+      } catch (_) { /* session metrics must never fail the pipeline */ }
+    } catch (err) {
+      if (err !== STALE) throw err;
+    } finally {
+      // A stale run must not leave its key marked pending: a later request
+      // for the same stems would otherwise never start a calculation.
+      if (!published && this._sessionMetricsPendingKey === key) this._sessionMetricsPendingKey = null;
+    }
   }
 
   _setScrubPos(frac) {
