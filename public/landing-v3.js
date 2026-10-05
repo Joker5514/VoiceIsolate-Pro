@@ -6,7 +6,11 @@ const $ = (id) => document.getElementById(id);
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function hasWebGL2() {
-  try { return !!document.createElement('canvas').getContext('webgl2'); } catch { return false; }
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    gl?.getExtension('WEBGL_lose_context')?.loseContext(); // release the probe context
+    return !!gl;
+  } catch { return false; }
 }
 
 /** CSS 3D bar field used when WebGL2 or the module load is unavailable. */
@@ -44,7 +48,7 @@ function mountFallback(host, stage) {
     const scale = Math.min(1.25, Math.max(0.45, stage.clientWidth / 900));
     field.style.transform = `translate(-50%,-50%) scale(${scale}) rotateX(${(62 - ty * 10).toFixed(2)}deg) rotateY(${(tx * 8).toFixed(2)}deg)`;
   };
-  const hero = $('home');
+  const hero = reduceMotion ? null : $('home'); // no pointer tilt under reduced motion
   hero?.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse') return;
     const r = hero.getBoundingClientRect();
