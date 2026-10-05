@@ -89,8 +89,12 @@ async function mountHeroStage() {
   const canvas = $('heroGl');
   const fallback = $('heroFallback');
   if (!stage || !canvas || !fallback) return;
+  if (!shouldLoadHeroScene()) { // a user preference, not a failure: no warning
+    canvas.remove();
+    mountFallback(fallback, stage);
+    return;
+  }
   try {
-    if (!shouldLoadHeroScene()) throw new Error('hero scene skipped (motion/data preference)');
     if (!hasWebGL2()) throw new Error('WebGL2 unavailable');
     const mod = await import('/hero-gl.js');
     await mod.mountHero(canvas);
