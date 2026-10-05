@@ -47,6 +47,14 @@ describe('analysis collaboration reset wiring', () => {
     expect(workspaceJs).toMatch(/sourceGeneration \+= 1;\s*sourceAbort\.abort\(\);\s*sourceAbort = new AbortController\(\);/);
     expect(workspaceJs).toContain('anySignal([signal, sourceSignal])');
     expect(workspaceJs).toMatch(/usmSourcesToAudioBuffersAsync\(ctx, usmNode\.sources, usmNode\.sampleRate, \{\s*signal: sourceSignal,/);
+    // USM binds the source before its first await and drops stale stems.
+    expect(workspaceJs).toMatch(
+      /async function runUsmBackend[\s\S]*?const sourceSignal = sourceAbort\.signal;[\s\S]*?usmBusy = true;/
+    );
+    expect(workspaceJs).toMatch(
+      /usmNode\.process\(channels, buf\.sampleRate, config\);\s*if \(sourceSignal\.aborted\) \{[\s\S]*?usmNode\.clear\?\.\(\);\s*return null;/
+    );
+    expect(workspaceJs).toContain('await pushUsmToAudition(sourceSignal, buf);');
     // A decode that lost a file switch must not report "no file loaded".
     expect(workspaceJs).toMatch(/await app\.ensureDecoded\(\);\s*\/\/[^\n]*\n\s*if \(runSource !== sourceGeneration\) return null;/);
   });

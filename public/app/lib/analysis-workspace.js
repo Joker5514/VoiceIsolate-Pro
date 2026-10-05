@@ -18,7 +18,12 @@ import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityCh
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
 import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
-import { anySignal, downmixToMonoAsync } from '/src/pipeline/ui-yield.js';
+import {
+  anySignal,
+  copyFloat32Channel,
+  createYieldBudget,
+  downmixToMonoAsync,
+} from '/src/pipeline/ui-yield.js';
 import {
   enrichAnalysisWithCollaboration,
   applyHunterFeedbackToAnalysis,
@@ -210,12 +215,16 @@ export function installAnalysisWorkspace(app) {
     renderUsmSummary();
   }
 
-  async function pushUsmToAudition() {
+  /**
+   * @param {AbortSignal} [sourceSignal] source the stems were computed from;
+   *   runUsmBackend passes the one it captured before its first await.
+   * @param {AudioBuffer} [original] input buffer for that same source
+   */
+  async function pushUsmToAudition(sourceSignal = sourceAbort.signal, original = app.origBuffer || app.inputBuffer) {
     const ctx = app.ctx || app.audioCtx;
-    if (!ctx) return;
+    if (!ctx || sourceSignal.aborted) return;
     if (ctx.state === 'suspended') await ctx.resume();
-    const original = app.origBuffer || app.inputBuffer;
-    const sourceSignal = sourceAbort.signal;
+    if (sourceSignal.aborted) return;
     let packed;
     try {
       packed = await usmSourcesToAudioBuffersAsync(ctx, usmNode.sources, usmNode.sampleRate, {
@@ -253,13 +262,24 @@ export function installAnalysisWorkspace(app) {
     showUsmError('');
     const buf = app.origBuffer || app.inputBuffer;
     if (!buf) return null;
+    // Bound to the source this run started on: clearState() swaps sourceAbort,
+    // so reading it after an await would pick up the next file's signal.
+    const sourceSignal = sourceAbort.signal;
     usmBusy = true;
     if (els.usmProgress) els.usmProgress.hidden = false;
     try {
+      // Budgeted copies: a synchronous slice() per channel was another
+      // full-track main-thread pass right after analysis.
+      const budget = createYieldBudget();
+      const yieldBudget = async () => {
+        if (sourceSignal.aborted) throw new DOMException('Source changed', 'AbortError');
+        await budget();
+      };
       const channels = [];
       for (let c = 0; c < buf.numberOfChannels; c++) {
-        channels.push(buf.getChannelData(c).slice());
+        channels.push(await copyFloat32Channel(buf.getChannelData(c), { yieldBudget }));
       }
+      if (sourceSignal.aborted) return null;
       const K = Math.max(2, Math.min(12, Number(opts.numSources) || 6));
       const config = {
         mode: opts.mode === 'query' ? 'query' : 'auto',
@@ -270,20 +290,27 @@ export function installAnalysisWorkspace(app) {
       const result = typeof usmNode.ensureComputed === 'function'
         ? await usmNode.ensureComputed(channels, buf.sampleRate, config)
         : await usmNode.process(channels, buf.sampleRate, config);
+      if (sourceSignal.aborted) {
+        // Old file's stems: never publish them, and drop them from the node,
+        // which app.getSourceStems() reads live.
+        usmNode.clear?.();
+        return null;
+      }
       app._usmResult = result;
       app._usmNode = usmNode;
       // Expose internal API on app for WhisperHunter / Process consumers
       app.getSourceStems = () => usmNode.getSourceStems();
       app.getSourceLabels = () => usmNode.getSourceLabels();
 
-      await pushUsmToAudition();
+      await pushUsmToAudition(sourceSignal, buf);
+      if (sourceSignal.aborted) return null;
       renderUsmSummary();
       if (typeof app.setStatus === 'function' && !result.cached) {
         app.setStatus(`Detected ${result.sources.length} sources (${result.method})`);
       }
       return result;
     } catch (err) {
-      showUsmError(err?.message || String(err));
+      if (!sourceSignal.aborted) showUsmError(err?.message || String(err));
       return null;
     } finally {
       usmBusy = false;
