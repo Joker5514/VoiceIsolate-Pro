@@ -328,6 +328,12 @@ const AIIntelligence = {
    * callback; five full-track passes held the main thread ~0.6 s per 5 min of
    * audio. Contiguous 1 s blocks keep RMS, ZCR and the level percentiles
    * representative of the whole file at a bounded cost.
+   *
+   * On long input every feature is an estimate from these blocks, including
+   * peak and crest factor: a transient between blocks is not seen. The
+   * Engineer caller passes the output stem, which has already been through
+   * the true-peak limiter, so its global peak sits near the limiter ceiling
+   * and the excerpt peak rarely differs in a way that changes the scene.
    * @param {Float32Array} audio
    * @param {number} sr
    * @returns {Float32Array}
