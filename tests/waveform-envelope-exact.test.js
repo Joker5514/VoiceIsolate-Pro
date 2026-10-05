@@ -41,21 +41,38 @@ test('long stem: built asynchronously, exact including a one-sample spike', asyn
   data[1_234_567] = 0.99; // one sample: any stride or excerpt would miss it
   const { _waveEnvelope } = load();
   const b = buf(data);
-  let redraws = 0;
+  const ran = [];
   let resolveReady;
   const ready = new Promise((resolve) => { resolveReady = resolve; });
-  const redraw = () => { redraws++; resolveReady(); };
-  // The playhead loop asks again every frame: the latest callback per canvas
-  // is kept, so a canvas is redrawn once, not once per frame.
-  for (let k = 0; k < 20; k++) expect(_waveEnvelope(b, 800, 'canvasA', redraw)).toBeNull();
+  // The playhead loop asks again every frame: only the latest callback for
+  // a canvas runs, once.
+  for (let k = 0; k < 20; k++) {
+    expect(_waveEnvelope(b, 800, 'canvasA', () => { ran.push(k); resolveReady(); })).toBeNull();
+  }
   await ready;
   await new Promise((r) => setTimeout(r, 0));
-  expect(redraws).toBe(1);
+  expect(ran).toEqual([19]);
   const env = _waveEnvelope(b, 800, 'canvasA', () => {});
   const ref = reference(data, 800);
   expect(Array.from(env.min)).toEqual(Array.from(ref.min));
   expect(Array.from(env.max)).toEqual(Array.from(ref.max));
   expect(Math.max(...env.max)).toBeCloseTo(0.99, 6);
+});
+
+test('canvases of different widths on one stem are each satisfied', async () => {
+  const data = new Float32Array(48000 * 40).map((_, i) => Math.sin(i * 0.002) * 0.4);
+  const { _waveEnvelope } = load();
+  const b = buf(data);
+  const done = [];
+  await new Promise((resolve) => {
+    const check = (id) => () => { done.push(id); if (done.length === 2) resolve(); };
+    expect(_waveEnvelope(b, 640, 'small', check('small'))).toBeNull();
+    expect(_waveEnvelope(b, 1200, 'large', check('large'))).toBeNull();
+  });
+  expect(done.sort()).toEqual(['large', 'small']);
+  for (const w of [640, 1200]) {
+    expect(Array.from(_waveEnvelope(b, w, 'x', () => {}).max)).toEqual(Array.from(reference(data, w).max));
+  }
 });
 
 test('short stem: computed synchronously and exact', () => {
