@@ -80,3 +80,31 @@ describe('PlaybackMixer loop + crop', () => {
     expect(mixer.currentTime()).toBeCloseTo(0.5, 3);
   });
 });
+describe('PlaybackMixer settles in-flight ramps when playback stops', () => {
+  // The mock's setTargetAtTime is a no-op, which models a ramp frozen mid-way
+  // because the graph stopped processing when the sources ended.
+  const loaded = () => {
+    const mixer = new PlaybackMixer({ context: mockCtx() });
+    mixer.loadStems([new Float32Array(48000 * 3)], [new Float32Array(48000 * 3)], 48000);
+    return mixer;
+  };
+
+  test('natural end snaps the voice level to its target', async () => {
+    const mixer = loaded();
+    await mixer.play();
+    expect(mixer.isPlaying()).toBe(true);
+    mixer.setVoiceLevel(200);
+    expect(mixer.cleanGain.gain.value).toBe(1); // ramp scheduled, not applied yet
+    mixer._cleanSource.onended();
+    expect(mixer.isPlaying()).toBe(false);
+    expect(mixer.cleanGain.gain.value).toBe(2);
+  });
+
+  test.each(['pause', 'stop'])('%s snaps the voice level to its target', async (method) => {
+    const mixer = loaded();
+    await mixer.play();
+    mixer.setVoiceLevel(50);
+    mixer[method]();
+    expect(mixer.cleanGain.gain.value).toBe(0.5);
+  });
+});
