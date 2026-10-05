@@ -7249,7 +7249,9 @@ class VoiceIsolatePro {
    * budgeted chunks. Superseded runs (stems changed again) are dropped.
    */
   async _computeSessionMetricsAsync(orig, o, p, n, sampleRate, key) {
-    const stale = () => this._sessionMetricsPendingKey !== key;
+    // Stale when the stems changed again or the file was replaced/cleared.
+    const fileSeq = this._fileSeq;
+    const stale = () => this._fileSeq !== fileSeq || this._sessionMetricsPendingKey !== key;
 
     // Pass 1: processed RMS/peak + retained-vs-removed energy.
     let pSum = 0;

@@ -340,6 +340,22 @@ describe('full-track scene classification (no sampling)', () => {
       .toEqual(AIIntelligence.autoTuneParams(audio, 48000, {}));
   });
 
+  test('default yield is a macrotask, not a microtask', async () => {
+    const forced = AIIntelligence._defaultYieldBudget();
+    const t0 = Date.now();
+    while (Date.now() - t0 < 15) { /* burn past the 10 ms budget */ }
+    let resumedInMicrotask = false;
+    Promise.resolve().then(() => { resumedInMicrotask = true; });
+    const p = forced();
+    await Promise.resolve();
+    expect(resumedInMicrotask).toBe(true);
+    let done = false;
+    p.then(() => { done = true; });
+    await Promise.resolve();
+    expect(done).toBe(false); // still waiting on the setTimeout macrotask
+    await p;
+  });
+
   test('short input returns the default scene on both paths', async () => {
     const tiny = new Float32Array(100);
     expect(await AIIntelligence.classifySceneAsync(tiny, 48000)).toEqual(AIIntelligence.classifyScene(tiny, 48000));

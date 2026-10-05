@@ -130,7 +130,7 @@ const AIIntelligence = {
   async classifySceneAsync(audio, sr = 48000, opts = {}) {
     if (audio.length < 1024) return this._defaultScene();
     if (!(audio instanceof Float32Array)) return this.classifyScene(audio, sr);
-    const yieldBudget = opts.yieldBudget || (() => Promise.resolve());
+    const yieldBudget = opts.yieldBudget || this._defaultYieldBudget();
     const n = audio.length;
     const CHUNK = 1 << 17;
     const bits = new Uint32Array(audio.buffer, audio.byteOffset, n);
@@ -186,6 +186,21 @@ const AIIntelligence = {
       spectralFlux: this._calcSpectralFlux(audio),
       dynamicRange: 20 * Math.log10(p95 / (p05raw + 1e-10)),
     });
+  },
+
+  /**
+   * Fallback yield for classifySceneAsync: a real macrotask (so input and
+   * paint run between chunks) at most once per ~10 ms of work. A resolved
+   * promise would only resume as a microtask and never let the browser in.
+   */
+  _defaultYieldBudget() {
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    let last = now();
+    return async () => {
+      if (now() - last < 10) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      last = now();
+    };
   },
 
   _defaultScene() {
