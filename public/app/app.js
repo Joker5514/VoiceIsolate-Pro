@@ -3193,11 +3193,12 @@ class VoiceIsolatePro {
    * for whisper/quiet content when the module is loaded.
    */
   _applyPresetValues(presetName, options = {}) {
-    const { preserveWhisperMode = false, respectUserTouched = false } = options;
+    const { preserveWhisperMode = false, respectUserTouched = false, liveMixOnly = false } = options;
     const preset = PRESETS[presetName];
     if (!preset) return;
     Object.entries(preset).forEach(([key, rawValue]) => {
       if (preserveWhisperMode && key === 'whisperMode') return;
+      if (liveMixOnly && !BRIDGE_RT_SLIDER_IDS.has(key)) return;
       if (key === 'description') return;
       if (this._isSliderLocked(key)) return;
       if (respectUserTouched && this._userTouchedSliders.has(key)) return;
@@ -3205,11 +3206,17 @@ class VoiceIsolatePro {
     });
   }
 
+  /**
+   * Post-Process calibration. It reads the processed output, so it may only
+   * move Live-Mix controls, which apply to playback at once. Process-time
+   * controls must keep describing the settings that produced the audio; a
+   * silent rewrite would also change the next Reprocess (audit AI-001).
+   */
   _autoCalibratePreset(buffer) {
     if (!buffer || typeof buffer.getChannelData !== 'function') return null;
     if (WorkflowTier.shouldSkipAutoCalibrate()) {
       const preset = WorkflowTier.getDefaultPreset();
-      this._applyPresetValues(preset, { respectUserTouched: true });
+      this._applyPresetValues(preset, { respectUserTouched: true, liveMixOnly: true });
       this._syncBridgeParams();
       return { preset, level: 'creator', rmsDb: 0 };
     }
@@ -3218,9 +3225,10 @@ class VoiceIsolatePro {
       channels.push(buffer.getChannelData(ch));
     }
     const { preset, level, rmsDb, overrides = {} } = recommendEngineerPreset(channels);
-    this._applyPresetValues(preset, { preserveWhisperMode: true, respectUserTouched: true });
+    this._applyPresetValues(preset, { preserveWhisperMode: true, respectUserTouched: true, liveMixOnly: true });
 
     for (const [key, val] of Object.entries(overrides)) {
+      if (!BRIDGE_RT_SLIDER_IDS.has(key)) continue;
       if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
       if (this._shouldPreserveSlider(key)) continue;
       this._setSliderUi(key, val);
@@ -3238,6 +3246,7 @@ class VoiceIsolatePro {
         .then((tune) => {
           if (fileSeq !== this._fileSeq || this.outputBuffer !== buffer) return;
           for (const [key, val] of Object.entries(tune.suggestions || {})) {
+            if (!BRIDGE_RT_SLIDER_IDS.has(key)) continue;
             if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
             if (this._shouldPreserveSlider(key)) continue;
             this._setSliderUi(key, val);
@@ -4066,6 +4075,25 @@ class VoiceIsolatePro {
   }
 
   /**
+   * Render the processed stems through the Live-Mix graph the user hears
+   * (EQ, gate, compressor, limiter, de-esser, gains, Background balance).
+   * Exports must equal playback; procBuffer alone is only the clean stem.
+   * Returns null when the bridge cannot be built, so callers can say so.
+   * @returns {Promise<AudioBuffer|null>}
+   */
+  async _renderProcessedMix({ signal = null, startSec = 0, endSec } = {}) {
+    const clean = this.procBuffer || this.outputBuffer;
+    if (!clean) return null;
+    await this.ensureCtx();
+    const bridge = this._bridge || await this._ensureBridge();
+    const mixer = bridge?.mixer;
+    if (!mixer || typeof mixer.renderMix !== 'function') return null;
+    this._syncBridgeParams();
+    const noise = this._noiseStemChannels ? this.noiseBuffer : null;
+    return mixer.renderMix({ signal, startSec, endSec, stems: { clean, noise } });
+  }
+
+  /**
    * User-initiated: upload processed WAV to Google Drive (VoiceIsolate Pro folder).
    * Never runs automatically after Process.
    */
@@ -4084,14 +4112,19 @@ class VoiceIsolatePro {
       );
       return;
     }
+    const mixBuf = await this._renderProcessedMix();
+    if (!mixBuf) {
+      this.showNotification('Live-Mix is unavailable, so the export cannot match playback. Reload and try again.', 'error');
+      return;
+    }
     const channels = [];
-    for (let c = 0; c < fullBuf.numberOfChannels; c++) {
-      channels.push(fullBuf.getChannelData(c));
+    for (let c = 0; c < mixBuf.numberOfChannels; c++) {
+      channels.push(mixBuf.getChannelData(c));
     }
     const ditherAmt = buildMlProcessingConfig(
       this.getEffectiveParams(window.VIP_PARAMS || {}),
     ).export.ditherAmt;
-    const blob = encodeWav(channels, fullBuf.sampleRate, { ditherAmt });
+    const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt });
     const filename = `processed-${Date.now()}.wav`;
     this.showNotification('Uploading to Google Drive…', 'info');
     const meta = await saveBlobToDrive({ blob, filename, mimeType: 'audio/wav' });
@@ -4135,10 +4168,19 @@ class VoiceIsolatePro {
       }
 
       const wantsVideo = this.isVideo && this._sourceFile && isVideoSource(this._sourceFile);
+      if (typeof this.updateProcessingOverlay === 'function') {
+        this.updateProcessingOverlay('Rendering Live-Mix…', 10, 28, job?.id || null);
+      }
+      // Video remux crops itself, so it takes the full-length mix.
+      const mixBuf = await this._renderProcessedMix(wantsVideo
+        ? { signal }
+        : { signal, startSec: cropIn, endSec: cropOut });
+      if (!mixBuf) throw new Error('Live-Mix is unavailable, so the export cannot match playback. Reload and try again.');
+      if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
       if (wantsVideo) {
         try {
           this.showNotification('Encoding processed video…', 'info');
-          const result = await exportVideoWithProcessedAudio(this._sourceFile, fullBuf, {
+          const result = await exportVideoWithProcessedAudio(this._sourceFile, mixBuf, {
             startSec: cropIn,
             endSec: cropOut,
             signal,
@@ -4186,9 +4228,9 @@ class VoiceIsolatePro {
         return;
       }
 
-      let buf = fullBuf;
-      if (cropIn > 0 || cropOut < fullBuf.duration) {
-        buf = sliceAudioBuffer(this.ctx, fullBuf, cropIn, cropOut);
+      let buf = mixBuf;
+      if (wantsVideo && (cropIn > 0 || cropOut < mixBuf.duration)) {
+        buf = sliceAudioBuffer(this.ctx, mixBuf, cropIn, cropOut);
       }
       if (typeof this.updateProcessingOverlay === 'function') {
         this.updateProcessingOverlay('Writing WAV…', 90, 30, job?.id || null);
@@ -4609,6 +4651,7 @@ class VoiceIsolatePro {
           stageEnd('ml_isolation');
           if (fileSeq !== this._fileSeq) break;
           this._mlIsolationSucceeded = mlOk;
+          this._processingEngine = mlOk ? 'ml' : 'dsp-fallback';
           if (!mlOk) {
             stageStart('dsp_fallback');
             await this._runFallbackPipeline(sourceBuf);
@@ -4687,9 +4730,13 @@ class VoiceIsolatePro {
 
       // Playable/exportable output is ready BEFORE visuals / auto-analysis.
       stageEnd('pipeline');
+      const viaFallback = this._processingEngine === 'dsp-fallback';
       this.updatePipelineProgress(32, 'Complete', 100, { force: true });
       this._logProgressDiag('complete');
       this.setStatus('DONE');
+      if (viaFallback) {
+        this.showNotification('ML isolation was unavailable, so the classical DSP fallback processed this file.', 'warn');
+      }
       try {
         this.updateAudioMetrics(this._computeAudioMetricsState());
       } catch (_) { /* metrics must not fail the pipeline */ }
@@ -5475,10 +5522,9 @@ class VoiceIsolatePro {
     const len = buf.length;
 
     if (!DSP || !this.ctx || typeof this.ctx.createBuffer !== 'function') {
-      // No DSP runtime — passthrough so playback still works.
-      this.procBuffer = buf;
-      this.outputBuffer = buf;
-      return;
+      // Neither engine can run. Returning the input as "processed" reported an
+      // unchanged file as Complete (audit AUD-005); fail visibly instead.
+      throw new Error('Neither ML isolation nor the DSP fallback is available, so the audio was not processed. Reload and try again.');
     }
 
     // Stereo → process mid once (halves STFT + spectral cost). Re-expand at end.

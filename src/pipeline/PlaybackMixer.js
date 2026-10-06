@@ -1249,21 +1249,36 @@ export class PlaybackMixer {
   /** Render the current stem mix through this same graph, on the audio rendering thread.
    * AudioParams are captured before the first await. Playback state is untouched.
    * Native offline rendering cannot be terminated; cancelled results are discarded.
+   *
+   * `stems` renders other buffers (e.g. Engineer's processed stems while A/B
+   * playback holds the original) through this graph's current settings. A
+   * missing noise stem renders as silence, matching a single-buffer load.
+   * @param {{ signal?: AbortSignal, startSec?: number, endSec?: number,
+   *   stems?: { clean: AudioBuffer, noise?: AudioBuffer|null } }} [opts]
    */
-  async renderMix({ signal, startSec = 0, endSec = this.duration() } = {}) {
+  async renderMix({ signal, startSec = 0, endSec, stems = null } = {}) {
     const Offline = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
     if (!Offline) throw new Error('Offline export is unavailable in this browser. Try a supported desktop browser.');
-    if (!this.cleanBuffer || !this.noiseBuffer) throw new Error('Process a recording before exporting.');
+    const cleanBuffer = stems ? stems.clean : this.cleanBuffer;
+    const noiseOverride = stems ? (stems.noise || null) : this.noiseBuffer;
+    if (!cleanBuffer || (!stems && !noiseOverride)) throw new Error('Process a recording before exporting.');
+    for (const b of [cleanBuffer, noiseOverride]) {
+      if (b && b.sampleRate !== SAMPLE_RATE) {
+        throw new Error(`[VIP][PlaybackMixer] renderMix stems must be ${SAMPLE_RATE} Hz (got ${b.sampleRate}).`);
+      }
+    }
     const cancelled = () => Object.assign(new Error('Cancelled'), { name: 'AbortError' });
     if (signal?.aborted) throw cancelled();
     const start = Math.max(0, Math.floor(startSec * SAMPLE_RATE));
-    const end = Math.min(this.cleanBuffer.length, Math.ceil(endSec * SAMPLE_RATE));
+    const end = Math.min(cleanBuffer.length, Math.ceil((endSec ?? cleanBuffer.duration) * SAMPLE_RATE));
     if (end <= start) throw new Error('Choose a non-empty export region.');
-    const ctx = new Offline(this.cleanBuffer.numberOfChannels, end - start, SAMPLE_RATE);
+    const ctx = new Offline(cleanBuffer.numberOfChannels, end - start, SAMPLE_RATE);
     const render = new PlaybackMixer({ context: ctx });
     // Reuse immutable AudioBuffers; no whole-file copies during graph construction.
-    render.cleanBuffer = this.cleanBuffer;
-    render.noiseBuffer = this.noiseBuffer;
+    // A silent placeholder needs no copy: createBuffer is zero-filled.
+    render.cleanBuffer = cleanBuffer;
+    render.noiseBuffer = noiseOverride
+      || ctx.createBuffer(cleanBuffer.numberOfChannels, cleanBuffer.length, SAMPLE_RATE);
     const copyNode = (from, to) => {
       if (!from || !to) return;
       if (typeof from.type === 'string') to.type = from.type;

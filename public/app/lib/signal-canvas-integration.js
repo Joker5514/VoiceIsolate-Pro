@@ -129,23 +129,30 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
       // Store selection for later
       appInstance._protectRegions = appInstance._protectRegions || [];
       appInstance._suppressRegions = appInstance._suppressRegions || [];
-      // For Isolate: set protect region
+      // Region-scoped processing is not implemented. Each action now does
+      // something real and says what it did (audit AUD-002): parameter
+      // actions go through _setSliderUi, so VIP_PARAMS, the slider and the
+      // Live-Mix bridge all change, and the notice says they apply file-wide.
+      const notify = (msg) => appInstance.showNotification?.(msg, 'info');
+      const setControls = (values) => {
+        for (const [id, v] of Object.entries(values)) appInstance._setSliderUi?.(id, v);
+        appInstance._syncBridgeParams?.();
+      };
       if (action === 'isolate') {
         appInstance._protectRegions = [{ start: startSec, end: endSec, confidence: 0.9 }];
-        appInstance.runPipeline?.();
+        if (appInstance._mlIsolationSucceeded) {
+          notify('Selection isolate applies to the DSP fallback only; ML stems are file-wide. Use Background and Voice to rebalance.');
+        } else {
+          appInstance.runPipeline?.();
+        }
         dispatch('ACTION_PREVIEWED', { action, startSec, endSec });
       } else if (action === 'enhance' || action === 'boost-whisper') {
-        // Boost whisper: set whisperLift + voiceTunnel
-        if (appInstance.params) {
-          appInstance.params.whisperLift = action === 'boost-whisper' ? 12 : 6;
-          appInstance.params.voiceTunnel = 60;
-        }
+        setControls({ whisperLift: action === 'boost-whisper' ? 12 : 6, voiceTunnel: 60 });
+        notify('Applied to the whole file. Press Reprocess to hear the change.');
         dispatch('ACTION_PREVIEWED', { action, startSec, endSec });
       } else if (action === 'reduce-noise') {
-        if (appInstance.params) {
-          appInstance.params.nrAmount = 70;
-          appInstance.params.bgSuppress = 60;
-        }
+        setControls({ nrAmount: 70, bgSuppress: 60 });
+        notify('Background reduced now; noise reduction applies to the whole file on Reprocess.');
         dispatch('ACTION_PREVIEWED', { action, startSec, endSec });
       } else if (action === 'preview') {
         dispatch('ACTION_PREVIEWED', { action, startSec, endSec });
