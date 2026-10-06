@@ -142,6 +142,45 @@ function resolvePresetNameLocal(name) {
   return redirects[name] || name || 'Voice Clarity';
 }
 
+/**
+ * AudioBuffer.getChannelData, memoised per buffer. Chromium returns the same
+ * aliased Float32Array on every call yet charges a linear pass each time
+ * (~12 ms per call per 5-minute channel). The metrics writers run on every
+ * pipeline progress tick and slider flush, so uncached calls added up to
+ * 0.5 s of main-thread stalls per Process on a 5-minute file.
+ */
+const _channelDataCache = new WeakMap();
+function cachedChannelData(buf, ch) {
+  let arr = _channelDataCache.get(buf);
+  if (!arr) {
+    arr = [];
+    _channelDataCache.set(buf, arr);
+  }
+  return arr[ch] || (arr[ch] = buf.getChannelData(ch));
+}
+
+/**
+ * Identity + content revision of an AudioBuffer, for the metric caches.
+ * Code that rewrites a live buffer's samples in place (the output limiter,
+ * the fallback gain trim) calls bumpBufferRevision() before and after, so a
+ * cached or in-flight result for the old content is never reused. A sample
+ * stamp cannot see interior changes.
+ */
+const _bufferRevisions = new WeakMap();
+let _nextBufferId = 1;
+function bufferRevisionKey(buf) {
+  let e = _bufferRevisions.get(buf);
+  if (!e) {
+    e = { id: _nextBufferId++, rev: 0 };
+    _bufferRevisions.set(buf, e);
+  }
+  return `${e.id}.${e.rev}`;
+}
+function bumpBufferRevision(buf) {
+  const e = buf && _bufferRevisions.get(buf);
+  if (e) e.rev += 1;
+}
+
 const LARGE_FILE_WARNING_BYTES = 500 * 1024 * 1024;
 const EXTENSION_MIME_TYPES = Object.freeze({
   mp3: 'audio/mpeg',
@@ -1787,8 +1826,8 @@ class VoiceIsolatePro {
       return { stereoActive: false, channelDiff: 0 };
     }
     try {
-      const L = buf.getChannelData(0);
-      const R = buf.getChannelData(1);
+      const L = cachedChannelData(buf, 0);
+      const R = cachedChannelData(buf, 1);
       const n = Math.min(L.length, R.length, 48000);
       let lRms = 0;
       let rRms = 0;
@@ -3187,18 +3226,26 @@ class VoiceIsolatePro {
       this._setSliderUi(key, val);
     }
 
-    const AI = globalThis.AIIntelligence;
-    if (AI && typeof AI.autoTuneParams === 'function') {
-      const mono = channels[0];
-      const tune = AI.autoTuneParams(mono, buffer.sampleRate, this.params);
-      for (const [key, val] of Object.entries(tune.suggestions || {})) {
-        if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
-        if (this._shouldPreserveSlider(key)) continue;
-        this._setSliderUi(key, val);
-      }
-    }
-
     this._syncBridgeParams();
+
+    // Scene auto-tune reads every sample of the track. Run synchronously it
+    // held the main thread ~0.6 s per 5 min of audio, so it runs in yielding
+    // chunks and applies its suggestions when done (if the file is unchanged).
+    const AI = globalThis.AIIntelligence;
+    if (AI && typeof AI.autoTuneParamsAsync === 'function') {
+      const fileSeq = this._fileSeq;
+      AI.autoTuneParamsAsync(channels[0], buffer.sampleRate, this.params, { yieldBudget: createYieldBudget() })
+        .then((tune) => {
+          if (fileSeq !== this._fileSeq || this.outputBuffer !== buffer) return;
+          for (const [key, val] of Object.entries(tune.suggestions || {})) {
+            if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
+            if (this._shouldPreserveSlider(key)) continue;
+            this._setSliderUi(key, val);
+          }
+          this._syncBridgeParams();
+        })
+        .catch((err) => structuredLog('warn', '[VIP] scene auto-tune failed', { err: err?.message }));
+    }
 
     const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
     structuredLog('info', '[VIP] Auto-calibrated mix', { preset, level, rmsDb });
@@ -5589,6 +5636,7 @@ class VoiceIsolatePro {
     const outGainDb = p.outGain ?? 0;
     if (outGainDb !== 0) {
       const gain = Math.pow(10, outGainDb / 20);
+      bumpBufferRevision(processed);
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         const out = processed.getChannelData(ch);
         await processInChunks({
@@ -5600,6 +5648,7 @@ class VoiceIsolatePro {
           },
         });
       }
+      bumpBufferRevision(processed);
       await yieldToBrowser();
     }
 
@@ -5626,6 +5675,15 @@ class VoiceIsolatePro {
    */
   _applyOutputSafetyLimit(buf, params) {
     if (!buf || typeof buf.numberOfChannels !== 'number') return buf;
+    // Synchronous in-place rewrite: one bump after it covers every reader.
+    try {
+      return this._applyOutputSafetyLimitInPlace(buf, params);
+    } finally {
+      bumpBufferRevision(buf);
+    }
+  }
+
+  _applyOutputSafetyLimitInPlace(buf, params) {
     const DSP = this._resolveDSP?.() || (typeof globalThis !== 'undefined' ? globalThis.DSP : null);
     if (!DSP || typeof DSP.truePeakLimit !== 'function') {
       // Fallback hard clamp to full-scale if DSP core not loaded.
@@ -5660,6 +5718,17 @@ class VoiceIsolatePro {
    * does not freeze at 98% during brickwall limiting.
    */
   async _applyOutputSafetyLimitAsync(buf, params) {
+    // Rewrites the live buffer in place: invalidate metric caches before the
+    // first write and after the last, including an aborted run.
+    bumpBufferRevision(buf);
+    try {
+      return await this._applyOutputSafetyLimitAsyncInPlace(buf, params);
+    } finally {
+      bumpBufferRevision(buf);
+    }
+  }
+
+  async _applyOutputSafetyLimitAsyncInPlace(buf, params) {
     if (!buf || typeof buf.numberOfChannels !== 'number') return buf;
     const DSP = this._resolveDSP?.() || (typeof globalThis !== 'undefined' ? globalThis.DSP : null);
     let p = params;
@@ -7119,32 +7188,20 @@ class VoiceIsolatePro {
       return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
     }
     try {
-      const o = orig.getChannelData(0);
-      const p = (proc && proc.getChannelData) ? proc.getChannelData(0) : o;
+      const o = cachedChannelData(orig, 0);
+      const p = (proc && proc.getChannelData) ? cachedChannelData(proc, 0) : o;
       const n = Math.min(o.length, p.length);
       if (n < 32) return { voicePct: null, noisePct: null, snrDb: null };
 
-      // Subsample for UI speed.
-      const step = Math.max(1, Math.floor(n / 8000));
-      let oRms = 0;
-      let pRms = 0;
-      let oCount = 0;
-      let voiceEnergy = 0;
-      let noiseEnergy = 0;
-      for (let i = 0; i < n; i += step) {
-        const ov = o[i];
-        const pv = p[i];
-        oRms += ov * ov;
-        pRms += pv * pv;
-        oCount += 1;
-        // Proxy: residual |orig-proc| ≈ noise removed; retained energy ≈ voice.
-        const resid = ov - pv;
-        noiseEnergy += resid * resid;
-        voiceEnergy += pv * pv;
-      }
-      if (!oCount) return { voicePct: null, noisePct: null, snrDb: null };
-      oRms = Math.sqrt(oRms / oCount);
-      pRms = Math.sqrt(pRms / oCount);
+      // Exact sums over every sample, computed off the progress tick and
+      // cached per stem pair; until ready the header shows "--".
+      const sums = this._audioMetricSums(orig, proc, o, p, n);
+      if (!sums) return { voicePct: null, noisePct: null, snrDb: null };
+      const { oSq, pSq, noiseEnergy } = sums;
+      const voiceEnergy = pSq;
+      const oCount = n;
+      const oRms = Math.sqrt(oSq / oCount);
+      const pRms = Math.sqrt(pSq / oCount);
       const total = voiceEnergy + noiseEnergy + 1e-12;
       let voicePct = (voiceEnergy / total) * 100;
       let noisePct = (noiseEnergy / total) * 100;
@@ -7174,6 +7231,53 @@ class VoiceIsolatePro {
   }
 
   /**
+   * Exact energy sums for the Voice/Noise/SNR header, over every sample of
+   * the stem pair, in yielding chunks. Cached by buffer identity + content
+   * revision for the last few pairs, so A/B toggles are
+   * instant. Returns null while a pass is running; when it finishes the
+   * header is repainted through updateAudioMetrics().
+   */
+  _audioMetricSums(orig, proc, o, p, n) {
+    const key = `${bufferRevisionKey(orig)}|${proc === orig ? '=' : bufferRevisionKey(proc)}`;
+    if (!this._audioMetricSumsCache) this._audioMetricSumsCache = new Map();
+    const cache = this._audioMetricSumsCache;
+    if (cache.has(key)) return cache.get(key);
+    if (!this._audioMetricSumsPending) this._audioMetricSumsPending = new Set();
+    if (this._audioMetricSumsPending.has(key)) return null;
+    this._audioMetricSumsPending.add(key);
+    let oSq = 0;
+    let pSq = 0;
+    let noiseEnergy = 0;
+    processInChunks({
+      total: n,
+      chunkSize: 48000 * 2,
+      runChunk: (start, end) => {
+        for (let i = start; i < end; i++) {
+          const ov = o[i];
+          const pv = p[i];
+          oSq += ov * ov;
+          pSq += pv * pv;
+          // Proxy: residual |orig-proc| ≈ noise removed; retained energy ≈ voice.
+          const resid = ov - pv;
+          noiseEnergy += resid * resid;
+        }
+      },
+    }).then(() => {
+      cache.set(key, { oSq, pSq, noiseEnergy });
+      while (cache.size > 4) cache.delete(cache.keys().next().value);
+      // Repaint only if these are still the stems on screen.
+      const curOrig = this.origBuffer || this.inputBuffer;
+      const curProc = this.abMode === 'original' ? curOrig : (this.outputBuffer || this.procBuffer || curOrig);
+      if (curOrig === orig && curProc === proc) this.updateAudioMetrics();
+    }).catch((err) => {
+      structuredLog('warn', '[VIP] audio metrics failed', { err: err?.message });
+    }).finally(() => {
+      this._audioMetricSumsPending.delete(key);
+    });
+    return null;
+  }
+
+  /**
    * Derive the unified session metrics (Voice Clarity, Noise Reduction,
    * Whisper Retention, Output dBFS + deep readouts) from the current stems.
    * This is NOT a second metrics writer: it is invoked exclusively from
@@ -7188,44 +7292,70 @@ class VoiceIsolatePro {
     if (!orig || typeof orig.getChannelData !== 'function') return null;
     if (!proc || proc === orig || typeof proc.getChannelData !== 'function') return null;
     try {
-      const o = orig.getChannelData(0);
-      const p = proc.getChannelData(0);
+      const o = cachedChannelData(orig, 0);
+      const p = cachedChannelData(proc, 0);
       const n = Math.min(o.length, p.length);
       const sampleRate = proc.sampleRate || orig.sampleRate || 48000;
       if (n < 256) return null;
 
       // Identity cache: updateAudioMetrics() fires hundreds of times per
       // Process pass; recompute only when the stems actually changed.
-      const stamp = (buf) => {
-        const d = buf.getChannelData(0);
-        const L = d.length;
-        return `${L}@${buf.sampleRate}:${d[0]}|${d[L >> 1]}|${d[L - 1]}`;
-      };
-      const key = `${stamp(orig)}|${stamp(proc)}`;
+      const key = `${bufferRevisionKey(orig)}|${bufferRevisionKey(proc)}`;
       if (key === this._sessionMetricsKey && this._sessionMetricsCache) {
         return this._sessionMetricsCache;
       }
+      // Every sample is used, so a long file is computed in yielding chunks
+      // rather than inside this progress tick; the result is pushed to the
+      // session store when ready. Until then callers get null (no update).
+      if (this._sessionMetricsPendingKey !== key) {
+        this._sessionMetricsPendingKey = key;
+        this._computeSessionMetricsAsync(orig, o, p, n, sampleRate, key)
+          .catch((err) => structuredLog('warn', '[VIP] session metrics failed', { err: err?.message }));
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 
-      // Pass 1 (subsampled): processed RMS/peak + retained-vs-removed energy.
-      const step = Math.max(1, Math.floor(n / 16000));
+  /**
+   * Exact session metrics over every sample and every 20 ms frame, in
+   * budgeted chunks. Superseded runs (stems changed again) are dropped.
+   */
+  async _computeSessionMetricsAsync(orig, o, p, n, sampleRate, key) {
+    // Stale when the stems changed again or the file was replaced/cleared.
+    const fileSeq = this._fileSeq;
+    const stale = () => this._fileSeq !== fileSeq || this._sessionMetricsPendingKey !== key;
+    // Thrown from a chunk to stop work for a replaced source mid-pass.
+    const STALE = {};
+    let published = false;
+    try {
+      // Pass 1: processed RMS/peak + retained-vs-removed energy.
       let pSum = 0;
-      let pCount = 0;
       let peak = 0;
       let voiceEnergy = 0;
       let noiseEnergy = 0;
-      for (let i = 0; i < n; i += step) {
-        const ov = o[i];
-        const pv = p[i];
-        pSum += pv * pv;
-        pCount += 1;
-        const abs = pv < 0 ? -pv : pv;
-        if (abs > peak) peak = abs;
-        // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
-        // retained energy ≈ voice.
-        const resid = ov - pv;
-        noiseEnergy += resid * resid;
-        voiceEnergy += pv * pv;
-      }
+      await processInChunks({
+        total: n,
+        chunkSize: 48000 * 2,
+        runChunk: (start, end) => {
+          if (stale()) throw STALE;
+          for (let i = start; i < end; i++) {
+            const ov = o[i];
+            const pv = p[i];
+            pSum += pv * pv;
+            const abs = pv < 0 ? -pv : pv;
+            if (abs > peak) peak = abs;
+            // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
+            // retained energy ≈ voice.
+            const resid = ov - pv;
+            noiseEnergy += resid * resid;
+            voiceEnergy += pv * pv;
+          }
+        },
+      });
+      if (stale()) return;
+      const pCount = n;
       const rms = Math.sqrt(pSum / Math.max(1, pCount));
       const total = voiceEnergy + noiseEnergy + 1e-12;
       const voiceClarity = Math.max(0, Math.min(100, (voiceEnergy / total) * 100));
@@ -7233,26 +7363,36 @@ class VoiceIsolatePro {
       if (!Number.isFinite(snrDb)) snrDb = 0;
       snrDb = Math.max(-40, Math.min(60, snrDb));
 
-      // Pass 2 (20 ms frames): noise floor reduction + whisper-band retention.
+      // Pass 2 (every 20 ms frame): noise floor reduction + whisper-band retention.
       const frame = Math.max(64, Math.floor(sampleRate * 0.02));
-      const preFrames = [];
-      const postFrames = [];
-      for (let pos = 0; pos + frame <= n; pos += frame) {
-        let ePre = 0;
-        let ePost = 0;
-        for (let i = 0; i < frame; i++) {
-          const ov = o[pos + i];
-          const pv = p[pos + i];
-          ePre += ov * ov;
-          ePost += pv * pv;
-        }
-        preFrames.push(ePre / frame);
-        postFrames.push(ePost / frame);
-      }
+      const frameCount = Math.floor(n / frame);
+      const preFrames = new Float64Array(frameCount);
+      const postFrames = new Float64Array(frameCount);
+      await processInChunks({
+        total: frameCount,
+        chunkSize: 100,
+        runChunk: (fStart, fEnd) => {
+          if (stale()) throw STALE;
+          for (let f = fStart; f < fEnd; f++) {
+            const pos = f * frame;
+            let ePre = 0;
+            let ePost = 0;
+            for (let i = 0; i < frame; i++) {
+              const ov = o[pos + i];
+              const pv = p[pos + i];
+              ePre += ov * ov;
+              ePost += pv * pv;
+            }
+            preFrames[f] = ePre / frame;
+            postFrames[f] = ePost / frame;
+          }
+        },
+      });
+      if (stale()) return;
       const dbOf = (v) => (v <= 1e-12 ? -120 : 10 * Math.log10(v));
       const percentileDb = (arr) => {
         if (!arr.length) return -120;
-        const sorted = [...arr].sort((a, b) => a - b);
+        const sorted = Float64Array.from(arr).sort();
         return dbOf(sorted[Math.max(0, Math.floor(sorted.length * 0.1))]);
       };
       const floorPreDb = percentileDb(preFrames);
@@ -7315,11 +7455,19 @@ class VoiceIsolatePro {
         voices,
         duration: Number.isFinite(orig.duration) ? orig.duration : n / sampleRate,
       };
+      if (stale()) return;
       this._sessionMetricsKey = key;
       this._sessionMetricsCache = metrics;
-      return metrics;
-    } catch (_) {
-      return null;
+      published = true;
+      try {
+        getAudioSessionStore().updateMetrics(metrics);
+      } catch (_) { /* session metrics must never fail the pipeline */ }
+    } catch (err) {
+      if (err !== STALE) throw err;
+    } finally {
+      // A stale run must not leave its key marked pending: a later request
+      // for the same stems would otherwise never start a calculation.
+      if (!published && this._sessionMetricsPendingKey === key) this._sessionMetricsPendingKey = null;
     }
   }
 

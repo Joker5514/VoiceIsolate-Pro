@@ -309,3 +309,55 @@ describe('_calcDynamicRange order statistics (no full-track sort)', () => {
     expect(AI._calcDynamicRange(view)).toBe(expected);
   });
 });
+
+describe('full-track scene classification (no sampling)', () => {
+  // A long track with one short transient far from the start: any excerpt or
+  // stride would miss it and change peak, crest factor and the suggestions.
+  function longTrack(n) {
+    const a = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      a[i] = Math.sin(i * 0.031) * (i % 48000 < 30000 ? 0.2 : 0.004) + ((i * 7919) % 13) / 1300;
+    }
+    a[Math.floor(n * 0.6137)] = 0.97;
+    return a;
+  }
+
+  test('classifySceneAsync equals classifyScene on every sample, across chunk boundaries', async () => {
+    const audio = longTrack(48000 * 45);
+    const sync = AIIntelligence.classifyScene(audio, 48000);
+    let yields = 0;
+    const asyncResult = await AIIntelligence.classifySceneAsync(audio, 48000, {
+      yieldBudget: async () => { yields++; },
+    });
+    expect(yields).toBeGreaterThan(1);
+    expect(asyncResult).toEqual(sync);
+    expect(sync.features.peak).toBeCloseTo(0.97, 6);
+  });
+
+  test('autoTuneParamsAsync equals autoTuneParams', async () => {
+    const audio = longTrack(48000 * 35);
+    expect(await AIIntelligence.autoTuneParamsAsync(audio, 48000, {}))
+      .toEqual(AIIntelligence.autoTuneParams(audio, 48000, {}));
+  });
+
+  test('default yield is a macrotask, not a microtask', async () => {
+    const forced = AIIntelligence._defaultYieldBudget();
+    const t0 = Date.now();
+    while (Date.now() - t0 < 15) { /* burn past the 10 ms budget */ }
+    let resumedInMicrotask = false;
+    Promise.resolve().then(() => { resumedInMicrotask = true; });
+    const p = forced();
+    await Promise.resolve();
+    expect(resumedInMicrotask).toBe(true);
+    let done = false;
+    p.then(() => { done = true; });
+    await Promise.resolve();
+    expect(done).toBe(false); // still waiting on the setTimeout macrotask
+    await p;
+  });
+
+  test('short input returns the default scene on both paths', async () => {
+    const tiny = new Float32Array(100);
+    expect(await AIIntelligence.classifySceneAsync(tiny, 48000)).toEqual(AIIntelligence.classifyScene(tiny, 48000));
+  });
+});

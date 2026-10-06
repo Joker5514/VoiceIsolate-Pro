@@ -18,14 +18,19 @@ import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityCh
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
 import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
-import { downmixToMono } from '/src/core/FeatureExtractor.js';
+import {
+  anySignal,
+  copyFloat32Channel,
+  createYieldBudget,
+  downmixToMonoAsync,
+} from '/src/pipeline/ui-yield.js';
 import {
   enrichAnalysisWithCollaboration,
   applyHunterFeedbackToAnalysis,
   analysisToHunterSliderTargets,
 } from '/src/core/AnalyzerWhisperBridge.js';
 import { analyzeAcousticEnvironment } from '../whisper-hunter.js';
-import { USMNode, usmSourcesToAudioBuffers } from '/src/pipeline/USMNode.js';
+import { USMNode, usmSourcesToAudioBuffersAsync } from '/src/pipeline/USMNode.js';
 
 /**
  * @param {object} app VoiceIsolatePro instance (legacy Engineer shell)
@@ -101,7 +106,16 @@ export function installAnalysisWorkspace(app) {
   let timeline = null;
   let lastAnalysis = null;
   let cancelled = false;
+  // Bumped/aborted by clearState(): work started on an older source is stale.
+  // The job signal is not aborted by a file change, so long copies also
+  // listen to sourceAbort and stop mid-way instead of finishing for nothing.
+  let sourceGeneration = 0;
+  let sourceAbort = new AbortController();
   let usmBusy = false;
+  // Source signal of the in-flight USM run, and a request that arrived for a
+  // newer source while that run (now stale) still held usmBusy.
+  let usmRunSignal = null;
+  let usmQueued = null;
 
   if (els.timeline) {
     timeline = new TimelineRenderer(els.timeline, {
@@ -205,12 +219,27 @@ export function installAnalysisWorkspace(app) {
     renderUsmSummary();
   }
 
-  async function pushUsmToAudition() {
+  /**
+   * @param {AbortSignal} [sourceSignal] source the stems were computed from;
+   *   runUsmBackend passes the one it captured before its first await.
+   * @param {AudioBuffer} [original] input buffer for that same source
+   */
+  async function pushUsmToAudition(sourceSignal = sourceAbort.signal, original = app.origBuffer || app.inputBuffer) {
     const ctx = app.ctx || app.audioCtx;
-    if (!ctx) return;
+    if (!ctx || sourceSignal.aborted) return;
     if (ctx.state === 'suspended') await ctx.resume();
-    const original = app.origBuffer || app.inputBuffer;
-    const packed = usmSourcesToAudioBuffers(ctx, usmNode.sources, usmNode.sampleRate);
+    if (sourceSignal.aborted) return;
+    let packed;
+    try {
+      packed = await usmSourcesToAudioBuffersAsync(ctx, usmNode.sources, usmNode.sampleRate, {
+        signal: sourceSignal,
+      });
+    } catch (err) {
+      if (sourceSignal.aborted) return; // file changed mid-copy: not an error
+      throw err;
+    }
+    // The copy yields: a different file may have been loaded meanwhile.
+    if (sourceSignal.aborted || (app.origBuffer || app.inputBuffer) !== original) return;
     audition.buildFromUSM(packed, ctx, original || null);
     transport.attachClock(() => audition.getCurrentTime());
     renderAuditionStrip();
@@ -229,6 +258,12 @@ export function installAnalysisWorkspace(app) {
    * Never called from mute/solo/slider. Progress updates chips only.
    */
   async function runUsmBackend(opts = {}) {
+    if (usmBusy && usmRunSignal?.aborted) {
+      // The busy run belongs to a file that is gone: replay this request for
+      // the current file once it settles, instead of dropping it.
+      usmQueued = opts;
+      return null;
+    }
     if (usmBusy) return usmNode.isReady?.() ? {
       sources: usmNode.sources,
       method: usmNode._lastResult?.method,
@@ -237,13 +272,25 @@ export function installAnalysisWorkspace(app) {
     showUsmError('');
     const buf = app.origBuffer || app.inputBuffer;
     if (!buf) return null;
+    // Bound to the source this run started on: clearState() swaps sourceAbort,
+    // so reading it later would pick up the next file's signal.
+    const sourceSignal = sourceAbort.signal;
     usmBusy = true;
+    usmRunSignal = sourceSignal;
     if (els.usmProgress) els.usmProgress.hidden = false;
     try {
+      // Budgeted copies: a synchronous slice() per channel was another
+      // full-track main-thread pass right after analysis.
+      const budget = createYieldBudget();
+      const yieldBudget = async () => {
+        if (sourceSignal.aborted) throw new DOMException('Source changed', 'AbortError');
+        await budget();
+      };
       const channels = [];
       for (let c = 0; c < buf.numberOfChannels; c++) {
-        channels.push(buf.getChannelData(c).slice());
+        channels.push(await copyFloat32Channel(buf.getChannelData(c), { yieldBudget }));
       }
+      if (sourceSignal.aborted) return null;
       const K = Math.max(2, Math.min(12, Number(opts.numSources) || 6));
       const config = {
         mode: opts.mode === 'query' ? 'query' : 'auto',
@@ -254,24 +301,37 @@ export function installAnalysisWorkspace(app) {
       const result = typeof usmNode.ensureComputed === 'function'
         ? await usmNode.ensureComputed(channels, buf.sampleRate, config)
         : await usmNode.process(channels, buf.sampleRate, config);
+      if (sourceSignal.aborted) {
+        // Old file's stems: never publish them, and drop them from the node,
+        // which app.getSourceStems() reads live.
+        usmNode.clear?.();
+        return null;
+      }
       app._usmResult = result;
       app._usmNode = usmNode;
       // Expose internal API on app for WhisperHunter / Process consumers
       app.getSourceStems = () => usmNode.getSourceStems();
       app.getSourceLabels = () => usmNode.getSourceLabels();
 
-      await pushUsmToAudition();
+      await pushUsmToAudition(sourceSignal, buf);
+      if (sourceSignal.aborted) return null;
       renderUsmSummary();
       if (typeof app.setStatus === 'function' && !result.cached) {
         app.setStatus(`Detected ${result.sources.length} sources (${result.method})`);
       }
       return result;
     } catch (err) {
-      showUsmError(err?.message || String(err));
+      if (!sourceSignal.aborted) showUsmError(err?.message || String(err));
       return null;
     } finally {
       usmBusy = false;
+      usmRunSignal = null;
       if (els.usmProgress) els.usmProgress.hidden = true;
+      if (usmQueued) {
+        const queued = usmQueued;
+        usmQueued = null;
+        void runUsmBackend(queued).catch((e) => console.warn('[VIP] queued USM run failed:', e?.message || e));
+      }
     }
   }
 
@@ -470,6 +530,9 @@ export function installAnalysisWorkspace(app) {
   }
 
   function clearState() {
+    sourceGeneration += 1;
+    sourceAbort.abort();
+    sourceAbort = new AbortController();
     cancelled = false;
     lastAnalysis = null;
     app._lastFullAnalysis = null;
@@ -572,11 +635,15 @@ export function installAnalysisWorkspace(app) {
   async function runAnalysis() {
     showError('');
     cancelled = false;
+    const runSource = sourceGeneration;
+    const sourceSignal = sourceAbort.signal;
     const jobs = globalThis.__VIP_JOBS__;
     let job = null;
     // Decode on the analyzer path (not at upload) — keeps the tab responsive.
     if (typeof app.ensureDecoded === 'function') {
       const decoded = await app.ensureDecoded();
+      // A file switch mid-decode is not "no file loaded".
+      if (runSource !== sourceGeneration) return null;
       if (!decoded) {
         showError('Load an audio or video file first, then analyze.');
         return null;
@@ -595,7 +662,9 @@ export function installAnalysisWorkspace(app) {
     const signal = job?.controller?.signal || jobs?.getCurrentSignal?.() || null;
     const superseded = () => {
       const activeJobId = jobs?.getCurrentJobId?.() || null;
-      return job?.cancelReason === 'superseded'
+      // clearState() (file change/clear) does not abort this run's signal.
+      return runSource !== sourceGeneration
+        || job?.cancelReason === 'superseded'
         || signal?.reason === 'superseded'
         || Boolean(activeJobId && job && activeJobId !== job.id);
     };
@@ -634,9 +703,15 @@ export function installAnalysisWorkspace(app) {
         channels.push(buf.getChannelData(c));
       }
       // Use mono mix for speed on long files — still multi-channel aware via count.
-      // downmixToMono already allocates for 2+ channels; copying each channel
-      // first doubled this synchronous pass (0.5 s per 5 min of stereo).
-      const mono = channels.length === 1 ? channels[0].slice() : downmixToMono(channels);
+      // Budgeted: a synchronous downmix froze the tab ~0.7 s per 5 min of stereo.
+      const downmixSignal = anySignal([signal, sourceSignal]);
+      let mono;
+      try {
+        mono = await downmixToMonoAsync(channels, { signal: downmixSignal.signal });
+      } finally {
+        downmixSignal.dispose();
+      }
+      if (superseded()) return null;
       const prevProgress = host.onProgress;
       const reportProgress = (pct, stage) => {
         try { prevProgress?.(pct, stage); } catch { /* ignore */ }
@@ -714,6 +789,9 @@ export function installAnalysisWorkspace(app) {
       if (els.root) els.root.dataset.state = cancelledErr ? 'idle' : 'error';
       return null;
     } finally {
+      // Stale/superseded exits return early without ending the job; settle it
+      // here (endJob is a no-op unless this job is still the current one).
+      if (job && job.status === 'running' && jobs?.endJob) jobs.endJob(job.id, 'cancelled');
       const activeJob = jobs?.getCurrentJob?.() || null;
       const newerAnalysisOwnsWorkspace = Boolean(
         activeJob

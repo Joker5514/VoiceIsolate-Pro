@@ -331,8 +331,79 @@ export async function copyChannelsToAudioBuffer(buf, channels, opts = {}) {
   return buf;
 }
 
+/**
+ * One signal that aborts when any input aborts. AbortSignal.any where the
+ * engine has it (Chromium 116+); otherwise a listener-based composite, so
+ * older WebViews still cancel on either source. Null inputs are ignored.
+ * Call dispose() once the guarded work settles: the fallback's listeners
+ * would otherwise pin each composite to a long-lived input signal.
+ * @param {(AbortSignal|null|undefined)[]} signals
+ * @returns {{ signal: AbortSignal|null, dispose: () => void }}
+ */
+export function anySignal(signals) {
+  const list = (signals || []).filter(Boolean);
+  const noop = () => {};
+  if (list.length <= 1) return { signal: list[0] || null, dispose: noop };
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
+    return { signal: AbortSignal.any(list), dispose: noop };
+  }
+  const ctrl = new AbortController();
+  const dispose = () => {
+    for (const s of list) s.removeEventListener('abort', onAbort);
+  };
+  function onAbort(e) {
+    dispose();
+    ctrl.abort(e?.target?.reason);
+  }
+  for (const s of list) {
+    if (s.aborted) {
+      ctrl.abort(s.reason);
+      break;
+    }
+    s.addEventListener('abort', onAbort, { once: true });
+  }
+  if (ctrl.signal.aborted) dispose();
+  return { signal: ctrl.signal, dispose };
+}
+
+/**
+ * Average channels into a new mono Float32Array in budgeted slices.
+ *
+ * A synchronous downmix of a 5-minute stereo stem held the main thread
+ * ~0.7 s in the post-Process auto-analysis (the fresh output pages commit
+ * inside the same task). A single channel is copied, never aliased.
+ * @param {Float32Array[]} channels
+ * @param {{ signal?: AbortSignal, chunkSize?: number }} [opts]
+ * @returns {Promise<Float32Array>}
+ */
+export async function downmixToMonoAsync(channels, opts = {}) {
+  const { signal = null, chunkSize = 48000 * 2 } = opts;
+  if (!channels?.length) return new Float32Array(0);
+  const n = channels[0].length;
+  const out = new Float32Array(n);
+  const inv = 1 / channels.length;
+  await processInChunks({
+    total: n,
+    chunkSize,
+    signal,
+    runChunk: (start, end) => {
+      if (channels.length === 1) {
+        out.set(channels[0].subarray(start, end), start);
+        return;
+      }
+      for (let ch = 0; ch < channels.length; ch++) {
+        const c = channels[ch];
+        for (let i = start; i < end; i++) out[i] += c[i] * inv;
+      }
+    },
+  });
+  return out;
+}
+
 export default {
   createYieldBudget,
+  anySignal,
+  downmixToMonoAsync,
   copyFloat32Channel,
   copyChannelsToAudioBuffer,
   yieldToBrowser,

@@ -105,17 +105,110 @@ const AIIntelligence = {
    * @returns {{ scene: string, confidence: number, scores: Object }}
    */
   classifyScene(audio, sr = 48000) {
-    const len = audio.length;
-    if (len < 1024) return { scene: 'podcast', confidence: 0.5, scores: {}, features: { rms: 0, peak: 0, crestFactor: 0, zcr: 0, spectralCentroid: 0, spectralFlux: 0, dynamicRange: 0 } };
-
-    // Feature extraction
+    if (audio.length < 1024) return this._defaultScene();
     const rms = this._calcRMS(audio);
     const peak = this._calcPeak(audio);
-    const crestFactor = peak / (rms + 1e-10);
-    const zcr = this._calcZCR(audio);
-    const spectralCentroid = this._calcSpectralCentroid(audio, sr);
-    const spectralFlux = this._calcSpectralFlux(audio);
-    const dynamicRange = this._calcDynamicRange(audio);
+    return this._classifyFromFeatures({
+      rms,
+      peak,
+      crestFactor: peak / (rms + 1e-10),
+      zcr: this._calcZCR(audio),
+      spectralCentroid: this._calcSpectralCentroid(audio, sr),
+      spectralFlux: this._calcSpectralFlux(audio),
+      dynamicRange: this._calcDynamicRange(audio),
+    });
+  },
+
+  /**
+   * classifyScene over the whole track without blocking the main thread:
+   * the same features from every sample, accumulated in chunks with
+   * `opts.yieldBudget` awaited between them. Results equal classifyScene.
+   * @param {Float32Array} audio
+   * @param {number} sr
+   * @param {{ yieldBudget?: () => Promise<void> }} [opts]
+   */
+  async classifySceneAsync(audio, sr = 48000, opts = {}) {
+    if (audio.length < 1024) return this._defaultScene();
+    if (!(audio instanceof Float32Array)) return this.classifyScene(audio, sr);
+    const yieldBudget = opts.yieldBudget || this._defaultYieldBudget();
+    const n = audio.length;
+    const CHUNK = 1 << 17;
+    const bits = new Uint32Array(audio.buffer, audio.byteOffset, n);
+    const hi = new Uint32Array(65536);
+    // Pass 1: RMS, peak, ZCR and the high-bits histogram for the percentiles.
+    let sumSq = 0;
+    let peak = 0;
+    let crossings = 0;
+    for (let start = 0; start < n; start += CHUNK) {
+      const end = Math.min(n, start + CHUNK);
+      for (let i = start; i < end; i++) {
+        const v = audio[i];
+        sumSq += v * v;
+        const abs = Math.abs(v);
+        if (abs > peak) peak = abs;
+        if (i > 0 && (v >= 0) !== (audio[i - 1] >= 0)) crossings++;
+        hi[(bits[i] & 0x7fffffff) >>> 15]++;
+      }
+      await yieldBudget();
+    }
+    // Pass 2: resolve the 5th/95th percentile of |x| (as _absOrderStats).
+    const targets = [Math.floor(0.05 * n), Math.floor(0.95 * n)].map((k) => {
+      let acc = 0;
+      let bucket = 0;
+      while (acc + hi[bucket] <= k) acc += hi[bucket++];
+      return { bucket, rank: k - acc, lo: new Uint32Array(32768) };
+    });
+    for (let start = 0; start < n; start += CHUNK) {
+      const end = Math.min(n, start + CHUNK);
+      for (let i = start; i < end; i++) {
+        const b = bits[i] & 0x7fffffff;
+        const bucket = b >>> 15;
+        for (const t of targets) if (t.bucket === bucket) t.lo[b & 0x7fff]++;
+      }
+      await yieldBudget();
+    }
+    const word = new Uint32Array(1);
+    const asFloat = new Float32Array(word.buffer);
+    const [p05raw, p95] = targets.map((t) => {
+      let acc = 0;
+      let low = 0;
+      while (acc + t.lo[low] <= t.rank) acc += t.lo[low++];
+      word[0] = (t.bucket << 15) | low;
+      return asFloat[0];
+    });
+    const rms = Math.sqrt(sumSq / n);
+    return this._classifyFromFeatures({
+      rms,
+      peak,
+      crestFactor: peak / (rms + 1e-10),
+      zcr: crossings / n,
+      spectralCentroid: this._calcSpectralCentroid(audio, sr),
+      spectralFlux: this._calcSpectralFlux(audio),
+      dynamicRange: 20 * Math.log10(p95 / (p05raw + 1e-10)),
+    });
+  },
+
+  /**
+   * Fallback yield for classifySceneAsync: a real macrotask (so input and
+   * paint run between chunks) at most once per ~10 ms of work. A resolved
+   * promise would only resume as a microtask and never let the browser in.
+   */
+  _defaultYieldBudget() {
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    let last = now();
+    return async () => {
+      if (now() - last < 10) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      last = now();
+    };
+  },
+
+  _defaultScene() {
+    return { scene: 'podcast', confidence: 0.5, scores: {}, features: { rms: 0, peak: 0, crestFactor: 0, zcr: 0, spectralCentroid: 0, spectralFlux: 0, dynamicRange: 0 } };
+  },
+
+  _classifyFromFeatures(features) {
+    const { rms, peak, crestFactor, zcr, spectralCentroid, spectralFlux, dynamicRange } = features;
 
     // Heuristic scoring for each scene type
     const scores = {};
@@ -194,7 +287,15 @@ const AIIntelligence = {
    * @returns {Object} suggested parameter overrides
    */
   autoTuneParams(audio, sr, currentParams = {}) {
-    const analysis = this.classifyScene(audio, sr);
+    return this._tuneFromAnalysis(this.classifyScene(audio, sr));
+  },
+
+  /** autoTuneParams over the whole track, yielding between chunks. */
+  async autoTuneParamsAsync(audio, sr, _currentParams = {}, opts = {}) {
+    return this._tuneFromAnalysis(await this.classifySceneAsync(audio, sr, opts));
+  },
+
+  _tuneFromAnalysis(analysis) {
     const { features } = analysis;
     const suggestions = {};
 
