@@ -25,3 +25,12 @@ console.log('deEss(amt=50) on 200Hz tone @0.3 (no sibilance): rms in/out', rms(t
 const hi = new Float32Array(sr); for (let i = 0; i < sr; i++) hi[i] = 0.05*Math.sin(2*Math.PI*6500*i/sr);
 const h2 = Float32Array.from(hi); DSP.deEss(h2, 6500, 50, sr);
 console.log('deEss(amt=50) on 6.5kHz tone @0.05: gain dB', (20*Math.log10(rms(h2,4800,sr)/rms(hi,4800,sr))).toFixed(2));
+
+if (process.argv.includes('--check')) {
+  const assert = require('assert');
+  assert.strictEqual(flagged, 4112, 'removeClicks modified-sample count');
+  assert.strictEqual(rms(y, sr, 1.2 * sr).toFixed(4), '0.0931', 'sibilant RMS after removeClicks');
+  assert.strictEqual((20 * Math.log10(rms(t2, 4800, sr) / rms(tone, 4800, sr))).toFixed(2), '-2.04', 'deEss gain on 200 Hz tone');
+  assert.strictEqual((20 * Math.log10(rms(h2, 4800, sr) / rms(hi, 4800, sr))).toFixed(2), '-1.43', 'deEss gain on 6.5 kHz tone');
+  console.log('check: OK');
+}

@@ -67,7 +67,7 @@ All commands run at `49d517e`.
 | 15 | `pnpm build:electron` (NSIS) | NOT VERIFIED | Windows-only packaging |
 | 16 | `pnpm downloads:validate`, `provenance:validate:strict` | NOT VERIFIED | network tier not run |
 | 17 | Firefox / Safari / iOS | NOT VERIFIED | no engines available |
-| 18 | GitHub Actions `ci.yml` on `main` | **FAIL** | runs 37394492678, 37265305093, 37219514154, 37219306095, 37206631620: job `production-gate` completes in ~1 s, log download returns 404. Last success: run 34413532273 on 2026-09-09. |
+| 18 | GitHub Actions `ci.yml` on `main` | **FAIL (gate did not execute; no test ran)** | runs 37394492678, 37265305093, 37219514154, 37219306095, 37206631620: job `production-gate` completes in ~1 s, log download returns 404. Last success: run 34413532273 on 2026-09-09. |
 | 19 | GitHub Actions `deploy.yml` on `main` | **SKIPPED** | runs 2649 to 2651 `conclusion: skipped` (gated on `ci` success) |
 
 Browser tier detail (step 12):
@@ -413,7 +413,7 @@ Severity: BLOCKER > CRITICAL > HIGH > MEDIUM > LOW.
 | Privacy | PASS | static + runtime egress PASS | Drive is opt-in | none |
 | Accessibility | PARTIAL | shell-qa guards | 1 AA failure | A11Y-001 |
 | Test coverage | PARTIAL | 3,548 unit tests, 10 browser journeys | gaps in TEST-001 | section 15 |
-| CI/CD | FAIL | gate not executing since 2026-09-09 | | CI-001 |
+| CI/CD | FAIL (not executing, not a failing test) | gate not executing since 2026-09-09 | | CI-001 |
 | Production build | PASS | `pnpm build` + worklet build verify | | none |
 
 ---

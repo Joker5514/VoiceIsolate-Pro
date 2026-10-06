@@ -1,6 +1,6 @@
 # Audit probes (2026-10-06)
 
-Evidence for `docs/audits/MASTER_AUDIT_2026-10-06.md`. Run from the repository root after `pnpm install`. All inputs are generated deterministically inside each script (fixed LCG seed 1 for noise). Not part of CI.
+Evidence for `docs/audits/MASTER_AUDIT_2026-10-06.md`. Run from the repository root after `pnpm install`. All inputs are generated deterministically inside each script (fixed LCG seed 1 for noise). Not part of CI. `dsp-probe.cjs` and `ort-temporal-context.mjs` accept `--check`, which exits non-zero if the reported values no longer hold. The sibilant signal in `dsp-probe.cjs` is a synthetic proxy (differenced white noise), not recorded speech.
 
 | Script | Report section | Expected output at `49d517e` |
 |---|---|---|
