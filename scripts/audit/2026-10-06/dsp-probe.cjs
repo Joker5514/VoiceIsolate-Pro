@@ -6,7 +6,7 @@ const x = new Float32Array(N);
 for (let i = 0; i < N; i++) {
   const t = i / sr;
   if (t < 1) { let v = 0; for (let h = 1; h <= 10; h++) v += Math.sin(2*Math.PI*150*h*t)/h; x[i] = 0.3*v/2; }
-  else if (t < 1.2) { x[i] = 0.15 * (rnd() - (i>0?0:0)); }
+  else if (t < 1.2) { x[i] = 0.15 * rnd(); }
   else { let v = 0; for (let h = 1; h <= 10; h++) v += Math.sin(2*Math.PI*150*h*t)/h; x[i] = 0.05*v/2; }
 }
 // crude HP for sibilant: first difference
