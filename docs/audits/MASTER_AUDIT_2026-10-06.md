@@ -21,9 +21,9 @@ Evidence labels used throughout:
 
 - **The production gate is not running.** `ci.yml` has not passed on `main` since 2026-09-09 (run 1073). The last five `main` runs (#830 to #834) each ended in about 1 s with no job log, and `deploy.yml` was skipped for all of them. Locally, `pnpm prod:verify` is red on two browser steps (`e2e-quick-clean`, `e2e-shell-qa`) that #833 introduced and CI never caught.
 - **The ML core is real.** The shipped models are genuine, hash-pinned and fast (BSRNN 0.287 ms per frame on one WASM thread, about 12 s of inference for 15 minutes of mono). The fused single-STFT path is sound. Both models are per-frame and stateless, though, so isolation quality has a ceiling, and nothing in the repo measures separation quality (no SDR, SI-SDR, PESQ or STOI anywhere).
-- **What the UI claims and what the signal path does diverge in four places.** (1) Engineer export writes only the clean stem and drops all 37 Live-Mix controls the user hears. (2) All four waveform-region actions leave the audio unchanged while the UI reports the action. (3) After Process, Engineer auto-calibration rewrites Process-time sliders from the *output*, so the visible settings are not the ones that produced the audio. (4) The "recommendation engine" is a 4-bucket RMS classifier whose plans never reach processing.
+- **What the UI claims and what the signal path does diverge in four places.** (1) Engineer export writes only the clean stem and drops all 37 Live-Mix controls the user hears. (2) On the default ML path, all four waveform-region actions leave the audio unchanged while the UI reports the action (only `isolate` has an effect, and only when ML fails and the DSP fallback runs). (3) After Process, Engineer auto-calibration rewrites Process-time sliders from the *output*, so the visible settings are not the ones that produced the audio. (4) The "recommendation engine" is a 4-bucket RMS classifier whose plans never reach processing.
 
-**Repository health score: 62 / 100.**
+**Repository health score: 58 / 100** (46 of 80 points across the eight dimensions below, equally weighted, so 57.5 rounded).
 
 | Dimension | Score | Basis |
 |---|---|---|
@@ -220,7 +220,7 @@ Verdict: the intelligence contracts (snapshot validation, stale-plan rejection) 
 | Scrub / seek | PASS | transport smokes |
 | Range selection, crop for export | PASS | `TransportRegionControls`, Landing region export |
 | Event markers | FAIL | no marker implementation found |
-| Apply isolation/enhancement to a region | **FAIL** | AUD-002 |
+| Apply isolation/enhancement to a region | **FAIL** (ML path) / PARTIAL (`isolate` on DSP fallback only) | AUD-002 |
 | Undo | FAIL | no undo stack for processing or slider changes |
 | Before/after preview | PASS | Landing matched A/B smoke PASS; Engineer A/B toggle |
 
@@ -261,12 +261,19 @@ Severity: BLOCKER > CRITICAL > HIGH > MEDIUM > LOW.
 - **Validation:** port the Landing "Exported PCM matches mix" check to `engineer-upload-smoke.cjs` with non-default EQ, outGain and Background.
 
 ### AUD-002: Waveform region actions do not change the audio but report success
-- **Severity:** HIGH. **Area:** waveform interaction / truthfulness. **Label:** OBSERVED.
+- **Severity:** HIGH. **Area:** waveform interaction / truthfulness. **Label:** OBSERVED (code path read for both engines; not executed in a browser).
+- **Scope by engine:**
+
+  | Action | ML path (default) | DSP fallback (ML failed) |
+  |---|---|---|
+  | `isolate` | no change: retained stems reused | regions consumed by `_spectralStageAsync` (`app.js:5557-5566`), so audio does change |
+  | `enhance`, `boost-whisper`, `reduce-noise` | no change | no change: fallback also reads `window.VIP_PARAMS` (`app.js:5472`), not `app.params` |
+
 - **Evidence:** `public/app/premium-workspace.js:384-385` calls `window.__vipEngineerProcessSelection` (`public/app/lib/signal-canvas-integration.js:125-150`):
   - `isolate`: sets `_protectRegions` and calls `runPipeline()`. Regions are read only by the DSP fallback (`app.js:5557-5560`). With ML available, `_runMLIsolationPipeline` returns the retained stems unchanged because the revision did not change (`app.js:5176-5189`).
   - `enhance`, `boost-whisper`, `reduce-noise`: write `app.params.*`. Processing snapshots `window.VIP_PARAMS` (`app.js:5170-5171`), which is a separate object (`app.js:3122-3124`), the change applies to the whole file rather than the region, and no Process is triggered.
   - All four branches dispatch `ACTION_PREVIEWED`.
-- **Impact:** the headline "select a sound and isolate it" feature does nothing audible.
+- **Impact:** on the default ML path, the headline "select a sound and isolate it" feature does nothing audible. The fallback row is a reading of the code; a browser test with ML disabled should confirm it.
 - **Correction:** either implement region processing (region-scoped mask gain in the worker using frame ranges, or region-restricted Live-Mix gain automation) or hide the actions. At minimum, route the parameter actions through `_setSliderUi` so the change is visible and persists.
 - **Validation:** E2E test: select a region, run Isolate, and assert that the output differs from the previous output inside the region and matches it outside.
 
@@ -393,7 +400,7 @@ Severity: BLOCKER > CRITICAL > HIGH > MEDIUM > LOW.
 | Speech enhancement | PARTIAL | EQ / comp in Live-Mix | not exported on Engineer | AUD-001 |
 | Source isolation | PARTIAL | BSRNN per-frame masks | no temporal context; unmeasured | ML-001 |
 | Waveform | PASS | render + budgeted envelope | none | none |
-| Waveform selection | PARTIAL | crop and selection work | region actions are no-ops | AUD-002 |
+| Waveform selection | PARTIAL | crop and selection work | region actions are no-ops on the ML path | AUD-002 |
 | DSP | PARTIAL | fused STFT sound | fallback defects; HF taper | AUD-003/004, DSP-001 |
 | ML inference | PASS | real, pinned, 0.287 ms per frame | none | none |
 | Analysis | PASS | worker-based, stale-safe | runs after Process only | AI-001 |
@@ -550,13 +557,15 @@ docs/audits/               one current report + archive/
 
 ---
 
-## Appendix A: reproduction scripts used in this audit
+## Appendix A: reproduction scripts
 
-All scripts were run from the repository root and are reproducible with the snippets below.
+The probes are checked in under `scripts/audit/2026-10-06/`, with the expected outputs listed in its `README.md`. Every input is generated inside the script (fixed LCG seed 1 for noise), so the results are deterministic apart from timings.
 
-- **Model hash, I/O and throughput:** load `public/app/models/bsrnn_vocals.onnx` with `onnxruntime-web` (WASM, `numThreads = 1`), run a `[384, 2049]` float32 batch 5 times after warm-up, and divide by 384.
-- **Temporal-context probe:** run an 8-frame batch twice, changing only frames 0-3 the second time, and compare outputs for frames 4-7. Then run frame 7 alone and compare.
-- **DSP probes:** `require('public/app/dsp-core.js')`; `removeClicks` on 1 s of harmonic tone (0.3), 0.2 s of differenced white noise (0.15) and 0.8 s of quiet harmonic tone (0.05); `deEss(…, 6500, 50, 48000)` on a 200 Hz tone at 0.3 and a 6.5 kHz tone at 0.05.
-- **DSP timing:** the same functions on 300 s of synthetic mono at 48 kHz.
-- **Browser tier:** `node scripts/prod-verify.mjs --only e2e-live,e2e-engineer-rt,e2e-engineer-upload,e2e-calibration,e2e-tier-picker,e2e-ui,e2e-landing,e2e-quick-clean,e2e-shell-qa,privacy-runtime`.
-- **Electron:** `xvfb-run -a node scripts/electron-security-smoke.cjs`.
+| Evidence | Command | Expected |
+|---|---|---|
+| AUD-003, AUD-004 | `node scripts/audit/2026-10-06/dsp-probe.cjs` | 4112 of 96000 samples modified; sibilant RMS 0.1207 -> 0.0931; de-ess -2.04 dB at 200 Hz, -1.43 dB at 6.5 kHz |
+| PERF-001 | `node scripts/audit/2026-10-06/dsp-timing.cjs` | per-pass timings (machine-dependent) |
+| Section 7 hash, range, throughput | `node scripts/audit/2026-10-06/ort-bench.mjs` | sha256 `7edd7c51...8141`; mask range [0.000, 1.000]; 0.285-0.287 ms/frame on the audit container |
+| Section 7 temporal context | `node scripts/audit/2026-10-06/ort-temporal-context.mjs` | both deltas `0.00e+0` for both models |
+| Browser tier | `node scripts/prod-verify.mjs --only e2e-live,e2e-engineer-rt,e2e-engineer-upload,e2e-calibration,e2e-tier-picker,e2e-ui,e2e-landing,e2e-quick-clean,e2e-shell-qa,privacy-runtime` | 8 PASS, 2 FAIL (section 3) |
+| Electron | `xvfb-run -a node scripts/electron-security-smoke.cjs` | 9/9 PASS |
