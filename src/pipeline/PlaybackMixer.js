@@ -1275,10 +1275,9 @@ export class PlaybackMixer {
     const ctx = new Offline(cleanBuffer.numberOfChannels, end - start, SAMPLE_RATE);
     const render = new PlaybackMixer({ context: ctx });
     // Reuse immutable AudioBuffers; no whole-file copies during graph construction.
-    // A silent placeholder needs no copy: createBuffer is zero-filled.
+    // A missing noise stem is silence: no source, no allocation.
     render.cleanBuffer = cleanBuffer;
-    render.noiseBuffer = noiseOverride
-      || ctx.createBuffer(cleanBuffer.numberOfChannels, cleanBuffer.length, SAMPLE_RATE);
+    render.noiseBuffer = noiseOverride;
     const copyNode = (from, to) => {
       if (!from || !to) return;
       if (typeof from.type === 'string') to.type = from.type;
@@ -1319,6 +1318,7 @@ export class PlaybackMixer {
       render._startedAt = -render._offset;
       render._scheduleSpeakerAutomation();
       for (const [buffer, destination] of [[render.cleanBuffer, render.speakerGain], [render.noiseBuffer, render.noiseGain]]) {
+        if (!buffer) continue;
         const source = ctx.createBufferSource();
         source.buffer = buffer;
         source.connect(destination);

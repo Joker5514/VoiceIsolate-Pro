@@ -2476,6 +2476,12 @@ class VoiceIsolatePro {
         for (let c = 0; c < channels.length; c++) out.copyToChannel(channels[c], c);
         this.outputBuffer = out;
         this.procBuffer = out;
+        // The retained stem pair no longer describes the output: without this,
+        // playback reloaded the old stems and export mixed in a stale residual.
+        this._cleanStemChannels = channels;
+        this._noiseStemChannels = null;
+        this.noiseBuffer = null;
+        this._bridgeBuf = null;
         this._setProcessedPlaybackMode?.();
         this._updateProcessButtonsState?.();
       },

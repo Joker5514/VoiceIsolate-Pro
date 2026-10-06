@@ -205,7 +205,11 @@ async function startServer() {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     const offenders = overflow <= 1 ? [] : await page.evaluate(() => [...document.querySelectorAll('body *')]
       .filter((el) => {
-        if (!(el.getBoundingClientRect().right > innerWidth + 1 && el.getClientRects().length)) return false;
+        if (!el.getClientRects().length) return false;
+        const r = el.getBoundingClientRect();
+        const sticksOut = r.right > innerWidth + 1 || r.left < -1
+          || (getComputedStyle(el).overflowX === 'visible' && el.scrollWidth > el.clientWidth + 1);
+        if (!sticksOut) return false;
         for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
           if (getComputedStyle(a).overflowX !== 'visible') return false;
         }

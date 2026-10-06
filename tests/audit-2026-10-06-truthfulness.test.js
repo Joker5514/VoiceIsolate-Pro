@@ -22,7 +22,9 @@ describe('audit 2026-10-06 truthfulness', () => {
   test('AUD-006: Landing watchdog has no total-time cap and resets on visibility return', () => {
     expect(landing).not.toMatch(/startedAt < 300000/);
     expect(landing).toContain('Date.now() - lastProcessProgress < PROCESS_STALL_MS');
-    expect(landing).toMatch(/visibilitychange[\s\S]{0,120}lastProcessProgress = Date\.now\(\)/);
+    expect(landing).toMatch(/visibilitychange[\s\S]{0,120}lastProcessProgress = lastRealProgress = Date\.now\(\)/);
+    // Load heartbeats cannot keep a hung model fetch alive forever.
+    expect(landing).toContain("msg.type !== 'heartbeat' || now - lastRealProgress < MODEL_LOAD_MAX_MS");
   });
 
   test('AUD-002: region parameter actions write through _setSliderUi, not app.params', () => {
