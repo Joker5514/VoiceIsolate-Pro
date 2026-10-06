@@ -177,3 +177,17 @@ describe('Engineer result lifecycle safeguards', () => {
     expect(appSource).toMatch(/_setSliderUi\(id, rawValue[\s\S]*?if \(changed\) this\._scheduleSessionPersist\(\);/);
   });
 });
+
+describe('EngineerModeBridge.holdsStems (export renders the playback stem)', () => {
+  test('true only for the exact loaded clean channels with no load pending', () => {
+    const mixer = { loadStems() {}, setVoiceLevel() {} };
+    const bridge = new EngineerModeBridge({ mixer });
+    const clean = [new Float32Array(4)];
+    expect(bridge.holdsStems(clean)).toBe(false);
+    bridge.loadStemPair(clean, null, 48000);
+    expect(bridge.holdsStems(clean)).toBe(true);
+    expect(bridge.holdsStems([new Float32Array(4)])).toBe(false);
+    bridge._pendingStemSource = { clean };
+    expect(bridge.holdsStems(clean)).toBe(false);
+  });
+});

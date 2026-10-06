@@ -243,6 +243,16 @@ export class EngineerModeBridge {
     return { cleanCh, noiseCh, sr: stemSampleRate(clean, noise, sampleRate), hasNoise };
   }
 
+  /**
+   * True when the mixer currently holds exactly these clean stem channels
+   * (no load pending), so its buffers are the ones playback renders.
+   * @param {Float32Array[]|AudioBuffer} clean
+   */
+  holdsStems(clean) {
+    return Boolean(clean) && this._loaded && !this._pendingStemSource
+      && this._stemSource?.clean === clean;
+  }
+
   /** True when a real residual/noise stem was loaded (vs silent placeholder). */
   hasNoiseStem() {
     return !!this._hasNoiseStem;

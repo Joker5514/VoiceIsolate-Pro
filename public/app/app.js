@@ -72,6 +72,7 @@ import {
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
 import {
   createYieldBudget,
+  copyChannelsToAudioBuffer,
   copyFloat32Channel,
   yieldToBrowser,
   throwIfAborted,
@@ -4095,8 +4096,23 @@ class VoiceIsolatePro {
     const mixer = bridge?.mixer;
     if (!mixer || typeof mixer.renderMix !== 'function') return null;
     this._syncBridgeParams();
-    const noise = this._noiseStemChannels ? this.noiseBuffer : null;
-    return mixer.renderMix({ signal, startSec, endSec, stems: { clean, noise } });
+    // Render the clean stem playback renders. The ML output-safety limiter
+    // rewrites procBuffer after the stems reach the bridge, so procBuffer is
+    // not the playback stem whenever retained stems exist.
+    const stemCh = this._cleanStemChannels;
+    let stems;
+    if (stemCh?.length && bridge.holdsStems?.(stemCh) && mixer.cleanBuffer) {
+      stems = { clean: mixer.cleanBuffer, noise: bridge.hasNoiseStem() ? mixer.noiseBuffer : null };
+    } else if (stemCh?.length) {
+      // A/B "original" holds the bridge: rebuild the playback stem cooperatively.
+      const stemBuf = this.ctx.createBuffer(stemCh.length, stemCh[0].length, this._stemSampleRate || clean.sampleRate);
+      await copyChannelsToAudioBuffer(stemBuf, stemCh, { signal });
+      stems = { clean: stemBuf, noise: this._noiseStemChannels ? this.noiseBuffer : null };
+    } else {
+      // DSP fallback: playback loads procBuffer itself with a silent residual.
+      stems = { clean, noise: null };
+    }
+    return mixer.renderMix({ signal, startSec, endSec, stems });
   }
 
   /**
