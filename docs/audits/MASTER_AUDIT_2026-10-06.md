@@ -169,7 +169,7 @@ None. No `getUserMedia` in product code (VERIFIED by `pnpm check:privacy` and th
 | Hop vs time constants | Hop is 1024 under 90 s on desktop and 2048 above it, and always 2048 on mobile. The 0.55 mask smoother is per frame, so its e-fold time constant (-1/ln 0.55 = 1.67 frames) doubles from about 36 ms (hop 1024) to 71 ms (hop 2048) at 48 kHz, depending on file length and device class. Output character depends on file duration. | INFERRED |
 | Fixed HF taper | `MLWorker.js:980-983` cuts the clean mask linearly above 8.4 kHz, reaching about -1.2 dB at 12 kHz, -2.5 dB at 16 kHz and -6.9 dB at 24 kHz, on every file. This is not a user control and is not in the documented mask equation. Because noise = input − clean, that voice "air" moves into the noise stem. | OBSERVED (math from code) |
 | Mask floor | Documented equation uses `max(M, M_floor ≈ -30 dB)`; the fused loop applies no floor (mask may reach 0). Engineer `nrFloor` only bounds the Engineer NR gain, not the model mask. | OBSERVED |
-| Fallback click repair | `dsp-core.js:683 removeClicks` flags first-difference spikes against 5× the file-mean derivative. On a synthetic 2 s clip with **no clicks**, it rewrote 4,112 samples inside a 200 ms sibilant burst and cut that burst from 0.1207 to 0.0931 RMS (-2.3 dB). It always runs on the fallback path (`app.js:5527`). | VERIFIED |
+| Fallback click repair | `dsp-core.js:683 removeClicks` flags first-difference spikes against 5× the file-mean derivative. On a synthetic, click-free 2 s fixture (a continuous 150 Hz harmonic bed plus a 200 ms band-limited 4-9 kHz sibilant-like burst with 15 ms raised-cosine ramps), it rewrote 3,739 samples inside the burst and none elsewhere, lowering the burst by 1.45 dB. A positive control with 5 injected clicks was fully repaired. It always runs on the fallback path (`app.js:5527`). | VERIFIED on synthetic signals; not measured on recorded speech |
 | Fallback de-esser | `dsp-core.js:790 deEss` keys off a +12 dB *peaking* boost (not a band-pass) with a fixed 0.1 linear threshold and applies broadband gain. With amount 50 it cut a pure 200 Hz tone at 0.3 by **2.04 dB** and a 6.5 kHz tone at 0.05 by 1.43 dB: it compresses vowels harder than sibilants. | VERIFIED |
 | Fallback noise gate | `dsp-core.js:621` detects on single-sample \|x\| with hold; acceptable with the 50 ms default hold, chattery with hold near 0. | INFERRED |
 | Playback worklets | `GateProcessor.js`, `DeEsserProcessor.js` (high-shelf sidechain), allowlisted, k-rate params. Not exercised numerically here. | OBSERVED |
@@ -285,8 +285,11 @@ Severity: BLOCKER > CRITICAL > HIGH > MEDIUM > LOW.
 - **Validation:** unit test that a Process → idle cycle leaves Process-time slider values unchanged; E2E test that Reprocess without user edits takes the retained-stems path.
 
 ### AUD-003: Fallback click repair damages sibilants
-- **Severity:** MEDIUM (fallback path only). **Label:** VERIFIED.
-- **Evidence:** `dsp-core.js:683-777`; always invoked at `app.js:5527`. Probe: 4,112 of 96,000 samples altered on click-free input; sibilant segment -2.3 dB with RMS error 0.087.
+- **Severity:** MEDIUM (fallback path only). **Label:** VERIFIED on synthetic signals; INFERRED for recorded speech.
+- **Evidence:** `dsp-core.js:683-777`; always invoked at `app.js:5527`.
+  - `dsp-sibilant-probe.cjs` (band-limited 4-9 kHz burst, ramped edges, continuous voiced bed, no clicks): 3,739 samples changed inside the burst, 0 outside, burst level -1.45 dB, burst RMS error 0.0535. Positive control: 5 of 5 injected clicks repaired.
+  - `dsp-probe.cjs` (cruder fixture: differenced white noise with hard edges): 4,112 samples changed, -2.3 dB. The hard edges make this one a weaker test, so it is kept only as a secondary result.
+  - The probes show the detector misfires on dense high-frequency content. They do not measure audibility on real speech; a recorded-speech golden test is still needed.
 - **Correction:** gate the derivative test on a local (not file-global) derivative median, require the amplitude test as well, and default `clickSensitivity` to off unless the analyzer detected clicks.
 - **Validation:** golden test: click-free speech-plus-noise is unchanged within 1e-6; injected clicks are repaired.
 
@@ -298,7 +301,7 @@ Severity: BLOCKER > CRITICAL > HIGH > MEDIUM > LOW.
 
 ### PERF-001: DSP fallback freezes the main thread for seconds
 - **Severity:** MEDIUM. **Label:** VERIFIED (timing in Node V8).
-- **Evidence:** `app.js:5522-5550`, synchronous over the whole mid channel. On 5 min mono: `removeClicks` 1,488 ms, `deEss` 167 ms, `noiseGate` 157 ms, `removeDCOffset` 61 ms, about 1.9 s in one task; about 5.6 s at 15 min. This violates the CLAUDE.md "full-length buffers never move in one task" rule. It is reached exactly when ML failed, often on weaker devices.
+- **Evidence:** `app.js:5522-5550`, synchronous over the whole mid channel. On 5 min mono, median of 5 warmed runs: `removeClicks` 1,180 ms, `noiseGate` 155 ms, `deEss` 149 ms, `removeDCOffset` 52 ms, about 1.5 s in one task; about 4.6 s at 15 min by linear scaling. This violates the CLAUDE.md "full-length buffers never move in one task" rule. It is reached exactly when ML failed, often on weaker devices.
 - **Correction:** move the conditioning chain into `SpectralCleanupWorker` (or a new DSP worker), or wrap each pass in `processInChunks` with carried filter state.
 - **Validation:** `perf-harness.cjs --surface engineer --secs 300` with ML forced off; max long task under 250 ms.
 
@@ -438,7 +441,7 @@ Severity: BLOCKER > CRITICAL > HIGH > MEDIUM > LOW.
 |---|---|---|
 | ML inference | 0.287 ms per frame (1-thread WASM), so a 15-min file takes about 6 to 12 s | VERIFIED |
 | Post-ML main thread | #832-#834 moved full-length copies into budgeted slices; smokes PASS | OBSERVED |
-| DSP fallback | ~1.9 s single task per 5 min (PERF-001) | VERIFIED |
+| DSP fallback | ~1.5 s single task per 5 min, median of 5 (PERF-001) | VERIFIED |
 | Bundle | 79 MB ORT variants (SIZE-001) | VERIFIED |
 | Landing watchdog | 300 s hard cap (AUD-006) | OBSERVED |
 
@@ -563,8 +566,9 @@ The probes are checked in under `scripts/audit/2026-10-06/`, with the expected o
 
 | Evidence | Command | Expected |
 |---|---|---|
-| AUD-003, AUD-004 | `node scripts/audit/2026-10-06/dsp-probe.cjs` | 4112 of 96000 samples modified; sibilant RMS 0.1207 -> 0.0931; de-ess -2.04 dB at 200 Hz, -1.43 dB at 6.5 kHz |
-| PERF-001 | `node scripts/audit/2026-10-06/dsp-timing.cjs` | per-pass timings (machine-dependent) |
+| AUD-003 (primary) | `node scripts/audit/2026-10-06/dsp-sibilant-probe.cjs --check` | 3739 samples changed in the burst, 0 elsewhere; -1.45 dB; 5/5 control clicks repaired |
+| AUD-003 (secondary), AUD-004 | `node scripts/audit/2026-10-06/dsp-probe.cjs --check` | 4112 of 96000 samples modified; sibilant RMS 0.1207 -> 0.0931; de-ess -2.04 dB at 200 Hz, -1.43 dB at 6.5 kHz |
+| PERF-001 | `node scripts/audit/2026-10-06/dsp-timing.cjs` | median of 5 per pass (machine-dependent) |
 | Section 7 hash, range, throughput | `node scripts/audit/2026-10-06/ort-bench.mjs` | sha256 `7edd7c51...8141`; mask range [0.000, 1.000]; 0.285-0.287 ms/frame on the audit container |
 | Section 7 temporal context | `node scripts/audit/2026-10-06/ort-temporal-context.mjs` | both deltas `0.00e+0` for both models |
 | Browser tier | `node scripts/prod-verify.mjs --only e2e-live,e2e-engineer-rt,e2e-engineer-upload,e2e-calibration,e2e-tier-picker,e2e-ui,e2e-landing,e2e-quick-clean,e2e-shell-qa,privacy-runtime` | 8 PASS, 2 FAIL (section 3) |
