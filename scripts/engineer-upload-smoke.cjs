@@ -103,6 +103,64 @@ function makeWav() {
   return file;
 }
 
+function readWavChannel0(bytes) {
+  let off = 12, fmt = null;
+  while (off + 8 <= bytes.length) {
+    const id = bytes.toString('ascii', off, off + 4);
+    const size = bytes.readUInt32LE(off + 4);
+    const body = off + 8;
+    if (id === 'fmt ') {
+      fmt = { format: bytes.readUInt16LE(body), channels: bytes.readUInt16LE(body + 2), bits: bytes.readUInt16LE(body + 14) };
+    } else if (id === 'data' && fmt) {
+      const step = (fmt.bits / 8) * fmt.channels;
+      const n = Math.floor(size / step);
+      const out = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const p = body + i * step;
+        if (fmt.format === 3) out[i] = bytes.readFloatLE(p);
+        else if (fmt.bits === 16) out[i] = bytes.readInt16LE(p) / 32768;
+        else if (fmt.bits === 24) out[i] = bytes.readIntLE(p, 3) / 8388608;
+        else out[i] = bytes.readInt32LE(p) / 2147483648;
+      }
+      return out;
+    }
+    off = body + size + (size & 1);
+  }
+  throw new Error('WAV has no data chunk');
+}
+
+const rms = (x) => Math.sqrt(x.reduce((a, v) => a + v * v, 0) / Math.max(1, x.length));
+
+async function exportProcessedWav(page) {
+  await page.waitForFunction(() => {
+    const b = document.getElementById('saveProcBtn');
+    return b && !b.disabled && !b.hasAttribute('aria-busy');
+  }, null, { timeout: 60000 });
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 60000 }),
+    page.evaluate(() => {
+      const app = window._vipApp;
+      if (!app.__smokeNotify) {
+        const orig = app.showNotification.bind(app);
+        app.__smokeNotify = true;
+        app.showNotification = (msg, kind) => { console.log(`[smoke-notify] ${kind}: ${msg}`); return orig(msg, kind); };
+      }
+      document.getElementById('saveProcBtn').click();
+    }),
+  ]);
+  return readWavChannel0(fs.readFileSync(await download.path()));
+}
+
+async function setSlider(page, id, value) {
+  await page.evaluate(([sid, v]) => {
+    const el = document.getElementById('sl_' + sid);
+    if (!el) throw new Error('missing slider ' + sid);
+    el.value = String(v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, [id, value]);
+}
+
 (async () => {
   const PORT = Number(process.env.SMOKE_PORT) || await getFreePort();
   const BASE = `http://127.0.0.1:${PORT}`;
@@ -122,9 +180,10 @@ function makeWav() {
   // from the pinned Playwright build can still run the upload smoke.
   const { launchChromium } = require('./lib/launch-chromium.cjs');
   const browser = await launchChromium({ args: ['--no-sandbox'] });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ acceptDownloads: true });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
+  if (process.env.SMOKE_DEBUG) page.on('console', (m) => console.log('   [console]', m.type(), m.text().slice(0, 300)));
 
   try {
     await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
@@ -190,6 +249,33 @@ function makeWav() {
     if (!state.hasBuffer) fails.push('inputBuffer not decoded after Process');
     if (!state.hasOut && state.status !== 'DONE') fails.push('no processed output after Process');
     if (state.status === 'ERROR') fails.push('pipeline ended in ERROR');
+
+    // AUD-001: the exported file must be the Live-Mix the user hears, not the
+    // bare clean stem. Let post-Process idle work settle, then move a Live-Mix
+    // control and compare two real downloads plus the playback graph's render.
+    await page.waitForTimeout(2500);
+    await page.waitForFunction(() => {
+      const b = document.getElementById('saveProcBtn');
+      return b && !b.disabled && !b.hasAttribute('aria-busy');
+    }, null, { timeout: 60000 });
+    await setSlider(page, 'outGain', 0);
+    const exp0 = await exportProcessedWav(page);
+    await setSlider(page, 'outGain', -12);
+    const expMinus12 = await exportProcessedWav(page);
+    const liveRender = await page.evaluate(async () => {
+      const app = window._vipApp;
+      const out = await app._bridge.mixer.renderMix();
+      return Array.from(out.getChannelData(0));
+    });
+    const deltaDb = 20 * Math.log10(rms(expMinus12) / Math.max(1e-12, rms(exp0)));
+    if (!(Math.abs(deltaDb + 12) <= 1)) fails.push(`export ignores outGain: -12 dB slider moved export by ${deltaDb.toFixed(2)} dB`);
+    let maxDelta = 0;
+    const n = Math.min(liveRender.length, expMinus12.length);
+    if (Math.abs(liveRender.length - expMinus12.length) > 1) fails.push(`export length ${expMinus12.length} != Live-Mix ${liveRender.length}`);
+    for (let i = 0; i < n; i++) maxDelta = Math.max(maxDelta, Math.abs(liveRender[i] - expMinus12[i]));
+    // 16-bit quantisation bound.
+    if (!(maxDelta <= 2 / 32768)) fails.push(`export differs from playback Live-Mix render by ${maxDelta}`);
+    console.log(`  ✓ export follows Live-Mix outGain: ${deltaDb.toFixed(2)} dB for -12 dB; maxDelta vs playback graph ${maxDelta.toExponential(2)}`);
 
     console.log('  ✓ audio upload accepted (deferred or eager decode)');
     console.log('  ✓ Process enabled after upload');

@@ -1025,7 +1025,20 @@ export function installAnalysisWorkspace(app) {
   });
 
   els.btnExport?.addEventListener('click', async () => {
-    const buf = app.procBuffer || app.outputBuffer || app.origBuffer;
+    let buf = app.origBuffer;
+    if (app.procBuffer || app.outputBuffer) {
+      // Export what playback renders (Live-Mix), not the bare clean stem.
+      try {
+        buf = await app._renderProcessedMix?.();
+      } catch (e) {
+        showError(e?.message || 'Export failed');
+        return;
+      }
+      if (!buf) {
+        showError('Live-Mix is unavailable, so the export cannot match playback. Reload and try again.');
+        return;
+      }
+    }
     const name = safeFilename((app.fileName || 'voiceisolate') + '-export', 'wav');
     const rawParams = globalThis.VIP_PARAMS || app.params || {};
     const params = typeof app.getEffectiveParams === 'function'

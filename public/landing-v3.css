@@ -54,6 +54,9 @@ body.v3::before, body.v3::after { content: none; display: none; }
 html:has(body.v3) { scroll-behavior: smooth; scroll-padding-top: 60px; background: #070b10; }
 body.v3 a { color: var(--v3-cyan); text-underline-offset: 3px; }
 body.v3 a:hover { color: var(--v3-cyan-hi); }
+/* The skip link paints white on --action-process-solid; the cyan link colour
+   above out-specifies ps-shell.css and drops it to 2.83:1. */
+body.v3 .ps-skip-link, body.v3 .ps-skip-link:hover { color: #fff; }
 body.v3 ::selection { background: rgba(155, 108, 255, .4); }
 body.v3 :focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v3-bg), 0 0 0 4px var(--v3-cyan); }
 body.v3 button:disabled, body.v3 select:disabled, body.v3 input:disabled { cursor: not-allowed; }
@@ -361,6 +364,9 @@ body.v3 .v3-upload .status-row { display: flex; align-items: center; justify-con
 body.v3 .ort-provider-hint { font: 400 11.5px/1 var(--v3-mono); color: var(--v3-fg-4); }
 
 /* Stems mixer card: the outer section only carries perspective, the inner tilts. */
+/* A tilted panel's perspective projection is wider than its layout box
+   (358px laid out, 438px painted at 390px), so the host clips sideways. */
+body.v3 .v3-tilt-host, body.v3 .v3-console-host { overflow-x: clip; }
 body.v3 .v3-mixer { padding: 0; border: 0; background: none; box-shadow: none; perspective: 1600px; }
 body.v3 .v3-mixer:hover { border: 0; box-shadow: none; }
 body.v3 .v3-tilt { padding: 0; gap: 0; overflow: hidden; transform-origin: 50% 0; transition: transform 120ms linear; }

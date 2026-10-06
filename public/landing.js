@@ -178,6 +178,14 @@ let hasProcessed = false;
 let processPlan = null;
 let processWatch = null;
 let lastProcessProgress = 0;
+const PROCESS_STALL_MS = 45000;
+const MODEL_LOAD_MAX_MS = 180000;
+let lastRealProgress = 0;
+// A backgrounded tab or a locked Android screen pauses timers and the worker;
+// on return, give the job a fresh stall window instead of failing it at once.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && processingInFlight) lastProcessProgress = lastRealProgress = Date.now();
+});
 let review = null;
 let reviewInFlight = false;
 let preflightSeq = 0;
@@ -706,7 +714,13 @@ function getWorker() {
     const msg = event.data || {};
     if (worker !== ownedWorker) return;
     const stale = !processingInFlight || msg.requestId !== requestSeq;
-    if (!stale) lastProcessProgress = Date.now();
+    if (!stale) {
+      const now = Date.now();
+      // Load heartbeats prove the worker is alive, not that the model fetch is
+      // moving; past MODEL_LOAD_MAX_MS without real progress they stop counting.
+      if (msg.type !== 'heartbeat') lastRealProgress = now;
+      if (msg.type !== 'heartbeat' || now - lastRealProgress < MODEL_LOAD_MAX_MS) lastProcessProgress = now;
+    }
     switch (msg.type) {
       case 'ready': {
         if (worker !== ownedWorker || typeof msg.backend !== 'string') break;
@@ -1342,11 +1356,12 @@ async function onProcess() {
     const source = ingested;
     const channelData = await copyAll(source.channelData);
     if (id !== requestSeq || !processingInFlight) return;
-    const startedAt = Date.now();
-    lastProcessProgress = startedAt;
+    lastProcessProgress = lastRealProgress = Date.now();
     clearProcessWatch();
     processWatch = setInterval(() => {
-      if (Date.now() - lastProcessProgress < 45000 && Date.now() - startedAt < 300000) return;
+      // No-progress watchdog only. A total-time cap killed healthy long jobs
+      // on slow WASM devices with a misleading message (audit AUD-006).
+      if (Date.now() - lastProcessProgress < PROCESS_STALL_MS) return;
       requestSeq += 1;
       worker?.terminate();
       worker = null;

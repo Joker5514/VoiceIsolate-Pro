@@ -203,7 +203,21 @@ async function startServer() {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-    assert(overflow <= 1, `Mobile horizontal overflow: ${overflow}px`);
+    const offenders = overflow <= 1 ? [] : await page.evaluate(() => [...document.querySelectorAll('body *')]
+      .filter((el) => {
+        if (!el.getClientRects().length) return false;
+        const r = el.getBoundingClientRect();
+        const sticksOut = r.right > innerWidth + 1 || r.left < -1
+          || (getComputedStyle(el).overflowX === 'visible' && el.scrollWidth > el.clientWidth + 1);
+        if (!sticksOut) return false;
+        for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+          if (getComputedStyle(a).overflowX !== 'visible') return false;
+        }
+        return true;
+      })
+      .slice(0, 8)
+      .map((el) => `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}.${[...el.classList].join('.')} right=${Math.round(el.getBoundingClientRect().right)}`));
+    assert(overflow <= 1, `Mobile horizontal overflow: ${overflow}px ${offenders.join(' | ')}`);
     await page.screenshot({ path: path.join(output, 'landing-mobile.png'), fullPage: true });
     check('Narrow mobile reflow with reduced motion', { width: 390, overflow });
     assert.equal(report.requests.filter((req) => ['POST', 'PUT', 'PATCH'].includes(req.method)).length, 0);
