@@ -251,6 +251,17 @@
     if (sc.tv && want('tv') && t >= (sc.tv.from ?? 0) && t <= (sc.tv.to ?? 1e9)) {
       const a = (sc.tv.amp || 0.05) * db2a(tvLevel(sc.tv, t) - sc.tv.level + (g.tv || 0)) * (0.7 + 0.18 * Math.sin(t * 11) + 0.12 * Math.sin(t * 2.7)); a2 += a * a;
     }
+    if (want('reverb')) {
+      // Room tail: each voiced syllable decays at the scene RT60 after it ends.
+      const tau = sc.rt60 / 6.9;
+      let r2 = 0;
+      for (const v of sc.voices) for (const s of v.syl) {
+        const dt = t - (s.t + s.d);
+        if (dt <= 0 || dt > sc.rt60) continue;
+        const a = v.amp * s.a * 0.35 * Math.exp(-dt / tau) * db2a(g.reverb || 0); r2 += a * a;
+      }
+      a2 += r2;
+    }
     if (want('hvac')) { const a = 0.028 * (1 + 0.25 * Math.sin(t * 0.9) + 0.12 * Math.sin(t * 2.3)) * db2a(g.hvac || 0); a2 += a * a; }
     if (want('hum')) { const a = 0.018 * db2a(g.hum || 0); a2 += a * a; }
     if (want('transient')) for (const tt of sc.transients) {

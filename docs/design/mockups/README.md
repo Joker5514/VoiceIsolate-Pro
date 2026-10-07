@@ -11,6 +11,10 @@ High-fidelity design direction for three connected surfaces. These are
 
 PNGs are 3840x2400 (1920x1200 at 2x).
 
+![Explain](png/explain.png)
+![Stems](png/stems.png)
+![Engineer](png/engineer.png)
+
 ## How they are built
 
 - `shell.css`: the shared shell (top bar, transport, panels, chips). It uses the

@@ -420,7 +420,7 @@
   // playhead + crosshair cursor
   const PHT = 137.364;
   ovl.insertAdjacentHTML('beforeend', `<div class="playhead" style="left:${X(PHT)}px"></div>`);
-  ruler.insertAdjacentHTML('beforeend', `<div class="ph-top" style="left:${X(PHT) + 56}px"></div>`);
+  ruler.insertAdjacentHTML('beforeend', `<div class="ph-top" style="left:${X(PHT)}px"></div>`);
   const cx = X(136.9), cy = Y(2840);
   ovl.insertAdjacentHTML('beforeend', `
     <div class="xh-v" style="left:${cx}px;top:${sy}px;bottom:auto;height:${sh}px;opacity:.6"></div>
@@ -462,7 +462,7 @@
     ['Television', 'Background • music bed', '91%', 'var(--src-tv)', 'tv', '#f59e57', 'muted'],
     ['HVAC', 'Continuous noise', '88%', 'var(--src-hvac)', 'hvac', '#8aa4bb', ''],
     ['Hum', '60 Hz / 120 Hz', '99%', 'var(--src-hum)', 'hum', '#d9c46a', ''],
-    ['Room Reflection', 'RT60 ≈ 0.55 s', '73%', 'var(--src-rv)', 'a', '#5b8cff', ''],
+    ['Room Reflection', 'RT60 ≈ 0.55 s', '73%', 'var(--src-rv)', 'reverb', '#5b8cff', ''],
     ['Transient Events', '9 events', '96%', 'var(--src-tr)', 'transient', '#e6edf5', ''],
   ];
   const srcEl = document.getElementById('srcs');
@@ -474,7 +474,7 @@
       <div class="ctl"><button><i data-i="${st === 'muted' ? 'eyeoff' : 'eye'}"></i></button><button class="${st === 'muted' ? 'on-m' : ''}">M</button><button class="${st === 'sel' ? 'on-s' : ''}">S</button><button><i data-i="${i === 5 ? 'lock' : 'unlock'}"></i></button><button class="iso"><i data-i="target"></i>ISOLATE</button></div>
     </div>`);
     const c = srcEl.querySelectorAll('.spark canvas')[i];
-    const ref = { a: 0.6, b: 0.24, whisper: 0.08, tv: 0.2, hvac: 0.14, hum: 0.09, transient: 0.12 }[id];
+    const ref = { a: 0.6, b: 0.24, whisper: 0.08, tv: 0.2, hvac: 0.14, hum: 0.09, transient: 0.12, reverb: 0.1 }[id];
     VIP.drawLane(c, scAll.voices.length && (id === 'a' || id === 'b') ? scAll : sc, id, hex, { t0: id === 'a' || id === 'b' ? 0 : T0, t1: id === 'a' || id === 'b' ? 768 : T1, ref });
   });
 
