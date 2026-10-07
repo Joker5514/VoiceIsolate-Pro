@@ -8,7 +8,7 @@ audio worse fails a gate instead of shipping.
 
 | Command | What it does | Runtime |
 |---|---|---|
-| `pnpm test:quality` | Gate: 9 fixtures x 3 profiles through the production `MLWorker.js` with the shipped ONNX models; hard invariants plus 45 pinned metrics (SI-SDR, speech level, noise reduction). Also `prod:verify` step `audio-quality`. | about 30 s |
+| `pnpm test:quality` | Gate: 9 fixtures x 3 profiles through the production `MLWorker.js` with the shipped ONNX models; hard invariants plus 66 pinned metrics (SI-SDR, speech level, fricative-band level, noise reduction). Also `prod:verify` step `audio-quality`. | about 30 s |
 | `node scripts/quality/quality-gate.cjs --update` | Re-pin `scripts/quality/quality-baseline.json` after an intended change. The diff is the review record. | about 30 s |
 | `pnpm quality:matrix -- --secs 6 [--json out.json] [--only id,id]` | Full 15-scenario x 3-profile report (markdown table). | about 2.5 min |
 
@@ -49,11 +49,16 @@ calibration changes is gathered locally (see below) and is not committed.
 | SI-SDR | Scale-invariant SDR of the clean stem against the dry target (dB). Used as absolute preservation for clean inputs. |
 | SI-SDR delta | SI-SDR(output) minus SI-SDR(input). Positive means the output is closer to the target than the input was. |
 | speech-level | Clean-stem RMS level minus target RMS level over active speech, in dB (gate). Catches a quieter output that SI-SDR, being gain-invariant, cannot. |
+| fricative-level | Clean-stem minus target energy in 3.5-9 kHz over fricative onsets, in dB (gate). Guards consonant loss that aggregate SI-SDR barely registers. |
 | noise-reduction | Input RMS level minus clean-stem RMS level on a noise-only input, in dB. |
 | level, HF 4-12 kHz, fricative, gap leak | Matrix only: level change in speech, high-band change in speech, energy change on fricative onsets, residual in pauses. |
 
 Hard invariants in the gate: no NaN or Infinity, length preserved, digital
 silence in gives peak below 1e-6 out, no output sample above full scale.
+
+The measured and pinned metric sets must match exactly (a new metric fails
+until it is pinned), every metric must be finite, and `--update` refuses to
+write a baseline from a run that broke any of these checks.
 
 ## Model calibration (2026-10-07)
 

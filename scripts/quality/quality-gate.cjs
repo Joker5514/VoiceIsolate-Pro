@@ -61,6 +61,12 @@ async function measureAll() {
         // SI-SDR ignores gain and noise-reduction rewards attenuation, so pin
         // the speech level too: a quieter clean stem must fail.
         metrics[`${key}/speech-level`] = M.rmsDb(clean, fx.active) - M.rmsDb(fx.ref, fx.active);
+        // Fricative onsets (3.5-9 kHz) are where the masks do the most damage
+        // (Maximum chain: about -30 dB); aggregate SI-SDR barely sees them.
+        if (fx.fricative) {
+          metrics[`${key}/fricative-level`] = M.bandEnergyDb(clean, 3500, 9000, 48000, 1024, fx.fricative)
+            - M.bandEnergyDb(fx.ref, 3500, 9000, 48000, 1024, fx.fricative);
+        }
       } else {
         metrics[`${key}/noise-reduction`] = M.rmsDb(fx.input) - M.rmsDb(clean);
       }
@@ -77,6 +83,14 @@ async function main() {
   const toleranceValue = Number(base?.toleranceDb);
   // A non-finite tolerance (e.g. 1e999 → Infinity) would disable every check.
   const tolerance = Number.isFinite(toleranceValue) && toleranceValue > 0 ? toleranceValue : DEFAULT_TOLERANCE_DB;
+  for (const [k, v] of Object.entries(metrics)) {
+    if (!Number.isFinite(v)) failures.push(`${k}: non-finite metric ${v}`);
+  }
+  if (update && failures.length) {
+    // Never pin a baseline from a run that broke a hard invariant.
+    console.error(`[quality] FAIL: baseline not written\n  ${failures.join('\n  ')}`);
+    process.exit(1);
+  }
   if (update) {
     fs.writeFileSync(BASELINE, `${JSON.stringify({
       note: 'dB; pinned by scripts/quality/quality-gate.cjs --update. Lower is a regression beyond the tolerance.',
@@ -85,6 +99,10 @@ async function main() {
     }, null, 2)}\n`);
     console.log(`[quality] baseline written: ${Object.keys(rounded).length} metrics`);
   } else {
+    // Key sets must match exactly, so a new metric cannot run unpinned.
+    for (const k of Object.keys(rounded)) {
+      if (!(k in base.metrics)) failures.push(`${k}: measured but not pinned (re-pin with --update)`);
+    }
     for (const [k, pinned] of Object.entries(base.metrics)) {
       const now = rounded[k];
       if (now == null) failures.push(`${k}: not measured`);
