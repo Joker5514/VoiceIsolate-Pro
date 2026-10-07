@@ -8,7 +8,7 @@ audio worse fails a gate instead of shipping.
 
 | Command | What it does | Runtime |
 |---|---|---|
-| `pnpm test:quality` | Gate: 9 fixtures x 3 profiles through the production `MLWorker.js` with the shipped ONNX models; hard invariants plus 24 pinned metrics. Also `prod:verify` step `audio-quality`. | about 30 s |
+| `pnpm test:quality` | Gate: 9 fixtures x 3 profiles through the production `MLWorker.js` with the shipped ONNX models; hard invariants plus 45 pinned metrics (SI-SDR, speech level, noise reduction). Also `prod:verify` step `audio-quality`. | about 30 s |
 | `node scripts/quality/quality-gate.cjs --update` | Re-pin `scripts/quality/quality-baseline.json` after an intended change. The diff is the review record. | about 30 s |
 | `pnpm quality:matrix -- --secs 6 [--json out.json] [--only id,id]` | Full 15-scenario x 3-profile report (markdown table). | about 2.5 min |
 

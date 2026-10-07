@@ -74,7 +74,9 @@ async function main() {
   const { metrics, failures } = await measureAll();
   const rounded = Object.fromEntries(Object.entries(metrics).map(([k, v]) => [k, Math.round(v * 100) / 100]));
   const base = update ? null : JSON.parse(fs.readFileSync(BASELINE, 'utf8'));
-  const tolerance = Number(base?.toleranceDb) > 0 ? Number(base.toleranceDb) : DEFAULT_TOLERANCE_DB;
+  const toleranceValue = Number(base?.toleranceDb);
+  // A non-finite tolerance (e.g. 1e999 → Infinity) would disable every check.
+  const tolerance = Number.isFinite(toleranceValue) && toleranceValue > 0 ? toleranceValue : DEFAULT_TOLERANCE_DB;
   if (update) {
     fs.writeFileSync(BASELINE, `${JSON.stringify({
       note: 'dB; pinned by scripts/quality/quality-gate.cjs --update. Lower is a regression beyond the tolerance.',

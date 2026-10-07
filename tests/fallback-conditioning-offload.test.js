@@ -36,6 +36,6 @@ test('dsp-worker is precached for offline use', () => {
 
 test('a worker error after the transfer fails Process with the stage named', () => {
   const after = helper.slice(helper.indexOf('call(op,'));
-  expect(after).toMatch(/DSP fallback failed during \$\{op === 'condition' \? 'input conditioning' : 'EQ and dynamics'\}/);
+  expect(after).toMatch(/throw new Error\(`DSP fallback failed during \$\{op === 'condition' \? 'input conditioning' : 'EQ and dynamics'\}/);
   expect(after).not.toMatch(/return inThread\(\)/);
 });

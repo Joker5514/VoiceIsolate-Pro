@@ -14,7 +14,7 @@ Labels: **VERIFIED** (measured here), **OBSERVED** (read in code), **INFERRED** 
 
 - **Shipped isolation made most noisy inputs worse, and still does on some.** First objective measurement in the repo (SI-SDR). On held-out recorded speech both chains lowered SI-SDR in 4 of 6 noisy conditions (default: -4.7 dB at white noise 10 dB SNR). Two inference-calibration fixes (training-contract input scaling, mask exponent 0.5) raised SI-SDR in all 7 held-out conditions (6 noisy plus clean preservation) for both chains. The default chain is still negative on 3 of 6 noisy conditions. The networks are the limit.
 - **The Engineer DSP fallback was effectively broken on long files.** 5 min of stereo took 307 s with one 31.4 s frozen main-thread task. Now 33.7 s with a 1.7 s worst task (VERIFIED, Chromium).
-- **A quality gate now runs in `prod:verify`.** 24 pinned metrics through the real `MLWorker.js` and shipped models; CI fails if any drops more than 0.5 dB.
+- **A quality gate now runs in `prod:verify`.** 45 pinned metrics (SI-SDR, speech level, noise reduction) through the real `MLWorker.js` and shipped models; CI fails if any drops more than 0.5 dB.
 
 What works: ML path throughput (5 min stereo in 13 to 16 s, RTF 0.044 to 0.055, VERIFIED), worker cleanup, silence handling, model integrity, Landing export parity (prior smoke). What is fragile: model quality, the fallback spectral stage (still main thread), CI execution on GitHub (CI-001, unchanged, NOT VERIFIED here).
 
@@ -297,7 +297,7 @@ Prior findings re-checked: PERF-001 CONFIRMED and FIXED (it was larger than repo
 
 | Test | Prevents |
 |---|---|
-| `scripts/quality/quality-gate.cjs` (prod:verify `audio-quality`) | any change to the ML path that lowers a pinned SI-SDR / suppression metric by > 0.5 dB, NaN output, silence leakage, overs |
+| `scripts/quality/quality-gate.cjs` (prod:verify `audio-quality`) | any change to the ML path that lowers a pinned SI-SDR / speech-level / suppression metric by > 0.5 dB, NaN output, silence leakage, overs |
 | `tests/dsp-dereverb-recurrence.test.js` | recurrence drifting from the direct sum; the O(D) cost returning |
 | `tests/dsp-worker.test.js` (3 new) | worker output differing from the in-place chain; PCM cloned instead of transferred |
 | `tests/fallback-conditioning-offload.test.js` | whole-file conditioning/EQ moving back onto the main thread; transferring before the worker is known to load |
