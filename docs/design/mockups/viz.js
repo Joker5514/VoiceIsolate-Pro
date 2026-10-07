@@ -333,9 +333,20 @@
     const acc = new Float32Array(N);
     const g = Object.assign({}, G0, o.gains || {});
     const K = o.avg || 24;
-    for (let k = 0; k < K; k++) {
-      columnSpectrum(sc, t - 0.25 + (0.5 * k) / K, sp, g, buf);
-      for (let r = 0; r < N; r++) acc[r] += buf.Pv[r] + buf.Pt[r] + buf.Pn[r];
+    // Same room tail as drawSpectrogram: warm the tail up over one RT60 before the window.
+    const dt = 0.5 / K;
+    const tail = new Float32Array(N).fill(-200);
+    const rt = sc.rt60 * db2a((g.reverb || 0) * 0.5);
+    const decay = (60 / Math.max(0.05, rt)) * dt;
+    const warm = Math.ceil(sc.rt60 / dt);
+    for (let k = -warm; k < K; k++) {
+      columnSpectrum(sc, t - 0.25 + k * dt, sp, g, buf);
+      for (let r = 0; r < N; r++) {
+        tail[r] = Math.max(tail[r] - decay, 10 * Math.log10(buf.Pv[r] + 1e-14));
+        if (k < 0) continue;
+        const rv = (g.reverb || 0) < -40 ? 0 : db2p(tail[r] - 9 + (g.reverb || 0) * 0.4);
+        acc[r] += buf.Pv[r] + buf.Pt[r] + buf.Pn[r] + rv;
+      }
     }
     const f = [], db = [];
     for (let r = N - 1; r >= 0; r--) { f.push(freqOf[r]); db.push(10 * Math.log10(acc[r] / K + 1e-14)); }
