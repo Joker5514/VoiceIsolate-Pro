@@ -603,3 +603,550 @@ details.vip-section.filter-empty {
   background: rgba(8, 12, 18, 0.92);
   padding-bottom: 8px;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Workstation shell — desktop (body.ws, set by engineer-console.js at
+   ≥1280×640). One screen: header → workspace tabs → session bar → stage |
+   rack | inspector (each column scrolls) → transport bar. Layout + visual
+   only; every ID, slider binding and listener is the same node as before.
+   Colours stay on the AA-pinned Precision Studio text tiers.
+   ══════════════════════════════════════════════════════════════════════ */
+body.eng-console.ws {
+  --ws-bg: #05080c;
+  --ws-panel: #0a1017;
+  --ws-panel-2: #0d141c;
+  --ws-raised: #111a23;
+  --ws-raised-2: #16212c;
+  --ws-line: #19242f;
+  --ws-line-2: #22303d;
+  --ws-line-3: #2c3d4d;
+  --ws-text: #eef3f8;
+  --ws-text-2: #b3bfcc;
+  --ws-text-3: #8d9aaa;
+  --ws-red: var(--action-process, #ff3d4d);
+  --ws-red-solid: var(--action-process-solid, #d81f30);
+  --ws-cyan: var(--action-live, #2ed5e5);
+  --ws-green: var(--state-success, #31cf7d);
+  --ws-amber: var(--state-warning, #f0b541);
+  --ws-radius: 12px;
+  height: 100vh;
+  height: 100dvh;
+  /* No overflow clip here: the columns scroll themselves, and a clipping body
+     would hide every control below the fold from overflow-aware tooling. */
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  background:
+    radial-gradient(1200px 520px at 50% -180px, rgba(46, 213, 229, 0.035), transparent 70%),
+    radial-gradient(900px 600px at 85% 110%, rgba(255, 61, 77, 0.025), transparent 70%),
+    var(--ws-bg) !important;
+}
+body.eng-console.ws > * { flex: none; }
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+body.eng-console.ws .hdr {
+  order: -3;
+  position: relative;
+  top: auto;
+  background: linear-gradient(#0b1118, #090e14) !important;
+  border-bottom: 1px solid var(--ws-line) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02), 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: none;
+}
+body.eng-console.ws .hdr-badge {
+  border-color: var(--ws-line-2);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--ws-text-2);
+  border-radius: 5px;
+  letter-spacing: 0.08em;
+}
+body.eng-console.ws .ec-mode-badge {
+  border-radius: 6px;
+  color: #bff0d4;
+  background: rgba(49, 207, 125, 0.1);
+  border-color: rgba(49, 207, 125, 0.32);
+}
+body.eng-console.ws .hdr-stat .hs-val { color: var(--ws-text); }
+body.eng-console.ws .hdr-stat .hs-lbl { color: var(--ws-text-3); }
+body.eng-console.ws .hdr-actions .btn,
+body.eng-console.ws .hdr-scale .btn-xs {
+  border-color: var(--ws-line-2);
+  background: linear-gradient(#17212c, #121a23);
+  color: var(--ws-text);
+  border-radius: 7px;
+}
+
+/* ── Workspace tabs (the Precision Studio rail, laid out horizontally) ─ */
+body.eng-console.ws.ps-workstation .ps-workspace-nav {
+  order: -2;
+  position: static;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  gap: 2px;
+  padding: 0 12px;
+  height: 38px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #080d13;
+  border: 0;
+  border-bottom: 1px solid var(--ws-line);
+  scrollbar-width: none;
+}
+body.eng-console.ws.ps-workstation .ps-workspace-nav[hidden] { display: none !important; }
+body.eng-console.ws.ps-workstation .ps-workspace-nav a {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  color: var(--ws-text-3);
+}
+body.eng-console.ws.ps-workstation .ps-workspace-nav a[aria-current="page"] {
+  color: var(--ws-text);
+  background: linear-gradient(#1a2430, #141d27);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -2px 0 var(--ws-red);
+}
+body.eng-console.ws.ps-forensic .ps-workspace-nav a[aria-current="page"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -2px 0 var(--ws-cyan);
+}
+body.eng-console.ws .ps-quick-strip { order: -1; }
+/* The legacy Home/Analyze/… nav duplicates the workspace tabs here. */
+body.eng-console.ws .vip-engineer-nav { display: none; }
+/* Its second canvas never received audio; the signal stage is #vizCard. */
+body.eng-console.ws #unifiedSignalWorkspace { display: none; }
+
+/* ── Session bar (#vipHero, compact) ─────────────────────────────────── */
+body.eng-console.ws #vipHero.vip-hero {
+  margin: 0;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--ws-line);
+  border-radius: 0;
+  background: linear-gradient(90deg, rgba(255, 61, 77, 0.05), transparent 30%), #080d13;
+  box-shadow: none;
+  overflow: visible;
+  transform: none;
+}
+body.eng-console.ws #vipHero .vip-hero-bg,
+body.eng-console.ws #vipHero .vip-hero-kicker,
+body.eng-console.ws #vipHero .vip-hero-tagline,
+body.eng-console.ws #vipHero .vip-hero-video-scan,
+body.eng-console.ws #vipHero .vip-hero-tier-label,
+body.eng-console.ws #vipHero .vip-hero-title,
+body.eng-console.ws #vipHero .vip-hero-scene-label { display: none; }
+body.eng-console.ws #vipHero .vip-hero-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+}
+body.eng-console.ws #vipHero .vip-hero-media { flex: none; }
+body.eng-console.ws #vipHero .vip-hero-video-frame {
+  width: 92px;
+  height: 52px;
+  aspect-ratio: auto;
+  border-radius: 8px;
+  border-color: var(--ws-line-2);
+  box-shadow: 0 0 0 1px rgba(255, 61, 77, 0.12), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+body.eng-console.ws #vipHero .vip-hero-fallback-mark { font-size: 15px; letter-spacing: 0.18em; }
+body.eng-console.ws #vipHero .vip-hero-fallback-text { display: none; }
+body.eng-console.ws #vipHero .vip-hero-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+}
+body.eng-console.ws #vipHero .vip-hero-title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+body.eng-console.ws #vipHero .vip-hero-status {
+  flex: 1 1 0;
+  min-width: 60px;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--ws-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.eng-console.ws #vipHero .vip-hero-tier,
+body.eng-console.ws #vipHero .vip-hero-scene,
+body.eng-console.ws #vipHero .vip-hero-cta-row,
+body.eng-console.ws #vipHero .vip-hero-trust {
+  margin: 0;
+  flex: none;
+  justify-content: flex-start;
+}
+body.eng-console.ws #vipHero .vip-hero-scene[hidden] { display: none !important; }
+body.eng-console.ws #vipHero .vip-hero-tier-picker {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--ws-line-2);
+  border-radius: 8px;
+  background: #060a0e;
+}
+body.eng-console.ws #vipHero .vip-tier-pill {
+  min-height: 26px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: none;
+}
+body.eng-console.ws #vipHero .vip-tier-pill[aria-pressed="true"] {
+  color: var(--ws-text);
+  background: linear-gradient(#1b2632, #151e28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+body.eng-console.ws #vipHero .vip-hero-scene-select {
+  min-height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--ws-line-2);
+  background: #070b10;
+  color: var(--ws-text);
+  font-size: 12px;
+}
+body.eng-console.ws #vipHero .vip-hero-cta-row { gap: 8px; }
+body.eng-console.ws #vipHero .vip-hero-cta {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+body.eng-console.ws #vipHero .vip-hero-trust {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(49, 207, 125, 0.28);
+  background: rgba(49, 207, 125, 0.08);
+}
+body.eng-console.ws #vipHero .vip-hero-trust-text {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: #bff0d4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Columns ─────────────────────────────────────────────────────────── */
+body.eng-console.ws .main-grid.ec-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(380px, 24vw, 460px) clamp(300px, 19vw, 360px);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  z-index: 1;
+}
+body.eng-console.ws .ec-col {
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  gap: 10px;
+  padding: 0 4px 16px 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ws-line-3) transparent;
+  scroll-padding-top: 8px;
+}
+/* Fixed-height flex columns would otherwise squeeze every panel to fit. */
+body.eng-console.ws .ec-col > * { flex-shrink: 0; }
+body.eng-console.ws .ec-col-stage { order: 1; }
+body.eng-console.ws .ec-col-rack {
+  order: 2;
+  position: static;
+  top: auto;
+  max-height: none;
+  scroll-padding-top: 56px;
+  scroll-padding-bottom: 16px;
+  padding-bottom: 24px;
+}
+body.eng-console.ws .ec-col-session { order: 3; }
+/* Stage and inspector are already full-height; the stacked fallback is not needed. */
+body.eng-console.ws .ec-col-session { display: flex; }
+
+/* ── Panels ──────────────────────────────────────────────────────────── */
+body.eng-console.ws .card,
+body.eng-console.ws details.vip-section,
+body.eng-console.ws .cockpit-card {
+  background: linear-gradient(180deg, var(--ws-panel-2), var(--ws-panel));
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+body.eng-console.ws details.card:hover { border-color: var(--ws-line-2); }
+body.eng-console.ws .vip-section-summary,
+body.eng-console.ws .viz-hdr {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-text-2);
+}
+body.eng-console.ws .engine-cockpit { margin: 0; padding: 0; max-width: none; }
+body.eng-console.ws .cockpit-row { flex-wrap: wrap; gap: 10px; }
+body.eng-console.ws .cockpit-title { font-size: 12px; line-height: 1.4; }
+body.eng-console.ws .vip-workstation__inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: auto;
+  min-width: 0;
+}
+body.eng-console.ws .vip-workstation__inspector h3 { color: var(--ws-text-2) !important; }
+body.eng-console.ws .vip-compare-toggle {
+  padding: 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: var(--ws-radius);
+  background: linear-gradient(180deg, var(--ws-panel-2), var(--ws-panel));
+}
+
+/* Signal stage: the canvas gets the room. */
+body.eng-console.ws #vizCard .viz-card-body { min-height: 0; }
+body.eng-console.ws #vizCard #spectro3d-container,
+body.eng-console.ws #vizCard #spectroCanvas { min-height: 340px; }
+
+/* Buttons share the console's two weights: neutral and the action red. */
+body.eng-console.ws .btn {
+  border-radius: 7px;
+}
+/* White text sits on the solid red only (5.05:1); the bright red fails AA. */
+body.eng-console.ws .btn-primary,
+body.eng-console.ws #vipHero #heroCtaProcess:not(:disabled) {
+  background: var(--ws-red-solid) !important;
+  border-color: #ff5161 !important;
+  color: #fff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 14px rgba(216, 31, 48, 0.28);
+}
+/* In the session bar Process is the call to action; Upload is secondary. */
+body.eng-console.ws #vipHero #heroCtaUpload {
+  background: linear-gradient(#17212c, #121a23) !important;
+  border-color: var(--ws-line-2) !important;
+  color: var(--ws-text) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ── Transport bar ───────────────────────────────────────────────────── */
+body.eng-console.ws > .transport-card {
+  order: 1;
+  position: relative;
+  z-index: 3;
+  margin: 0;
+  padding: 6px 16px 6px;
+  border: 0;
+  border-top: 1px solid var(--ws-line);
+  border-radius: 0;
+  background: linear-gradient(#0b1118, #080c11);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+/* One row: buttons · time · scrubber · speed/loop/A-B. .transport-top has no
+   role, so display:contents only flattens layout, not semantics. */
+body.eng-console.ws > .transport-card {
+  display: grid;
+  grid-template-columns: auto auto minmax(160px, 1fr) auto;
+  align-items: center;
+  column-gap: 18px;
+}
+body.eng-console.ws > .transport-card .transport-top { display: contents; }
+body.eng-console.ws > .transport-card .tp-buttons { grid-column: 1; }
+body.eng-console.ws > .transport-card .tp-time-wrap { grid-column: 2; }
+body.eng-console.ws > .transport-card .transport-seek { grid-column: 3; grid-row: 1; }
+body.eng-console.ws > .transport-card .tp-meta {
+  grid-column: 4;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  min-width: 0;
+}
+body.eng-console.ws > .transport-card .btn-tp {
+  border-radius: 8px;
+  border-color: var(--ws-line-2);
+  background: linear-gradient(#17212c, #121a23);
+  color: var(--ws-text-2);
+}
+body.eng-console.ws > .transport-card .btn-tp-play {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #071016;
+  background: linear-gradient(#f4f8fb, #c9d3dc);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 22px rgba(46, 213, 229, 0.12);
+}
+body.eng-console.ws > .transport-card .tp-time-wrap {
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: #05080b;
+  border: 1px solid var(--ws-line);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+body.eng-console.ws > .transport-card .tp-time {
+  font-family: var(--fm, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  color: var(--ws-text);
+}
+body.eng-console.ws > .transport-card .transport-seek { margin: 0; padding: 8px 2px; min-height: 0; }
+body.eng-console.ws > .transport-card .tp-speed label { color: var(--ws-text-3); }
+
+/* ── Live analyzer card (neon-pulse-visualizer.js) ─────────────────────
+   The card's np-* markup had no rules anywhere, so it rendered as raw
+   buttons, an unbounded black canvas and a bare text list at every width. */
+body.eng-console .np-card {
+  margin: 0 0 12px;
+  border: 1px solid var(--border-subtle, #1d2a34);
+  border-radius: 10px;
+  background: #05080c;
+  overflow: hidden;
+}
+body.eng-console .np-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle, #1d2a34);
+}
+body.eng-console .np-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  color: #b3bfcc;
+}
+body.eng-console .np-card-title svg { color: var(--action-live, #2ed5e5); }
+body.eng-console .np-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #a9eef5;
+  background: rgba(46, 213, 229, 0.1);
+  border: 1px solid rgba(46, 213, 229, 0.3);
+}
+body.eng-console .np-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--action-live, #2ed5e5);
+  box-shadow: 0 0 6px rgba(46, 213, 229, 0.7);
+}
+body.eng-console .np-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 8px 12px 0;
+  padding: 2px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  border: 1px solid #22303d;
+  border-radius: 7px;
+  background: #060a0e;
+}
+body.eng-console .np-tab {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #8d9aaa;
+  font: 600 10.5px/1 inherit;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+body.eng-console .np-tab:hover { color: #eef3f8; }
+body.eng-console .np-tab.active,
+body.eng-console .np-tab[aria-selected="true"] {
+  color: #eef3f8;
+  background: linear-gradient(#1b2632, #151e28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+body.eng-console .np-tab:focus-visible {
+  outline: 2px solid var(--action-live, #2ed5e5);
+  outline-offset: 1px;
+}
+body.eng-console .np-canvas-wrap {
+  position: relative;
+  height: 200px;
+  margin: 8px 12px;
+  border: 1px solid #19242f;
+  border-radius: 8px;
+  background: #04070b;
+  overflow: hidden;
+}
+body.eng-console .np-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+body.eng-console .np-scanline { display: none; }
+body.eng-console .np-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 12px 10px;
+}
+body.eng-console .np-stat {
+  padding: 6px 8px;
+  border: 1px solid #19242f;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.015);
+}
+body.eng-console .np-stat-val {
+  font: 600 14px/1.2 var(--fm, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  color: #eef3f8;
+}
+body.eng-console .np-stat-label {
+  margin-top: 2px;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8d9aaa;
+}
+body.eng-console .np-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 12px 10px;
+  font-size: 10.5px;
+  color: #b3bfcc;
+}
+body.eng-console .np-legend:empty { display: none; }
+body.eng-console .np-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+body.eng-console .np-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
