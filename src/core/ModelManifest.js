@@ -86,6 +86,16 @@ export const MODEL_MANIFEST = Object.freeze({
     bins: 2049,
     maxBatchFrames: 96,
     sampleRate: 48000,
+    /**
+     * Inference calibration, measured by scripts/quality (docs/guides/AUDIO_QUALITY.md):
+     * inputNormalization — the network was trained on magnitude frames scaled
+     *   to a per-frame peak of 1 (scripts/export_onnx_models.py); feed the same.
+     * maskExponent — the sigmoid mask is applied as mask^p. p = 0.5 halves the
+     *   mask's attenuation in dB; on held-out recorded speech it raised SI-SDR
+     *   in every tested condition, at the cost of less noise-only suppression.
+     */
+    inputNormalization: 'frame-max',
+    maskExponent: 0.5,
     io: Object.freeze({
       input: 'input',                // [batch, 2049] Float32 magnitudes
       output: 'output',              // [batch, 2049] Float32 mask (sigmoid)
@@ -131,6 +141,16 @@ export const MODEL_MANIFEST = Object.freeze({
     // Larger base batches cut session.run overhead (effectiveBatchFrames multiplies further).
     maxBatchFrames: 128,
     sampleRate: 48000,
+    /**
+     * Inference calibration, measured by scripts/quality (docs/guides/AUDIO_QUALITY.md):
+     * inputNormalization — the network was trained on magnitude frames scaled
+     *   to a per-frame peak of 1 (scripts/export_onnx_models.py); feed the same.
+     * maskExponent — the sigmoid mask is applied as mask^p. p = 0.5 halves the
+     *   mask's attenuation in dB; on held-out recorded speech it raised SI-SDR
+     *   in every tested condition, at the cost of less noise-only suppression.
+     */
+    inputNormalization: 'frame-max',
+    maskExponent: 0.5,
     io: Object.freeze({
       input: 'input',                // [batch, 2049] Float32 magnitudes
       output: 'output',              // [batch, 2049] Float32 vocal mask

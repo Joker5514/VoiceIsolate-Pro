@@ -160,6 +160,23 @@ function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
  * - LUFS measurement, true-peak limiting, dither
  * - Lightweight spectral noise classifier
  */
+/**
+ * One macrotask checkpoint for the async STFT fallback yield. On a page,
+ * MessageChannel is not clamped in hidden tabs the way setTimeout(0) is
+ * (~1 s), so a backgrounded fallback keeps running. Elsewhere (workers, Node)
+ * a plain timer is used: a live port would keep Node's event loop alive.
+ */
+function macrotaskYield() {
+  if (typeof document !== 'undefined' && typeof MessageChannel === 'function') {
+    return new Promise((resolve) => {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = () => { ch.port1.close(); resolve(); };
+      ch.port2.postMessage(0);
+    });
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 const DSPCore = {
 
   // ===== CONSTANTS =====
@@ -267,13 +284,12 @@ const DSPCore = {
     const real = new Float32Array(fftSize);
     const imag = new Float32Array(fftSize);
 
-    const yieldUI = () => new Promise((resolve) => {
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => setTimeout(resolve, 0));
-      } else {
-        setTimeout(resolve, 0);
-      }
-    });
+    // opts.maybeYield (ui-yield createYieldBudget) yields only when its time
+    // budget has elapsed; without it, fall back to a plain macrotask every
+    // yieldEvery frames. Never await rAF here: it is 0 Hz in a hidden tab, so
+    // the fallback stalled whenever the user switched away.
+    const maybeYield = typeof opts.maybeYield === 'function' ? opts.maybeYield : null;
+    const yieldUI = macrotaskYield;
 
     for (let f = 0; f < frameCount; f++) {
       if (shouldAbort && shouldAbort()) {
@@ -293,7 +309,12 @@ const DSPCore = {
       }
       mag[f] = m;
       phase[f] = p;
-      if (f > 0 && (f % yieldEvery) === 0) {
+      if (maybeYield) {
+        if ((f & 7) === 7) {
+          if (onProgress) onProgress(f / frameCount);
+          await maybeYield();
+        }
+      } else if (f > 0 && (f % yieldEvery) === 0) {
         if (onProgress) onProgress(f / frameCount);
         await yieldUI();
       }
@@ -321,13 +342,12 @@ const DSPCore = {
     const real = new Float32Array(fftSize);
     const imag = new Float32Array(fftSize);
 
-    const yieldUI = () => new Promise((resolve) => {
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => setTimeout(resolve, 0));
-      } else {
-        setTimeout(resolve, 0);
-      }
-    });
+    // opts.maybeYield (ui-yield createYieldBudget) yields only when its time
+    // budget has elapsed; without it, fall back to a plain macrotask every
+    // yieldEvery frames. Never await rAF here: it is 0 Hz in a hidden tab, so
+    // the fallback stalled whenever the user switched away.
+    const maybeYield = typeof opts.maybeYield === 'function' ? opts.maybeYield : null;
+    const yieldUI = macrotaskYield;
 
     for (let f = 0; f < frameCount; f++) {
       const offset = f * hopSize;
@@ -350,7 +370,12 @@ const DSPCore = {
         output[offset + i] += real[i] * window[i];
         windowSum[offset + i] += windowSq[i];
       }
-      if (f > 0 && (f % yieldEvery) === 0) {
+      if (maybeYield) {
+        if ((f & 7) === 7) {
+          if (onProgress) onProgress(f / frameCount);
+          await maybeYield();
+        }
+      } else if (f > 0 && (f % yieldEvery) === 0) {
         if (onProgress) onProgress(f / frameCount);
         await yieldUI();
       }
@@ -612,6 +637,82 @@ const DSPCore = {
     const targetLin = Math.pow(10, targetDb / 20);
     const gain = targetLin / peak;
     for (let i = 0; i < data.length; i++) data[i] *= gain;
+    return data;
+  },
+
+  /**
+   * Fallback-path input conditioning for one channel, in the shipped order:
+   * DC removal → click repair → gate → de-ess → ~8 ms process-boundary fades.
+   * One implementation for both callers: dsp-worker.js runs it off the main
+   * thread, app.js runs it in place only when that worker is unavailable.
+   * @param {Float32Array} data mutated in place where the stage allows
+   * @param {object} p effective Engineer params
+   * @param {number} sr
+   * @returns {Float32Array}
+   */
+  conditionFallbackChannel(data, p, sr) {
+    this.removeDCOffset(data, sr);
+    this.removeClicks(data, p.clickSensitivity ?? 3);
+    const gateThresh = p.gateThresh ?? -42;
+    if (gateThresh > -80) {
+      data = this.noiseGate(data, {
+        threshold: gateThresh,
+        range: p.gateRange ?? -60,
+        attack: p.gateAttack ?? 5,
+        release: p.gateRelease ?? 200,
+        hold: p.gateHold ?? 50,
+        lookahead: p.gateLookahead ?? 5,
+      }, sr);
+    }
+    if ((p.deEssAmt ?? 0) > 0) this.deEss(data, p.deEssFreq ?? 6500, p.deEssAmt ?? 0, sr);
+    const fadeN = Math.min(Math.floor(data.length / 4), Math.round(0.008 * sr));
+    for (let i = 0; i < fadeN; i++) {
+      const g = i / Math.max(1, fadeN);
+      data[i] *= g;
+      data[data.length - 1 - i] *= g;
+    }
+    return data;
+  },
+
+  /**
+   * Fallback-path filters + EQ + dynamics for one channel (S22–S25): HP/LP,
+   * 10-band peaking EQ, compressor or makeup gain, true-peak limiter.
+   * Shared by app.js (in place) and dsp-worker.js ('eqDynamics').
+   */
+  eqDynamicsChannel(data, p, sr) {
+    const DSP = this;
+
+    // S22 high-pass / low-pass.
+    const hpFreq = p.hpFreq ?? 20;
+    if (hpFreq > 20) DSP.biquadProcess(data, DSP.biquadCoeffs('highpass', hpFreq, p.hpQ ?? 0.7, 0, sr));
+    const lpFreq = p.lpFreq ?? 20000;
+    if (lpFreq < 20000) DSP.biquadProcess(data, DSP.biquadCoeffs('lowpass', lpFreq, p.lpQ ?? 0.7, 0, sr));
+
+    // S23 10-band parametric EQ.
+    const eqBands = [
+      ['eqSub', 40], ['eqBass', 120], ['eqWarmth', 300], ['eqBody', 700], ['eqLowMid', 1500],
+      ['eqMid', 3000], ['eqPresence', 5000], ['eqClarity', 8000], ['eqAir', 13000], ['eqBrill', 18000],
+    ].map(([id, freq]) => ({ freq, gain: p[id] ?? 0, Q: 1.0, type: 'peaking' }))
+      .filter((b) => b.freq < sr / 2);
+    DSP.parametricEQ(data, eqBands, sr);
+
+    // S24 compressor (+ makeup gain).
+    if ((p.compRatio ?? 1) > 1.01) {
+      DSP.compress(data, {
+        threshold: p.compThresh ?? -24,
+        ratio: p.compRatio ?? 4,
+        attack: p.compAttack ?? 10,
+        release: p.compRelease ?? 150,
+        knee: Math.max(0.5, p.compKnee ?? 6),
+        makeup: p.compMakeup ?? 0,
+      }, sr);
+    } else if ((p.compMakeup ?? 0) > 0) {
+      const g = Math.pow(10, (p.compMakeup ?? 0) / 20);
+      for (let i = 0; i < data.length; i++) data[i] *= g;
+    }
+
+    // S25 limiter.
+    DSP.truePeakLimit(data, p.limThresh ?? -1);
     return data;
   },
 
@@ -1240,8 +1341,33 @@ const DSPCore = {
     let histPos = 0;
     let histFilled = 0;
 
+    // The tail estimate for frame f reads the ring of D = decayFrames slots
+    // newest→oldest starting one behind the current frame, so it covers frames
+    // f-1 … f-(D-1) with weights r^1 … r^(D-1) and then wraps onto the current
+    // frame with weight r^D (r = exp(-3/D)). The previous implementation summed
+    // that window directly, O(D) per bin per frame (~31 s on the main thread
+    // for 5 min of audio at the desktop hop). The same sum is kept here as a
+    // recurrence over the past-frame part, O(1) per bin:
+    //   T_f     = Σ_{d=1}^{D-1} r^d · x_{f-d}
+    //   T_{f+1} = r · (x_f + T_f − r^{D-1} · x_{f-(D-1)})
+    const r = weights[0];
+    const rD1 = decayFrames > 1 ? weights[decayFrames - 2] : 1;
+    const rD = weights[decayFrames - 1];
+    const tail = new Float64Array(numBins);
+    let prevFrame = null;
+
     for (let f = 0; f < mag.length; f++) {
       const cur = mag[f];
+
+      // Advance T to this frame using the previous frame's original
+      // magnitudes and the one leaving the window, before the slot it lives
+      // in is overwritten below.
+      if (prevFrame) {
+        const leaving = f - decayFrames >= 0 ? history[histPos] : null;
+        for (let k = 0; k < numBins; k++) {
+          tail[k] = r * (prevFrame[k] + tail[k] - (leaving ? rD1 * leaving[k] : 0));
+        }
+      }
 
       // Snapshot the ORIGINAL magnitudes for this frame *before* any gain is
       // applied. This is what later frames will see as "past" when they
@@ -1249,22 +1375,13 @@ const DSPCore = {
       // estimate to shrink frame-after-frame, producing runaway suppression.
       const slot = history[histPos];
       for (let k = 0; k < numBins; k++) slot[k] = cur[k];
+      prevFrame = slot;
       histPos = (histPos + 1) % decayFrames;
       if (histFilled < decayFrames) histFilled++;
 
-      // Now apply the dereverb gain using the snapshotted history (which
-      // does NOT include the slot we just wrote — it walks from newest past
-      // backwards, skipping the current frame).
       if (histFilled > decayFrames - 1) {
         for (let k = 0; k < numBins; k++) {
-          let reverbEst = 0;
-          for (let d = 0; d < decayFrames; d++) {
-            // Walk newest→oldest, but skip the slot we just wrote (the
-            // current frame) by starting at (histPos - 2).
-            const idx = ((histPos - 2 - d) % decayFrames + decayFrames) % decayFrames;
-            reverbEst += history[idx][k] * weights[d];
-          }
-          reverbEst /= weightSum;
+          const reverbEst = (tail[k] + rD * slot[k]) / weightSum;
           const gain = Math.max(0.1, 1 - alpha * reverbEst / (cur[k] + 1e-10));
           cur[k] *= gain;
         }

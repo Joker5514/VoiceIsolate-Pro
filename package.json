@@ -70,6 +70,8 @@
     "pretest:tier-picker": "playwright install chromium",
     "test:electron-security": "node scripts/electron-security-smoke.cjs",
     "perf:browser": "node scripts/perf/perf-harness.cjs",
+    "test:quality": "node scripts/quality/quality-gate.cjs",
+    "quality:matrix": "node scripts/quality/quality-matrix.cjs",
     "preperf:browser": "playwright install chromium",
     "pretest:shell-qa": "playwright install chromium",
     "pretest:engineer": "playwright install chromium",

@@ -109,10 +109,15 @@ describe('DSPCore.removeClicks', () => {
 });
 
 describe('Pipeline wiring (source guards)', () => {
-  test('app.js Pass-1 calls removeClicks', () => {
+  test('app.js Pass-1 runs the conditioning chain that calls removeClicks', () => {
     const app = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
-    expect(app).toMatch(/DSP\.removeClicks/);
-    expect(app).toMatch(/clickSensitivity/);
+    const core = fs.readFileSync(path.join(__dirname, '../public/app/dsp-core.js'), 'utf8');
+    expect(app).toContain("op === 'condition' ? 'conditionFallbackChannel'");
+    expect(app).toMatch(/channels = await this\._dspWorkerChannels\('condition', channels, p, sr, DSP\)/);
+    const start = core.indexOf('  conditionFallbackChannel(data, p, sr) {');
+    expect(start).toBeGreaterThan(-1);
+    const chain = core.slice(start, core.indexOf('\n  },\n', start));
+    expect(chain).toMatch(/this\.removeClicks\(data, p\.clickSensitivity/);
   });
 
   test('MLWorker uses colaSafeHop and OLA floor', () => {

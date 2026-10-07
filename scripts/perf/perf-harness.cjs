@@ -17,6 +17,7 @@
  *   node scripts/perf/perf-harness.cjs --surface engineer --secs 10,60 --cycles 3
  *   node scripts/perf/perf-harness.cjs --surface landing --secs 30 --cancel
  *   flags: --sr 44100|48000  --channels 1|2  --cancel  --cycles N  --headed
+ *          --no-ml  (blocks MLWorker.js so Engineer measures its DSP fallback path)
  */
 'use strict';
 
@@ -43,6 +44,7 @@ const SR = Number(arg('sr', '48000'));
 const CH = Number(arg('channels', '2'));
 const CYCLES = Number(arg('cycles', '1'));
 const DO_CANCEL = has('cancel');
+const NO_ML = has('no-ml');
 const HEADED = has('headed');
 const PROFILE = has('profile');
 const TRACE = has('trace');
@@ -389,6 +391,7 @@ async function main() {
   // Teardown and the report always happen, including after a renderer crash.
   try {
     const ctx = await browser.newContext();
+    if (NO_ML) await ctx.route('**/src/workers/MLWorker.js', (r) => r.abort());
     page = await ctx.newPage();
     await page.addInitScript(instrument);
     // Optional ad-hoc probe (diagnostics only): VIP_PERF_PROBE=/path/probe.js
@@ -459,6 +462,8 @@ async function main() {
         }
         run.rtf = +(run.processMs / 1000 / secs).toFixed(4);
         run.final = s;
+        run.engine = await page.evaluate(() => window._vipApp?._processingEngine ?? null).catch(() => null);
+        run.stageMs = await page.evaluate(() => ({ ...(globalThis.__vipStageTimings || {}) })).catch(() => null);
         run.success = Boolean(s && S.success(s));
         run.hung = !s || !S.done(s);
         const pt1 = run.ptEnd ?? await page.evaluate(() => performance.now());
@@ -488,7 +493,7 @@ async function main() {
         run.rssAfterMb = chromiumRssMb();
         runs.push(run);
         console.log(JSON.stringify({
-          secs, cycle, ok: run.success, ms: run.processMs, rtf: run.rtf, cancelMs: run.cancelMs,
+          secs, cycle, ok: run.success, engine: run.engine, stages: run.stageMs, ms: run.processMs, rtf: run.rtf, cancelMs: run.cancelMs,
           lt: run.longTasks.max, settleLt: run.settleLongTaskMax, lt100: run.longTasks.count100, gap: run.heartbeatGaps.max,
           heap: run.heapAfterGcMb, rss: run.rssAfterMb, peakRss, w: run.workersLive, ctx: run.audioCtxLive, st: s?.status,
         }));
@@ -524,6 +529,9 @@ async function main() {
   for (const r of runs) {
     if (r.hung) failures.push(`${r.secs}s cycle ${r.cycle}: did not finish (${r.final?.status})`);
     else if (!r.success) failures.push(`${r.secs}s cycle ${r.cycle}: ended ${r.final?.status}`);
+    if (NO_ML && SURFACE === 'engineer' && r.engine !== 'dsp-fallback') {
+      failures.push(`${r.secs}s cycle ${r.cycle}: --no-ml ran engine '${r.engine}', not the DSP fallback`);
+    }
     if (DO_CANCEL && !r.cancelSettled) failures.push(`${r.secs}s cycle ${r.cycle}: cancel never settled`);
   }
   // Growth = the later half of the runs needs more live resources than the

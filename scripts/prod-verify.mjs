@@ -9,6 +9,7 @@
  *
  * Tiers:
  *   static   repository integrity, versions, lint, unit/contract tests, DSP,
+ *            audio quality (shipped ONNX models, objective SI-SDR gate),
  *            privacy, model + worklet integrity, provenance, production build
  *   browser  real-Chromium journeys (Engineer, Landing, shell guards,
  *            runtime privacy) — on by default, `--no-browser` to skip
@@ -58,6 +59,7 @@ const STEPS = [
   ['lint', 'static', 'lint', pnpm('lint')],
   ['test', 'static', 'unit / contract / integration tests', pnpm('test')],
   ['dsp-isolation', 'static', 'DSP', node('scripts/check-dsp-isolation.js')],
+  ['audio-quality', 'static', 'audio quality', pnpm('test:quality')],
   ['privacy-static', 'static', 'privacy', node('scripts/check-privacy-invariants.js')],
   ['no-cloud-audio', 'static', 'privacy', node('scripts/check-no-cloud-audio.js')],
   ['models', 'static', 'model integrity', node('scripts/validate-model-integrity.mjs')],
