@@ -748,12 +748,6 @@
         <p class="hint" style="margin:8px 0 0;font-size:12px;opacity:.75;">Google Drive is optional. Processing never uses Drive — files leave the device only when you tap Save to Drive.</p>
       </div>
 
-      <!-- Mobile sticky action bar -->
-      <div class="mobile-action-bar" id="mobileActionBar">
-        <button id="mobileProcessBtn" class="btn btn-primary" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"></polygon></svg>Process</button>
-        <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Reprocess</button>
-        <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
-      </div>
     </section>
 
     <section class="col-right">
@@ -884,6 +878,15 @@
       </div>
     </section>
   </main>
+
+  <!-- Mobile sticky action bar. Kept outside <main>: .main-grid is a
+       z-index:1 stacking context, and a fixed bar inside it was painted under
+       the hero and the field nav, so phones could not tap Process. -->
+  <div class="mobile-action-bar" id="mobileActionBar">
+    <button id="mobileProcessBtn" class="btn btn-primary" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"></polygon></svg>Process</button>
+    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Reprocess</button>
+    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
+  </div>
 
   <div id="customPresetModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="customPresetTitle" aria-hidden="true">
     <div class="modal-content">

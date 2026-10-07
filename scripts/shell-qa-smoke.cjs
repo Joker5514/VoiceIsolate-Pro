@@ -385,6 +385,46 @@ async function tabWalk(page, steps = 60) {
       check(pageErrors.length === 0, 'the entry-point journey raises no page errors', pageErrors);
       await ctx.close();
     }
+
+    // ── phone entry point: the sticky Process bar must be tappable ────────
+    // Below 768px the panel Process button is hidden and `#mobileActionBar`
+    // owns Process. It was painted under the field nav (<=640px) and the hero
+    // (its z-index was scoped to `.main-grid`), and the upload toast covered
+    // it, so a phone tap never started Process.
+    for (const width of [390, 768]) {
+      console.log(`\n[phone entry point @ ${width}px — tap the sticky Process bar]`);
+      const { ctx, page } = await newPage(browser, width);
+      await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
+      await page.waitForFunction(() => typeof window._vipApp?.handleFile === 'function', null, { timeout: 30000 });
+      await page.evaluate(() => {
+        window._vipApp?._dismissBootSplash?.();
+        const s = document.getElementById('bootSplash');
+        if (s) { s.style.display = 'none'; s.style.pointerEvents = 'none'; }
+      });
+      await page.setInputFiles('#fileInput', wav);
+      await page.waitForFunction(
+        () => { const b = document.getElementById('mobileProcessBtn'); return b && !b.disabled; },
+        null, { timeout: 60000 },
+      );
+      const hit = await page.evaluate(() => {
+        const b = document.getElementById('mobileProcessBtn');
+        const r = b.getBoundingClientRect();
+        const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return { onTop: !!top && b.contains(top), by: top ? `${top.tagName}#${top.id}.${top.className}` : null,
+          box: [r.x, r.y, r.width, r.height].map(Math.round) };
+      });
+      check(hit.onTop, `the mobile Process button is on top right after upload @ ${width}px`, hit);
+      let started = false;
+      try {
+        await page.locator('#mobileProcessBtn').click({ timeout: 5000 });
+        started = await page.waitForFunction(() => {
+          const st = document.getElementById('hStatus')?.textContent?.trim();
+          return window._vipApp?.isProcessing || st === 'DONE';
+        }, null, { timeout: 15000 }).then(() => true, () => false);
+      } catch { /* reported below */ }
+      check(started, `tapping the mobile Process button starts Process @ ${width}px`);
+      await ctx.close();
+    }
   } catch (err) {
     console.error(err);
     fails.push(String(err).split('\n')[0]);

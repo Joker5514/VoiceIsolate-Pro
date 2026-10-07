@@ -516,6 +516,17 @@ html {
 
   /* Hide the in-panel actions-row on mobile (moved to sticky bar) */
   .actions-row { display: none; }
+
+  /* Toasts sat at bottom:24px, over the Process button, for 4 s after
+     every upload ("Decoded: … run Analyze or Process"). The top edge is the
+     sticky header, which scroll-padding-top already keeps content out of, so
+     a toast there never covers a control that was scrolled into view. */
+  #toastRegion {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    bottom: auto;
+    right: 12px;
+    left: 12px;
+  }
 }
 
 /* ═══════════════════════════════════════════

@@ -141,14 +141,27 @@ body.ps-forensic .ps-workspace-nav a[aria-current="page"] {
     color: var(--text-primary, #f4f7fa);
     box-shadow: inset 0 -2px 0 var(--action-process, #ff3d4d);
   }
+  /* The field nav owns the bottom 64px, so the sticky Process bar
+     (mobile.css) sits directly above it. Both are fixed to bottom:0 otherwise,
+     and the bar cannot win on z-index: its z-index:200 is scoped to
+     `.main-grid`'s z-index:1 stacking context, so the nav painted over it and
+     every tap on Process landed on "Analyze" (measured on a 412px viewport). */
+  body.ps-workstation .mobile-action-bar {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 8px;
+  }
+  /* mobile.css re-sets this at :root after this sheet loads; out-rank it. */
+  html:root {
+    scroll-padding-bottom: calc(133px + env(safe-area-inset-bottom, 0px));
+  }
   body.ps-workstation {
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(133px + env(safe-area-inset-bottom, 0px));
   }
   .ps-field-sheet {
     position: fixed;
     left: 8px;
     right: 8px;
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(133px + env(safe-area-inset-bottom, 0px));
     z-index: 45;
     max-height: 40vh;
     overflow: auto;

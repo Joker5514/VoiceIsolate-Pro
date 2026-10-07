@@ -126,6 +126,11 @@
     this.frame   = 0;
     this.running = false;
     this._raf    = null;
+    /* Phones: draw every other frame. At 60 fps this spinner was ~8% of the
+       main thread during Process on a 4x-throttled mobile profile. */
+    this._halfRate = typeof navigator !== 'undefined'
+      && /Android|Mobile/i.test(navigator.userAgent || '');
+    this._skipFrame = false;
 
     /* Cache prefers-reduced-motion once; update via media query listener */
     this._reducedMotion = false;
@@ -193,7 +198,9 @@
       this._draw();
       return;
     }
-    this._draw();
+    this._skipFrame = this._halfRate && !this._skipFrame;
+    if (this._skipFrame) this.frame++;
+    else this._draw();
     var self = this;
     this._raf = requestAnimationFrame(function () { self._loop(); });
   };

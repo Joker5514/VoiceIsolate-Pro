@@ -18,6 +18,8 @@
  *   node scripts/perf/perf-harness.cjs --surface landing --secs 30 --cancel
  *   flags: --sr 44100|48000  --channels 1|2  --cancel  --cycles N  --headed
  *          --no-ml  (blocks MLWorker.js so Engineer measures its DSP fallback path)
+ *          --mobile (Pixel 7 viewport/UA/touch + CPU throttle, default 4x;
+ *                    --cpu-throttle N overrides the rate)
  */
 'use strict';
 
@@ -50,6 +52,8 @@ const PROFILE = has('profile');
 const TRACE = has('trace');
 const MARKER = `vip-perf-${process.pid}-${Date.now()}`;
 const SETTLE = Number(arg('settle', '0'));
+const MOBILE = has('mobile');
+const CPU_THROTTLE = Number(arg('cpu-throttle', MOBILE ? '4' : '1'));
 {
   const bad = [];
   if (!['engineer', 'landing'].includes(SURFACE)) bad.push(`--surface ${SURFACE}`);
@@ -58,6 +62,7 @@ const SETTLE = Number(arg('settle', '0'));
   if (![1, 2].includes(CH)) bad.push(`--channels ${CH}`);
   if (!Number.isInteger(CYCLES) || CYCLES < 1) bad.push(`--cycles ${CYCLES}`);
   if (!Number.isFinite(SETTLE) || SETTLE < 0) bad.push(`--settle ${SETTLE}`);
+  if (!Number.isFinite(CPU_THROTTLE) || CPU_THROTTLE < 1) bad.push(`--cpu-throttle ${CPU_THROTTLE}`);
   if (bad.length) {
     console.error(`invalid arguments: ${bad.join(', ')}`);
     process.exit(2);
@@ -312,7 +317,8 @@ const ENGINEER = {
     await page.setInputFiles('#fileInput', file);
     await page.waitForFunction(() => { const b = document.getElementById('processBtn'); return b && !b.disabled; }, null, { timeout: 120000 });
   },
-  async start(page) { await page.click('#processBtn', { force: true }); },
+  // Phones hide the panel actions row; Process lives in the sticky mobile bar.
+  async start(page) { await page.locator('#processBtn:visible, #mobileProcessBtn:visible').first().click(); },
   state: (page) => page.evaluate(() => ({
     status: document.getElementById('hStatus')?.textContent?.trim() || '',
     busy: Boolean(window._vipApp?.isProcessing),
@@ -390,13 +396,14 @@ async function main() {
   let page = null;
   // Teardown and the report always happen, including after a renderer crash.
   try {
-    const ctx = await browser.newContext();
+    const ctx = await browser.newContext(MOBILE ? { ...require('playwright').devices['Pixel 7'] } : {});
     if (NO_ML) await ctx.route('**/src/workers/MLWorker.js', (r) => r.abort());
     page = await ctx.newPage();
     await page.addInitScript(instrument);
     // Optional ad-hoc probe (diagnostics only): VIP_PERF_PROBE=/path/probe.js
     if (process.env.VIP_PERF_PROBE) await page.addInitScript({ path: process.env.VIP_PERF_PROBE });
     const cdp = await ctx.newCDPSession(page);
+    if (CPU_THROTTLE > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text().slice(0, 300)}`); });
     page.on('crash', () => { crashed = true; });
@@ -510,6 +517,7 @@ async function main() {
   const workerUrls = crashed || !page ? [] : await page.evaluate(() => window.__vipPerf.workerUrls || []).catch(() => []);
   const report = {
     surface: SURFACE, sr: SR, channels: CH, cancel: DO_CANCEL, cycles: CYCLES, headed: HEADED,
+    mobile: MOBILE, cpuThrottle: CPU_THROTTLE,
     commit: (() => { try { return execSync('git rev-parse --short HEAD', { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return null; } })(),
     crashed, fatal: fatal ? String(fatal.stack || fatal) : null, baseline, runs, workerUrls, probe, errors: errors.slice(0, 50),
   };

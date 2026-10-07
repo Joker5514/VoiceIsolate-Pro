@@ -21,8 +21,15 @@ export const YIELD_BUDGET_DESKTOP_MS = 10;
 /** Above this sample count, bulk copies may use budgeted chunking. */
 export const LARGE_CHANNEL_SAMPLES = 48000 * 30; // 30 sec @ 48 kHz
 
-/** Chunk size when budgeted copying is used (~20 s of audio). */
-export const COPY_CHUNK_SAMPLES = 48000 * 20;
+/**
+ * Chunk size when budgeted copying is used (~2 s of audio).
+ *
+ * One chunk is one indivisible copy (out.set / copyToChannel). At 20 s per
+ * chunk a single AudioBuffer slice took 170-380 ms on a 4x CPU-throttled
+ * mobile profile, a visible freeze after Process. Yields are time-budgeted,
+ * so a smaller chunk only bounds the worst task; it adds no waiting.
+ */
+export const COPY_CHUNK_SAMPLES = 48000 * 2;
 
 /**
  * How long a single yield waits for requestAnimationFrame before falling back
