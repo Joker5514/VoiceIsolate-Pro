@@ -238,7 +238,7 @@
   /* Linear amplitude of one source (or 'mix') at time t. */
   function srcAmp(sc, id, t, g) {
     let a2 = 0;
-    const want = (k) => id === 'mix' || id === k;
+    const want = (k) => id === 'mix' || id === k || (Array.isArray(id) && id.includes(k));
     for (const v of sc.voices) {
       if (!want(v.id)) continue;
       let e = 0; for (const s of v.syl) { const x = sylEnv(s, t); if (x > e) e = x; }

@@ -162,7 +162,7 @@ h1 em { font-style: normal; background: linear-gradient(90deg, #fff 0%, #cfe9ee 
       <div class="num"><em class="ok">01</em><b>LISTEN</b><span class="chip ok st">Done</span></div>
       <h3>Reads the signal locally</h3>
       <p class="d">Decoded on this device and resampled to 48 kHz. Nothing is sent anywhere.</p>
-      <div class="viz" style="height:118px"><canvas id="c1w" hidden></canvas><span class="lanelbl" style="top:6px">L</span><span class="lanelbl" style="top:64px">R</span></div>
+      <div class="viz" id="c1v" style="height:118px"><span class="lanelbl" style="top:6px">L</span><span class="lanelbl" style="top:64px">R</span></div>
       <div class="viz" style="height:92px;margin-top:8px"><canvas id="c1f"></canvas><span class="lanelbl r" style="top:6px">FFT • 00:04.5</span></div>
       <div class="facts">
         <div>Format<b>48 kHz • 24-bit • 2 ch</b></div>
@@ -287,10 +287,9 @@ h1 em { font-style: normal; background: linear-gradient(90deg, #fff 0%, #cfe9ee 
 
   // card 1: stereo waveform + FFT
   const c1 = VIP.makeScene({ seed: 4, voices: [{ id: 'a', f0: 116, level: -27, amp: 0.6, segs: [[0, 2.4], [2.9, 6.2], [6.8, 9]] }, { id: 'b', f0: 212, level: -36, amp: 0.24, segs: [[2.4, 2.9]] }], tv: { level: -58, amp: 0.08 }, hvac: -55 });
-  const c1w = document.getElementById('c1w');
-  const r1 = c1w.getBoundingClientRect();
-  const cc = document.createElement('canvas'); cc.style.cssText = 'position:absolute;left:0;top:0;height:50%;width:100%'; c1w.parentNode.appendChild(cc);
-  const cc2 = document.createElement('canvas'); cc2.style.cssText = 'position:absolute;left:0;top:50%;height:50%;width:100%;border-top:1px solid #19242f'; c1w.parentNode.appendChild(cc2);
+  const c1v = document.getElementById('c1v');
+  const cc = document.createElement('canvas'); cc.style.cssText = 'position:absolute;left:0;top:0;height:50%;width:100%'; c1v.appendChild(cc);
+  const cc2 = document.createElement('canvas'); cc2.style.cssText = 'position:absolute;left:0;top:50%;height:50%;width:100%;border-top:1px solid #19242f'; c1v.appendChild(cc2);
   VIP.drawWaveform(cc, c1, { t0: 0, t1: 9, color: 'rgba(132,150,170,0.6)', rmsColor: 'rgba(205,218,230,0.9)', scale: 0.45, seed: 1 });
   VIP.drawWaveform(cc2, c1, { t0: 0, t1: 9, color: 'rgba(132,150,170,0.6)', rmsColor: 'rgba(205,218,230,0.9)', scale: 0.45, seed: 2, gain: 0.92 });
   const spec = VIP.spectrumAt(c1, 4.5, { N: 300, fmin: 30, fmax: 20000 });
@@ -334,7 +333,7 @@ h1 em { font-style: normal; background: linear-gradient(90deg, #fff 0%, #cfe9ee 
     g -= 6 / (1 + Math.pow(9000 / f, 3));
     gpts.push([i / 300, 0.62 + g / 40]);
   }
-  const g4 = VIP.drawCurve(document.getElementById('c4'), [{ pts: gpts.map(([x]) => [x, 0.62]), color: 'rgba(255,255,255,0.12)', dash: [3, 3] }, { pts: gpts, color: '#2ed5e5', width: 1.6 }]);
+  VIP.drawCurve(document.getElementById('c4'), [{ pts: gpts.map(([x]) => [x, 0.62]), color: 'rgba(255,255,255,0.12)', dash: [3, 3] }, { pts: gpts, color: '#2ed5e5', width: 1.6 }]);
 
   // card 5: before / after spectra
   const before = VIP.spectrumAt(sc, 130.5, { N: 260, fmin: 30, fmax: 20000 });

@@ -441,7 +441,7 @@
     }
     nEl.insertAdjacentHTML('beforeend', h + (i < nodes.length - 1 ? `<div class="wire ${i < 7 ? 'act' : ''}"></div>` : ''));
   });
-  document.querySelector('.chain').insertAdjacentHTML('beforeend', '<div class="chainfoot"><span>Total latency <b>35.9 ms</b></span><span>Live-Mix stages <b>4</b></span><span>Process-time stages <b>4</b></span><span>Chain revision <b>r7</b></span><span style="margin-left:auto">Single STFT / iSTFT on the spectral path</span></div>');
+  document.querySelector('.chain').insertAdjacentHTML('beforeend', '<div class="chainfoot"><span>Total latency <b>34.2 ms</b></span><span>Live-Mix stages <b>4</b></span><span>Process-time stages <b>4</b></span><span>Chain revision <b>r7</b></span><span style="margin-left:auto">Single STFT / iSTFT on the spectral path</span></div>');
 
   // knobs
   const knob = (v, label, val, col) => {
@@ -450,7 +450,7 @@
     const arc = (d0, d1, rr) => { const [x0, y0] = pt(d0, rr), [x1, y1] = pt(d1, rr); return `M${x0} ${y0} A${rr} ${rr} 0 ${d1 - d0 > 180 ? 1 : 0} 1 ${x1} ${y1}`; };
     let ticks = ''; for (let k = 0; k <= 10; k++) { const d = a0 + 27 * k; const [x0, y0] = pt(d, 27.5), [x1, y1] = pt(d, 29.5); ticks += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#3a4858" stroke-width="1"/>`; }
     const [px, py] = pt(a, 13);
-    return `<div class="knob"><svg viewBox="0 0 60 60">${ticks}<path d="${arc(a0, a1, r)}" stroke="#1d2833" stroke-width="3" fill="none" stroke-linecap="round"/><path d="${arc(a0, a, r)}" stroke="${col}" stroke-width="3" fill="none" stroke-linecap="round" style="filter:drop-shadow(0 0 3px ${col})"/><circle cx="30" cy="30" r="17" fill="url(#kg)" stroke="#2a3846"/><line x1="30" y1="30" x2="${px}" y2="${py}" stroke="#eef3f8" stroke-width="2" stroke-linecap="round"/><defs><radialGradient id="kg" cx="40%" cy="30%"><stop offset="0" stop-color="#2a3846"/><stop offset="1" stop-color="#121a23"/></radialGradient></defs></svg><div class="kv">${val}</div><div class="kl">${label}</div></div>`;
+    return `<div class="knob"><svg viewBox="0 0 60 60">${ticks}<path d="${arc(a0, a1, r)}" stroke="#1d2833" stroke-width="3" fill="none" stroke-linecap="round"/><path d="${arc(a0, a, r)}" stroke="${col}" stroke-width="3" fill="none" stroke-linecap="round" style="filter:drop-shadow(0 0 3px ${col})"/><circle cx="30" cy="30" r="17" fill="url(#kg-${label})" stroke="#2a3846"/><line x1="30" y1="30" x2="${px}" y2="${py}" stroke="#eef3f8" stroke-width="2" stroke-linecap="round"/><defs><radialGradient id="kg-${label}" cx="40%" cy="30%"><stop offset="0" stop-color="#2a3846"/><stop offset="1" stop-color="#121a23"/></radialGradient></defs></svg><div class="kv">${val}</div><div class="kl">${label}</div></div>`;
   };
   document.getElementById('knobs').innerHTML = knob(0.48, 'Threshold', '−52 dB', '#f0b541') + knob(0.53, 'Reduction', '16 dB', '#2ed5e5') + knob(0.24, 'Attack', '12 ms', '#2ed5e5') + knob(0.41, 'Release', '180 ms', '#2ed5e5');
 
