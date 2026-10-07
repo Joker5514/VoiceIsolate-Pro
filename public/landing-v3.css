@@ -614,7 +614,7 @@ body.v3 {
 body.v3 .v3-nav { gap: 0; padding: 2px; border: 1px solid var(--v3-line); border-radius: 8px; background: rgba(7, 11, 16, .6); }
 body.v3 .v3-nav a { height: 30px; border-radius: 6px; }
 body.v3 .v3-nav a:hover, body.v3 .v3-nav a[aria-current] { background: #161f29; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); }
-body.v3 .v3-nav a[aria-current] span { color: var(--v3-crimson-hi); }
+body.v3 .v3-nav a[aria-current] span { color: #ff8a94; }
 body.v3 .v3-link--solid, body.v3 .v3-link--solid:hover { background: var(--v3-crimson); color: #fff; }
 body.v3 .v3-link--solid:hover { background: #c41c2c; }
 
