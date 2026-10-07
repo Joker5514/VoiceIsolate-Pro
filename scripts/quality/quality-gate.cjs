@@ -22,25 +22,17 @@
 const fs = require('fs');
 const path = require('path');
 const { createMlWorker } = require('./lib/mlworker-node.cjs');
-const { engineerConfig } = require('./lib/engineer-config.cjs');
+const { profiles: loadProfiles, GATE_SCENARIOS } = require('./lib/profiles.cjs');
 const M = require('./lib/metrics.cjs');
 const { scenarios } = require('./scenarios.cjs');
 
 const BASELINE = path.join(__dirname, 'quality-baseline.json');
 const SECS = 4;
 const DEFAULT_TOLERANCE_DB = 0.5;
-const GATE_SCENARIOS = [
-  'clean-speech', 'white-5db', 'hvac-5db', 'hum-10db', 'music-0db',
-  'whisper-clean', 'whisper-white-10db', 'silence', 'noise-only',
-];
 
 async function measureAll() {
   const worker = await createMlWorker();
-  const profiles = [
-    { id: 'landing', modelIds: ['bsrnn_vocals'], processingConfig: null },
-    { id: 'engineer', modelIds: ['bsrnn_vocals'], processingConfig: await engineerConfig() },
-    { id: 'maximum', modelIds: ['bsrnn_vocals', 'rnnoise'], processingConfig: null },
-  ];
+  const profiles = await loadProfiles();
   const metrics = {};
   const failures = [];
   for (const sc of scenarios(SECS).filter((s) => GATE_SCENARIOS.includes(s.id))) {
@@ -54,7 +46,9 @@ async function measureAll() {
       for (const [name, stem] of [['clean', clean], ['noise', out.noise[0]]]) {
         if (stem.length !== fx.input.length) failures.push(`${key}: ${name} length ${stem.length} != ${fx.input.length}`);
       }
-      if (M.peak(clean) > 1) failures.push(`${key}: output peak ${M.peak(clean).toFixed(3)} > 1`);
+      for (const [name, stem] of [['clean', clean], ['noise', out.noise[0]]]) {
+        if (M.peak(stem) > 1) failures.push(`${key}: ${name} peak ${M.peak(stem).toFixed(3)} > 1`);
+      }
       if (sc.id === 'silence') {
         if (M.peak(clean) > 1e-6) failures.push(`${key}: silence produced peak ${M.peak(clean)}`);
         continue;

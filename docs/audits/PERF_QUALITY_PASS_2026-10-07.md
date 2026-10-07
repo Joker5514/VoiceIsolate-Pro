@@ -139,7 +139,9 @@ Calibration set (tuned on, not held out): 3 LibriSpeech utterances × {clean, wh
 | noise-only | engineer | noise reduction dB | 7.6 | 7.3 | **-0.4** |
 | noise-only | maximum | noise reduction dB | 26.9 | 17.7 | **-9.2** |
 
-Verdict: 42 of 45 separation rows improve. Regressions in bold are the stated tradeoff (less suppression where there is no speech) plus whisper-under-music on the default chain (-0.3 to -0.5 dB, synthetic only; recorded music 5 dB improved). Clean-speech high band (4-12 kHz) after: -4.7 dB default, -7.8 dB Engineer defaults, -32.8 dB Maximum.
+Note: after this table was taken the reverb fixture was rescaled to the dry speech level (its input had peaked near 2.9, about 4x the other fixtures), so re-running `quality:matrix` gives different reverb rows; the other rows are unaffected.
+
+Verdict: of the 42 rows with a before/after metric (silence excluded), 36 improve and 6 regress (bold): the 3 noise-only rows are the stated tradeoff (less suppression where there is no speech), plus whisper-under-music on the default chain (-0.3 to -0.5 dB, synthetic only; recorded music 5 dB improved) and overlapping speakers on Maximum (-0.1 dB). Clean-speech high band (4-12 kHz) after: -4.7 dB default, -7.8 dB Engineer defaults, -32.8 dB Maximum.
 
 ---
 

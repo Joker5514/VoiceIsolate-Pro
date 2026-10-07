@@ -78,7 +78,7 @@ describe('DSPCore.dereverb recurrence', () => {
     ['desktop hop, default decay', 0.324, 512, 60],
     ['long decay', 0.8, 512, 100],
     ['one-frame window', 0.001, 1024, 35],
-    ['two-frame window', 0.03, 1024, 100],
+    ['two-frame window', 0.05, 1024, 100],
   ])('matches the direct sum (%s)', (_label, decaySec, hop, amount) => {
     const mag = spectrogram(400, 257, 7);
     const ref = dereverbReference(clone(mag), amount, decaySec, 48000, hop);
@@ -103,7 +103,8 @@ describe('DSPCore.dereverb recurrence', () => {
     const t1 = process.hrtime.bigint();
     core.dereverb(clone(mag), 60, 0.8, 48000, 512);
     const long = Number(process.hrtime.bigint() - t1);
-    // 0.12 s → 11 frames, 0.8 s → 75 frames: the direct sum was ~7x slower.
-    expect(long / short).toBeLessThan(3);
+    // 0.12 s → 11 frames, 0.8 s → 75 frames: the direct sum was ~7x slower;
+    // the recurrence is ~1x. Loose bound so a loaded runner cannot flake it.
+    expect(long / short).toBeLessThan(5);
   });
 });

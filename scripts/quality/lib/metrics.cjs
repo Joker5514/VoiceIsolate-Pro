@@ -77,7 +77,11 @@ function fft(re, im) {
   }
 }
 
-/** Mean per-frame energy (dB) in [lo, hi] Hz, Hann frames, no overlap. */
+/**
+ * Mean per-frame energy (dB) in [lo, hi] Hz, Hann frames, no overlap.
+ * With `mask`, a frame counts when its centre sample is active, and masked-out
+ * samples inside it are zeroed so energy outside the mask cannot leak in.
+ */
 function bandEnergyDb(x, lo, hi, sr = 48000, frame = 2048, mask = null) {
   const k0 = Math.ceil(lo * frame / sr);
   const k1 = Math.min(frame / 2, Math.floor(hi * frame / sr));
@@ -86,7 +90,8 @@ function bandEnergyDb(x, lo, hi, sr = 48000, frame = 2048, mask = null) {
   for (let s = 0; s + frame <= x.length; s += frame) {
     if (mask && !mask[s + (frame >> 1)]) continue;
     for (let i = 0; i < frame; i++) {
-      re[i] = x[s + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / frame));
+      const v = mask && !mask[s + i] ? 0 : x[s + i];
+      re[i] = v * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / frame));
       im[i] = 0;
     }
     fft(re, im);
@@ -96,4 +101,4 @@ function bandEnergyDb(x, lo, hi, sr = 48000, frame = 2048, mask = null) {
   return db(total / Math.max(1, frames));
 }
 
-module.exports = { siSdr, rmsDb, peak, nonFinite, dcOffset, bandEnergyDb, db };
+module.exports = { fft, siSdr, rmsDb, peak, nonFinite, dcOffset, bandEnergyDb, db };

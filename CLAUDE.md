@@ -112,7 +112,9 @@ whole stem uses the cooperative helpers (`copyChannelsToAudioBuffer`,
 `EngineerModeBridge.loadStemPairAsync`, `ProcessingController.setProcessedAsync`),
 or moves the pass into a worker. The Engineer DSP fallback (taken when ML fails) runs its whole-file
 conditioning and EQ/dynamics passes in `/app/dsp-worker.js`
-(`app._dspWorkerChannels`), its async STFT yields through the caller's time
+(`app._dspWorkerChannels`; if that worker cannot be created or does not answer
+its init handshake, the same passes run synchronously on the main thread, so
+that path can still block on long files), its async STFT yields through the caller's time
 budget (`maybeYield`), and `DSPCore.dereverb` uses an O(1)-per-frame tail
 recurrence; together these took 5 min of stereo from 307 s with a 31 s
 frozen task to 34 s with a 1.7 s worst task. Re-measure with
@@ -348,7 +350,7 @@ including held-out audio (`docs/guides/AUDIO_QUALITY.md`). Do not "restore"
 raw-magnitude input or `mask^1` without new measurements. `pnpm test:quality`
 (`prod:verify` step `audio-quality`) runs the real `MLWorker.js` with the
 shipped models over deterministic fixtures and fails on any pinned metric
-dropping more than 0.5 dB; re-pin only with `quality-gate.cjs --update` and a
+dropping more than 0.5 dB; re-pin only with `node scripts/quality/quality-gate.cjs --update` and a
 reviewed baseline diff. Both shipped networks are single-frame and weak: the
 default chain still lowers SI-SDR on some noisy inputs. Do not describe them
 as more capable than the gate shows.

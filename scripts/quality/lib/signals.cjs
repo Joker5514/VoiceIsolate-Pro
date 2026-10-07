@@ -69,15 +69,21 @@ function syllablePlan(seconds, seed) {
   return plan;
 }
 
-function envelopeAt(plan, i) {
-  const t = i / SR;
-  for (const s of plan) {
-    if (t >= s.start && t < s.start + s.dur) {
-      const x = (t - s.start) / s.dur;
-      return { syl: s, env: Math.sin(Math.PI * x) ** 0.6 * s.level, x };
-    }
-  }
-  return null;
+/**
+ * Envelope lookup with a forward-only cursor: synthesis walks samples in
+ * order, so each call advances at most past finished syllables (linear in
+ * duration instead of rescanning the plan per sample).
+ */
+function envelopeCursor(plan) {
+  let idx = 0;
+  return (i) => {
+    const t = i / SR;
+    while (idx < plan.length && t >= plan[idx].start + plan[idx].dur) idx++;
+    const s = plan[idx];
+    if (!s || t < s.start) return null;
+    const x = (t - s.start) / s.dur;
+    return { syl: s, env: Math.sin(Math.PI * x) ** 0.6 * s.level, x };
+  };
 }
 
 /**
@@ -98,8 +104,9 @@ function talker({ seconds, seed = 1, f0 = 125, whisper = false, formantScale = 1
   let phase = 0;
   let curVowel = -1;
   let coefs = null;
+  const envelopeAt = envelopeCursor(plan);
   for (let i = 0; i < n; i++) {
-    const e = envelopeAt(plan, i);
+    const e = envelopeAt(i);
     let src = 0;
     let fr = 0;
     if (e) {
@@ -223,18 +230,34 @@ function roomIr(rt60, seed) {
   return ir;
 }
 
-/** Direct convolution restricted to the IR support (fixtures are short). */
+/**
+ * Linear convolution truncated to x.length, by FFT overlap-add (block 8192).
+ * Direct summation over a 0.6 s IR made the reverb fixture cost minutes at
+ * long --secs.
+ */
 function convolve(x, h) {
+  const { fft } = require('./metrics.cjs');
+  const B = 8192;
+  let n = 1;
+  while (n < B + h.length - 1) n <<= 1;
+  const hr = new Float64Array(n); const hi = new Float64Array(n);
+  hr.set(h);
+  fft(hr, hi);
   const y = new Float32Array(x.length);
-  const taps = [];
-  for (let j = 0; j < h.length; j++) if (Math.abs(h[j]) > 1e-5) taps.push(j);
-  for (let i = 0; i < x.length; i++) {
-    const xi = x[i];
-    if (xi === 0) continue;
-    for (const j of taps) {
-      if (i + j >= y.length) break;
-      y[i + j] += xi * h[j];
+  const re = new Float64Array(n); const im = new Float64Array(n);
+  for (let s0 = 0; s0 < x.length; s0 += B) {
+    re.fill(0); im.fill(0);
+    const len = Math.min(B, x.length - s0);
+    for (let i = 0; i < len; i++) re[i] = x[s0 + i];
+    fft(re, im);
+    for (let k = 0; k < n; k++) {
+      const a = re[k] * hr[k] - im[k] * hi[k];
+      const b = re[k] * hi[k] + im[k] * hr[k];
+      // conj trick for the inverse: ifft(X) = conj(fft(conj(X))) / n
+      re[k] = a; im[k] = -b;
     }
+    fft(re, im);
+    for (let i = 0; i < n && s0 + i < y.length; i++) y[s0 + i] += re[i] / n;
   }
   return y;
 }

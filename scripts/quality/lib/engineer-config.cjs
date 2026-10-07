@@ -16,13 +16,19 @@ let cached = null;
 async function loadModules() {
   if (cached) return cached;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-quality-'));
-  const cal = fs.readFileSync(path.join(ROOT, 'public/app/slider-calibration.js'), 'utf8');
-  const map = fs.readFileSync(path.join(ROOT, 'public/app/slider-map.js'), 'utf8')
-    .replace("from './slider-calibration.js'", "from './slider-calibration.mjs'");
-  fs.writeFileSync(path.join(dir, 'slider-calibration.mjs'), cal);
-  fs.writeFileSync(path.join(dir, 'slider-map.mjs'), map);
-  const sliderMap = await import(pathToFileURL(path.join(dir, 'slider-map.mjs')).href);
-  const calibration = await import(pathToFileURL(path.join(dir, 'slider-calibration.mjs')).href);
+  let sliderMap;
+  let calibration;
+  try {
+    const cal = fs.readFileSync(path.join(ROOT, 'public/app/slider-calibration.js'), 'utf8');
+    const map = fs.readFileSync(path.join(ROOT, 'public/app/slider-map.js'), 'utf8')
+      .replace("from './slider-calibration.js'", "from './slider-calibration.mjs'");
+    fs.writeFileSync(path.join(dir, 'slider-calibration.mjs'), cal);
+    fs.writeFileSync(path.join(dir, 'slider-map.mjs'), map);
+    sliderMap = await import(pathToFileURL(path.join(dir, 'slider-map.mjs')).href);
+    calibration = await import(pathToFileURL(path.join(dir, 'slider-calibration.mjs')).href);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
   const schema = await import(pathToFileURL(path.join(ROOT, 'src/core/ParameterSchema.js')).href);
   cached = { sliderMap, calibration, schema };
   return cached;

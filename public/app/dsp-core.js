@@ -160,6 +160,23 @@ function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
  * - LUFS measurement, true-peak limiting, dither
  * - Lightweight spectral noise classifier
  */
+/**
+ * One macrotask checkpoint for the async STFT fallback yield. On a page,
+ * MessageChannel is not clamped in hidden tabs the way setTimeout(0) is
+ * (~1 s), so a backgrounded fallback keeps running. Elsewhere (workers, Node)
+ * a plain timer is used: a live port would keep Node's event loop alive.
+ */
+function macrotaskYield() {
+  if (typeof document !== 'undefined' && typeof MessageChannel === 'function') {
+    return new Promise((resolve) => {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = () => { ch.port1.close(); resolve(); };
+      ch.port2.postMessage(0);
+    });
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 const DSPCore = {
 
   // ===== CONSTANTS =====
@@ -272,7 +289,7 @@ const DSPCore = {
     // yieldEvery frames. Never await rAF here: it is 0 Hz in a hidden tab, so
     // the fallback stalled whenever the user switched away.
     const maybeYield = typeof opts.maybeYield === 'function' ? opts.maybeYield : null;
-    const yieldUI = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const yieldUI = macrotaskYield;
 
     for (let f = 0; f < frameCount; f++) {
       if (shouldAbort && shouldAbort()) {
@@ -330,7 +347,7 @@ const DSPCore = {
     // yieldEvery frames. Never await rAF here: it is 0 Hz in a hidden tab, so
     // the fallback stalled whenever the user switched away.
     const maybeYield = typeof opts.maybeYield === 'function' ? opts.maybeYield : null;
-    const yieldUI = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const yieldUI = macrotaskYield;
 
     for (let f = 0; f < frameCount; f++) {
       const offset = f * hopSize;

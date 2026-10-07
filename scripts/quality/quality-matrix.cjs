@@ -12,7 +12,7 @@
  */
 const fs = require('fs');
 const { createMlWorker } = require('./lib/mlworker-node.cjs');
-const { engineerConfig } = require('./lib/engineer-config.cjs');
+const { profiles: loadProfiles } = require('./lib/profiles.cjs');
 const M = require('./lib/metrics.cjs');
 const { scenarios } = require('./scenarios.cjs');
 
@@ -55,15 +55,15 @@ function measure(fx, out) {
 
 async function main() {
   const secs = Number(arg('secs', 6));
+  if (!Number.isFinite(secs) || secs <= 0) throw new Error(`--secs must be a positive number (got ${arg('secs', 6)})`);
   const only = arg('only', '');
+  const all = scenarios(secs);
+  const wanted = only ? only.split(',').filter(Boolean) : [];
+  const unknown = wanted.filter((id) => !all.some((s) => s.id === id));
+  if (unknown.length) throw new Error(`unknown --only scenario(s): ${unknown.join(', ')}`);
   const worker = await createMlWorker();
-  const eng = await engineerConfig();
-  const profiles = [
-    { id: 'landing', modelIds: ['bsrnn_vocals'], processingConfig: null },
-    { id: 'engineer', modelIds: ['bsrnn_vocals'], processingConfig: eng },
-    { id: 'maximum', modelIds: ['bsrnn_vocals', 'rnnoise'], processingConfig: null },
-  ];
-  const list = scenarios(secs).filter((s) => !only || only.split(',').includes(s.id));
+  const profiles = await loadProfiles();
+  const list = all.filter((s) => !wanted.length || wanted.includes(s.id));
   const rows = [];
   for (const sc of list) {
     const fx = sc.build();

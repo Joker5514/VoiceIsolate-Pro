@@ -59,7 +59,7 @@ const STEPS = [
   ['lint', 'static', 'lint', pnpm('lint')],
   ['test', 'static', 'unit / contract / integration tests', pnpm('test')],
   ['dsp-isolation', 'static', 'DSP', node('scripts/check-dsp-isolation.js')],
-  ['audio-quality', 'static', 'audio quality', node('scripts/quality/quality-gate.cjs')],
+  ['audio-quality', 'static', 'audio quality', pnpm('test:quality')],
   ['privacy-static', 'static', 'privacy', node('scripts/check-privacy-invariants.js')],
   ['no-cloud-audio', 'static', 'privacy', node('scripts/check-no-cloud-audio.js')],
   ['models', 'static', 'model integrity', node('scripts/validate-model-integrity.mjs')],

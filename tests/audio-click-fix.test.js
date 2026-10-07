@@ -113,7 +113,10 @@ describe('Pipeline wiring (source guards)', () => {
     const app = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
     const core = fs.readFileSync(path.join(__dirname, '../public/app/dsp-core.js'), 'utf8');
     expect(app).toContain("op === 'condition' ? 'conditionFallbackChannel'");
-    const chain = core.slice(core.indexOf('conditionFallbackChannel(data, p, sr)'));
+    expect(app).toMatch(/channels = await this\._dspWorkerChannels\('condition', channels, p, sr, DSP\)/);
+    const start = core.indexOf('  conditionFallbackChannel(data, p, sr) {');
+    expect(start).toBeGreaterThan(-1);
+    const chain = core.slice(start, core.indexOf('\n  },\n', start));
     expect(chain).toMatch(/this\.removeClicks\(data, p\.clickSensitivity/);
   });
 

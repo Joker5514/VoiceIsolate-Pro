@@ -282,6 +282,7 @@ describe('dsp-worker: condition', () => {
     const [reply] = await dispatch(s, messages, 'eqDynamics', {
       channels: [new Float32Array(input).buffer], sampleRate: 48000, params: p,
     });
+    expect(reply.msg.type).toBe('result');
     expect(Array.from(new Float32Array(reply.msg.result.channels[0]))).toEqual(Array.from(expected));
   });
 
@@ -291,6 +292,7 @@ describe('dsp-worker: condition', () => {
       channels: [fixture(4800).buffer, fixture(4800).buffer], sampleRate: 48000, params,
     });
     expect(reply.msg.result.channels).toHaveLength(2);
-    expect(reply.transfers).toEqual(reply.msg.result.channels);
+    expect(reply.transfers).toHaveLength(2);
+    reply.msg.result.channels.forEach((buf, i) => expect(reply.transfers[i]).toBe(buf));
   });
 });

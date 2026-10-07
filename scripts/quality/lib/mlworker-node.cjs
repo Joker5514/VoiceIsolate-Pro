@@ -12,24 +12,23 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { webcrypto } = require('crypto');
+const { pathToFileURL } = require('url');
 
 const ROOT = path.resolve(__dirname, '../../..');
 
 async function loadManifest() {
-  const mod = await import(path.join(ROOT, 'src/core/ModelManifest.js'));
+  const mod = await import(pathToFileURL(path.join(ROOT, 'src/core/ModelManifest.js')).href);
   const m = mod.MODEL_MANIFEST || mod.default || mod;
   return Object.values(m).filter((e) => e && typeof e === 'object' && e.id);
 }
 
 function createSandbox(ort) {
-  const messages = [];
   const listeners = new Set();
   const self = {
     navigator: { hardwareConcurrency: 1, userAgent: 'node-quality-harness X11' },
     crossOriginIsolated: false, // forces ort numThreads = 1 → deterministic
     crypto: webcrypto,
     postMessage(msg) {
-      messages.push(msg);
       for (const fn of listeners) fn(msg);
     },
   };
@@ -82,7 +81,7 @@ function createSandbox(ort) {
       }
     },
   };
-  return { sandbox, self, messages, listeners };
+  return { sandbox, self, listeners };
 }
 
 /**

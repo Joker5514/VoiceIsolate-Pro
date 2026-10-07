@@ -48,6 +48,9 @@ function scenarios(seconds = 6) {
   add('reverb-0.5s', 'Room reverb RT60 0.5 s (target = dry)', () => {
     const v = voice();
     const wet = S.convolve(v.signal, S.roomIr(0.5, 104));
+    // The IR keeps the direct path and stacks the tail on it; bring the wet
+    // mix back to the dry speech level so input level matches other fixtures.
+    S.normalizeRms(wet, S.rms(v.signal, v.active) > 0 ? 20 * Math.log10(S.rms(v.signal, v.active)) : -20, v.active);
     return { input: wet, ref: v.signal, active: v.active, fricative: v.fricative };
   });
   add('whisper-clean', 'Whisper only (no noise)', () => {

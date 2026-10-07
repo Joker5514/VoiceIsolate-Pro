@@ -23,10 +23,8 @@ test('fallback conditioning is delegated, not run inline per channel', () => {
 
 test('worker path handshakes before transferring the only copy of the audio', () => {
   expect(helper).toContain("new Worker('/app/dsp-worker.js')");
-  const init = helper.indexOf("call('init'");
-  const transfer = helper.indexOf('call(op,');
-  expect(init).toBeGreaterThan(-1);
-  expect(transfer).toBeGreaterThan(init);
+  // Both calls awaited, init first: a dropped await would let the transfer race the handshake.
+  expect(helper).toMatch(/await call\('init'[\s\S]*?await call\(op,/);
   expect(helper).toMatch(/worker\.terminate\(\)/);
   expect(helper).toMatch(/throwIfAborted/);
 });
