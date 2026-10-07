@@ -10,24 +10,30 @@ const path = require('path');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 
-function body(src, start) {
+function body(src, start, file) {
   const i = src.indexOf(start);
-  expect(i).toBeGreaterThanOrEqual(0);
+  if (i < 0) throw new Error(`${file}: anchor "${start}" not found`);
   return src.slice(i, src.indexOf('\n  }\n', i));
 }
 
+function pick(text, re, group, label) {
+  const m = text.match(re);
+  expect({ [label]: m ? m[group] : null }).not.toEqual({ [label]: null });
+  return m[group];
+}
+
 describe('mobile predicate parity', () => {
-  const engineer = body(read('public/app/app.js'), '_isMobileEngineer() {');
-  const spinner = body(read('public/app/processing-overlay.js'), 'function isMobileDevice() {');
+  const engineer = body(read('public/app/app.js'), '_isMobileEngineer() {', 'app.js');
+  const spinner = body(read('public/app/processing-overlay.js'), 'function isMobileDevice() {', 'processing-overlay.js');
 
   test('same user-agent pattern', () => {
     const ua = /\/Android\|[^/]+\/i/;
-    expect(spinner.match(ua)[0]).toBe(engineer.match(ua)[0]);
+    expect(pick(spinner, ua, 0, 'spinner UA pattern')).toBe(pick(engineer, ua, 0, 'engineer UA pattern'));
   });
 
   test('same deviceMemory threshold', () => {
     const mem = /deviceMemory > 0 && navigator\.deviceMemory <= (\d+)/;
-    expect(spinner.match(mem)[1]).toBe(engineer.match(mem)[1]);
+    expect(pick(spinner, mem, 1, 'spinner deviceMemory')).toBe(pick(engineer, mem, 1, 'engineer deviceMemory'));
   });
 
   test('both honour a Capacitor native platform', () => {
