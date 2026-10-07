@@ -86,7 +86,7 @@ function createSandbox(ort) {
 }
 
 /**
- * @returns {Promise<{ separate: Function, close: Function, backend: string }>}
+ * @returns {Promise<{ separate: Function, backend: string, manifest: object[] }>}
  */
 async function createMlWorker({ patchSource } = {}) {
   const ort = require(path.join(ROOT, 'node_modules/onnxruntime-web'));

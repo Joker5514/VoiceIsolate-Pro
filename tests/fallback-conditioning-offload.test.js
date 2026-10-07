@@ -35,3 +35,9 @@ test('dsp-worker is precached for offline use', () => {
   const sw = fs.readFileSync(path.join(__dirname, '../public/app/sw.js'), 'utf8');
   expect(sw).toContain("'/app/dsp-worker.js'");
 });
+
+test('a worker error after the transfer fails Process with the stage named', () => {
+  const after = helper.slice(helper.indexOf('call(op,'));
+  expect(after).toMatch(/DSP fallback failed during \$\{op === 'condition' \? 'input conditioning' : 'EQ and dynamics'\}/);
+  expect(after).not.toMatch(/return inThread\(\)/);
+});

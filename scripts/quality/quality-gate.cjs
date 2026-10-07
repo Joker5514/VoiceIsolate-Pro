@@ -8,8 +8,9 @@
  * checks:
  *   1. hard invariants: finite output, length preserved, silence in → silence
  *      out, no output above full scale;
- *   2. regressions: every pinned metric in quality-baseline.json must not drop
- *      by more than TOLERANCE_DB.
+ *   2. regressions: every pinned metric in quality-baseline.json (SI-SDR,
+ *      speech level, noise reduction) must not drop by more than its
+ *      toleranceDb.
  *
  *   node scripts/quality/quality-gate.cjs            # check
  *   node scripts/quality/quality-gate.cjs --update   # re-pin after an intended change
@@ -27,7 +28,7 @@ const { scenarios } = require('./scenarios.cjs');
 
 const BASELINE = path.join(__dirname, 'quality-baseline.json');
 const SECS = 4;
-const TOLERANCE_DB = 0.5;
+const DEFAULT_TOLERANCE_DB = 0.5;
 const GATE_SCENARIOS = [
   'clean-speech', 'white-5db', 'hvac-5db', 'hum-10db', 'music-0db',
   'whisper-clean', 'whisper-white-10db', 'silence', 'noise-only',
@@ -50,7 +51,9 @@ async function measureAll() {
       const key = `${sc.id}/${p.id}`;
       const bad = M.nonFinite(clean) + M.nonFinite(out.noise[0]);
       if (bad) failures.push(`${key}: ${bad} non-finite samples`);
-      if (clean.length !== fx.input.length) failures.push(`${key}: length ${clean.length} != ${fx.input.length}`);
+      for (const [name, stem] of [['clean', clean], ['noise', out.noise[0]]]) {
+        if (stem.length !== fx.input.length) failures.push(`${key}: ${name} length ${stem.length} != ${fx.input.length}`);
+      }
       if (M.peak(clean) > 1) failures.push(`${key}: output peak ${M.peak(clean).toFixed(3)} > 1`);
       if (sc.id === 'silence') {
         if (M.peak(clean) > 1e-6) failures.push(`${key}: silence produced peak ${M.peak(clean)}`);
@@ -61,6 +64,9 @@ async function measureAll() {
         metrics[`${key}/si-sdr${sc.kind === 'preservation' ? '' : '-delta'}`] = sc.kind === 'preservation'
           ? M.siSdr(clean, fx.ref)
           : M.siSdr(clean, fx.ref) - M.siSdr(fx.input, fx.ref);
+        // SI-SDR ignores gain and noise-reduction rewards attenuation, so pin
+        // the speech level too: a quieter clean stem must fail.
+        metrics[`${key}/speech-level`] = M.rmsDb(clean, fx.active) - M.rmsDb(fx.ref, fx.active);
       } else {
         metrics[`${key}/noise-reduction`] = M.rmsDb(fx.input) - M.rmsDb(clean);
       }
@@ -73,19 +79,20 @@ async function main() {
   const update = process.argv.includes('--update');
   const { metrics, failures } = await measureAll();
   const rounded = Object.fromEntries(Object.entries(metrics).map(([k, v]) => [k, Math.round(v * 100) / 100]));
+  const base = update ? null : JSON.parse(fs.readFileSync(BASELINE, 'utf8'));
+  const tolerance = Number(base?.toleranceDb) > 0 ? Number(base.toleranceDb) : DEFAULT_TOLERANCE_DB;
   if (update) {
     fs.writeFileSync(BASELINE, `${JSON.stringify({
       note: 'dB; pinned by scripts/quality/quality-gate.cjs --update. Lower is a regression beyond the tolerance.',
-      toleranceDb: TOLERANCE_DB,
+      toleranceDb: DEFAULT_TOLERANCE_DB,
       metrics: rounded,
     }, null, 2)}\n`);
     console.log(`[quality] baseline written: ${Object.keys(rounded).length} metrics`);
   } else {
-    const base = JSON.parse(fs.readFileSync(BASELINE, 'utf8'));
     for (const [k, pinned] of Object.entries(base.metrics)) {
       const now = rounded[k];
       if (now == null) failures.push(`${k}: not measured`);
-      else if (now < pinned - TOLERANCE_DB) failures.push(`${k}: ${now} dB < pinned ${pinned} dB - ${TOLERANCE_DB}`);
+      else if (now < pinned - tolerance) failures.push(`${k}: ${now} dB < pinned ${pinned} dB - ${tolerance}`);
     }
   }
   for (const [k, v] of Object.entries(rounded)) console.log(`  ${k.padEnd(42)} ${v.toFixed(2)} dB`);

@@ -5584,7 +5584,15 @@ class VoiceIsolatePro {
         seen.add(own.buffer);
         return own.buffer;
       });
-      const result = await call(op, { channels: buffers, sampleRate: sr, params }, buffers);
+      let result;
+      try {
+        result = await call(op, { channels: buffers, sampleRate: sr, params }, buffers);
+      } catch (err) {
+        if (err?.name === 'AbortError') throw err;
+        // The channel buffers now belong to the dead worker, so there is
+        // nothing to retry in place: fail this Process visibly and by stage.
+        throw new Error(`DSP fallback failed during ${op === 'condition' ? 'input conditioning' : 'EQ and dynamics'}: ${err?.message || err}. The audio was not processed; try Process again.`);
+      }
       return result.channels.map((b) => new Float32Array(b));
     } finally {
       clearInterval(poll);
