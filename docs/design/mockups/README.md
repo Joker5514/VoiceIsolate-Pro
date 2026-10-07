@@ -17,8 +17,9 @@ PNGs are 3840x2400 (1920x1200 at 2x).
 
 ## How they are built
 
-- `shell.css`: the shared shell (top bar, transport, panels, chips). It uses the
-  Precision Studio tokens from `public/app/ds-tokens.css`.
+- `shell.css`: the shared shell (top bar, transport, panels, chips). Its color
+  values mirror the Precision Studio tokens in `public/app/ds-tokens.css`; it
+  does not import that file, so keep them in step by hand.
 - `viz.js`: a deterministic signal model (seeded PRNG). One scene drives every view on a page:
   - voices with continuous pitch contours and formants
   - whispers
