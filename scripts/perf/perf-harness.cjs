@@ -529,6 +529,9 @@ async function main() {
   for (const r of runs) {
     if (r.hung) failures.push(`${r.secs}s cycle ${r.cycle}: did not finish (${r.final?.status})`);
     else if (!r.success) failures.push(`${r.secs}s cycle ${r.cycle}: ended ${r.final?.status}`);
+    if (NO_ML && SURFACE === 'engineer' && r.engine !== 'dsp-fallback') {
+      failures.push(`${r.secs}s cycle ${r.cycle}: --no-ml ran engine '${r.engine}', not the DSP fallback`);
+    }
     if (DO_CANCEL && !r.cancelSettled) failures.push(`${r.secs}s cycle ${r.cycle}: cancel never settled`);
   }
   // Growth = the later half of the runs needs more live resources than the

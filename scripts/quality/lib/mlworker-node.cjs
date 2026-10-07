@@ -103,9 +103,11 @@ async function createMlWorker({ patchSource } = {}) {
     listeners.add(fn);
   });
 
-  const ready = waitFor((m) => m.type === 'ready');
+  const ready = waitFor((m) => m.type === 'ready' || m.type === 'error');
   await self.onmessage({ data: { type: 'init', manifest } });
-  const { backend } = await ready;
+  const first = await ready;
+  if (first.type === 'error') throw new Error(`[quality] MLWorker init failed: ${first.message}`);
+  const { backend } = first;
 
   let seq = 0;
   /**

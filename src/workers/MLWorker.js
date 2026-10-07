@@ -850,6 +850,9 @@ async function runSpectralMask(entry, session, samples, onProgress, processingCo
   );
 }
 
+/** Spectral heads already warned about missing calibration (once per id). */
+const _uncalibratedWarned = new Set();
+
 async function runFusedSpectralMaskChain(
   heads,
   samples,
@@ -879,6 +882,14 @@ async function runFusedSpectralMaskChain(
 
   // Training-contract input scaling and per-model mask calibration
   // (ModelManifest inputNormalization / maskExponent).
+  for (const h of heads) {
+    const id = h.entry.id;
+    if (_uncalibratedWarned.has(id)) continue;
+    if (h.entry.inputNormalization !== 'frame-max' || !(Number(h.entry.maskExponent) > 0)) {
+      _uncalibratedWarned.add(id);
+      console.warn(`[VIP][MLWorker] '${id}' has no inputNormalization/maskExponent calibration; running raw magnitudes and mask^1.`);
+    }
+  }
   const normalizeInput = heads.some((h) => h.entry.inputNormalization === 'frame-max');
   const maskExponents = heads.map((h) => {
     const p = Number(h.entry.maskExponent);

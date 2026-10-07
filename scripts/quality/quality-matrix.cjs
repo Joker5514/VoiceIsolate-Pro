@@ -63,6 +63,8 @@ async function main() {
   if (unknown.length) throw new Error(`unknown --only scenario(s): ${unknown.join(', ')}`);
   const worker = await createMlWorker();
   const profiles = await loadProfiles();
+  // Compile every chain before timing so RTF is warm processing, not first-call compile.
+  for (const p of profiles) await worker.separate([new Float32Array(48000)], p);
   const list = all.filter((s) => !wanted.length || wanted.includes(s.id));
   const rows = [];
   for (const sc of list) {

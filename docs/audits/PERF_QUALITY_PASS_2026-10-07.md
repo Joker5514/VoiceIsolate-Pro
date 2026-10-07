@@ -288,7 +288,7 @@ Prior findings re-checked: PERF-001 CONFIRMED and FIXED (it was larger than repo
 | `scripts/quality/*` | harness, fixtures, metrics, gate, baseline | none at runtime | gate itself |
 | `scripts/prod-verify.mjs`, `package.json` | `audio-quality` step, scripts | +47 s CI | prod:verify |
 | `scripts/perf/perf-harness.cjs` | `--no-ml`, engine + stage timings | none at runtime | manual |
-| tests (3 updated, 2 new) | see M | | |
+| tests (2 updated, 3 new: `dsp-dereverb-recurrence`, `fallback-conditioning-offload`, cases in `dsp-worker`) | see M | | |
 | `CLAUDE.md`, `docs/guides/AUDIO_QUALITY.md` | contracts | | |
 
 ---

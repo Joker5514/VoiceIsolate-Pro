@@ -35,7 +35,8 @@ speech-like signals: a band-limited glottal source (or noise, for whisper)
 through three formant resonators, syllable envelopes with pauses, and
 4-8 kHz fricative onsets. Noise beds: white, fan/HVAC, 60 Hz hum with
 harmonics, sawtooth-triad music, synthetic babble, room reverb (RT60 0.5 s),
-hard clipping, silence. Every scenario knows its ground-truth target.
+hard clipping, silence. Every speech scenario knows its ground-truth target;
+the silence and noise-only fixtures have none and are scored by output level.
 
 These are proxies. They catch regressions in the shipped path; they do not
 certify absolute quality on recorded speech. Recorded-speech evidence for
@@ -47,7 +48,8 @@ calibration changes is gathered locally (see below) and is not committed.
 |---|---|
 | SI-SDR | Scale-invariant SDR of the clean stem against the dry target (dB). Used as absolute preservation for clean inputs. |
 | SI-SDR delta | SI-SDR(output) minus SI-SDR(input). Positive means the output is closer to the target than the input was. |
-| noise-reduction | RMS of a noise-only input minus RMS of its clean stem (dB). |
+| speech-level | Clean-stem RMS level minus target RMS level over active speech, in dB (gate). Catches a quieter output that SI-SDR, being gain-invariant, cannot. |
+| noise-reduction | Input RMS level minus clean-stem RMS level on a noise-only input, in dB. |
 | level, HF 4-12 kHz, fricative, gap leak | Matrix only: level change in speech, high-band change in speech, energy change on fricative onsets, residual in pauses. |
 
 Hard invariants in the gate: no NaN or Infinity, length preserved, digital

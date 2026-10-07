@@ -16,9 +16,8 @@ const helper = app.slice(app.indexOf('  async _dspWorkerChannels('), app.indexOf
 test('fallback conditioning is delegated, not run inline per channel', () => {
   expect(body).toMatch(/await this\._dspWorkerChannels\('condition', channels, p, sr, DSP\)/);
   expect(body).toMatch(/await this\._dspWorkerChannels\('eqDynamics', channels, p, sr, DSP\)/);
-  for (const stage of ['DSP.removeDCOffset(', 'DSP.removeClicks(', 'DSP.noiseGate(', 'DSP.deEss(', '_eqDynamicsStage(']) {
-    expect(body).not.toContain(stage);
-  }
+  // Any spelling (DSP., this., DSPCore.) of an inline whole-file pass fails this.
+  expect(body).not.toMatch(/\b(removeDCOffset|removeClicks|noiseGate|deEss|parametricEQ|compress|truePeakLimit|eqDynamicsChannel|conditionFallbackChannel)\s*\(/);
 });
 
 test('worker path handshakes before transferring the only copy of the audio', () => {

@@ -5546,8 +5546,18 @@ class VoiceIsolatePro {
     const signal = this._processAbortSignal();
     let seq = 0;
     let poll = null;
+    // A stalled worker must not leave Process waiting forever: the handshake
+    // gets 15 s, a pass gets 60 s plus 2 s per second of audio (measured
+    // ~0.3 s per minute of audio in Chromium), then the worker is terminated.
+    const audioSec = (channels[0]?.length || 0) / Math.max(1, sr);
+    let watchdog = null;
     const call = (type, payload, transfer) => new Promise((resolve, reject) => {
       const id = `condition-${++seq}`;
+      clearTimeout(watchdog);
+      const limitMs = type === 'init' ? 15000 : 60000 + audioSec * 2000;
+      watchdog = setTimeout(() => {
+        reject(new Error(`dsp-worker ${type} timed out after ${Math.round(limitMs / 1000)} s`));
+      }, limitMs);
       worker.onmessage = (e) => {
         const msg = e.data || {};
         if (msg.id !== id) return;
@@ -5596,6 +5606,7 @@ class VoiceIsolatePro {
       return result.channels.map((b) => new Float32Array(b));
     } finally {
       clearInterval(poll);
+      clearTimeout(watchdog);
       worker.terminate();
     }
   }
@@ -5658,7 +5669,11 @@ class VoiceIsolatePro {
         },
       });
       channels = [mid];
-      this._dspStereoSources = { L, R, mid };
+      // The mid buffer is transferred to dsp-worker, so the stereo expand
+      // derives its gain envelope from raw (L+R)/2 (mid: null). That is the
+      // consistent reference: L and R are raw, so every conditioning stage
+      // (DC, clicks, gate, de-ess) is carried onto them through the envelope.
+      this._dspStereoSources = { L, R, mid: null };
     } else {
       channels = [buf.getChannelData(0).slice()];
       this._dspStereoSources = null;
@@ -6653,13 +6668,6 @@ class VoiceIsolatePro {
       L[i] = L[i] * (1 - a) + mid * a;
       R[i] = R[i] * (1 - a) + mid * a;
     }
-  }
-
-  // S22–S25: HP/LP filters, 10-band parametric EQ, compressor, limiter.
-  _eqDynamicsStage(data, sr, p) {
-    const DSP = this._resolveDSP();
-    if (!DSP) return data;
-    return DSP.eqDynamicsChannel(data, p, sr);
   }
 
   // Live-microphone ingestion removed — upload-only workflow (CLAUDE.md §1.1).
