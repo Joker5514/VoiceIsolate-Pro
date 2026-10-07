@@ -130,6 +130,7 @@ async function newPage(browser, width, opts = {}) {
     viewport: { width, height: 900 },
     serviceWorkers: 'block',
     reducedMotion: opts.reducedMotion ? 'reduce' : 'no-preference',
+    ...(opts.touch ? { isMobile: true, hasTouch: true } : {}),
   });
   const page = await ctx.newPage();
   await page.addInitScript({ path: PROBES });
@@ -393,7 +394,7 @@ async function tabWalk(page, steps = 60) {
     // it, so a phone tap never started Process.
     for (const width of [390, 768]) {
       console.log(`\n[phone entry point @ ${width}px — tap the sticky Process bar]`);
-      const { ctx, page } = await newPage(browser, width);
+      const { ctx, page } = await newPage(browser, width, { touch: true });
       await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
       await page.waitForFunction(() => typeof window._vipApp?.handleFile === 'function', null, { timeout: 30000 });
       await page.evaluate(() => {
@@ -428,7 +429,7 @@ async function tabWalk(page, steps = 60) {
         `taps on the upload toast reach the page beneath @ ${width}px`, toastTap);
       let started = false;
       try {
-        await page.locator('#mobileProcessBtn').click({ timeout: 5000 });
+        await page.locator('#mobileProcessBtn').tap({ timeout: 5000 });
         started = await page.waitForFunction(() => {
           const st = document.getElementById('hStatus')?.textContent?.trim();
           return window._vipApp?.isProcessing || st === 'DONE';

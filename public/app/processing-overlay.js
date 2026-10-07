@@ -118,6 +118,17 @@
   }
 
   /* ── NeuralSpinner — radial spectrum + oscilloscope + helix ─────── */
+  function isMobileDevice() {
+    try {
+      if (typeof navigator === 'undefined') return false;
+      if (/Android|iPhone|iPad|Mobile|Capacitor/i.test(navigator.userAgent || '')) return true;
+      if (navigator.deviceMemory > 0 && navigator.deviceMemory <= 4) return true;
+      return Boolean(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    } catch (_) {
+      return false;
+    }
+  }
+
   function NeuralSpinner(canvas) {
     this.canvas  = canvas;
     this.ctx     = canvas.getContext('2d');
@@ -126,11 +137,13 @@
     this.frame   = 0;
     this.running = false;
     this._raf    = null;
-    /* Phones: draw every other frame. At 60 fps this spinner was ~8% of the
-       main thread during Process on a 4x-throttled mobile profile. */
-    this._halfRate = typeof navigator !== 'undefined'
-      && /Android|Mobile/i.test(navigator.userAgent || '');
-    this._skipFrame = false;
+    /* Mobile (same test as EngineerApp._isMobileEngineer): cap drawing at
+       ~30 fps by wall clock, so 90/120 Hz panels are capped too. At 60 fps
+       this spinner was ~8% of the main thread during Process on a
+       4x-throttled mobile profile. */
+    this._minFrameMs = isMobileDevice() ? 33 : 0;
+    this._lastDraw = 0;
+    this._t0 = Date.now();
 
     /* Cache prefers-reduced-motion once; update via media query listener */
     this._reducedMotion = false;
@@ -198,9 +211,11 @@
       this._draw();
       return;
     }
-    this._skipFrame = this._halfRate && !this._skipFrame;
-    if (this._skipFrame) this.frame++;
-    else this._draw();
+    var now = Date.now();
+    if (now - this._lastDraw >= this._minFrameMs) {
+      this._lastDraw = now;
+      this._draw();
+    }
     var self = this;
     this._raf = requestAnimationFrame(function () { self._loop(); });
   };
@@ -212,7 +227,9 @@
     var H  = canvas.height;
     var cx = W / 2;
     var cy = H / 2;
-    var t  = ++this.frame / 60;
+    this.frame++;
+    /* Seconds of wall clock: animation speed no longer depends on draw rate. */
+    var t  = (Date.now() - this._t0) / 1000;
     var p  = this.progress;
     var hue = this.groupHue;
 
