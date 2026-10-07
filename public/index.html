@@ -205,6 +205,14 @@
           <p id="landingJobStatus" class="hint" role="status" aria-live="polite" hidden></p>
         </section>
 
+        <!-- Stage column: signal canvas + stems mixer (one grid cell on wide screens) -->
+        <div class="v3-ws-stage">
+        <!-- Signal canvas: automatic regions, direct selection -->
+        <section class="panel vip-card v3-card" id="signalCanvasSection" aria-labelledby="signalCanvasLabel">
+          <h2 id="signalCanvasLabel" class="v3-label">Signal workspace · select directly on waveform or spectrogram</h2>
+          <div id="unifiedSignalCanvas" class="vip-signal-canvas-host"></div>
+        </section>
+
         <!-- Stems: lanes, transport, compare, export -->
         <div class="v3-tilt-host">
           <section class="panel vip-card v3-card v3-mixer" id="enhancePanel" aria-labelledby="enhanceLabel">
@@ -352,12 +360,7 @@
             </div>
           </section>
         </div>
-
-        <!-- Signal canvas: automatic regions, direct selection -->
-        <section class="panel vip-card v3-card" id="signalCanvasSection" aria-labelledby="signalCanvasLabel">
-          <h2 id="signalCanvasLabel" class="v3-label">Signal workspace · select directly on waveform or spectrogram</h2>
-          <div id="unifiedSignalCanvas" class="vip-signal-canvas-host"></div>
-        </section>
+        </div>
 
         <!-- Analyze: automatic analysis -->
         <section class="panel vip-card v3-card" id="analyzePanel" aria-labelledby="analyzeLabel">
