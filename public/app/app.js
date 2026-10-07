@@ -5517,6 +5517,81 @@ class VoiceIsolatePro {
   // wired to window.VIP_PARAMS via DSPCore. Performance: process mid only on
   // multi-channel sources (one STFT path), FFT 2048 / hop 512 for Engineer speed.
   // @param {AudioBuffer} [sourceBuf] — pass-local source (orig or prior proc for multi-pass)
+  /**
+   * Run a whole-file DSPCore channel pass in /app/dsp-worker.js, transferring
+   * each channel there and back. `op` is 'condition' (DC, clicks, gate,
+   * de-ess) or 'eqDynamics' (HP/LP, EQ, compressor, limiter); the worker calls
+   * the same DSPCore method the in-place path does. Abort terminates the
+   * worker. When a worker cannot start (no Worker, CSP, load error) the pass
+   * runs in place, which is the previous behaviour.
+   * @param {Float32Array[]} channels owned buffers; transferred (detached) on the worker path
+   */
+  async _dspWorkerChannels(op, channels, p, sr, DSP) {
+    const method = op === 'condition' ? 'conditionFallbackChannel' : 'eqDynamicsChannel';
+    const params = {};
+    for (const [k, v] of Object.entries(p || {})) {
+      if (typeof v === 'number' && Number.isFinite(v)) params[k] = v;
+    }
+    const inThread = () => channels.map((data) => DSP[method](data, params, sr));
+    if (typeof Worker !== 'function' || typeof DSP[method] !== 'function') {
+      return typeof DSP[method] === 'function' ? inThread() : channels;
+    }
+    let worker;
+    try {
+      worker = new Worker('/app/dsp-worker.js');
+    } catch (err) {
+      console.warn('[VIP] dsp-worker unavailable; conditioning in place:', err?.message || err);
+      return inThread();
+    }
+    const signal = this._processAbortSignal();
+    let seq = 0;
+    let poll = null;
+    const call = (type, payload, transfer) => new Promise((resolve, reject) => {
+      const id = `condition-${++seq}`;
+      worker.onmessage = (e) => {
+        const msg = e.data || {};
+        if (msg.id !== id) return;
+        if (msg.type === 'result') resolve(msg.result);
+        else reject(new Error(msg.error || `dsp-worker ${type} failed`));
+      };
+      worker.onerror = (ev) => {
+        ev?.preventDefault?.();
+        reject(new Error(ev?.message || 'dsp-worker failed'));
+      };
+      clearInterval(poll);
+      poll = setInterval(() => {
+        if (signal?.aborted || this.abortFlag) {
+          try { throwIfAborted({ aborted: true }); } catch (abortErr) { reject(abortErr); }
+        }
+      }, 50);
+      worker.postMessage({ type, id, payload }, transfer || []);
+    });
+    try {
+      // Handshake before transferring: a worker that fails to load or parse
+      // must not take the only copy of the audio with it.
+      try {
+        await call('init', { sampleRate: sr });
+      } catch (err) {
+        if (err?.name === 'AbortError') throw err;
+        console.warn('[VIP] dsp-worker unavailable; conditioning in place:', err?.message || err);
+        return inThread();
+      }
+      // Transfer needs whole, distinct buffers; copy any view that is not.
+      const seen = new Set();
+      const buffers = channels.map((c) => {
+        const whole = c.byteOffset === 0 && c.buffer.byteLength === c.byteLength && !seen.has(c.buffer);
+        const own = whole ? c : c.slice();
+        seen.add(own.buffer);
+        return own.buffer;
+      });
+      const result = await call(op, { channels: buffers, sampleRate: sr, params }, buffers);
+      return result.channels.map((b) => new Float32Array(b));
+    } finally {
+      clearInterval(poll);
+      worker.terminate();
+    }
+  }
+
   async _runFallbackPipeline(sourceBuf) {
     const buf = sourceBuf || this.origBuffer || this.inputBuffer;
     if (!buf) return;
@@ -5584,38 +5659,12 @@ class VoiceIsolatePro {
     await yieldToBrowser();
 
     // ── Pass 1–2: input conditioning + time-domain cleanup ──
-    // Order: DC → classical click removal → gate → de-ess.
-    // removeClicks was previously implemented but never wired (audit residual pops).
+    // Order: DC → classical click removal → gate → de-ess (DSPCore
+    // conditionFallbackChannel). Whole-file passes, so they run in dsp-worker
+    // (audit PERF-001: ~1.5 s single task per 5 min of audio on the main thread).
     this.updatePipelineProgress(3, 'Conditioning input…', 8);
-    for (let ch = 0; ch < channels.length; ch++) {
-      let data = channels[ch];
-      DSP.removeDCOffset(data, sr);
-      // S07: click/pop repair (sensitivity 1–10; default 3). Always on for
-      // classical path; lightweight O(N) median detector + Hermite fill.
-      if (typeof DSP.removeClicks === 'function') {
-        DSP.removeClicks(data, p.clickSensitivity ?? 3);
-      }
-      const gateThresh = p.gateThresh ?? -42;
-      if (gateThresh > -80) {
-        data = DSP.noiseGate(data, {
-          threshold: gateThresh,
-          range: p.gateRange ?? -60,
-          attack: p.gateAttack ?? 5,
-          release: p.gateRelease ?? 200,
-          hold: p.gateHold ?? 50,
-          lookahead: p.gateLookahead ?? 5,
-        }, sr);
-      }
-      if ((p.deEssAmt ?? 0) > 0) DSP.deEss(data, p.deEssFreq ?? 6500, p.deEssAmt ?? 0, sr);
-      // Process-boundary micro-fades (~8 ms) kill residual edge discontinuities.
-      const fadeN = Math.min(Math.floor(data.length / 4), Math.round(0.008 * sr));
-      for (let i = 0; i < fadeN; i++) {
-        const g = i / Math.max(1, fadeN);
-        data[i] *= g;
-        data[data.length - 1 - i] *= g;
-      }
-      channels[ch] = data;
-    }
+    channels = await this._dspWorkerChannels('condition', channels, p, sr, DSP);
+    this._throwIfProcessAborted();
 
     // ── Pass 3–5: Engineer spectral fallback ──────────────────────────────
     // MLWorker owns the fast fused production path. If it is unavailable, this
@@ -5650,10 +5699,8 @@ class VoiceIsolatePro {
 
     // ── Pass 7–8: filters, EQ, dynamics ──
     this.updatePipelineProgress(21, 'EQ + dynamics…', 70);
-    for (let ch = 0; ch < channels.length; ch++) {
-      this._eqDynamicsStage(channels[ch], sr, p);
-    }
-    await this._yield();
+    channels = await this._dspWorkerChannels('eqDynamics', channels, p, sr, DSP);
+    this._throwIfProcessAborted();
 
     // ── Pass 9: stereo image ──
     if (channels.length >= 2) {
@@ -6176,6 +6223,9 @@ class VoiceIsolatePro {
     const stftOpts = {
       // Cooperative STFT: yield every N frames so long files never freeze the tab.
       yieldEvery: forensic ? (mobile ? 8 : 32) : (mobile ? 12 : 48),
+      // Time-budgeted yields (no rAF): rAF-paced yields stalled in hidden tabs
+      // and cost ~0.2 s each in throttled windows (60 s of audio took 63 s).
+      maybeYield: yieldBudget,
       onProgress: (frac) => { if (onProgress) onProgress(0.02 + frac * 0.18); },
       shouldAbort: () => this.abortFlag,
     };
@@ -6267,6 +6317,7 @@ class VoiceIsolatePro {
     const rendered = typeof DSP.inverseSTFTAsync === 'function'
       ? await DSP.inverseSTFTAsync(mag, phase, FFT, HOP, data.length, {
         yieldEvery: forensic ? (mobile ? 16 : 32) : (mobile ? 24 : 64),
+        maybeYield: yieldBudget,
         onProgress: (frac) => { if (onProgress) onProgress(0.85 + frac * 0.14); },
       })
       : DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
@@ -6600,39 +6651,7 @@ class VoiceIsolatePro {
   _eqDynamicsStage(data, sr, p) {
     const DSP = this._resolveDSP();
     if (!DSP) return data;
-
-    // S22 high-pass / low-pass.
-    const hpFreq = p.hpFreq ?? 20;
-    if (hpFreq > 20) DSP.biquadProcess(data, DSP.biquadCoeffs('highpass', hpFreq, p.hpQ ?? 0.7, 0, sr));
-    const lpFreq = p.lpFreq ?? 20000;
-    if (lpFreq < 20000) DSP.biquadProcess(data, DSP.biquadCoeffs('lowpass', lpFreq, p.lpQ ?? 0.7, 0, sr));
-
-    // S23 10-band parametric EQ.
-    const eqBands = [
-      ['eqSub', 40], ['eqBass', 120], ['eqWarmth', 300], ['eqBody', 700], ['eqLowMid', 1500],
-      ['eqMid', 3000], ['eqPresence', 5000], ['eqClarity', 8000], ['eqAir', 13000], ['eqBrill', 18000],
-    ].map(([id, freq]) => ({ freq, gain: p[id] ?? 0, Q: 1.0, type: 'peaking' }))
-      .filter((b) => b.freq < sr / 2);
-    DSP.parametricEQ(data, eqBands, sr);
-
-    // S24 compressor (+ makeup gain).
-    if ((p.compRatio ?? 1) > 1.01) {
-      DSP.compress(data, {
-        threshold: p.compThresh ?? -24,
-        ratio: p.compRatio ?? 4,
-        attack: p.compAttack ?? 10,
-        release: p.compRelease ?? 150,
-        knee: Math.max(0.5, p.compKnee ?? 6),
-        makeup: p.compMakeup ?? 0,
-      }, sr);
-    } else if ((p.compMakeup ?? 0) > 0) {
-      const g = Math.pow(10, (p.compMakeup ?? 0) / 20);
-      for (let i = 0; i < data.length; i++) data[i] *= g;
-    }
-
-    // S25 limiter.
-    DSP.truePeakLimit(data, p.limThresh ?? -1);
-    return data;
+    return DSP.eqDynamicsChannel(data, p, sr);
   }
 
   // Live-microphone ingestion removed — upload-only workflow (CLAUDE.md §1.1).

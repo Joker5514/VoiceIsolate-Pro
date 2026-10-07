@@ -245,3 +245,52 @@ describe('dsp-worker: demucs graceful fallback', () => {
     expect(r.msg.type).toBe('result');
   });
 });
+
+// ── fallback conditioning off the main thread (audit PERF-001) ────────────────
+
+describe('dsp-worker: condition', () => {
+  function fixture(n = 48000) {
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      x[i] = 0.3 * Math.sin(2 * Math.PI * 220 * i / 48000) + 0.02 + (i % 9000 === 0 ? 0.9 : 0);
+    }
+    return x;
+  }
+  const params = { clickSensitivity: 3, gateThresh: -42, deEssAmt: 40, deEssFreq: 6500 };
+
+  test('matches the in-thread DSPCore chain sample for sample', async () => {
+    const { self: s, messages } = loadWorker();
+    const input = fixture();
+    const expected = DSPCore.conditionFallbackChannel(new Float32Array(input), params, 48000);
+    const buf = new Float32Array(input).buffer;
+    const [reply] = await dispatch(s, messages, 'condition', { channels: [buf], sampleRate: 48000, params });
+    expect(reply.msg.type).toBe('result');
+    const out = new Float32Array(reply.msg.result.channels[0]);
+    expect(out.length).toBe(input.length);
+    expect(Array.from(out)).toEqual(Array.from(expected));
+    // The chain changed the audio (DC removed, click repaired), not a passthrough.
+    let diff = 0;
+    for (let i = 0; i < out.length; i++) diff = Math.max(diff, Math.abs(out[i] - input[i]));
+    expect(diff).toBeGreaterThan(0.01);
+  });
+
+  test('eqDynamics matches the in-thread DSPCore pass', async () => {
+    const { self: s, messages } = loadWorker();
+    const input = fixture();
+    const p = { hpFreq: 80, eqPresence: 4, compRatio: 3, compThresh: -20, limThresh: -1 };
+    const expected = DSPCore.eqDynamicsChannel(new Float32Array(input), p, 48000);
+    const [reply] = await dispatch(s, messages, 'eqDynamics', {
+      channels: [new Float32Array(input).buffer], sampleRate: 48000, params: p,
+    });
+    expect(Array.from(new Float32Array(reply.msg.result.channels[0]))).toEqual(Array.from(expected));
+  });
+
+  test('returns channel buffers as transfers, not clones', async () => {
+    const { self: s, messages } = loadWorker();
+    const [reply] = await dispatch(s, messages, 'condition', {
+      channels: [fixture(4800).buffer, fixture(4800).buffer], sampleRate: 48000, params,
+    });
+    expect(reply.msg.result.channels).toHaveLength(2);
+    expect(reply.transfers).toEqual(reply.msg.result.channels);
+  });
+});

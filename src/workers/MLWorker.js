@@ -807,6 +807,9 @@ function realFftInverse(specRe, specIm, n, out, hr, hi) {
 function makeStftBatchBuf(batchMax, bins) {
   return {
     batchMags: new Float32Array(batchMax * bins),
+    // Model input when a head declares inputNormalization 'frame-max'. The raw
+    // magnitudes stay in batchMags for the Engineer controls' noise tracking.
+    batchNorm: new Float32Array(batchMax * bins),
     batchRe: new Float32Array(batchMax * bins),
     batchIm: new Float32Array(batchMax * bins),
   };
@@ -874,6 +877,14 @@ async function runFusedSpectralMaskChain(
     }
   }
 
+  // Training-contract input scaling and per-model mask calibration
+  // (ModelManifest inputNormalization / maskExponent).
+  const normalizeInput = heads.some((h) => h.entry.inputNormalization === 'frame-max');
+  const maskExponents = heads.map((h) => {
+    const p = Number(h.entry.maskExponent);
+    return Number.isFinite(p) && p > 0 ? p : 1;
+  });
+
   const out = new Float32Array(samples.length);
   const norm = new Float32Array(samples.length);
   // Masked positive-frequency bins (0..N/2); the mirrored half is never built.
@@ -909,10 +920,17 @@ async function runFusedSpectralMaskChain(
       if (avail < N) frame.fill(0, avail);
       const off = b * bins;
       realFftForward(frame, N, buf.batchRe, buf.batchIm, off, halfRe, halfIm);
+      let peak = 0;
       for (let k = 0; k < bins; k++) {
         const rr = buf.batchRe[off + k];
         const ii = buf.batchIm[off + k];
-        buf.batchMags[off + k] = Math.sqrt(rr * rr + ii * ii);
+        const m = Math.sqrt(rr * rr + ii * ii);
+        buf.batchMags[off + k] = m;
+        if (m > peak) peak = m;
+      }
+      if (normalizeInput) {
+        const g = 1 / (peak + 1e-6);
+        for (let k = 0; k < bins; k++) buf.batchNorm[off + k] = buf.batchMags[off + k] * g;
       }
     }
   };
@@ -947,10 +965,13 @@ async function runFusedSpectralMaskChain(
       : null;
 
     const magSlice = cur.batchMags.subarray(0, count * bins);
+    const normSlice = cur.batchNorm.subarray(0, count * bins);
     fusedMask.fill(1, 0, count * bins);
 
-    for (const head of heads) {
-      const input = new ort.Tensor('float32', magSlice, [count, bins]);
+    for (let h = 0; h < heads.length; h++) {
+      const head = heads[h];
+      const feed = head.entry.inputNormalization === 'frame-max' ? normSlice : magSlice;
+      const input = new ort.Tensor('float32', feed, [count, bins]);
       const results = await queuedSessionRun(
         head.entry.id,
         head.session,
@@ -962,9 +983,15 @@ async function runFusedSpectralMaskChain(
       if (!mask || mask.length < count * bins) {
         throw new Error(`[VIP][MLWorker] '${head.entry.id}' returned a malformed output tensor.`);
       }
-      // In-domain fusion: product of independent sigmoid masks.
-      for (let i = 0; i < count * bins; i++) {
-        fusedMask[i] *= mask[i];
+      // In-domain fusion: product of independent sigmoid masks, each raised
+      // to its calibrated exponent.
+      const p = maskExponents[h];
+      if (p === 1) {
+        for (let i = 0; i < count * bins; i++) fusedMask[i] *= mask[i];
+      } else if (p === 0.5) {
+        for (let i = 0; i < count * bins; i++) fusedMask[i] *= Math.sqrt(mask[i]);
+      } else {
+        for (let i = 0; i < count * bins; i++) fusedMask[i] *= Math.pow(mask[i], p);
       }
     }
 

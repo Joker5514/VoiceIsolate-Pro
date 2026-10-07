@@ -41,7 +41,11 @@ describe('UI freeze mitigations', () => {
   test('async STFT with UI yields exists in dsp-core', () => {
     expect(dspCore).toContain('forwardSTFTAsync');
     expect(dspCore).toContain('inverseSTFTAsync');
-    expect(dspCore).toMatch(/requestAnimationFrame/);
+    // Yields are time-budgeted (CLAUDE.md §1.2): the caller's maybeYield,
+    // never a per-yield rAF await, which is 0 Hz in a hidden tab.
+    expect(dspCore).toContain('opts.maybeYield');
+    expect(dspCore).not.toMatch(/requestAnimationFrame\(/);
+    expect(appJs.match(/maybeYield: yieldBudget/g)).toHaveLength(2);
   });
 
   test('spectral stage uses async STFT', () => {

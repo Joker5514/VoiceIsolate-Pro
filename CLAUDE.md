@@ -110,8 +110,14 @@ main-thread VAD feature extraction). Main-thread code that copies or scans a
 whole stem uses the cooperative helpers (`copyChannelsToAudioBuffer`,
 `copyFloat32Channel` with a yield budget, `PlaybackMixer.loadStemsAsync`,
 `EngineerModeBridge.loadStemPairAsync`, `ProcessingController.setProcessedAsync`),
-or moves the pass into a worker. Re-measure with
+or moves the pass into a worker. The Engineer DSP fallback (taken when ML fails) runs its whole-file
+conditioning and EQ/dynamics passes in `/app/dsp-worker.js`
+(`app._dspWorkerChannels`), its async STFT yields through the caller's time
+budget (`maybeYield`), and `DSPCore.dereverb` uses an O(1)-per-frame tail
+recurrence; together these took 5 min of stereo from 307 s with a 31 s
+frozen task to 34 s with a 1.7 s worst task. Re-measure with
 `node scripts/perf/perf-harness.cjs --surface engineer|landing --secs 60,300 --settle 10000`
+(add `--no-ml` to force the Engineer DSP fallback)
 (records long tasks, heartbeat gaps, cancel latency, live Workers/AudioContexts,
 heap and RSS; it asserts stability only, never machine-specific timings).
 
@@ -333,6 +339,20 @@ are planned and must follow the same manifest + integrity flow.
 Shipped-model bytes are verified by `scripts/validate-model-integrity.mjs`
 (`pnpm models:validate`) against `ModelManifest.js`. Do not add a second manifest.
 
+**Inference calibration and the quality gate.** Each spectral entry carries
+`inputNormalization: 'frame-max'` (the training contract in
+`scripts/export_onnx_models.py`: magnitudes divided by the per-frame peak) and
+`maskExponent: 0.5` (mask applied as `mask^0.5`). Both are applied inside the
+one fused STFT pass and were chosen by measured SI-SDR on recorded speech,
+including held-out audio (`docs/guides/AUDIO_QUALITY.md`). Do not "restore"
+raw-magnitude input or `mask^1` without new measurements. `pnpm test:quality`
+(`prod:verify` step `audio-quality`) runs the real `MLWorker.js` with the
+shipped models over deterministic fixtures and fails on any pinned metric
+dropping more than 0.5 dB; re-pin only with `quality-gate.cjs --update` and a
+reviewed baseline diff. Both shipped networks are single-frame and weak: the
+default chain still lowers SI-SDR on some noisy inputs. Do not describe them
+as more capable than the gate shows.
+
 **Dual worker note:** `src/workers/MLWorker.js` is the canonical offline worker
 (Landing + `StemSeparation.js`). `public/app/ml-worker.js` is the legacy Engineer
 real-time SAB path — do not add passthrough fallbacks there; new ML work targets
@@ -450,6 +470,7 @@ pnpm provenance:validate  # provenance schema/claims; stale/unknown allowed
 pnpm test:live             # Playwright headless Engineer pipeline smoke
 pnpm test:shell-qa         # browser-driven shell guards + entry-point journey
 pnpm test:calibration      # upload -> Process -> DONE, slider calibration
+pnpm test:quality          # SI-SDR gate: real MLWorker + shipped ONNX models
 pnpm test:privacy-runtime  # Chromium egress recorder over Landing + Engineer journeys
 pnpm prod:verify           # THE production gate (static + browser; --network, --no-browser)
 ```

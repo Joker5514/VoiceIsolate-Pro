@@ -35,13 +35,15 @@ self.onmessage = async function (e) {
       case 'loadModel':  result = await handleLoadModel(payload); break;
       case 'getMetrics': result = handleGetMetrics();             break;
       case 'reset':      result = handleReset();                  break;
+      case 'condition':  result = handleChannels('conditionFallbackChannel', payload); break;
+      case 'eqDynamics': result = handleChannels('eqDynamicsChannel', payload);        break;
       default: throw new Error(`Unknown message type: ${type}`);
     }
     // Transfer any ArrayBuffer payload (processedData) instead of structured-cloning
     // — this saves a full PCM copy on every processed block.
-    const transfers = (result && result.processedData instanceof ArrayBuffer)
-      ? [result.processedData]
-      : undefined;
+    let transfers;
+    if (result && result.processedData instanceof ArrayBuffer) transfers = [result.processedData];
+    else if (result && Array.isArray(result.channels)) transfers = result.channels;
     self.postMessage({ type: 'result', id, result }, transfers);
   } catch (err) {
     self.postMessage({ type: 'error', id, error: err.message, stack: err.stack });
@@ -157,6 +159,21 @@ async function handleProcess(payload) {
     processedData: output.buffer,
     metrics: dspCore.getMetrics ? dspCore.getMetrics() : {}
   };
+}
+
+/**
+ * Whole-file DSP fallback passes off the main thread: 'condition' (DC, clicks,
+ * gate, de-ess, edge fades) and 'eqDynamics' (HP/LP, EQ, compressor, limiter).
+ * Same DSPCore methods the in-thread path uses; channel buffers arrive and
+ * leave as transfers, so no PCM is copied.
+ */
+function handleChannels(method, { channels, sampleRate, params }) {
+  const core = dspCore || DSPCoreLocal;
+  const out = (channels || []).map((buf) => {
+    const data = core[method](new Float32Array(buf), params || {}, sampleRate);
+    return data.buffer;
+  });
+  return { channels: out };
 }
 
 function handleGetMetrics() {
