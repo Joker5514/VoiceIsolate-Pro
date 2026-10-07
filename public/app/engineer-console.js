@@ -79,12 +79,11 @@
     const colStage = el('div', 'ec-col ec-col-stage');
     const colRack = el('div', 'ec-col ec-col-rack');
 
-    // Session column: upload, library, processing, save, mobile bar
+    // Session column: upload, library, processing, save
     move(left, [
       '#section-upload',
       '#section-processing',
       '.save-row',
-      '#mobileActionBar',
     ], colSession);
 
     // Stage column: transport, viz, video, analysis, target speaker

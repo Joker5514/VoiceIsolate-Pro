@@ -92,7 +92,9 @@ export class ProcessingController {
     const gen = this._asyncGen = (this._asyncGen || 0) + 1;
     const isCurrent = typeof opts.isCurrent === 'function' ? opts.isCurrent : () => true;
     const live = () => gen === this._asyncGen && isCurrent();
-    const SLICE = 1 << 20;
+    // 128k samples per slice: at 1M a single slice was a 500-790 ms task on a
+    // 4x CPU-throttled mobile profile (5 min stereo, Landing).
+    const SLICE = 1 << 17;
     const clone = async (channels) => {
       const out = [];
       for (const ch of channels) {

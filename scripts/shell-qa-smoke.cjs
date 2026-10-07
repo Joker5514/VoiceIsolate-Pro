@@ -130,6 +130,7 @@ async function newPage(browser, width, opts = {}) {
     viewport: { width, height: 900 },
     serviceWorkers: 'block',
     reducedMotion: opts.reducedMotion ? 'reduce' : 'no-preference',
+    ...(opts.touch ? { isMobile: true, hasTouch: true } : {}),
   });
   const page = await ctx.newPage();
   await page.addInitScript({ path: PROBES });
@@ -383,6 +384,58 @@ async function tabWalk(page, steps = 60) {
       check(out.nan === 0, 'the output buffer contains no NaN samples', out);
       check(out.peak > 1e-4, 'the output buffer is not silent', out);
       check(pageErrors.length === 0, 'the entry-point journey raises no page errors', pageErrors);
+      await ctx.close();
+    }
+
+    // ── phone entry point: the sticky Process bar must be tappable ────────
+    // Below 768px the panel Process button is hidden and `#mobileActionBar`
+    // owns Process. It was painted under the field nav (<=640px) and the hero
+    // (its z-index was scoped to `.main-grid`), and the upload toast covered
+    // it, so a phone tap never started Process.
+    for (const width of [390, 768]) {
+      console.log(`\n[phone entry point @ ${width}px — tap the sticky Process bar]`);
+      const { ctx, page } = await newPage(browser, width, { touch: true });
+      await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
+      await page.waitForFunction(() => typeof window._vipApp?.handleFile === 'function', null, { timeout: 30000 });
+      await page.evaluate(() => {
+        window._vipApp?._dismissBootSplash?.();
+        const s = document.getElementById('bootSplash');
+        if (s) { s.style.display = 'none'; s.style.pointerEvents = 'none'; }
+      });
+      await page.setInputFiles('#fileInput', wav);
+      await page.waitForFunction(
+        () => { const b = document.getElementById('mobileProcessBtn'); return b && !b.disabled; },
+        null, { timeout: 60000 },
+      );
+      const hit = await page.evaluate(() => {
+        const b = document.getElementById('mobileProcessBtn');
+        const r = b.getBoundingClientRect();
+        const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return { onTop: !!top && b.contains(top), by: top ? `${top.tagName}#${top.id}.${top.className}` : null,
+          box: [r.x, r.y, r.width, r.height].map(Math.round) };
+      });
+      check(hit.onTop, `the mobile Process button is on top right after upload @ ${width}px`, hit);
+      // The upload toast sits over the sticky header on phones; a tap on it
+      // must reach whatever is underneath, not the toast body.
+      const toastTap = await page.evaluate(() => {
+        const t = document.querySelector('#toastRegion .toast');
+        if (!t) return { toast: false };
+        const r = t.getBoundingClientRect();
+        const top = document.elementFromPoint(r.x + r.width / 3, r.y + r.height / 2);
+        return { toast: true, passesThrough: !!top && !top.closest('.toast'),
+          by: top ? `${top.tagName}#${top.id}.${top.className}` : null };
+      });
+      check(toastTap.toast && toastTap.passesThrough,
+        `taps on the upload toast reach the page beneath @ ${width}px`, toastTap);
+      let started = false;
+      try {
+        await page.locator('#mobileProcessBtn').tap({ timeout: 5000 });
+        started = await page.waitForFunction(() => {
+          const st = document.getElementById('hStatus')?.textContent?.trim();
+          return window._vipApp?.isProcessing || st === 'DONE';
+        }, null, { timeout: 15000 }).then(() => true, () => false);
+      } catch { /* reported below */ }
+      check(started, `tapping the mobile Process button starts Process @ ${width}px`);
       await ctx.close();
     }
   } catch (err) {

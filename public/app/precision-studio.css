@@ -117,6 +117,13 @@ body.ps-forensic .ps-workspace-nav a[aria-current="page"] {
 }
 
 @media (max-width: 640px) {
+  /* One source for the two stacked fixed bars at the bottom of the screen:
+     the field nav, and the sticky Process bar (mobile.css) directly above
+     it (61px measured, plus a little air). */
+  :root {
+    --ps-field-nav-h: 64px;
+    --ps-bottom-stack: calc(var(--ps-field-nav-h) + 69px + env(safe-area-inset-bottom, 0px));
+  }
   .ps-field-nav {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -125,7 +132,7 @@ body.ps-forensic .ps-workspace-nav a[aria-current="page"] {
     right: 0;
     bottom: 0;
     z-index: 50;
-    min-height: calc(64px + env(safe-area-inset-bottom, 0px));
+    min-height: calc(var(--ps-field-nav-h) + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--surface-panel, #0d131b);
     border-top: 1px solid var(--border-subtle, #1d2a34);
@@ -141,14 +148,25 @@ body.ps-forensic .ps-workspace-nav a[aria-current="page"] {
     color: var(--text-primary, #f4f7fa);
     box-shadow: inset 0 -2px 0 var(--action-process, #ff3d4d);
   }
+  /* The field nav owns the bottom of the screen, so the sticky Process bar
+     sits directly above it. Both were fixed to bottom:0, and every tap on
+     Process landed on "Analyze" (measured on a 412px viewport). */
+  body.ps-workstation .mobile-action-bar {
+    bottom: calc(var(--ps-field-nav-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 8px;
+  }
+  /* mobile.css re-sets this at :root after this sheet loads; out-rank it. */
+  html:root {
+    scroll-padding-bottom: var(--ps-bottom-stack);
+  }
   body.ps-workstation {
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--ps-bottom-stack);
   }
   .ps-field-sheet {
     position: fixed;
     left: 8px;
     right: 8px;
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    bottom: var(--ps-bottom-stack);
     z-index: 45;
     max-height: 40vh;
     overflow: auto;
