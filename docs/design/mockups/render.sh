@@ -9,9 +9,12 @@ if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
   echo "render.sh: Chromium headless_shell not found. Set VIP_HEADLESS_SHELL to its path." >&2
   exit 1
 fi
+# Chromium refuses to start sandboxed as root (e.g. in containers); only then disable it.
+SANDBOX=""
+[ "$(id -u)" = "0" ] && SANDBOX="--no-sandbox"
 mkdir -p png
 for page in explain stems engineer; do
-  "$BIN" --no-sandbox --hide-scrollbars --disable-gpu \
+  "$BIN" $SANDBOX --hide-scrollbars --disable-gpu \
     --window-size=1920,1200 --force-device-scale-factor="$SCALE" --virtual-time-budget=20000 \
     --screenshot="png/$page.png" "file://$PWD/$page.html" >/dev/null 2>&1
   echo "png/$page.png"

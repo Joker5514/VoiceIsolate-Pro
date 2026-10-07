@@ -17,9 +17,10 @@ PNGs are 3840x2400 (1920x1200 at 2x).
 
 ## How they are built
 
-- `shell.css`: the shared shell (top bar, transport, panels, chips). Its color
-  values mirror the Precision Studio tokens in `public/app/ds-tokens.css`; it
-  does not import that file, so keep them in step by hand.
+- `shell.css`: the shared shell (top bar, transport, panels, chips). Its palette is
+  derived from the Precision Studio tokens in `public/app/ds-tokens.css`: the accents
+  match (`#ff3d4d`, `#d81f30`, `#2ed5e5`, `#31cf7d`, `#f0b541`), while the surfaces and text
+  greys are darker or adjusted for the mockups. It does not import that file.
 - `viz.js`: a deterministic signal model (seeded PRNG). On each page, one scene drives every
   analysis view of the visible time window:
   - voices with continuous pitch contours and formants
@@ -46,8 +47,8 @@ docs/design/mockups/render.sh      # 2x (default)
 docs/design/mockups/render.sh 1    # 1x
 ```
 
-It launches Chromium with `--no-sandbox`.
-Only run it on these trusted mockup files, or in an isolated container.
+It adds `--no-sandbox` only when run as root (Chromium will not start sandboxed as
+root, e.g. in containers). Only run it on these trusted mockup files.
 
 The script uses Chromium's `headless_shell` from `/opt/pw-browsers`. Override the
 path with `VIP_HEADLESS_SHELL`. Do not use `chrome --headless=new` for

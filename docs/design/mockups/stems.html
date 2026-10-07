@@ -447,7 +447,7 @@
     ['transient', 'Transient events', 'var(--src-tr)', '#e6edf5', '9 events', ''],
   ];
   lanes.forEach(([id, nm, cv, hex, meta, cls], i) => {
-    lanesEl.insertAdjacentHTML('beforeend', `<div class="lane ${cls}" style="--c:${cv}"><div class="lg"><i data-i="${id === 'tv' ? 'eyeoff' : 'eye'}"></i><span class="sw"></span></div><div class="la"><canvas></canvas><span class="ln">${nm}<b>${meta}</b></span>${cls ? `<div class="rg" style="left:${X(S0)}px;width:${X(S1) - X(S0)}px"></div>` : ''}<div class="lph" style="left:${X(PHT)}px"></div></div><div class="lr"><button class="${id === 'tv' ? 'on-m' : ''}">M</button><button class="${id === 'b' ? 'on-s' : ''}">S</button></div></div>`);
+    lanesEl.insertAdjacentHTML('beforeend', `<div class="lane ${cls}" style="--c:${cv}${id === 'tv' ? ';opacity:.55' : ''}"><div class="lg"><i data-i="${id === 'tv' ? 'eyeoff' : 'eye'}"></i><span class="sw"></span></div><div class="la"><canvas></canvas><span class="ln">${nm}<b>${meta}</b></span>${cls ? `<div class="rg" style="left:${X(S0)}px;width:${X(S1) - X(S0)}px"></div>` : ''}<div class="lph" style="left:${X(PHT)}px"></div></div><div class="lr"><button class="${id === 'tv' ? 'on-m' : ''}">M</button><button class="${id === 'b' ? 'on-s' : ''}">S</button></div></div>`);
     const c = lanesEl.querySelectorAll('.lane canvas')[i];
     const ref = { a: 0.6, b: 0.24, whisper: 0.08, tv: 0.2, hvac: 0.16, transient: 0.12 }[Array.isArray(id) ? id[0] : id];
     VIP.drawLane(c, sc, id, hex, { t0: T0, t1: T1, ref });
