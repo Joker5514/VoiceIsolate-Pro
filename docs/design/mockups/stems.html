@@ -96,7 +96,6 @@
 .hum { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed color-mix(in srgb, var(--src-hum) 70%, transparent); }
 .trans { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(230,237,245,.45); }
 .trans span { position: absolute; top: 6px; left: 4px; font-size: 9px; font-weight: 650; letter-spacing: .08em; color: var(--src-tr); background: rgba(5,8,12,.8); padding: 1px 5px; border-radius: 3px; white-space: nowrap; border: 1px solid rgba(230,237,245,.25); }
-.dimmask { position: absolute; inset: 0; pointer-events: none; }
 .sel-box { position: absolute; border: 1.5px solid #c4a8ff; border-radius: 3px; box-shadow: 0 0 0 9999px rgba(3,5,9,.4), 0 0 24px rgba(167,125,255,.35), inset 0 0 30px rgba(167,125,255,.12); }
 .sel-box .h { position: absolute; width: 9px; height: 9px; background: #fff; border: 1.5px solid #a77dff; border-radius: 2px; }
 .sel-box .e { position: absolute; background: #fff; border-radius: 2px; border: 1px solid #a77dff; }
@@ -226,7 +225,7 @@
     <div class="navsub"><i data-i="check"></i>Analysis complete <span style="margin-left:auto;font-family:var(--mono);font-size:10px">12:48 in 41 s</span></div>
     <div class="srcs" id="srcs"></div>
     <div class="hist">
-      <div class="hh"><span class="cap">History</span><span style="font-size:10.5px;color:var(--text-4)">4 steps</span></div>
+      <div class="hh"><span class="cap">History</span><span style="font-size:10.5px;color:var(--text-4)">3 steps</span></div>
       <div class="row"><i data-i="history"></i>Preview: Isolate Speaker B<span class="tm">now</span></div>
       <div class="row" style="color:var(--text-3)"><i data-i="check"></i>Hum −21 dB (60/120 Hz)<span class="tm">02:41</span></div>
       <div class="row" style="color:var(--text-3)"><i data-i="check"></i>Auto analysis &amp; stem split<span class="tm">02:38</span></div>
@@ -475,7 +474,7 @@
     </div>`);
     const c = srcEl.querySelectorAll('.spark canvas')[i];
     const ref = { a: 0.6, b: 0.24, whisper: 0.08, tv: 0.2, hvac: 0.14, hum: 0.09, transient: 0.12, reverb: 0.1 }[id];
-    VIP.drawLane(c, scAll.voices.length && (id === 'a' || id === 'b') ? scAll : sc, id, hex, { t0: id === 'a' || id === 'b' ? 0 : T0, t1: id === 'a' || id === 'b' ? 768 : T1, ref });
+    VIP.drawLane(c, sc, id, hex, { t0: T0, t1: T1, ref });
   });
 
   // selection spectrum (Speaker B vs TV vs floor)
