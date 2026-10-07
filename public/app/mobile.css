@@ -527,6 +527,10 @@ html {
     right: 12px;
     left: 12px;
   }
+  /* Up there a toast overlaps the sticky header for its 4 s. Let taps pass
+     through to the header controls; only the close button stays live. */
+  #toastRegion .toast { pointer-events: none; }
+  #toastRegion .toast-close { pointer-events: auto; }
 }
 
 /* ═══════════════════════════════════════════

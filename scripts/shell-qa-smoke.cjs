@@ -414,6 +414,18 @@ async function tabWalk(page, steps = 60) {
           box: [r.x, r.y, r.width, r.height].map(Math.round) };
       });
       check(hit.onTop, `the mobile Process button is on top right after upload @ ${width}px`, hit);
+      // The upload toast sits over the sticky header on phones; a tap on it
+      // must reach whatever is underneath, not the toast body.
+      const toastTap = await page.evaluate(() => {
+        const t = document.querySelector('#toastRegion .toast');
+        if (!t) return { toast: false };
+        const r = t.getBoundingClientRect();
+        const top = document.elementFromPoint(r.x + r.width / 3, r.y + r.height / 2);
+        return { toast: true, passesThrough: !!top && !top.closest('.toast'),
+          by: top ? `${top.tagName}#${top.id}.${top.className}` : null };
+      });
+      check(toastTap.toast && toastTap.passesThrough,
+        `taps on the upload toast reach the page beneath @ ${width}px`, toastTap);
       let started = false;
       try {
         await page.locator('#mobileProcessBtn').click({ timeout: 5000 });
