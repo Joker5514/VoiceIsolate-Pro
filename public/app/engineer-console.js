@@ -39,6 +39,7 @@
       wireViewToggle();
       wireFocusExplain();
       installPrecisionStudioShell();
+      installWorkstation();
       trackHeaderHeight();
       // Defer ticker + summary so reparent paints before any interval work.
       const schedule = globalThis.requestIdleCallback
@@ -353,6 +354,63 @@
     installQuickStrip();
     syncWorkspaceMode();
     window.addEventListener('vip:tierChanged', syncWorkspaceMode);
+  }
+
+  /*
+   * Workstation shell (desktop): one screen instead of a long scroll.
+   * Header → workspace tabs → session bar (#vipHero) → stage | rack | inspector
+   * columns that scroll on their own → transport pinned to the bottom edge.
+   * Only nodes move; IDs and listeners stay. Below the breakpoint every move is
+   * undone so phones and tablets keep the flowing layout.
+   */
+  const WS_QUERY = '(min-width: 1280px) and (min-height: 640px)';
+  const wsMoves = [];
+
+  function wsPlace(node, parent, before) {
+    if (!node || !parent) return;
+    wsMoves.push({ node, parent: node.parentNode, next: node.nextSibling });
+    parent.insertBefore(node, before || null);
+  }
+
+  function wsRestore() {
+    while (wsMoves.length) {
+      const m = wsMoves.pop();
+      if (!m.parent) continue;
+      const next = m.next && m.next.parentNode === m.parent ? m.next : null;
+      m.parent.insertBefore(m.node, next);
+    }
+  }
+
+  function applyWorkstation(on) {
+    if (!on) {
+      document.body.classList.remove('ws');
+      wsRestore();
+    } else if (!wsMoves.length) {
+      const stage = document.querySelector('.ec-col-stage');
+      const session = document.querySelector('.ec-col-session');
+      if (!stage || !session) return;
+      document.body.classList.add('ws');
+      // Transport becomes the bottom bar; it stays ahead of the mobile bar.
+      wsPlace(document.querySelector('.transport-card'), document.body, document.getElementById('mobileActionBar'));
+      // Signal leads the stage, followed by the Raw/Processed/Removed metrics.
+      const viz = document.getElementById('vizCard');
+      wsPlace(viz, stage, stage.firstChild);
+      if (viz) wsPlace(document.getElementById('engineerCompareToggle'), stage, viz.nextSibling);
+      // Inspector column: selection + overlays first, engine health last.
+      wsPlace(document.getElementById('engineerInspector'), session, session.firstChild);
+      wsPlace(document.querySelector('.engine-cockpit'), session, null);
+    }
+    // Canvases size from their boxes; let the visualizers re-measure.
+    try { window.dispatchEvent(new Event('resize')); } catch { /* cosmetic */ }
+  }
+
+  function installWorkstation() {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia(WS_QUERY);
+    applyWorkstation(mq.matches);
+    const onChange = (e) => applyWorkstation(e.matches);
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
   }
 
   function currentTierId() {
