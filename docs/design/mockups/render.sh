@@ -11,7 +11,7 @@ if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
 fi
 mkdir -p png
 for page in explain stems engineer; do
-  "$BIN" --no-sandbox --hide-scrollbars --disable-gpu --allow-file-access-from-files \
+  "$BIN" --no-sandbox --hide-scrollbars --disable-gpu \
     --window-size=1920,1200 --force-device-scale-factor="$SCALE" --virtual-time-budget=20000 \
     --screenshot="png/$page.png" "file://$PWD/$page.html" >/dev/null 2>&1
   echo "png/$page.png"

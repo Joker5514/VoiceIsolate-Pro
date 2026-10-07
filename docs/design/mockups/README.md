@@ -20,7 +20,8 @@ PNGs are 3840x2400 (1920x1200 at 2x).
 - `shell.css`: the shared shell (top bar, transport, panels, chips). Its color
   values mirror the Precision Studio tokens in `public/app/ds-tokens.css`; it
   does not import that file, so keep them in step by hand.
-- `viz.js`: a deterministic signal model (seeded PRNG). One scene drives every view on a page:
+- `viz.js`: a deterministic signal model (seeded PRNG). On each page, one scene drives every
+  analysis view of the visible time window:
   - voices with continuous pitch contours and formants
   - whispers
   - TV bleed
@@ -29,8 +30,10 @@ PNGs are 3840x2400 (1920x1200 at 2x).
   - transients
   - a room tail
   
-  The waveform, log-frequency spectrogram, source lanes, FFT curves and before/after
-  spectra all come from that scene, so they agree with each other.
+  The waveform, log-frequency spectrogram, source lanes, source cards, FFT curves and
+  before/after spectra all come from that scene, so they agree with each other.
+  The whole-file overview strips (the transport scrubber, and the Stems file strip)
+  use a separate full-length scene. They show the file's shape, not the same samples.
   The overlay boxes and tags are drawn by hand and label representative events.
   For example, the whisper at 02:18.1 sits inside the Speaker B selection on
   Stems and has no box of its own.
@@ -43,7 +46,7 @@ docs/design/mockups/render.sh      # 2x (default)
 docs/design/mockups/render.sh 1    # 1x
 ```
 
-It launches Chromium with `--no-sandbox` and `--allow-file-access-from-files`.
+It launches Chromium with `--no-sandbox`.
 Only run it on these trusted mockup files, or in an isolated container.
 
 The script uses Chromium's `headless_shell` from `/opt/pw-browsers`. Override the
