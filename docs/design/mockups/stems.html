@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VoiceIsolate-Pro — Stems</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+.toolbar { height: 46px; display: flex; align-items: center; gap: 14px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #080d13; }
+.seg { display: flex; padding: 2px; gap: 1px; border: 1px solid var(--line-2); border-radius: 7px; background: #060a0e; }
+.seg button { height: 26px; min-width: 28px; padding: 0 8px; border-radius: 5px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-3); font-size: 11.5px; font-weight: 550; }
+.seg button i { width: 15px; height: 15px; }
+.seg button.on { color: var(--text); background: linear-gradient(#1b2632, #151e28); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+.seg button.on.cy { color: var(--cyan); }
+.tsep { width: 1px; height: 22px; background: var(--line-2); }
+.tlabel { font-size: 10px; color: var(--text-4); letter-spacing: .08em; font-weight: 600; text-transform: uppercase; }
+.readout { display: flex; gap: 16px; font: 11px var(--mono); color: var(--text-3); margin-left: 6px; }
+.readout b { color: var(--text); font-weight: 600; }
+.cmp { display: flex; align-items: center; position: relative; height: 30px; border-radius: 15px; border: 1px solid var(--line-3); background: #060a0e; padding: 2px; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
+.cmp span { position: relative; z-index: 1; width: 104px; text-align: center; font-size: 10.5px; font-weight: 650; letter-spacing: .1em; color: var(--text-3); }
+.cmp span.on { color: #fff; }
+.cmp .knob { position: absolute; left: 2px; top: 2px; width: 104px; height: 24px; border-radius: 12px; background: linear-gradient(#26313d, #1a232d); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 2px 6px rgba(0,0,0,.5); border: 1px solid #3a4a5a; }
+.cmp .grip { position: absolute; left: 100px; top: 7px; width: 12px; height: 14px; z-index: 2; color: var(--text-3); }
+.zoom { display: flex; align-items: center; gap: 8px; color: var(--text-3); }
+.zoom i { width: 15px; height: 15px; }
+.zoom .zs { width: 90px; height: 3px; border-radius: 2px; background: #1b2531; position: relative; }
+.zoom .zs::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 62%; background: var(--text-3); border-radius: 2px; }
+.zoom .zs::after { content: ''; position: absolute; left: 62%; top: -5px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #dfe7ee; box-shadow: 0 1px 3px rgba(0,0,0,.6); }
+.zoom b { font: 11px var(--mono); color: var(--text-2); font-weight: 400; }
+
+.main { position: absolute; top: 100px; bottom: 66px; left: 0; right: 0; display: grid; grid-template-columns: 262px 1fr 372px; gap: 9px; padding: 9px; }
+
+/* left navigator */
+.nav { display: flex; flex-direction: column; overflow: hidden; }
+.navsub { padding: 9px 12px 8px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-3); border-bottom: 1px solid var(--line); }
+.navsub i { width: 13px; height: 13px; color: var(--green); }
+.srcs { padding: 7px; display: grid; gap: 5px; }
+.src { position: relative; padding: 8px 9px 7px 13px; border-radius: 8px; border: 1px solid transparent; background: rgba(255,255,255,.012); }
+.src::before { content: ''; position: absolute; left: 4px; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--c); opacity: .9; }
+.src.sel { border-color: rgba(167,125,255,.5); background: linear-gradient(90deg, rgba(167,125,255,.13), rgba(167,125,255,.03)); box-shadow: 0 0 0 1px rgba(167,125,255,.12), 0 6px 18px rgba(0,0,0,.3); }
+.src.dim { opacity: .55; }
+.src .r1 { display: flex; align-items: baseline; justify-content: space-between; }
+.src .nm { font-weight: 600; font-size: 12.5px; }
+.src .cf { font: 600 12px var(--mono); color: var(--text-2); }
+.src.sel .cf { color: #d6c4ff; }
+.src .sub { font-size: 10.5px; color: var(--text-3); margin-top: 1px; display: flex; justify-content: space-between; }
+.src .spark { height: 14px; margin: 5px 0 4px; }
+.src .ctl { display: flex; gap: 3px; align-items: center; }
+.src .ctl button { height: 20px; min-width: 22px; padding: 0 5px; border-radius: 4px; display: grid; place-items: center; font: 650 9.5px Inter; color: var(--text-3); border: 1px solid var(--line-2); background: #0a1017; }
+.src .ctl button i { width: 12px; height: 12px; }
+.src .ctl button.on-s { color: #0b0f14; background: var(--amber); border-color: var(--amber); }
+.src .ctl button.on-m { color: #fff; background: #3a4654; border-color: #4f5d6d; }
+.src .ctl button.iso { margin-left: auto; padding: 0 7px; display: flex; gap: 4px; font-size: 9.5px; letter-spacing: .06em; }
+.src.sel .ctl button.iso { color: #fff; background: var(--red-solid); border-color: #ff5161; }
+.hist { margin-top: auto; border-top: 1px solid var(--line); padding: 8px 12px 10px; }
+.hist .hh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.hist .row { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 11px; color: var(--text-2); }
+.hist .row .tm { font: 10px var(--mono); color: var(--text-4); margin-left: auto; }
+.hist .row i { width: 12px; height: 12px; color: var(--text-4); }
+
+/* center */
+.center { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.overview { height: 38px; position: relative; padding: 0 52px 0 56px; }
+.overview .ovw { position: absolute; left: 56px; right: 52px; top: 4px; bottom: 4px; border-radius: 5px; background: #070b10; border: 1px solid var(--line); overflow: hidden; }
+.overview .win { position: absolute; top: 2px; bottom: 2px; border: 1px solid rgba(238,243,248,.55); border-radius: 4px; background: rgba(238,243,248,.07); box-shadow: 0 0 0 9999px rgba(3,6,10,.35); }
+.overview .lb { position: absolute; left: 6px; top: 12px; font-size: 9.5px; letter-spacing: .1em; font-weight: 650; color: var(--text-4); }
+.overview .rb { position: absolute; right: 4px; top: 11px; font: 10px var(--mono); color: var(--text-4); }
+.ovmk { position: absolute; bottom: 1px; width: 3px; height: 3px; border-radius: 1px; }
+
+.stage { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.stage .ph .legend { display: flex; gap: 12px; font-size: 10.5px; color: var(--text-3); align-items: center; }
+.stage .ph .legend span { display: flex; align-items: center; gap: 5px; }
+.cbar { width: 90px; height: 6px; border-radius: 2px; background: linear-gradient(90deg, #04070b, #0a2438, #0d4a64, #11829a, #2ccbdc, #b4f3f8, #fff); }
+.rulerwrap { position: relative; padding: 0 52px 0 56px; }
+.plotrow { position: relative; flex: 1; display: flex; }
+.yax { width: 56px; position: relative; border-right: 1px solid var(--line); }
+.fax { width: 52px; position: relative; border-left: 1px solid var(--line); }
+.yax span, .fax span { position: absolute; font: 9.5px var(--mono); color: var(--text-3); transform: translateY(-50%); }
+.yax span { right: 7px; }
+.fax span { left: 7px; }
+.yax i, .fax i { position: absolute; width: 4px; height: 1px; background: var(--line-3); }
+.yax i { right: 0; } .fax i { left: 0; }
+.yax .ttl, .fax .ttl { position: absolute; bottom: 6px; font-size: 8.5px; letter-spacing: .1em; color: var(--text-4); font-weight: 650; }
+.yax .ttl { left: 6px; } .fax .ttl { left: 7px; }
+.plot { position: relative; flex: 1; overflow: hidden; background: #04070b; }
+.plot > canvas { position: absolute; inset: 0; }
+#wav { opacity: .9; mix-blend-mode: screen; }
+.grid-h { position: absolute; left: 0; right: 0; height: 1px; background: rgba(255,255,255,.035); }
+.grid-v { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.03); }
+
+.ov { position: absolute; border-radius: 5px; border: 1px solid var(--c); background: color-mix(in srgb, var(--c) 7%, transparent); }
+.ov.dash { border-style: dashed; }
+.ov .tag { position: absolute; left: -1px; top: -19px; display: flex; gap: 6px; align-items: center; height: 17px; padding: 0 6px; border-radius: 4px 4px 4px 0; font-size: 9.5px; font-weight: 650; letter-spacing: .07em; color: #071016; background: var(--c); white-space: nowrap; }
+.ov .tag b { font: 600 9.5px var(--mono); opacity: .8; }
+.ov .tag.in { top: 4px; left: 4px; border-radius: 4px; color: var(--c); background: rgba(5,8,12,.82); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); }
+.ov .tag.in b { color: var(--text-2); opacity: 1; }
+.hum { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed color-mix(in srgb, var(--src-hum) 70%, transparent); }
+.trans { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(230,237,245,.45); }
+.trans span { position: absolute; top: 6px; left: 4px; font-size: 9px; font-weight: 650; letter-spacing: .08em; color: var(--src-tr); background: rgba(5,8,12,.8); padding: 1px 5px; border-radius: 3px; white-space: nowrap; border: 1px solid rgba(230,237,245,.25); }
+.dimmask { position: absolute; inset: 0; pointer-events: none; }
+.sel-box { position: absolute; border: 1.5px solid #c4a8ff; border-radius: 3px; box-shadow: 0 0 0 9999px rgba(3,5,9,.4), 0 0 24px rgba(167,125,255,.35), inset 0 0 30px rgba(167,125,255,.12); }
+.sel-box .h { position: absolute; width: 9px; height: 9px; background: #fff; border: 1.5px solid #a77dff; border-radius: 2px; }
+.sel-box .e { position: absolute; background: #fff; border-radius: 2px; border: 1px solid #a77dff; }
+.sel-prev { position: absolute; overflow: hidden; }
+.sel-prev canvas { position: absolute; }
+.sel-lbl { position: absolute; left: -1.5px; bottom: -24px; display: flex; gap: 8px; align-items: center; height: 20px; padding: 0 8px; background: #a77dff; color: #0b0715; border-radius: 0 0 4px 4px; font-size: 10px; font-weight: 700; letter-spacing: .06em; white-space: nowrap; }
+.sel-lbl b { font: 600 10px var(--mono); }
+.prevchip { position: absolute; right: 6px; top: 6px; font-size: 9px; font-weight: 700; letter-spacing: .1em; color: #e8ddff; background: rgba(20,12,40,.82); border: 1px solid rgba(167,125,255,.55); padding: 2px 6px; border-radius: 3px; }
+.actions { position: absolute; z-index: 7; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 10px; background: rgba(13,19,27,.94); border: 1px solid #33404f; box-shadow: 0 12px 34px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter: blur(8px); }
+.actions .ctx { padding: 0 10px 0 8px; margin-right: 4px; border-right: 1px solid var(--line-2); line-height: 1.15; }
+.actions .ctx b { display: block; font-size: 11.5px; font-weight: 650; }
+.actions .ctx span { font: 10px var(--mono); color: var(--text-3); }
+.actions button { height: 30px; padding: 0 10px; border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+.actions button i { width: 13px; height: 13px; }
+.actions button.pri { color: #fff; background: linear-gradient(#e2283a, var(--red-solid)); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 3px 10px rgba(216,31,48,.4); }
+.actions button.hov { background: #1c2733; color: var(--text); box-shadow: inset 0 0 0 1px #3b4a5a; }
+.actions kbd { margin-left: 2px; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 1.5px; margin-left: -.75px; background: var(--red); box-shadow: 0 0 10px rgba(255,61,77,.8); z-index: 4; }
+.ph-top { position: absolute; top: 0; width: 11px; height: 9px; margin-left: -5.5px; background: var(--red); clip-path: polygon(0 0, 100% 0, 50% 100%); z-index: 5; }
+.xh-v, .xh-h { position: absolute; background: rgba(255,255,255,.35); }
+.xh-v { top: 0; bottom: 0; width: 1px; }
+.xh-h { left: 0; right: 0; height: 1px; }
+.coord { position: absolute; z-index: 7; padding: 4px 7px; border-radius: 5px; background: rgba(5,8,12,.92); border: 1px solid #3a4858; font: 10.5px var(--mono); color: var(--text); white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,.5); }
+.coord em { font-style: normal; color: var(--text-3); margin: 0 4px; }
+.cursor { position: absolute; z-index: 8; width: 18px; height: 18px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8)); }
+.mk { position: absolute; top: 0; height: 24px; display: flex; align-items: flex-start; }
+.mk span { font-size: 9px; font-weight: 650; padding: 1px 5px; margin-top: 1px; border-radius: 3px; background: #1e2a36; color: var(--text-2); border-left: 2px solid var(--amber); white-space: nowrap; letter-spacing: .03em; }
+
+/* lanes */
+.lanes { height: 288px; display: flex; flex-direction: column; overflow: hidden; }
+.lane { position: relative; display: flex; height: 40px; border-bottom: 1px solid var(--line); }
+.lane:last-child { border-bottom: 0; }
+.lane .lg { width: 56px; border-right: 1px solid var(--line); display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-4); }
+.lane .lg i { width: 13px; height: 13px; }
+.lane .lg .sw { width: 9px; height: 9px; border-radius: 3px; background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 60%, transparent); }
+.lane .la { position: relative; flex: 1; background: linear-gradient(rgba(255,255,255,.008), rgba(255,255,255,0)); }
+.lane .la canvas { position: absolute; inset: 0; }
+.lane .ln { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); display: flex; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 5px; background: rgba(8,12,17,.88); border: 1px solid var(--line-2); font-size: 11px; font-weight: 600; z-index: 2; }
+.lane .ln b { font: 10px var(--mono); color: var(--text-3); font-weight: 400; }
+.lane .lr { width: 52px; border-left: 1px solid var(--line); display: flex; align-items: center; justify-content: center; gap: 3px; }
+.lane .lr button { width: 20px; height: 18px; border-radius: 4px; font: 700 9.5px Inter; color: var(--text-3); border: 1px solid var(--line-2); }
+.lane .lr button.on-s { color: #0b0f14; background: var(--amber); border-color: var(--amber); }
+.lane .lr button.on-m { color: #fff; background: #3a4654; border-color: #4f5d6d; }
+.lane.sel { background: rgba(167,125,255,.05); }
+.lane.sel .ln { border-color: rgba(167,125,255,.6); color: #e2d6ff; }
+.lane .rg { position: absolute; top: 5px; bottom: 5px; border-radius: 4px; border: 1.5px solid #c4a8ff; background: rgba(167,125,255,.1); z-index: 1; }
+.lane .lph { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,61,77,.75); z-index: 3; }
+
+/* right panel */
+.intel { display: flex; flex-direction: column; overflow: hidden; }
+.selhd { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, rgba(167,125,255,.1), transparent 70%); }
+.ring { width: 54px; height: 54px; position: relative; flex: none; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 650 14px Inter; }
+.ring b small { font-size: 9px; color: var(--text-3); font-weight: 600; }
+.selhd .nm { font-size: 16px; font-weight: 650; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+.selhd .sb { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.selhd .tr { font: 10.5px var(--mono); color: #cdb9ff; margin-top: 3px; }
+.kv { padding: 4px 14px 8px; }
+.kv .r { display: flex; align-items: center; justify-content: space-between; height: 27px; border-bottom: 1px solid rgba(255,255,255,.035); font-size: 12px; }
+.kv .r:last-child { border-bottom: 0; }
+.kv .k { color: var(--text-3); }
+.kv .v { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.kv .v.mono { font-family: var(--mono); font-weight: 400; font-size: 11.5px; }
+.lvl { display: flex; gap: 2px; }
+.lvl i { width: 6px; height: 10px; border-radius: 1px; background: #1e2a36; }
+.lvl i.f { background: var(--c); }
+.sect { padding: 10px 14px; border-top: 1px solid var(--line); }
+.sect .sh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.specmini { height: 84px; position: relative; border-radius: 6px; background: #05080c; border: 1px solid var(--line); overflow: hidden; }
+.specmini .band { position: absolute; top: 0; bottom: 0; background: rgba(167,125,255,.09); border-left: 1px dashed rgba(167,125,255,.5); border-right: 1px dashed rgba(167,125,255,.5); }
+.specmini .fl { position: absolute; bottom: 3px; font: 8.5px var(--mono); color: var(--text-4); transform: translateX(-50%); }
+.specmini .lg2 { position: absolute; top: 5px; right: 6px; display: flex; gap: 8px; font-size: 9.5px; color: var(--text-3); }
+.specmini .lg2 span { display: flex; align-items: center; gap: 4px; }
+.treat .tr { display: grid; grid-template-columns: 1fr 76px 66px; align-items: center; gap: 10px; height: 30px; font-size: 12px; }
+.treat .tr .val { font: 600 12px var(--mono); text-align: right; }
+.treat .tr .val.on { color: var(--green); font-family: Inter; font-size: 11px; letter-spacing: .08em; }
+.treat .tr .bar s { background: var(--c, var(--cyan)); }
+.treat .why { font-size: 10.5px; color: var(--text-4); margin-top: 1px; }
+.btnrow { display: flex; gap: 8px; margin-top: 10px; }
+.btnrow .btn { flex: 1; height: 34px; }
+.btn.pv { color: var(--cyan); border-color: rgba(46,213,229,.45); background: linear-gradient(rgba(46,213,229,.12), rgba(46,213,229,.05)); }
+.intent { margin-top: auto; border-top: 1px solid var(--line); padding: 10px 14px 12px; background: linear-gradient(rgba(255,255,255,.012), transparent); }
+.cmd { display: flex; gap: 8px; align-items: flex-start; padding: 9px 10px; border-radius: 9px; background: #05080c; border: 1px solid #2a3846; box-shadow: 0 0 0 3px rgba(46,213,229,.06), inset 0 1px 3px rgba(0,0,0,.5); }
+.cmd i { width: 15px; height: 15px; color: var(--cyan); margin-top: 1px; }
+.cmd p { margin: 0; flex: 1; font-size: 12.5px; line-height: 1.4; color: var(--text); }
+.cmd p .caret { display: inline-block; width: 1.5px; height: 14px; background: var(--cyan); vertical-align: -2px; margin-left: 1px; }
+.cmd .snd { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; background: var(--raised-2); border: 1px solid var(--line-3); color: var(--text-2); }
+.cmd .snd i { width: 13px; height: 13px; color: var(--text-2); margin: 0; }
+.placeholder { font-size: 10.5px; color: var(--text-4); margin: 6px 2px 8px; }
+.plan { border: 1px solid var(--line-2); border-radius: 9px; overflow: hidden; }
+.plan .pr { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 7px 10px; font-size: 11.5px; border-bottom: 1px solid var(--line); }
+.plan .pr:last-child { border-bottom: 0; }
+.plan .pr .n { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font: 650 9.5px var(--mono); color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 50%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
+.plan .pr .x { color: var(--text-3); font-size: 10.5px; }
+.plan .pr .v { font: 600 11px var(--mono); }
+.plan .foot { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: rgba(255,255,255,.015); font-size: 10.5px; color: var(--text-3); }
+</style>
+</head>
+<body>
+<header id="topbar"></header>
+
+<div class="toolbar">
+  <div class="seg">
+    <button title="Pointer"><i data-i="cursor"></i></button>
+    <button title="Time selection"><i data-i="timesel"></i></button>
+    <button class="on cy" title="Time-frequency selection"><i data-i="fit"></i></button>
+    <button title="Spectral brush"><i data-i="brush"></i></button>
+    <button title="Lasso"><i data-i="lasso"></i></button>
+    <button title="Select similar"><i data-i="wand"></i></button>
+  </div>
+  <div class="seg"><button>Waveform</button><button>Spectrogram</button><button class="on">Hybrid</button></div>
+  <div class="seg"><button class="on"><i data-i="layers"></i>Source map</button><button><i data-i="snap"></i>Snap</button></div>
+  <span class="tsep"></span>
+  <button class="ib bd"><i data-i="undo"></i></button><button class="ib bd"><i data-i="redo"></i></button>
+  <div class="readout"><span>SEL <b>02:14.200 → 02:19.800</b></span><span>Δ <b>5.600 s</b></span><span>BAND <b>170 Hz – 4.20 kHz</b></span></div>
+  <div style="flex:1"></div>
+  <div class="cmp"><span class="on">ORIGINAL</span><span>PROCESSED</span><div class="knob"></div><i class="grip" data-i="grip"></i></div>
+  <span class="tsep"></span>
+  <div class="zoom"><i data-i="zoomout"></i><div class="zs"></div><i data-i="zoomin"></i><b>40.0 s</b><button class="ib bd"><i data-i="fit"></i></button></div>
+</div>
+
+<div class="main">
+  <!-- LEFT: source navigator -->
+  <aside class="panel nav">
+    <div class="ph"><span class="t"><i data-i="layers"></i>Detected sources</span><span class="chip cy">8</span></div>
+    <div class="navsub"><i data-i="check"></i>Analysis complete <span style="margin-left:auto;font-family:var(--mono);font-size:10px">12:48 in 41 s</span></div>
+    <div class="srcs" id="srcs"></div>
+    <div class="hist">
+      <div class="hh"><span class="cap">History</span><span style="font-size:10.5px;color:var(--text-4)">4 steps</span></div>
+      <div class="row"><i data-i="history"></i>Preview: Isolate Speaker B<span class="tm">now</span></div>
+      <div class="row" style="color:var(--text-3)"><i data-i="check"></i>Hum −21 dB (60/120 Hz)<span class="tm">02:41</span></div>
+      <div class="row" style="color:var(--text-3)"><i data-i="check"></i>Auto analysis &amp; stem split<span class="tm">02:38</span></div>
+    </div>
+  </aside>
+
+  <!-- CENTER -->
+  <section class="center">
+    <div class="overview">
+      <span class="lb">FILE</span>
+      <div class="ovw" id="ovw"><canvas id="ovc"></canvas></div>
+      <span class="rb">12:48</span>
+    </div>
+
+    <div class="panel stage">
+      <div class="ph">
+        <span class="t"><i data-i="wave"></i>Signal canvas<span class="chip" style="margin-left:4px">L+R</span><span class="chip">FFT 4096 • Hann</span></span>
+        <span class="legend">
+          <span><i class="sw" style="background:var(--src-a)"></i>Speaker A</span>
+          <span><i class="sw" style="background:var(--src-b)"></i>Speaker B</span>
+          <span><i class="sw" style="background:var(--src-w)"></i>Whisper</span>
+          <span><i class="sw" style="background:var(--src-tv)"></i>Television</span>
+          <span><i class="sw" style="background:var(--src-hvac)"></i>HVAC</span>
+          <span><i class="sw" style="background:var(--src-hum)"></i>Hum</span>
+          <span><i class="sw" style="background:var(--src-rv)"></i>Reflection</span>
+          <span style="margin-left:6px;gap:6px">−96<i class="cbar"></i>−24 dB</span>
+        </span>
+      </div>
+      <div class="rulerwrap"><div class="ruler" id="ruler"></div></div>
+      <div class="plotrow">
+        <div class="yax" id="yax"><span class="ttl">dBFS</span></div>
+        <div class="plot" id="plot">
+          <canvas id="spec"></canvas>
+          <canvas id="wav"></canvas>
+          <div id="ovl"></div>
+        </div>
+        <div class="fax" id="fax"><span class="ttl">Hz</span></div>
+      </div>
+    </div>
+
+    <div class="panel lanes" id="lanes">
+      <div class="ph" style="height:30px"><span class="t">Source lanes</span><span class="meta">Click a region to select it on the canvas • drag to extend</span></div>
+    </div>
+  </section>
+
+  <!-- RIGHT: intelligence -->
+  <aside class="panel intel">
+    <div class="ph"><span class="t"><i data-i="spark"></i>Signal intelligence</span><span class="meta">Local analysis</span></div>
+    <div class="selhd">
+      <div class="ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="#1d2833" stroke-width="3"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="#a77dff" stroke-width="3" stroke-linecap="round" stroke-dasharray="84.7 97.4"/></svg><b>87<small>%</small></b></div>
+      <div>
+        <div class="nm"><i class="sw" style="background:var(--src-b);width:10px;height:10px"></i>Speaker B</div>
+        <div class="sb">Quiet voice • second speaker</div>
+        <div class="tr">02:14.2 – 02:19.8 • 23 regions total</div>
+      </div>
+    </div>
+    <div class="kv">
+      <div class="r"><span class="k">Confidence</span><span class="v mono">87%</span></div>
+      <div class="r"><span class="k">Frequency concentration</span><span class="v mono">1.4 – 4.2 kHz</span></div>
+      <div class="r"><span class="k">Estimated distance</span><span class="v">Medium <span class="lvl" style="--c:#a77dff"><i class="f"></i><i class="f"></i><i></i></span></span></div>
+      <div class="r"><span class="k">Masking</span><span class="v"><span class="chip" style="color:#ffc79a;border-color:rgba(245,158,87,.35)">Television</span><span class="chip" style="color:#a9eef5;border-color:rgba(46,213,229,.3)">Speaker A</span></span></div>
+      <div class="r"><span class="k">Speech energy</span><span class="v">Low <span class="lvl" style="--c:#a77dff"><i class="f"></i><i></i><i></i><i></i></span></span></div>
+      <div class="r"><span class="k">Whisper risk</span><span class="v"><span class="chip warn">High</span></span></div>
+    </div>
+    <div class="sect">
+      <div class="sh"><span class="cap">Selection spectrum</span><span style="font:10px var(--mono);color:var(--text-4)">avg 5.6 s</span></div>
+      <div class="specmini" id="smini"><canvas id="sminic"></canvas>
+        <div class="lg2"><span><i class="sw" style="background:var(--src-b)"></i>Speaker B</span><span><i class="sw" style="background:var(--src-tv)"></i>TV</span><span><i class="sw" style="background:var(--src-hvac)"></i>Floor</span></div>
+      </div>
+    </div>
+    <div class="sect treat">
+      <div class="sh"><span class="cap">Recommended treatment</span><span class="chip ok">Speech-safe</span></div>
+      <div class="tr" style="--c:#a77dff"><div>Voice Focus<div class="why">Speaker B, 1.4–4.2 kHz</div></div><div class="bar"><s style="width:34%"></s></div><div class="val">+34%</div></div>
+      <div class="tr" style="--c:#f59e57"><div>TV Suppression<div class="why">outside protected band</div></div><div class="bar"><s style="width:52%"></s></div><div class="val">−13 dB</div></div>
+      <div class="tr" style="--c:#5b8cff"><div>Dereverb<div class="why">RT60 0.55 s → 0.38 s</div></div><div class="bar"><s style="width:21%"></s></div><div class="val">21%</div></div>
+      <div class="tr" style="--c:#ff7ab6"><div>Whisper Protection<div class="why">3 whispers in range</div></div><div class="toggle on" style="justify-self:end"></div><div class="val on">ON</div></div>
+      <div class="btnrow"><button class="btn pv"><i data-i="headphones"></i>PREVIEW</button><button class="btn primary"><i data-i="check"></i>APPLY</button></div>
+    </div>
+    <div class="intent">
+      <div class="cmd"><i data-i="spark"></i><p>Isolate the quieter speaker and reduce the television without damaging whispers.<span class="caret"></span></p><button class="snd"><i data-i="send"></i></button></div>
+      <div class="placeholder">Tell VoiceIsolate what you want to hear… <kbd>/</kbd></div>
+      <div class="plan">
+        <div class="pr" style="--c:#a77dff"><span class="n">1</span><span>Isolate <b>Speaker B</b> <span class="x">23 regions</span></span><span class="v">+34%</span></div>
+        <div class="pr" style="--c:#f59e57"><span class="n">2</span><span>Reduce <b>Television</b> <span class="x">all regions</span></span><span class="v">−13 dB</span></div>
+        <div class="pr" style="--c:#ff7ab6"><span class="n">3</span><span>Protect <b>Whispers</b> <span class="x">14 regions</span></span><span class="v" style="color:var(--green)">LOCKED</span></div>
+        <div class="pr" style="--c:#31cf7d"><span class="n">4</span><span>Verify speech preservation</span><span class="v">est. 96%</span></div>
+        <div class="foot"><span>Plan ready • 0 ML reruns for preview</span><span style="display:flex;gap:6px"><button class="btn sm ghost">Edit</button><button class="btn sm">Apply plan</button></span></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div class="transport" id="transport"></div>
+
+<script src="viz.js"></script>
+<script>
+(function () {
+  VIP.shell('stems');
+  const T0 = 120, T1 = 160, FMIN = 40, FMAX = 16000;
+  const sc = VIP.makeScene({
+    seed: 42,
+    voices: [
+      { id: 'a', f0: 118, level: -27, amp: 0.66, segs: [[120.3, 126.6], [129.9, 133.6], [140.6, 146.9], [150.4, 156.2], [158.2, 160]] },
+      { id: 'b', f0: 208, level: -35, amp: 0.25, segs: [[127.0, 129.4], [134.25, 139.75], [147.4, 149.9]] },
+    ],
+    whispers: [{ segs: [[131.4, 132.5], [138.1, 139.4], [156.6, 157.8]], level: -54, amp: 0.09 }],
+    tv: { level: -62, amp: 0.055, boost: [[142.8, 152.2, 7]] },
+    hvac: -61, hum: -45,
+    transients: [{ t: 125.25, level: -29, amp: 0.72 }, { t: 144.6, level: -33, amp: 0.5 }, { t: 152.95, level: -31, amp: 0.58 }],
+  });
+
+  const plot = document.getElementById('plot');
+  const PW = plot.clientWidth, PH = plot.clientHeight;
+  const L = Math.log(FMAX / FMIN);
+  const X = (t) => ((t - T0) / (T1 - T0)) * PW;
+  const Y = (f) => PH * (1 - Math.log(f / FMIN) / L);
+
+  VIP.drawSpectrogram(document.getElementById('spec'), sc, { t0: T0, t1: T1, fmin: FMIN, fmax: FMAX, dbMin: -102, dbMax: -25 });
+  VIP.drawWaveform(document.getElementById('wav'), sc, { t0: T0, t1: T1, color: 'rgba(214,232,248,0.13)', rmsColor: 'rgba(236,246,255,0.24)', scale: 0.44, centerLine: 'rgba(255,255,255,0.10)' });
+
+  // grid + axes
+  const ovl = document.getElementById('ovl');
+  const yax = document.getElementById('yax'), fax = document.getElementById('fax');
+  let h = '';
+  [50, 100, 200, 500, 1000, 2000, 5000, 10000].forEach((f) => {
+    h += `<div class="grid-h" style="top:${Y(f).toFixed(1)}px"></div>`;
+    fax.insertAdjacentHTML('beforeend', `<i style="top:${Y(f).toFixed(1)}px"></i><span style="top:${Y(f).toFixed(1)}px">${f >= 1000 ? f / 1000 + 'k' : f}</span>`);
+  });
+  for (let t = 125; t < T1; t += 5) h += `<div class="grid-v" style="left:${X(t).toFixed(1)}px"></div>`;
+  ovl.insertAdjacentHTML('beforeend', h);
+  const mid = PH / 2, sc2 = PH * 0.44;
+  [[0, '0'], [-6, '−6'], [-12, '−12'], [-24, '−24']].forEach(([db, l]) => {
+    const a = Math.pow(10, db / 20);
+    [mid - a * sc2, mid + a * sc2].forEach((y) => yax.insertAdjacentHTML('beforeend', `<i style="top:${y.toFixed(1)}px"></i><span style="top:${y.toFixed(1)}px">${l}</span>`));
+  });
+  yax.insertAdjacentHTML('beforeend', `<i style="top:${mid}px"></i><span style="top:${mid}px">−∞</span>`);
+
+  // ruler + markers
+  const ruler = document.getElementById('ruler');
+  VIP.ruler(ruler, T0, T1, 5, 1, (t) => VIP.mmss(t, 1));
+  const marks = [[125.25, 'M1 Door'], [144.6, 'M2 Cup'], [152.95, 'M3 Knock']];
+  marks.forEach(([t, l]) => ruler.insertAdjacentHTML('beforeend', `<div class="mk" style="left:${X(t)}px"><span>${l}</span></div>`));
+
+  // source overlays
+  const box = (t0, t1, f0, f1, c, tag, conf, cls) => {
+    const x = X(t0), w = X(t1) - x, y = Y(f1), hh = Y(f0) - y;
+    return `<div class="ov ${cls || ''}" style="--c:${c};left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${w.toFixed(1)}px;height:${hh.toFixed(1)}px">${tag ? `<span class="tag ${cls && cls.includes('inner') ? 'in' : ''}">${tag}${conf ? ` <b>${conf}</b>` : ''}</span>` : ''}</div>`;
+  };
+  let o = '';
+  o += box(120.3, 126.6, 95, 5200, 'var(--src-a)', 'SPEAKER A', '94%');
+  o += box(129.9, 133.6, 95, 5200, 'var(--src-a)', '', '');
+  o += box(140.6, 146.9, 95, 5200, 'var(--src-a)', 'SPEAKER A', '94%');
+  o += box(150.4, 156.2, 95, 5200, 'var(--src-a)', '', '');
+  o += box(127.0, 129.4, 170, 4200, 'var(--src-b)', 'SPEAKER B', '87%');
+  o += box(147.4, 149.9, 170, 4200, 'var(--src-b)', '', '');
+  o += box(131.4, 132.5, 700, 8200, 'var(--src-w)', 'WHISPER', '79%');
+  o += box(156.6, 157.8, 700, 8200, 'var(--src-w)', 'WHISPER', '81%');
+  o += box(142.9, 152.1, 210, 3900, 'var(--src-tv)', 'TELEVISION', '91%', 'dash inner');
+  o += box(126.65, 128.4, 95, 3200, 'var(--src-rv)', 'ROOM REFLECTION', '73%', 'dash inner');
+  o += box(120.0, 159.95, 42, 420, 'var(--src-hvac)', 'HVAC', '88%', 'dash inner');
+  o += `<div class="hum" style="top:${Y(60)}px"></div><div class="hum" style="top:${Y(120)}px"></div>`;
+  o += `<div style="position:absolute;right:8px;top:${Y(120) - 22}px" class="ov" ><span class="tag in" style="--c:var(--src-hum);position:static;display:inline-flex">60 Hz HUM <b>99%</b></span></div>`;
+  marks.forEach(([t]) => { o += `<div class="trans" style="left:${X(t)}px"><span>TRANSIENT</span></div>`; });
+  ovl.insertAdjacentHTML('beforeend', o);
+  ovl.querySelectorAll('.ov[style*="right:8px"]').forEach((e) => { e.style.border = '0'; e.style.background = 'none'; });
+
+  // selection with processed preview inside
+  const S0 = 134.2, S1 = 139.8, SF0 = 170, SF1 = 4200;
+  const sx = X(S0), sw = X(S1) - sx, sy = Y(SF1), sh = Y(SF0) - sy;
+  ovl.insertAdjacentHTML('beforeend', `<div class="sel-prev" id="selprev" style="left:${sx}px;top:${sy}px;width:${sw}px;height:${sh}px"><canvas id="selc" style="left:0;top:${-sy}px;width:${sw}px;height:${PH}px"></canvas></div>`);
+  VIP.drawSpectrogram(document.getElementById('selc'), sc, { t0: S0, t1: S1, fmin: FMIN, fmax: FMAX, dbMin: -100, dbMax: -22, seed: 77, gains: { tv: -13, hvac: -14, a: -18, reverb: -12, floor: -4, hum: -21, b: 4, whisper: 2 } });
+  ovl.insertAdjacentHTML('beforeend', `
+    <div class="sel-box" style="left:${sx}px;top:${sy}px;width:${sw}px;height:${sh}px">
+      <i class="h" style="left:-5px;top:-5px"></i><i class="h" style="right:-5px;top:-5px"></i><i class="h" style="left:-5px;bottom:-5px"></i><i class="h" style="right:-5px;bottom:-5px"></i>
+      <i class="e" style="left:-3px;top:50%;width:5px;height:22px;margin-top:-11px"></i><i class="e" style="right:-3px;top:50%;width:5px;height:22px;margin-top:-11px"></i>
+      <i class="e" style="top:-3px;left:50%;height:5px;width:22px;margin-left:-11px"></i>
+    </div>
+    <span class="prevchip" style="left:${sx + sw - 6}px;top:${sy + 6}px;right:auto;transform:translateX(-100%);z-index:7">PREVIEW • TREATMENT</span>
+    <span class="sel-lbl" style="left:${sx - 0.5}px;top:${sy + sh + 1}px;bottom:auto;z-index:7">QUIET VOICE • SPEAKER B <b>02:14.2–02:19.8</b></span>`);
+  // contextual actions
+  ovl.insertAdjacentHTML('beforeend', `
+    <div class="actions" style="left:${sx - 210}px;top:${sy - 58}px">
+      <div class="ctx"><b>Quiet Voice</b><span>02:14.2–02:19.8 • 170 Hz–4.2 kHz</span></div>
+      <button class="pri"><i data-i="target"></i>ISOLATE<kbd style="border-color:rgba(255,255,255,.4);color:#fff">I</kbd></button>
+      <button class="hov"><i data-i="plus"></i>BOOST</button>
+      <button><i data-i="minus"></i>REDUCE</button>
+      <button><i data-i="x"></i>REMOVE</button>
+      <button><i data-i="shieldp"></i>PROTECT</button>
+      <button><i data-i="headphones"></i>SOLO</button>
+    </div>`);
+  // playhead + crosshair cursor
+  const PHT = 137.364;
+  ovl.insertAdjacentHTML('beforeend', `<div class="playhead" style="left:${X(PHT)}px"></div>`);
+  ruler.insertAdjacentHTML('beforeend', `<div class="ph-top" style="left:${X(PHT) + 56}px"></div>`);
+  const cx = X(136.9), cy = Y(2840);
+  ovl.insertAdjacentHTML('beforeend', `
+    <div class="xh-v" style="left:${cx}px;top:${sy}px;bottom:auto;height:${sh}px;opacity:.6"></div>
+    <div class="xh-h" style="top:${cy}px;left:${sx}px;right:auto;width:${sw}px;opacity:.6"></div>
+    <i class="cursor" data-i="cursor" style="left:${cx - 3}px;top:${cy - 2}px"></i>
+    <div class="coord" style="left:${cx + 16}px;top:${cy + 12}px">02:16.900<em>•</em>2.84 kHz<em>•</em>−31.4 dB</div>`);
+
+  // overview
+  const ovc = document.getElementById('ovc');
+  const scAll = VIP.makeScene({ seed: 99, voices: [{ id: 'a', f0: 118, level: -30, amp: 0.7, segs: VIP.segsFor(0, 768, 7, 0.62) }, { id: 'b', f0: 205, level: -40, amp: 0.3, segs: VIP.segsFor(3, 768, 11, 0.3) }], tv: { level: -60, amp: 0.06 } });
+  VIP.drawWaveform(ovc, scAll, { t0: 0, t1: 768, color: 'rgba(141,160,180,0.45)', rmsColor: 'rgba(200,214,228,0.7)', scale: 0.46, centerLine: false });
+  const ovw = document.getElementById('ovw'), OW = ovw.clientWidth;
+  ovw.insertAdjacentHTML('beforeend', `<div class="win" style="left:${(T0 / 768) * OW}px;width:${((T1 - T0) / 768) * OW}px"></div>`);
+  const Rr = VIP.rng(5);
+  for (let i = 0; i < 14; i++) ovw.insertAdjacentHTML('beforeend', `<i class="ovmk" style="left:${(Rr() * OW).toFixed(0)}px;background:var(--src-w)"></i>`);
+
+  // lanes
+  const lanesEl = document.getElementById('lanes');
+  const lanes = [
+    ['a', 'Speaker A', 'var(--src-a)', '#2ed5e5', '31 regions', ''],
+    ['b', 'Speaker B', 'var(--src-b)', '#a77dff', '23 regions', 'sel'],
+    ['whisper', 'Whispers', 'var(--src-w)', '#ff7ab6', '14 regions', ''],
+    ['tv', 'Television', 'var(--src-tv)', '#f59e57', 'continuous', ''],
+    ['hvac', 'Environment', 'var(--src-hvac)', '#8aa4bb', 'HVAC • hum', ''],
+    ['transient', 'Transient events', 'var(--src-tr)', '#e6edf5', '9 events', ''],
+  ];
+  lanes.forEach(([id, nm, cv, hex, meta, cls], i) => {
+    lanesEl.insertAdjacentHTML('beforeend', `<div class="lane ${cls}" style="--c:${cv}"><div class="lg"><i data-i="${id === 'tv' ? 'eyeoff' : 'eye'}"></i><span class="sw"></span></div><div class="la"><canvas></canvas><span class="ln">${nm}<b>${meta}</b></span>${cls ? `<div class="rg" style="left:${X(S0)}px;width:${X(S1) - X(S0)}px"></div>` : ''}<div class="lph" style="left:${X(PHT)}px"></div></div><div class="lr"><button class="${id === 'tv' ? 'on-m' : ''}">M</button><button class="${id === 'b' ? 'on-s' : ''}">S</button></div></div>`);
+    const c = lanesEl.querySelectorAll('.lane canvas')[i];
+    const ref = { a: 0.6, b: 0.24, whisper: 0.08, tv: 0.2, hvac: 0.16, transient: 0.12 }[id];
+    VIP.drawLane(c, sc, id, hex, { t0: T0, t1: T1, ref });
+  });
+
+  // source cards
+  const srcs = [
+    ['Speaker A', 'Primary voice', '94%', 'var(--src-a)', 'a', '#2ed5e5', ''],
+    ['Speaker B', 'Quiet voice', '87%', 'var(--src-b)', 'b', '#a77dff', 'sel'],
+    ['Whisper Events', '14 regions', '79%', 'var(--src-w)', 'whisper', '#ff7ab6', ''],
+    ['Television', 'Background • music bed', '91%', 'var(--src-tv)', 'tv', '#f59e57', 'muted'],
+    ['HVAC', 'Continuous noise', '88%', 'var(--src-hvac)', 'hvac', '#8aa4bb', ''],
+    ['Hum', '60 Hz / 120 Hz', '99%', 'var(--src-hum)', 'hum', '#d9c46a', ''],
+    ['Room Reflection', 'RT60 ≈ 0.55 s', '73%', 'var(--src-rv)', 'a', '#5b8cff', ''],
+    ['Transient Events', '9 events', '96%', 'var(--src-tr)', 'transient', '#e6edf5', ''],
+  ];
+  const srcEl = document.getElementById('srcs');
+  srcs.forEach(([nm, sub, cf, cv, id, hex, st], i) => {
+    srcEl.insertAdjacentHTML('beforeend', `<div class="src ${st === 'sel' ? 'sel' : ''} ${st === 'muted' ? 'dim' : ''}" style="--c:${cv}">
+      <div class="r1"><span class="nm">${nm}</span><span class="cf">${cf}</span></div>
+      <div class="sub"><span>${sub}</span></div>
+      <div class="spark"><canvas></canvas></div>
+      <div class="ctl"><button><i data-i="${st === 'muted' ? 'eyeoff' : 'eye'}"></i></button><button class="${st === 'muted' ? 'on-m' : ''}">M</button><button class="${st === 'sel' ? 'on-s' : ''}">S</button><button><i data-i="${i === 5 ? 'lock' : 'unlock'}"></i></button><button class="iso"><i data-i="target"></i>ISOLATE</button></div>
+    </div>`);
+    const c = srcEl.querySelectorAll('.spark canvas')[i];
+    const ref = { a: 0.6, b: 0.24, whisper: 0.08, tv: 0.2, hvac: 0.14, hum: 0.09, transient: 0.12 }[id];
+    VIP.drawLane(c, scAll.voices.length && (id === 'a' || id === 'b') ? scAll : sc, id, hex, { t0: id === 'a' || id === 'b' ? 0 : T0, t1: id === 'a' || id === 'b' ? 768 : T1, ref });
+  });
+
+  // selection spectrum (Speaker B vs TV vs floor)
+  const sb = VIP.spectrumAt(sc, 137, { N: 220, gains: { tv: -200, hvac: -200, hum: -200, a: -200, whisper: -200, floor: -200 }, fmin: 50, fmax: 16000 });
+  const stv = VIP.spectrumAt(sc, 137, { N: 220, gains: { a: -200, b: -200, whisper: -200, hvac: -200, hum: -200 }, fmin: 50, fmax: 16000 });
+  const sfl = VIP.spectrumAt(sc, 137, { N: 220, gains: { a: -200, b: -200, whisper: -200, tv: -200 }, fmin: 50, fmax: 16000 });
+  const norm = (s) => s.db.map((d, i) => [i / (s.db.length - 1), Math.max(0, Math.min(1, (d + 100) / 70))]);
+  const smooth = (p) => p.map((v, i) => [v[0], (p[Math.max(0, i - 1)][1] + v[1] * 2 + p[Math.min(p.length - 1, i + 1)][1]) / 4]);
+  VIP.drawCurve(document.getElementById('sminic'), [
+    { pts: smooth(norm(sfl)), color: 'rgba(138,164,187,0.7)', width: 1 },
+    { pts: smooth(norm(stv)), color: '#f59e57', fill: 'rgba(245,158,87,0.12)', width: 1.1 },
+    { pts: smooth(norm(sb)), color: '#b48fff', fill: 'rgba(167,125,255,0.28)', width: 1.4 },
+  ]);
+  const sm = document.getElementById('smini'), SW = sm.clientWidth, lf = (f) => (Math.log(f / 50) / Math.log(320)) * SW;
+  sm.insertAdjacentHTML('beforeend', `<div class="band" style="left:${lf(1400)}px;width:${lf(4200) - lf(1400)}px"></div>`);
+  [[100, '100'], [1000, '1k'], [10000, '10k']].forEach(([f, l]) => sm.insertAdjacentHTML('beforeend', `<span class="fl" style="left:${lf(f)}px">${l}</span>`));
+
+  VIP.transport(document.getElementById('transport'), { pos: 137.364 / 768, right: '<button class="btn" style="margin-left:4px"><i data-i="export"></i>Export stems</button>' });
+  VIP.icons();
+})();
+</script>
+</body>
+</html>

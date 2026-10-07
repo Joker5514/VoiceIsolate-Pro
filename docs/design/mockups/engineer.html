@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VoiceIsolate-Pro — Engineer</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+.toolbar { height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #080d13; }
+.lyr { display: flex; gap: 4px; align-items: center; }
+.lyr .tlabel { margin-right: 6px; }
+.lp { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 12px; border: 1px solid var(--line-2); font-size: 11px; color: var(--text-3); }
+.lp i.d { width: 7px; height: 7px; border-radius: 50%; background: var(--c); opacity: .35; }
+.lp.on { color: var(--text); border-color: color-mix(in srgb, var(--c) 45%, transparent); background: color-mix(in srgb, var(--c) 9%, transparent); }
+.lp.on i.d { opacity: 1; box-shadow: 0 0 6px var(--c); }
+.tlabel { font-size: 10px; color: var(--text-4); letter-spacing: .08em; font-weight: 650; text-transform: uppercase; }
+.sel { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 10px; border-radius: 6px; border: 1px solid var(--line-2); font: 11px var(--mono); color: var(--text-2); background: #070b10; }
+.sel i { width: 11px; height: 11px; color: var(--text-4); }
+.sel span { font: 600 9.5px Inter; letter-spacing: .08em; color: var(--text-4); }
+
+.ws { position: absolute; top: 96px; bottom: 66px; left: 0; right: 0; display: grid; grid-template-columns: 1fr 392px 352px; gap: 8px; padding: 8px; }
+.col { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+.ph { height: 30px; }
+
+/* waveform + spectrogram */
+.tl { position: relative; }
+.axL { width: 44px; flex: none; position: relative; border-right: 1px solid var(--line); }
+.axR { width: 46px; flex: none; position: relative; border-left: 1px solid var(--line); }
+.axL span, .axR span { position: absolute; font: 9px var(--mono); color: var(--text-3); transform: translateY(-50%); }
+.axL span { right: 6px; } .axR span { left: 6px; }
+.axL b { position: absolute; left: 8px; font: 650 10px Inter; color: var(--text-2); transform: translateY(-50%); }
+.row { display: flex; position: relative; }
+.plotc { position: relative; flex: 1; overflow: hidden; }
+.plotc > canvas { position: absolute; inset: 0; }
+.chan { height: 62px; border-bottom: 1px solid var(--line); background: #05080c; }
+.rw { padding: 0 46px 0 44px; }
+.spec { height: 318px; background: #04070b; }
+.gh { position: absolute; left: 0; right: 0; height: 1px; background: rgba(255,255,255,.035); }
+.gv { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.03); }
+.rail { height: 16px; position: relative; border-bottom: 1px solid var(--line); background: #070b10; }
+.rail i { position: absolute; top: 4px; height: 8px; border-radius: 2px; background: var(--c); opacity: .9; }
+.rail .lbl { position: absolute; left: -40px; top: 2px; font: 600 8.5px Inter; letter-spacing: .1em; color: var(--text-4); }
+.fo { position: absolute; border: 1px solid var(--c); border-radius: 4px; background: color-mix(in srgb, var(--c) 7%, transparent); }
+.fo.d { border-style: dashed; }
+.fo .tg { position: absolute; left: 3px; top: 3px; display: flex; gap: 5px; align-items: center; height: 16px; padding: 0 5px; border-radius: 3px; background: rgba(5,8,12,.85); border: 1px solid color-mix(in srgb, var(--c) 50%, transparent); color: var(--c); font-size: 9px; font-weight: 700; letter-spacing: .08em; white-space: nowrap; }
+.fo .tg b { font: 600 9px var(--mono); color: var(--text-2); }
+.fo.hatch { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--c) 22%, transparent) 0 2px, transparent 2px 7px); }
+.hum { position: absolute; left: 0; right: 0; border-top: 1px dashed color-mix(in srgb, var(--src-hum) 75%, transparent); }
+.trn { position: absolute; top: 0; bottom: 0; border-left: 1px dashed rgba(230,237,245,.5); }
+.plh { position: absolute; top: 0; bottom: 0; width: 1.5px; margin-left: -.75px; background: var(--red); box-shadow: 0 0 10px rgba(255,61,77,.8); z-index: 5; }
+.selr { position: absolute; top: 0; bottom: 0; background: rgba(46,213,229,.06); border-left: 1px solid rgba(46,213,229,.45); border-right: 1px solid rgba(46,213,229,.45); }
+
+/* chain */
+.chain { height: 152px; }
+.nodes { display: flex; align-items: center; padding: 10px 12px 0; gap: 0; }
+.node { position: relative; width: 110px; height: 82px; border-radius: 9px; padding: 7px 8px; background: linear-gradient(#131c26, #0f161e); border: 1px solid var(--line-2); box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 4px 12px rgba(0,0,0,.35); flex: none; }
+.node.io { width: 66px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; }
+.node.io b { font-size: 9.5px; letter-spacing: .12em; }
+.node.io span { font: 9px var(--mono); color: var(--text-3); }
+.node .nh { display: flex; align-items: center; gap: 5px; }
+.node .nh .led { width: 5px; height: 5px; }
+.node .nh .led.off { background: #3a4654; box-shadow: none; }
+.node .nh b { font-size: 8px; font-weight: 700; letter-spacing: .05em; white-space: nowrap; overflow: hidden; }
+.node .gd { margin-top: 5px; font: 600 15px Inter; letter-spacing: -.01em; }
+.node .gd.n { color: var(--text-2); font-size: 12px; margin-top: 7px; }
+.node .st { display: flex; justify-content: space-between; margin-top: 5px; font: 9px var(--mono); color: var(--text-3); }
+.node .cf { position: absolute; right: 7px; top: 7px; font: 600 9px var(--mono); color: var(--text-3); }
+.node.nsel { border-color: var(--cyan); box-shadow: 0 0 0 1px rgba(46,213,229,.3), 0 0 22px rgba(46,213,229,.15), inset 0 1px 0 rgba(255,255,255,.06); background: linear-gradient(#14222c, #0f1a22); }
+.node.wh { border-color: rgba(255,122,182,.5); }
+.node.byp { opacity: .5; }
+.node.drag { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(0,0,0,.55); }
+.node .grip { position: absolute; left: 50%; bottom: -1px; width: 16px; height: 8px; margin-left: -8px; color: var(--text-4); }
+.wire { flex: 1; min-width: 8px; height: 2px; background: #2a3846; position: relative; }
+.wire.act { background: linear-gradient(90deg, #2a3846, var(--cyan), #2a3846); }
+.wire::after { content: ''; position: absolute; right: -1px; top: -3px; border: 4px solid transparent; border-left: 5px solid #3a4b5c; border-right: 0; }
+.chainfoot { display: flex; gap: 18px; padding: 8px 14px 0; font-size: 10.5px; color: var(--text-3); }
+.chainfoot b { font: 600 10.5px var(--mono); color: var(--text-2); }
+
+/* params */
+.lower { flex: 1; display: grid; grid-template-columns: 1fr 470px; gap: 8px; min-height: 0; }
+.params { display: flex; flex-direction: column; }
+.pbody { flex: 1; display: grid; grid-template-columns: 1fr 272px; gap: 14px; padding: 12px; min-height: 0; }
+.graph { position: relative; border-radius: 8px; background: #05080c; border: 1px solid var(--line); overflow: hidden; }
+.graph canvas { position: absolute; inset: 0; }
+.graph .lg { position: absolute; top: 7px; left: 9px; display: flex; gap: 10px; font-size: 9.5px; color: var(--text-3); }
+.graph .lg span { display: flex; align-items: center; gap: 4px; }
+.graph .ax { position: absolute; font: 8.5px var(--mono); color: var(--text-4); }
+.knobs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.knob { text-align: center; }
+.knob svg { width: 60px; height: 60px; display: block; margin: 0 auto; }
+.knob .kl { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+.knob .kv { font: 600 11px var(--mono); color: var(--text); }
+.sl { margin-top: 12px; }
+.sl .sh { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-2); margin-bottom: 6px; }
+.sl .sh b { font: 600 11px var(--mono); color: var(--text); }
+.track2 { position: relative; height: 4px; border-radius: 2px; background: #1a2430; }
+.track2 s { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--c, var(--cyan)); }
+.track2 i { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fff, #c9d3dc); box-shadow: 0 1px 4px rgba(0,0,0,.7), 0 0 0 3px rgba(46,213,229,.15); }
+.adv { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--text-2); }
+.adv a { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--cyan); }
+.adv a i { width: 12px; height: 12px; }
+
+.wh .whbody { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.whviz { position: relative; height: 150px; border-radius: 8px; background: #04070b; border: 1px solid var(--line); overflow: hidden; }
+.whviz canvas { position: absolute; inset: 0; }
+.pband { position: absolute; left: 0; right: 0; background: repeating-linear-gradient(135deg, rgba(255,122,182,.16) 0 2px, transparent 2px 8px); border-top: 1px solid rgba(255,122,182,.7); border-bottom: 1px solid rgba(255,122,182,.7); }
+.pband span { position: absolute; right: 6px; top: 4px; font: 700 9px Inter; letter-spacing: .1em; color: #ffc2dc; background: rgba(5,8,12,.85); padding: 1px 5px; border-radius: 3px; }
+.bnd { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--red); }
+.bnd span { position: absolute; left: 6px; top: -16px; font: 700 8.5px Inter; letter-spacing: .1em; color: #ffb3ba; }
+.whstats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.whstats div { padding: 7px 8px; border-radius: 7px; border: 1px solid var(--line); background: rgba(255,255,255,.015); }
+.whstats span { display: block; font-size: 9.5px; color: var(--text-3); }
+.whstats b { font: 650 15px Inter; }
+.whstats b.g { color: var(--green); font-size: 13px; letter-spacing: .06em; }
+
+/* analysis stack */
+.an { display: flex; flex-direction: column; }
+.an .body { position: relative; flex: 1; padding: 8px 10px 10px; }
+.fft { height: 236px; }
+.fftc { position: absolute; inset: 8px 10px 10px; border-radius: 6px; background: #04070b; border: 1px solid var(--line); overflow: hidden; }
+.phs { height: 226px; }
+.phgrid { display: grid; grid-template-columns: 168px 1fr; gap: 12px; height: 100%; }
+.scope { position: relative; border-radius: 6px; background: #04070b; border: 1px solid var(--line); }
+.scope canvas { position: absolute; inset: 0; }
+.mv { display: flex; flex-direction: column; gap: 10px; justify-content: center; }
+.corr .cb { position: relative; height: 10px; border-radius: 3px; background: linear-gradient(90deg, rgba(255,61,77,.35), rgba(240,181,65,.25) 45%, rgba(49,207,125,.3)); }
+.corr .cb i { position: absolute; top: -3px; width: 3px; height: 16px; margin-left: -1.5px; background: #fff; border-radius: 1px; box-shadow: 0 0 6px rgba(255,255,255,.7); }
+.corr .cs { display: flex; justify-content: space-between; font: 8.5px var(--mono); color: var(--text-4); margin-top: 3px; }
+.kvs { display: grid; gap: 4px; }
+.kvs div { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); }
+.kvs b { font: 600 11px var(--mono); color: var(--text); }
+.loud { height: 236px; }
+.lgrid { display: grid; grid-template-columns: 1fr 86px; gap: 10px; height: 100%; }
+.big { display: flex; align-items: baseline; gap: 6px; }
+.big b { font: 650 34px 'Inter Display', Inter; letter-spacing: -.03em; }
+.big span { font-size: 11px; color: var(--text-3); font-weight: 600; letter-spacing: .06em; }
+.lrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.lrow div { padding: 5px 7px; border-radius: 6px; border: 1px solid var(--line); }
+.lrow span { display: block; font-size: 9.5px; color: var(--text-3); }
+.lrow b { font: 600 13px var(--mono); }
+.lhist { position: relative; height: 70px; margin-top: 8px; border-radius: 6px; background: #04070b; border: 1px solid var(--line); overflow: hidden; }
+.lhist canvas { position: absolute; inset: 0; }
+.lhist .tgt { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(49,207,125,.6); }
+.lhist .tgt span { position: absolute; right: 4px; top: -12px; font: 8.5px var(--mono); color: var(--green); }
+.vm { display: flex; gap: 6px; height: 100%; padding-bottom: 14px; position: relative; }
+.vm .m { flex: 1; position: relative; border-radius: 3px; background: #0f1720; overflow: hidden; }
+.vm .m s { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, #1b8c5a 0%, var(--green) 60%, #c9d65a 80%, var(--amber) 90%, var(--red) 100%); background-size: 100% var(--h, 180px); background-position: bottom; }
+.vm .m u { position: absolute; left: 0; right: 0; height: 2px; background: #fff; }
+.vm .ml { position: absolute; bottom: 0; font: 600 8.5px Inter; color: var(--text-3); letter-spacing: .06em; transform: translateX(-50%); }
+.qual { flex: 1; }
+.qg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.qg div { padding: 8px 8px 7px; border-radius: 7px; border: 1px solid var(--line); background: rgba(255,255,255,.015); }
+.qg span { display: block; font-size: 9.5px; color: var(--text-3); }
+.qg b { font: 650 18px Inter; letter-spacing: -.02em; }
+.qg b small { font-size: 10px; color: var(--text-3); font-weight: 500; margin-left: 2px; }
+.qg em { display: block; font: normal 600 10px var(--mono); color: var(--green); margin-top: 1px; }
+.qg em.n { color: var(--text-4); }
+.snrc { position: relative; height: 84px; margin-top: 8px; border-radius: 6px; background: #04070b; border: 1px solid var(--line); overflow: hidden; }
+.snrc canvas { position: absolute; inset: 0; }
+
+/* inspector */
+.insp { display: flex; flex-direction: column; overflow: hidden; }
+.ihead { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.ring { width: 50px; height: 50px; position: relative; flex: none; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 650 13px Inter; }
+.ihead .t1 { font-size: 13px; font-weight: 600; }
+.ihead .t2 { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.facts { padding: 6px 14px 8px; }
+.facts div { display: flex; align-items: center; gap: 9px; height: 25px; font-size: 12px; color: var(--text-2); }
+.facts div b { font: 600 12px var(--mono); color: var(--text); width: 22px; text-align: right; }
+.facts .sw { width: 7px; height: 7px; border-radius: 50%; }
+.recs { padding: 8px 14px 4px; border-top: 1px solid var(--line); }
+.rec { display: grid; grid-template-columns: 18px 1fr auto; gap: 9px; align-items: center; height: 29px; font-size: 12px; }
+.rec .n { font: 600 10px var(--mono); color: var(--text-3); }
+.rec .ck { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--line-3); display: grid; place-items: center; }
+.rec .ck.on { background: var(--cyan); border-color: var(--cyan); color: #04121a; }
+.rec .ck i { width: 11px; height: 11px; }
+.ibtns { display: grid; gap: 6px; padding: 8px 14px 12px; }
+.ibtns .btn { height: 34px; }
+.plancard { margin: 0 10px; border: 1px solid rgba(46,213,229,.32); border-radius: 10px; background: linear-gradient(rgba(46,213,229,.05), rgba(46,213,229,.01)); overflow: hidden; }
+.plancard .phd { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-bottom: 1px solid rgba(46,213,229,.18); }
+.plancard .phd b { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; }
+.pl { display: grid; grid-template-columns: 70px 1fr; gap: 8px; padding: 6px 12px; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 11.5px; align-items: start; }
+.pl .k { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; color: var(--text-3); padding-top: 2px; }
+.pl .v { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.pl .v span { display: flex; gap: 5px; align-items: baseline; }
+.pl .v b { font: 600 11px var(--mono); }
+.pacts { display: flex; gap: 6px; padding: 9px 12px; }
+.pacts .btn { flex: 1; height: 30px; }
+.eng { margin-top: auto; border-top: 1px solid var(--line); padding: 9px 14px 11px; background: rgba(0,0,0,.18); }
+.eng .eh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.eng .eg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px; }
+.eng .eg div { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-4); }
+.eng .eg b { font: 10.5px var(--mono); color: var(--text-3); font-weight: 400; }
+.tele { display: flex; align-items: center; gap: 12px; padding-left: 16px; border-left: 1px solid var(--line); font: 10px var(--mono); color: var(--text-4); }
+.tele b { color: var(--text-3); font-weight: 400; }
+.tele .ok { color: var(--green); display: flex; align-items: center; gap: 6px; font-family: Inter; font-weight: 650; letter-spacing: .08em; font-size: 9.5px; }
+</style>
+</head>
+<body>
+<header id="topbar"></header>
+
+<div class="toolbar">
+  <div class="lyr">
+    <span class="tlabel">Layers</span>
+    <span class="lp on" style="--c:var(--src-a)"><i class="d"></i>Speakers</span>
+    <span class="lp on" style="--c:var(--src-w)"><i class="d"></i>Whispers</span>
+    <span class="lp on" style="--c:var(--amber)"><i class="d"></i>Overlap</span>
+    <span class="lp on" style="--c:var(--src-tr)"><i class="d"></i>Transients</span>
+    <span class="lp on" style="--c:var(--src-hum)"><i class="d"></i>Hum</span>
+    <span class="lp on" style="--c:var(--src-tv)"><i class="d"></i>Music bleed</span>
+    <span class="lp" style="--c:var(--src-hvac)"><i class="d"></i>Env. noise</span>
+    <span class="lp on" style="--c:var(--src-rv)"><i class="d"></i>Reverb</span>
+    <span class="lp on" style="--c:#f0b541"><i class="d"></i>Secondary speech</span>
+  </div>
+  <div style="flex:1"></div>
+  <div class="sel"><span>FFT</span>4096<i data-i="chevd"></i></div>
+  <div class="sel"><span>WIN</span>Hann 75%<i data-i="chevd"></i></div>
+  <div class="sel"><span>RANGE</span>−100 … −24 dB<i data-i="chevd"></i></div>
+  <div class="sel"><span>SCALE</span>Log<i data-i="chevd"></i></div>
+  <div class="cmpab" style="display:flex"><div class="ab" style="height:30px;padding:1px"><button class="abA" style="height:26px"><em>A</em>ORIGINAL</button><button class="abB on" style="height:26px"><em>B</em>PROCESSED</button></div></div>
+</div>
+
+<div class="ws">
+  <!-- LEFT: signal + chain + params -->
+  <div class="col">
+    <div class="panel tl" style="flex:none">
+      <div class="ph"><span class="t"><i data-i="wave"></i>Stereo waveform</span><span class="meta" style="font-family:var(--mono)">02:08.000 – 02:28.000 • 20.0 s • peak −3.1 dBFS</span></div>
+      <div class="rw" style="position:relative"><div class="ruler" id="ruler"></div></div>
+      <div class="row chan"><div class="axL" id="axl0"><b style="top:50%">L</b></div><div class="plotc" id="pc0"><canvas id="w0"></canvas></div><div class="axR"></div></div>
+      <div class="row chan" style="border-bottom:0"><div class="axL" id="axl1"><b style="top:50%">R</b></div><div class="plotc" id="pc1"><canvas id="w1"></canvas></div><div class="axR"></div></div>
+    </div>
+    <div class="panel tl" style="flex:none">
+      <div class="ph"><span class="t"><i data-i="layers"></i>Spectrogram • forensic overlays</span><span class="meta">Hover for t / f / dB • drag to select</span></div>
+      <div class="row rail"><div class="axL"><span style="top:50%;right:6px;font:600 8.5px Inter;letter-spacing:.08em;color:var(--text-4)">DIAR</span></div><div class="plotc" id="rail"></div><div class="axR"></div></div>
+      <div class="row spec"><div class="axL"></div><div class="plotc" id="sp"><canvas id="spc"></canvas><div id="spo"></div></div><div class="axR" id="fax"></div></div>
+    </div>
+    <div class="panel chain" style="flex:none">
+      <div class="ph"><span class="t"><i data-i="chip"></i>Processing chain</span><span class="meta">Drag to reorder where safe • ML stages run once per Process, never from a slider</span></div>
+      <div class="nodes" id="nodes"></div>
+    </div>
+    <div class="lower">
+      <div class="panel params">
+        <div class="ph"><span class="t"><i data-i="gear"></i>Noise floor<span class="chip cy" style="margin-left:4px">Selected</span></span><span style="display:flex;gap:8px;align-items:center"><span class="sel" style="height:24px"><span>PRESET</span>Adaptive • Dialogue<i data-i="chevd"></i></span><span class="toggle on"></span></span></div>
+        <div class="pbody">
+          <div class="graph" id="nfg"><canvas id="nfc"></canvas>
+            <div class="lg"><span><i class="sw" style="background:#5b6878"></i>Noise profile</span><span><i class="sw" style="background:var(--amber)"></i>Threshold</span><span><i class="sw" style="background:var(--cyan)"></i>Output</span></div>
+          </div>
+          <div>
+            <div class="knobs" id="knobs"></div>
+            <div class="sl"><div class="sh">Spectral Smoothing<b>38%</b></div><div class="track2"><s style="width:38%"></s><i style="left:38%"></i></div></div>
+            <div class="sl"><div class="sh">Voice Protection<b>72%</b></div><div class="track2" style="--c:var(--src-w)"><s style="width:72%"></s><i style="left:72%"></i></div></div>
+            <div class="adv"><span style="display:flex;gap:8px;align-items:center"><span class="toggle on"></span>Adaptive Tracking</span><a>6 more<i data-i="chev"></i></a></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel wh" style="display:flex;flex-direction:column">
+        <div class="ph"><span class="t" style="color:#ffc2dc"><i data-i="shieldp" style="color:var(--src-w)"></i>WhisperHunter</span><span style="display:flex;gap:6px"><span class="chip ok">ACTIVE</span><span class="chip">02:18.1 – 02:19.4</span></span></div>
+        <div class="whbody">
+          <div class="whviz" id="whv"><canvas id="whc"></canvas><canvas id="whp" style="z-index:3"></canvas></div>
+          <div class="whstats">
+            <div><span>Protected regions</span><b>14</b></div>
+            <div><span>Confidence</span><b>89%</b></div>
+            <div><span>Speech damage risk</span><b class="g">LOW</b></div>
+            <div><span>Quietest whisper</span><b>−52<small style="font-size:10px;color:var(--text-3);font-weight:500"> dBFS</small></b></div>
+          </div>
+          <div class="sl" style="margin-top:0"><div class="sh">Protected band<b>1.50 – 4.00 kHz</b></div><div class="track2" style="--c:var(--src-w)"><s style="left:38%;width:30%"></s><i style="left:38%"></i><i style="left:68%"></i></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIDDLE: analysis stack -->
+  <div class="col">
+    <div class="panel an fft">
+      <div class="ph"><span class="t">Spectrum analyzer</span><span class="meta" style="font-family:var(--mono)">@ 02:17.364 • 1/24 oct</span></div>
+      <div class="body"><div class="fftc"><canvas id="fftc"></canvas></div></div>
+    </div>
+    <div class="panel an phs">
+      <div class="ph"><span class="t">Phase scope</span><span class="meta">Stereo correlation</span></div>
+      <div class="body"><div class="phgrid">
+        <div class="scope"><canvas id="phc"></canvas></div>
+        <div class="mv">
+          <div class="corr"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);margin-bottom:6px">Correlation<b style="font:600 12px var(--mono);color:var(--text)">+0.86</b></div><div class="cb"><i style="left:93%"></i></div><div class="cs"><span>−1</span><span>0</span><span>+1</span></div></div>
+          <div class="kvs">
+            <div>Stereo width<b>14%</b></div>
+            <div>Balance L/R<b>+0.4 dB</b></div>
+            <div>Mono compatible<b style="color:var(--green)">Yes</b></div>
+            <div>Phase issues<b>0</b></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <div class="panel an loud">
+      <div class="ph"><span class="t">Loudness</span><span class="meta">EBU R128 • target −16 LUFS</span></div>
+      <div class="body"><div class="lgrid">
+        <div>
+          <div class="big"><b>−16.0</b><span>LUFS-I</span></div>
+          <div class="lrow"><div><span>LUFS-S</span><b>−15.2</b></div><div><span>True Peak</span><b>−1.2</b></div><div><span>LRA</span><b>6.4 LU</b></div></div>
+          <div class="lhist" id="lh"><canvas id="lhc"></canvas></div>
+        </div>
+        <div class="vm">
+          <div class="m" style="--h:150px"><s style="height:66%"></s><u style="bottom:71%"></u><span class="ml" style="left:50%">M</span></div>
+          <div class="m" style="--h:150px"><s style="height:62%"></s><u style="bottom:66%"></u></div>
+          <div class="m" style="--h:150px"><s style="height:64%"></s><u style="bottom:64%"></u></div>
+        </div>
+      </div></div>
+    </div>
+    <div class="panel an qual">
+      <div class="ph"><span class="t">Signal quality</span><span class="meta">Original → processed</span></div>
+      <div class="body">
+        <div class="qg">
+          <div><span>SNR</span><b>24.6<small>dB</small></b><em>+13.8 dB</em></div>
+          <div><span>Noise floor</span><b>−71.2<small>dBFS</small></b><em>−18.6 dB</em></div>
+          <div><span>Dynamic range</span><b>18.4<small>dB</small></b><em class="n">+2.1 dB</em></div>
+        </div>
+        <div class="snrc"><canvas id="snrc"></canvas><div class="lg" style="position:absolute;top:5px;left:8px;display:flex;gap:10px;font-size:9.5px;color:var(--text-3)"><span style="display:flex;gap:4px;align-items:center"><i class="sw" style="background:#5b6878"></i>SNR original</span><span style="display:flex;gap:4px;align-items:center"><i class="sw" style="background:var(--green)"></i>SNR processed</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: inspector -->
+  <aside class="panel insp">
+    <div class="ph"><span class="t"><i data-i="spark"></i>VoiceIsolate intelligence</span><span class="meta">Local</span></div>
+    <div class="ihead">
+      <div class="ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="#1d2833" stroke-width="3"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="#2ed5e5" stroke-width="3" stroke-linecap="round" stroke-dasharray="90.6 97.4"/></svg><b>93%</b></div>
+      <div><div class="t1">Analysis confidence 93%</div><div class="t2">12:48 analyzed • 1 Process pass</div></div>
+    </div>
+    <div class="facts">
+      <div><b>17</b>notable events</div>
+      <div><b>2</b>voices detected<span class="sw" style="background:var(--src-a);margin-left:auto"></span><span class="sw" style="background:var(--src-b)"></span></div>
+      <div><b>14</b>whisper regions<span class="sw" style="background:var(--src-w);margin-left:auto"></span></div>
+      <div><b>—</b>continuous HVAC noise<span class="sw" style="background:var(--src-hvac);margin-left:auto"></span></div>
+      <div><b>—</b>60 Hz electrical hum<span class="sw" style="background:var(--src-hum);margin-left:auto"></span></div>
+      <div><b>—</b>moderate room reflections<span class="sw" style="background:var(--src-rv);margin-left:auto"></span></div>
+    </div>
+    <div class="recs">
+      <div class="cap" style="margin-bottom:4px">Recommendations</div>
+      <div class="rec"><span class="ck on"><i data-i="check"></i></span><span>Reduce HVAC</span><b class="mono" style="font-size:11px">−15 dB</b></div>
+      <div class="rec"><span class="ck on"><i data-i="check"></i></span><span>Remove 60 Hz / 120 Hz hum</span><b class="mono" style="font-size:11px">−19 dB</b></div>
+      <div class="rec"><span class="ck on"><i data-i="check"></i></span><span>Protect whisper regions</span><b class="mono" style="font-size:11px">14</b></div>
+      <div class="rec"><span class="ck on"><i data-i="check"></i></span><span>Reduce room reflections</span><b class="mono" style="font-size:11px">24%</b></div>
+      <div class="rec"><span class="ck"><i></i></span><span>Increase Speaker B intelligibility</span><b class="mono" style="font-size:11px">+2.8 dB</b></div>
+    </div>
+    <div class="ibtns"><button class="btn primary"><i data-i="spark"></i>GENERATE PROCESSING PLAN</button><button class="btn"><i data-i="headphones"></i>PREVIEW CHANGES</button></div>
+    <div class="plancard">
+      <div class="phd"><b>PROCESSING PLAN</b><span class="chip cy">Confidence 91%</span></div>
+      <div class="pl"><span class="k">TARGET</span><span class="v"><span><i class="sw" style="background:var(--src-b)"></i>Quiet Speaker (B)</span></span></div>
+      <div class="pl"><span class="k">PROTECT</span><span class="v"><span><i class="sw" style="background:var(--src-w)"></i>Whispers • 14</span></span></div>
+      <div class="pl"><span class="k">SUPPRESS</span><span class="v"><span>HVAC <b>−15 dB</b></span><span>TV <b>−11 dB</b></span><span>Hum <b>−19 dB</b></span></span></div>
+      <div class="pl"><span class="k">RESTORE</span><span class="v"><span>Dereverb <b>24%</b></span></span></div>
+      <div class="pl"><span class="k">ENHANCE</span><span class="v"><span>Presence <b>+2.8 dB</b></span></span></div>
+      <div class="pacts"><button class="btn primary sm" style="height:30px">APPLY PLAN</button><button class="btn sm" style="height:30px">EDIT</button><button class="btn sm" style="height:30px">COMPARE</button></div>
+    </div>
+    <div class="eng">
+      <div class="eh"><span class="cap" style="display:flex;gap:6px;align-items:center"><span class="led"></span>DSP engine active</span><span style="font-size:10px;color:var(--text-4)">Engine health</span></div>
+      <div class="eg">
+        <div>Sample rate<b>48 kHz</b></div><div>Buffer<b>128 smp</b></div>
+        <div>Processing<b>2.67 ms</b></div><div>Model<b style="color:var(--green)">READY</b></div>
+        <div>GPU<b>27%</b></div><div>CPU<b>16%</b></div>
+        <div>Memory<b>1.8 GB</b></div><div>Dropouts<b>0</b></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div class="transport" id="transport"></div>
+
+<script src="viz.js"></script>
+<script>
+(function () {
+  VIP.shell('engineer');
+  const T0 = 128, T1 = 148, FMIN = 40, FMAX = 16000;
+  const sc = VIP.makeScene({
+    seed: 42,
+    voices: [
+      { id: 'a', f0: 118, level: -27, amp: 0.66, segs: [[120.3, 126.6], [128.1, 133.6], [140.6, 146.9], [150.4, 156.2]] },
+      { id: 'b', f0: 208, level: -35, amp: 0.25, segs: [[134.25, 139.75], [146.2, 148]] },
+      { id: 'c', f0: 162, level: -50, amp: 0.06, segs: [[129.4, 131.0]] },
+    ],
+    whispers: [{ segs: [[131.4, 132.5], [138.1, 139.4]], level: -57, amp: 0.09 }],
+    tv: { level: -62, amp: 0.055, boost: [[142.8, 152.2, 7]] },
+    hvac: -61, hum: -45,
+    transients: [{ t: 144.6, level: -31, amp: 0.55 }, { t: 135.7, level: -36, amp: 0.3 }],
+  });
+  const PHT = 137.364;
+
+  // waveforms
+  const pc = document.getElementById('pc0'), PW = pc.clientWidth;
+  const X = (t) => ((t - T0) / (T1 - T0)) * PW;
+  ['w0', 'w1'].forEach((id, i) => VIP.drawWaveform(document.getElementById(id), sc, { t0: T0, t1: T1, seed: 3 + i, gain: i ? 0.94 : 1, color: 'rgba(100,190,210,0.5)', rmsColor: 'rgba(190,240,248,0.9)', scale: 0.46 }));
+  ['axl0', 'axl1'].forEach((id) => { const el = document.getElementById(id); const H = 62; [[0, '0'], [-6, '−6'], [-18, '−18']].forEach(([d, l]) => { const a = Math.pow(10, d / 20) * 0.46 * H; el.insertAdjacentHTML('beforeend', `<span style="top:${H / 2 - a}px">${l}</span>`); }); });
+  ['pc0', 'pc1'].forEach((id) => document.getElementById(id).insertAdjacentHTML('beforeend', `<div class="selr" style="left:${X(134.2)}px;width:${X(139.8) - X(134.2)}px"></div><div class="plh" style="left:${X(PHT)}px"></div>`));
+  VIP.ruler(document.getElementById('ruler'), T0, T1, 2, 0.5, (t) => VIP.mmss(t, 1));
+  document.getElementById('ruler').insertAdjacentHTML('beforeend', `<div class="ph-top" style="position:absolute;top:0;width:11px;height:9px;margin-left:-5.5px;background:var(--red);clip-path:polygon(0 0,100% 0,50% 100%);left:${X(PHT)}px"></div>`);
+
+  // spectrogram
+  const sp = document.getElementById('sp'), SH = sp.clientHeight, L = Math.log(FMAX / FMIN);
+  const Y = (f) => SH * (1 - Math.log(f / FMIN) / L);
+  VIP.drawSpectrogram(document.getElementById('spc'), sc, { t0: T0, t1: T1, fmin: FMIN, fmax: FMAX, dbMin: -102, dbMax: -25 });
+  const fax = document.getElementById('fax');
+  let g = '';
+  [50, 100, 200, 500, 1000, 2000, 5000, 10000].forEach((f) => { g += `<div class="gh" style="top:${Y(f)}px"></div>`; fax.insertAdjacentHTML('beforeend', `<span style="top:${Y(f)}px">${f >= 1000 ? f / 1000 + 'k' : f}</span>`); });
+  for (let t = 130; t < T1; t += 2) g += `<div class="gv" style="left:${X(t)}px"></div>`;
+  const fo = (t0, t1, f0, f1, c, tag, conf, cls, tp) => `<div class="fo ${cls || ''}" style="--c:${c};left:${X(t0)}px;top:${Y(f1)}px;width:${X(t1) - X(t0)}px;height:${Y(f0) - Y(f1)}px">${tag ? `<span class="tg" style="${tp || ''}">${tag}<b>${conf}</b></span>` : ''}</div>`;
+  g += fo(131.4, 132.5, 700, 8000, 'var(--src-w)', 'WHISPER', '81%');
+  g += fo(138.1, 139.4, 700, 8000, 'var(--src-w)', 'WHISPER', '79%');
+  g += fo(146.2, 146.9, 120, 4500, '#f0b541', 'OVERLAP', 'A+B', 'hatch');
+  g += fo(129.4, 131.0, 140, 3000, '#f0b541', 'SECONDARY SPEECH?', '62%', 'd');
+  g += fo(142.9, 147.95, 210, 3900, 'var(--src-tv)', 'MUSIC BLEED', '91%', 'd', 'top:auto;bottom:3px');
+  g += fo(133.6, 134.25, 100, 2600, 'var(--src-rv)', 'TAIL', '0.55 s', 'd');
+  g += `<div class="hum" style="top:${Y(60)}px"></div><div class="hum" style="top:${Y(120)}px"></div><div class="fo" style="--c:var(--src-hum);border:0;background:none;left:${X(128.2)}px;top:${Y(120) - 22}px"><span class="tg">HUM 60/120 Hz<b>99%</b></span></div>`;
+  [135.7, 144.6].forEach((t) => { g += `<div class="trn" style="left:${X(t)}px"></div>`; });
+  g += `<div class="selr" style="left:${X(134.2)}px;width:${X(139.8) - X(134.2)}px"></div><div class="plh" style="left:${X(PHT)}px"></div>`;
+  g += `<div class="coord" style="position:absolute;left:${X(141.1)}px;top:${Y(3000)}px;padding:4px 7px;border-radius:5px;background:rgba(5,8,12,.92);border:1px solid #3a4858;font:10.5px var(--mono);white-space:nowrap">02:21.104 <span style="color:var(--text-3)">•</span> 3.02 kHz <span style="color:var(--text-3)">•</span> −44.8 dB</div>`;
+  document.getElementById('spo').innerHTML = g;
+  // diarization rail
+  const rail = document.getElementById('rail');
+  [[128.1, 133.6, 'var(--src-a)'], [140.6, 146.9, 'var(--src-a)'], [134.25, 139.75, 'var(--src-b)'], [146.2, 148, 'var(--src-b)'], [129.4, 131.0, '#f0b541']].forEach(([a, b, c]) => rail.insertAdjacentHTML('beforeend', `<i style="--c:${c};left:${X(a)}px;width:${X(b) - X(a)}px"></i>`));
+
+  // chain
+  const nodes = [
+    ['io', 'INPUT', '−3.1 dBFS'],
+    ['ANALYSIS', 'n', 'Complete', '0 ms', '4%', '93%'],
+    ['NOISE FLOOR', 'nsel', '−16 dB', '10.7 ms', '3%', ''],
+    ['WHISPERHUNTER', 'wh', '14 regions', '0 ms', '1%', '89%'],
+    ['VOICE ISOLATION', '', '+34%', 'offline', 'GPU', '94%'],
+    ['DEREVERB', '', '−24%', '21.3 ms', '2%', '76%'],
+    ['DYNAMIC EQ', '', '+2.8 dB', '0.7 ms', '1%', ''],
+    ['SPECTRAL REPAIR', 'byp', 'Bypassed', '—', '0%', ''],
+    ['LIMITER', '', '−1.0 dBTP', '1.5 ms', '<1%', ''],
+    ['io', 'OUTPUT', '−16.0 LUFS'],
+  ];
+  const nEl = document.getElementById('nodes');
+  nodes.forEach((n, i) => {
+    let h;
+    if (n[0] === 'io') h = `<div class="node io"><b>${n[1]}</b><span>${n[2]}</span></div>`;
+    else {
+      const [name, st, gd, lat, cpu, cf] = n;
+      h = `<div class="node ${st}"><div class="nh"><span class="led ${st === 'byp' ? 'off' : ''}"></span><b>${name}</b></div><div class="gd ${/^[+−-]/.test(gd) ? '' : 'n'}" style="${st === 'nsel' ? 'color:var(--cyan)' : st === 'wh' ? 'color:#ffc2dc' : ''}">${gd}</div><div class="st"><span>${lat}</span><span>${cf ? 'conf ' + cf : 'CPU ' + cpu}</span></div>${st === 'nsel' ? '<i class="grip" data-i="grip" style="transform:rotate(90deg)"></i>' : ''}</div>`;
+    }
+    nEl.insertAdjacentHTML('beforeend', h + (i < nodes.length - 1 ? `<div class="wire ${i < 7 ? 'act' : ''}"></div>` : ''));
+  });
+  document.querySelector('.chain').insertAdjacentHTML('beforeend', '<div class="chainfoot"><span>Total latency <b>35.9 ms</b></span><span>Live-Mix stages <b>4</b></span><span>Process-time stages <b>4</b></span><span>Chain revision <b>r7</b></span><span style="margin-left:auto">Single STFT / iSTFT on the spectral path</span></div>');
+
+  // knobs
+  const knob = (v, label, val, col) => {
+    const a0 = -135, a1 = 135, a = a0 + (a1 - a0) * v, r = 23, cx = 30, cy = 30;
+    const pt = (deg, rr) => [cx + rr * Math.sin((deg * Math.PI) / 180), cy - rr * Math.cos((deg * Math.PI) / 180)];
+    const arc = (d0, d1, rr) => { const [x0, y0] = pt(d0, rr), [x1, y1] = pt(d1, rr); return `M${x0} ${y0} A${rr} ${rr} 0 ${d1 - d0 > 180 ? 1 : 0} 1 ${x1} ${y1}`; };
+    let ticks = ''; for (let k = 0; k <= 10; k++) { const d = a0 + 27 * k; const [x0, y0] = pt(d, 27.5), [x1, y1] = pt(d, 29.5); ticks += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#3a4858" stroke-width="1"/>`; }
+    const [px, py] = pt(a, 13);
+    return `<div class="knob"><svg viewBox="0 0 60 60">${ticks}<path d="${arc(a0, a1, r)}" stroke="#1d2833" stroke-width="3" fill="none" stroke-linecap="round"/><path d="${arc(a0, a, r)}" stroke="${col}" stroke-width="3" fill="none" stroke-linecap="round" style="filter:drop-shadow(0 0 3px ${col})"/><circle cx="30" cy="30" r="17" fill="url(#kg)" stroke="#2a3846"/><line x1="30" y1="30" x2="${px}" y2="${py}" stroke="#eef3f8" stroke-width="2" stroke-linecap="round"/><defs><radialGradient id="kg" cx="40%" cy="30%"><stop offset="0" stop-color="#2a3846"/><stop offset="1" stop-color="#121a23"/></radialGradient></defs></svg><div class="kv">${val}</div><div class="kl">${label}</div></div>`;
+  };
+  document.getElementById('knobs').innerHTML = knob(0.48, 'Threshold', '−52 dB', '#f0b541') + knob(0.53, 'Reduction', '16 dB', '#2ed5e5') + knob(0.24, 'Attack', '12 ms', '#2ed5e5') + knob(0.41, 'Release', '180 ms', '#2ed5e5');
+
+  // noise floor graph
+  const nfc = document.getElementById('nfc');
+  const prof = VIP.spectrumAt(sc, 133.95, { N: 240, fmin: 30, fmax: 20000, gains: { a: -200, b: -200, c: -200, whisper: -200, tv: -200 } });
+  const toY = (d) => Math.max(0, Math.min(1, (d + 112) / 70));
+  const sm = (arr, k) => arr.map((_, i) => { let s = 0, n = 0; for (let j = -k; j <= k; j++) { const v = arr[i + j]; if (v !== undefined) { s += v; n++; } } return s / n; });
+  const pdb = sm(prof.db, 3);
+  const N = pdb.length;
+  const fAt = (i) => 30 * Math.pow(20000 / 30, i / (N - 1));
+  const thr = pdb.map((d) => d + 6);
+  const out = pdb.map((d, i) => { const f = fAt(i); const prot = f > 1500 && f < 4000 ? 0.28 : 1; return d - 16 * prot; });
+  const c = VIP.drawCurve(nfc, [
+    { pts: pdb.map((d, i) => [i / (N - 1), toY(d)]), color: 'rgba(120,136,154,0.9)', fill: 'rgba(120,136,154,0.22)', width: 1 },
+    { pts: thr.map((d, i) => [i / (N - 1), toY(d)]), color: '#f0b541', width: 1.2, dash: [4, 3] },
+    { pts: out.map((d, i) => [i / (N - 1), toY(d)]), color: '#2ed5e5', width: 1.6 },
+  ]);
+  const lf = (f) => (Math.log(f / 30) / Math.log(20000 / 30)) * c.w;
+  c.ctx.fillStyle = 'rgba(255,122,182,0.10)'; c.ctx.fillRect(lf(1500), 0, lf(4000) - lf(1500), c.h);
+  c.ctx.strokeStyle = 'rgba(255,122,182,0.6)'; c.ctx.setLineDash([2, 3]); c.ctx.beginPath(); c.ctx.moveTo(lf(1500), 20); c.ctx.lineTo(lf(1500), c.h); c.ctx.moveTo(lf(4000), 20); c.ctx.lineTo(lf(4000), c.h); c.ctx.stroke(); c.ctx.setLineDash([]);
+  const nfg = document.getElementById('nfg');
+  [[100, '100'], [1000, '1k'], [10000, '10k']].forEach(([f, l]) => nfg.insertAdjacentHTML('beforeend', `<span class="ax" style="left:${lf(f) - 8}px;bottom:4px">${l}</span>`));
+  [[-50, '−50'], [-70, '−70'], [-90, '−90']].forEach(([d, l]) => nfg.insertAdjacentHTML('beforeend', `<span class="ax" style="right:6px;top:${(1 - toY(d)) * c.h - 6}px">${l}</span>`));
+  nfg.insertAdjacentHTML('beforeend', `<span class="ax" style="left:${lf(1500) + 4}px;top:30px;color:#ffc2dc">PROTECTED</span><span class="ax" style="left:${lf(200)}px;top:${(1 - toY(pdb[Math.round((N - 1) * Math.log(200 / 30) / Math.log(20000 / 30))] - 9)) * c.h}px;color:var(--cyan)">−16 dB</span>`);
+
+  // WhisperHunter
+  const whv = document.getElementById('whv'), WH = whv.clientHeight, WW = whv.clientWidth;
+  const WF0 = 300, WF1 = 12000, WL = Math.log(WF1 / WF0), WY = (f) => WH * (1 - Math.log(f / WF0) / WL);
+  VIP.drawSpectrogram(document.getElementById('whc'), sc, { t0: 137.4, t1: 140.2, fmin: WF0, fmax: WF1, dbMin: -100, dbMax: -30, seed: 5 });
+  const wp = VIP.setup(document.getElementById('whp'));
+  const wx = (t) => ((t - 137.4) / 2.8) * WW;
+  // speech probability + mask
+  const pts = [];
+  for (let i = 0; i <= 200; i++) { const t = 137.4 + (2.8 * i) / 200; const a = VIP.srcAmp(sc, 'b', t) / 0.25, w = VIP.srcAmp(sc, 'whisper', t) / 0.09; pts.push([i / 200, Math.min(1, Math.max(a, w * 0.9))]); }
+  const sp2 = pts.map((p, i) => [p[0], (pts[Math.max(0, i - 2)][1] + pts[Math.max(0, i - 1)][1] + p[1] + pts[Math.min(200, i + 1)][1] + pts[Math.min(200, i + 2)][1]) / 5]);
+  const ctx = wp.ctx;
+  ctx.fillStyle = 'rgba(255,122,182,0.13)';
+  ctx.fillRect(wx(138.1), WY(4000), wx(139.4) - wx(138.1), WY(1500) - WY(4000));
+  ctx.beginPath(); sp2.forEach(([x, y], i) => { const X2 = x * WW, Y2 = WH - 6 - y * 46; i ? ctx.lineTo(X2, Y2) : ctx.moveTo(X2, Y2); });
+  ctx.strokeStyle = '#ffd0e4'; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.lineTo(WW, WH); ctx.lineTo(0, WH); ctx.closePath(); ctx.fillStyle = 'rgba(255,122,182,0.12)'; ctx.fill();
+  whv.insertAdjacentHTML('beforeend', `
+    <div class="pband" style="top:${WY(4000)}px;height:${WY(1500) - WY(4000)}px;z-index:2"><span>PROTECTED 1.5 – 4 kHz</span></div>
+    <div class="bnd" style="top:${WY(5200)}px;z-index:4"><span>SUPPRESSION BOUNDARY</span></div>
+    <div style="position:absolute;z-index:4;left:${wx(138.1)}px;top:${WY(8000)}px;width:${wx(139.4) - wx(138.1)}px;height:${WY(700) - WY(8000)}px;border:1.5px solid var(--src-w);border-radius:4px;box-shadow:0 0 14px rgba(255,122,182,.35)"><span style="position:absolute;right:3px;bottom:3px;font:700 9px Inter;letter-spacing:.08em;color:#ffd0e4;background:rgba(5,8,12,.85);padding:1px 5px;border-radius:3px">WHISPER 89%</span></div>
+    <span style="position:absolute;z-index:4;left:6px;bottom:52px;font:600 8.5px Inter;letter-spacing:.1em;color:#ffd0e4">SPEECH PROBABILITY</span>
+    <span style="position:absolute;z-index:4;left:6px;top:6px;font:9px var(--mono);color:var(--text-3)">02:17.4 – 02:20.2</span>`);
+
+  // FFT analyzer
+  const fftc = document.getElementById('fftc');
+  const cur = VIP.spectrumAt(sc, PHT, { N: 300, fmin: 20, fmax: 20000 });
+  const orig = cur;
+  const proc = VIP.spectrumAt(sc, PHT, { N: 300, fmin: 20, fmax: 20000, gains: { tv: -11, hvac: -15, hum: -19, floor: -6, a: -4, b: 3 } });
+  const ny = (d) => Math.max(0, Math.min(1, (d + 104) / 82));
+  const peak = proc.db.map((d, i) => Math.max(d, proc.db[i - 1] ?? d, proc.db[i + 1] ?? d) + 4);
+  const fc = VIP.drawCurve(fftc, [
+    { pts: orig.db.map((d, i) => [i / 299, ny(d)]), color: 'rgba(120,136,154,0.7)', width: 1 },
+    { pts: proc.db.map((d, i) => [i / 299, ny(d)]), color: '#2ed5e5', fill: 'rgba(46,213,229,0.28)', width: 1.3 },
+    { pts: sm(peak, 2).map((d, i) => [i / 299, ny(d)]), color: 'rgba(255,255,255,0.45)', width: 0.8, dash: [1, 2] },
+  ]);
+  const flf = (f) => (Math.log(f / 20) / Math.log(1000)) * fc.w;
+  fc.ctx.font = '9px "Liberation Mono", monospace'; fc.ctx.fillStyle = 'rgba(134,149,166,0.9)';
+  [[50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1k'], [2000, '2k'], [5000, '5k'], [10000, '10k']].forEach(([f, l]) => { fc.ctx.fillStyle = 'rgba(255,255,255,0.05)'; fc.ctx.fillRect(flf(f), 0, 1, fc.h); fc.ctx.fillStyle = 'rgba(134,149,166,0.9)'; fc.ctx.fillText(l, flf(f) + 3, fc.h - 4); });
+  [-30, -50, -70, -90].forEach((d) => { const y = (1 - ny(d)) * fc.h; fc.ctx.fillStyle = 'rgba(255,255,255,0.05)'; fc.ctx.fillRect(0, y, fc.w, 1); fc.ctx.fillStyle = 'rgba(134,149,166,0.9)'; fc.ctx.fillText(String(d).replace('-', '−'), 4, y - 3); });
+  fc.ctx.fillStyle = 'rgba(217,196,106,0.95)'; fc.ctx.fillText('60 Hz', flf(60) + 3, (1 - ny(orig.db[Math.round(299 * Math.log(60 / 20) / Math.log(1000))])) * fc.h - 4);
+
+  VIP.drawPhase(document.getElementById('phc'), { seed: 9 });
+
+  // loudness history
+  const lp = []; const Rl = VIP.rng(12);
+  for (let i = 0; i <= 120; i++) { const t = T0 + (20 * i) / 120; const a = VIP.srcAmp(sc, 'mix', t); lp.push([i / 120, Math.max(0.05, Math.min(0.95, 0.42 + 0.55 * Math.sqrt(a) - 0.25 + Rl() * 0.03))]); }
+  const lps = lp.map((p, i) => [p[0], lp.slice(Math.max(0, i - 4), i + 5).reduce((s, q) => s + q[1], 0) / Math.min(9, i + 5, lp.length - i + 4)]);
+  VIP.drawCurve(document.getElementById('lhc'), [{ pts: lps, color: '#2ed5e5', fill: 'rgba(46,213,229,0.18)', width: 1.3 }]);
+  document.getElementById('lh').insertAdjacentHTML('beforeend', '<div class="tgt" style="top:42%"><span>−16</span></div>');
+
+  // SNR over time
+  const s1 = [], s2 = []; const Rs = VIP.rng(31);
+  for (let i = 0; i <= 160; i++) { const t = T0 + (20 * i) / 160; const v = VIP.srcAmp(sc, 'a', t) + VIP.srcAmp(sc, 'b', t) * 1.6; const n = 0.25 + 0.1 * Math.sin(i / 9) + Rs() * 0.06; s1.push([i / 160, Math.min(0.9, 0.12 + v * 0.6 + n * 0.3)]); s2.push([i / 160, Math.min(0.95, 0.3 + v * 0.75 + n * 0.25 + 0.18)]); }
+  const smo = (a) => a.map((p, i) => [p[0], a.slice(Math.max(0, i - 3), i + 4).reduce((s, q) => s + q[1], 0) / (Math.min(i + 4, a.length) - Math.max(0, i - 3))]);
+  VIP.drawCurve(document.getElementById('snrc'), [{ pts: smo(s1), color: 'rgba(120,136,154,0.85)', width: 1 }, { pts: smo(s2), color: '#31cf7d', fill: 'rgba(49,207,125,0.14)', width: 1.4 }]);
+
+  VIP.transport(document.getElementById('transport'), {
+    pos: PHT / 768,
+    right: '<div class="tele"><span class="ok"><span class="led"></span>DSP ENGINE ACTIVE</span><span><b>48 kHz</b></span><span><b>128</b> smp</span><span><b>2.67</b> ms</span><span>drop-outs <b>0</b></span></div>',
+  });
+  VIP.icons();
+})();
+</script>
+</body>
+</html>
