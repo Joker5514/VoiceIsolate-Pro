@@ -302,7 +302,7 @@ h1 em { font-style: normal; background: linear-gradient(90deg, #fff 0%, #cfe9ee 
     ['Hum 60 Hz', 99, 'var(--src-hum)'], ['Reverberation', 73, 'var(--src-rv)'],
   ];
   document.getElementById('det').innerHTML = det.map(([n, v, c]) => `<div class="r ${v < 80 ? 'lo' : ''}" style="--c:${c}"><i class="sw" style="background:${c}"></i><span>${n}</span><div class="bar"><s style="width:${v}%"></s></div><span class="v">${v}%</span></div>`).join('');
-  const m = document.getElementById('c2m'); const { ctx, w: mw, h: mh } = VIP.setup(m);
+  const m = document.getElementById('c2m'); const { ctx, w: mw } = VIP.setup(m);
   const R = VIP.rng(8); const rows = ['#2ed5e5', '#a77dff', '#ff7ab6', '#f59e57', '#e6edf5', '#8aa4bb'];
   rows.forEach((c, i) => {
     const y = 5 + i * 8.2; ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(0, y, mw, 6);

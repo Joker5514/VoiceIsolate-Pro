@@ -476,7 +476,7 @@
 
   /* Shared shell: top bar + optional transport. */
   VIP.shell = function (page) {
-    const nav = ['Explain', 'Stems', 'Engineer'].map((n) => `<a class="${n.toLowerCase() === page ? 'on' : ''}">${n}</a>`).join('');
+    const nav = ['Explain', 'Stems', 'Engineer'].map((n) => `<a href="${n.toLowerCase()}.html" class="${n.toLowerCase() === page ? 'on' : ''}"${n.toLowerCase() === page ? ' aria-current="page"' : ''}>${n}</a>`).join('');
     document.getElementById('topbar').innerHTML = `
       <div class="tb-left">
         <div class="logo"><span class="mark"><svg viewBox="0 0 28 28" width="26" height="26"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5a66"/><stop offset="1" stop-color="#b3121f"/></linearGradient></defs><rect x="1" y="1" width="26" height="26" rx="7" fill="#11161d" stroke="rgba(255,255,255,.08)"/><path d="M6 14h2.2M9.6 10.5v7M13 7v14M16.4 10v8M19.8 12.4v3.2" stroke="#e9eef4" stroke-width="1.9" stroke-linecap="round"/><path d="M5 20.5L23 7.5" stroke="url(#lg)" stroke-width="2.2" stroke-linecap="round"/></svg></span><span class="wm">VoiceIsolate<span>-Pro</span></span></div>

@@ -77,7 +77,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .logo .wm { font: 650 15.5px/1 'Inter Display', Inter, sans-serif; letter-spacing: -0.015em; }
 .logo .wm span { color: var(--red); font-weight: 600; }
 .mainnav { display: flex; padding: 3px; gap: 2px; background: #070b10; border: 1px solid var(--line); border-radius: 9px; }
-.mainnav a { padding: 6px 16px; border-radius: 6px; font-weight: 550; font-size: 13px; color: var(--text-3); }
+.mainnav a { text-decoration: none; padding: 6px 16px; border-radius: 6px; font-weight: 550; font-size: 13px; color: var(--text-3); }
 .mainnav a.on { color: var(--text); background: linear-gradient(#1a2430, #141d27); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.5); }
 .utilnav { display: flex; gap: 2px; padding-left: 12px; border-left: 1px solid var(--line); }
 .utilnav a { display: flex; align-items: center; gap: 6px; padding: 6px 9px; color: var(--text-3); font-size: 12.5px; border-radius: 6px; }
