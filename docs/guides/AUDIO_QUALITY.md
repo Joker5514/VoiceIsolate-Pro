@@ -57,8 +57,9 @@ Hard invariants in the gate: no NaN or Infinity, length preserved, digital
 silence in gives peak below 1e-6 out, no output sample above full scale.
 
 The measured and pinned metric sets must match exactly (a new metric fails
-until it is pinned), every metric must be finite, and `--update` refuses to
-write a baseline from a run that broke any of these checks.
+until it is pinned) and every metric must be finite. `--update` re-pins the
+current metric set, but refuses to write a baseline if the run breaks a hard
+invariant or produces a non-finite metric.
 
 ## Model calibration (2026-10-07)
 
