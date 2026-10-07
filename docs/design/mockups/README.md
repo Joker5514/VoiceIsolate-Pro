@@ -35,6 +35,9 @@ PNGs are 3840x2400 (1920x1200 at 2x).
   before/after spectra all come from that scene, so they agree with each other.
   The whole-file overview strips (the transport scrubber, and the Stems file strip)
   use a separate full-length scene. They show the file's shape, not the same samples.
+  Some panels are hand-authored: the Engineer phase scope (its own seeded point
+  cloud), the correlation value, and every summary number such as LUFS, SNR
+  tiles and confidences.
   The overlay boxes and tags are drawn by hand and label representative events.
   For example, the whisper at 02:18.1 sits inside the Speaker B selection on
   Stems and has no box of its own.
