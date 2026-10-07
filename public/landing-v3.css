@@ -1,8 +1,9 @@
 /*
  * Landing v3 (Claude Design handoff "VoiceIsolate Pro v3").
  * Loads last; scoped to body.v3 so it wins over the legacy landing stack.
- * Colour rule: cyan = primary action, violet = background stem / selection,
- * red = logo mark and destructive/mute only.
+ * Colour rule (workstation refresh, appended last): crimson = actions,
+ * cyan = spectral / voice stem, violet = background stem / selection,
+ * emerald = local / ok, amber = warnings.
  */
 
 @font-face { font-family: 'Geist'; src: url('/fonts/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
@@ -598,3 +599,133 @@ body.v3 .slider-hint-btn:focus-visible, body.v3 .hint-example-pill:focus-visible
 body.v3 .hint-range-track { background: linear-gradient(90deg, rgba(155, 108, 255, .4), rgba(46, 213, 229, .4)); }
 body.v3 .hint-dir-down, body.v3 .hint-chip-down { color: #c4a8ff; border-color: rgba(155, 108, 255, .35); background: rgba(155, 108, 255, .1); }
 body.v3 .hint-dir-up, body.v3 .hint-chip-up { color: var(--v3-cyan); border-color: rgba(46, 213, 229, .35); background: rgba(46, 213, 229, .1); }
+
+/* ── Workstation refresh (Explain + Stems) ─────────────────────────────────
+   Layout + colour only. Every ID and binding above is unchanged. Crimson
+   paints actions; white text on it uses the solid #d81f30 (5.05:1). */
+body.v3 {
+  --v3-crimson: #d81f30;
+  --v3-crimson-hi: #e8303f;
+  --v3-crimson-glow: rgba(216, 31, 48, .45);
+  --v3-amber: #f2b33d;
+}
+
+/* Header: segmented section nav, crimson Studio link. */
+body.v3 .v3-nav { gap: 0; padding: 2px; border: 1px solid var(--v3-line); border-radius: 8px; background: rgba(7, 11, 16, .6); }
+body.v3 .v3-nav a { height: 30px; border-radius: 6px; }
+body.v3 .v3-nav a:hover, body.v3 .v3-nav a[aria-current] { background: #161f29; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); }
+body.v3 .v3-nav a[aria-current] span { color: var(--v3-crimson-hi); }
+body.v3 .v3-link--solid, body.v3 .v3-link--solid:hover { background: var(--v3-crimson); color: #fff; }
+body.v3 .v3-link--solid:hover { background: #c41c2c; }
+
+/* Primary actions: crimson solid. Spectral accents stay cyan. */
+body.v3 .v3-btn--primary,
+body.v3 .v3-console__cta {
+  background: var(--v3-crimson); color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 8px 24px -10px var(--v3-crimson-glow);
+}
+body.v3 .v3-btn--primary:hover { background: #c41c2c; color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 12px 30px -10px var(--v3-crimson-glow); }
+body.v3 .v3-console:hover .v3-console__cta { background: #c41c2c; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 12px 30px -10px var(--v3-crimson-glow); }
+body.v3 .v3-workspace .vip-btn--primary,
+body.v3 .v3-workspace .btn-primary,
+body.v3 #processBtn,
+body.v3 .v3-modes .ps-btn--process {
+  background: var(--v3-crimson); color: #fff; border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+body.v3 .v3-workspace .vip-btn--primary:hover:not(:disabled),
+body.v3 .v3-workspace .btn-primary:hover,
+body.v3 #processBtn:hover:not(:disabled),
+body.v3 .v3-modes .ps-btn--process:hover { background: #c41c2c; color: #fff; }
+body.v3 #processBtn:disabled { background: #2a1519; color: #9a7b80; }
+/* Segmented groups keep the neutral pressed style, not the action fill. */
+body.v3 .v3-workspace .v3-seg .vip-btn--primary { background: #161f29; color: var(--v3-fg); box-shadow: inset 0 -2px 0 var(--v3-crimson); }
+
+/* Explain: pipeline cards sit flat on a track, the separation step is keyed. */
+body.v3 .v3-pipeline { position: relative; perspective: none; padding-top: 22px; }
+body.v3 .v3-pipeline::before { content: ''; position: absolute; left: 18px; right: 18px; top: 10px; height: 1px; background: linear-gradient(90deg, var(--v3-line-3), rgba(46, 213, 229, .5), var(--v3-line-3)); }
+body.v3 .v3-pipeline li { position: relative; border-radius: 8px; min-height: 140px; }
+body.v3 .v3-pipeline li::before { content: ''; position: absolute; left: 16px; top: -16px; width: 7px; height: 7px; border-radius: 50%; background: var(--v3-bg); border: 1px solid var(--v3-line-3); }
+body.v3 .v3-pipeline li:hover { transform: translateY(-2px); border-color: var(--v3-line-3); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 14px 26px -16px rgba(0, 0, 0, .9); }
+body.v3 .v3-pipeline .v3-pipeline__key { border-color: rgba(216, 31, 48, .55); background: linear-gradient(180deg, rgba(216, 31, 48, .10), rgba(216, 31, 48, .02)), var(--v3-panel); }
+body.v3 .v3-pipeline .v3-pipeline__key::before { background: var(--v3-crimson); border-color: var(--v3-crimson); box-shadow: 0 0 10px var(--v3-crimson-glow); }
+body.v3 .v3-pipeline__key span { color: #ff8a94; }
+
+body.v3 .v3-principles > div,
+body.v3 .v3-uses .vip-use-case {
+  padding: 16px; border: 1px solid var(--v3-line); border-radius: 10px; background: var(--v3-panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+body.v3 .v3-principles > div { border-top: 2px solid rgba(46, 213, 229, .5); }
+body.v3 .v3-principles > div:nth-child(2) { border-top-color: rgba(155, 108, 255, .6); }
+body.v3 .v3-principles > div:nth-child(3) { border-top-color: rgba(49, 207, 125, .6); }
+body.v3 .v3-uses { gap: 12px; }
+
+/* Facts: an evidence row of equal cells. */
+body.v3 .v3-facts { border: 1px solid var(--v3-line); border-radius: 10px; background: rgba(7, 11, 16, .5); overflow: hidden; }
+body.v3 .v3-facts li { padding: 16px 20px; }
+body.v3 .v3-facts li + li { border-left: 1px solid var(--v3-line); }
+body.v3 .v3-facts strong { font-size: 36px; }
+
+/* Wide Explain: copy left, separation stage framed right. */
+@media (min-width: 1100px) {
+  body.v3 .v3-hero {
+    max-width: 1320px; display: grid; gap: 28px 56px; align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    grid-template-areas: "lead stage" "side stage" "facts stage" "block block" "principles principles" "uses uses";
+  }
+  body.v3 .v3-hero__grid { display: contents; }
+  body.v3 .v3-hero__lead { grid-area: lead; align-self: end; }
+  body.v3 .v3-hero__side { grid-area: side; }
+  body.v3 .v3-display { font-size: clamp(56px, 5.6vw, 92px); }
+  body.v3 .v3-stage {
+    grid-area: stage; align-self: stretch; height: auto; min-height: 460px; margin: 0;
+    border: 1px solid var(--v3-line); border-radius: 14px; background: #05080c;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 40px 80px -40px rgba(0, 0, 0, .9);
+  }
+  body.v3 .v3-stage__fade--top { height: 18%; }
+  body.v3 .v3-stage__fade--bottom { height: 28%; }
+  body.v3 .v3-legend { bottom: 20px; }
+  body.v3 .v3-facts { grid-area: facts; }
+  body.v3 .v3-block { grid-area: block; margin-top: 40px; }
+  body.v3 .v3-principles { grid-area: principles; }
+  body.v3 .v3-uses { grid-area: uses; }
+}
+
+/* Stems: panels flatten (no 3D tilt, so compare/export are never clipped). */
+body.v3 #stemsTilt, body.v3 #engineerTilt { transform: none !important; }
+body.v3 .v3-mixer { perspective: none; }
+body.v3 .v3-card, body.v3 .v3-tilt { border-radius: 10px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 24px 48px -32px rgba(0, 0, 0, .9); }
+body.v3 .v3-card > .v3-label:first-child { padding-bottom: 10px; border-bottom: 1px solid var(--v3-line); }
+body.v3 .v3-local i { box-shadow: 0 0 8px rgba(49, 207, 125, .7); }
+
+/* Narrow: the stage wrapper is transparent, so DOM order is the stacking order. */
+body.v3 .v3-ws-stage { display: contents; }
+
+/* Wide Stems: session column left, signal + mixer stage right. The last row
+   is 1fr so a stage taller than the session column grows that filler row
+   instead of opening gaps between the session panels. */
+@media (min-width: 1280px) {
+  body.v3 #stems .v3-wrap { max-width: 1600px; }
+  body.v3 .v3-workspace {
+    display: grid; gap: 0 16px; align-items: start;
+    grid-template-columns: minmax(340px, 400px) minmax(0, 1fr);
+    grid-template-rows: repeat(5, auto) 1fr;
+  }
+  body.v3 .v3-workspace > .v3-card { grid-column: 1; min-width: 0; margin-bottom: 16px; }
+  body.v3 .v3-workspace > #uploadPanel { grid-row: 1; }
+  body.v3 .v3-workspace > #analyzePanel { grid-row: 2; }
+  body.v3 .v3-workspace > #mixPanel { grid-column: 1; grid-row: 3; min-width: 0; }
+  body.v3 .v3-workspace > #speakersPanel { grid-row: 4; }
+  body.v3 .v3-workspace > #targetSpeakerLandingPanel { grid-row: 5; }
+  body.v3 .v3-ws-stage { grid-column: 2; grid-row: 1 / span 6; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+  body.v3 #uploadPanel .v3-drop { min-height: 200px; }
+  body.v3 #signalCanvasSection .vip-signal-canvas-host { min-height: 360px; }
+}
+
+@media (max-width: 640px) {
+  body.v3 .v3-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body.v3 .v3-facts li { padding: 14px 12px; }
+  body.v3 .v3-facts strong { font-size: 26px; white-space: nowrap; }
+  body.v3 .v3-facts span { font-size: 12px; }
+}
