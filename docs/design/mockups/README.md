@@ -31,6 +31,9 @@ PNGs are 3840x2400 (1920x1200 at 2x).
   
   The waveform, log-frequency spectrogram, source lanes, FFT curves and before/after
   spectra all come from that scene, so they agree with each other.
+  The overlay boxes and tags are drawn by hand and label representative events.
+  For example, the whisper at 02:18.1 sits inside the Speaker B selection on
+  Stems and has no box of its own.
 - No external scripts or fonts. Text uses system Inter and Liberation Mono.
 
 ## Re-render
@@ -39,6 +42,9 @@ PNGs are 3840x2400 (1920x1200 at 2x).
 docs/design/mockups/render.sh      # 2x (default)
 docs/design/mockups/render.sh 1    # 1x
 ```
+
+It launches Chromium with `--no-sandbox` and `--allow-file-access-from-files`.
+Only run it on these trusted mockup files, or in an isolated container.
 
 The script uses Chromium's `headless_shell` from `/opt/pw-browsers`. Override the
 path with `VIP_HEADLESS_SHELL`. Do not use `chrome --headless=new` for
