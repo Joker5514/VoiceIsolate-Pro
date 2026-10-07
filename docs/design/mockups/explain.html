@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VoiceIsolate-Pro — Explain</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+.hero { position: absolute; top: 54px; left: 0; right: 0; height: 560px; display: grid; grid-template-columns: 600px 1fr; gap: 40px; padding: 34px 40px 0 64px; }
+.copy { padding-top: 4px; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 650; letter-spacing: .14em; color: var(--text-3); text-transform: uppercase; }
+.eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 10px var(--red); }
+h1 { margin: 18px 0 0; font: 700 74px/1.0 'Inter Display', Inter, sans-serif; letter-spacing: -.035em; }
+h1 em { font-style: normal; background: linear-gradient(90deg, #fff 0%, #cfe9ee 55%, #7fe4ef 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lede { margin: 22px 0 0; max-width: 520px; font-size: 17px; line-height: 1.55; color: var(--text-2); }
+.ctas { display: flex; gap: 12px; margin-top: 30px; }
+.ctas .btn { height: 46px; padding: 0 22px; font-size: 14px; border-radius: 10px; }
+.ctas .btn i { width: 17px; height: 17px; }
+.trust { margin-top: 18px; display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--text-3); }
+.trust i { width: 14px; height: 14px; color: var(--green); }
+.trust b { color: var(--line-3); font-weight: 400; }
+.evid { margin-top: 34px; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.012); }
+.evid > div { padding: 14px 16px; border-right: 1px solid var(--line); }
+.evid > div:last-child { border-right: 0; }
+.evid b { display: block; font: 650 22px Inter; letter-spacing: -.02em; }
+.evid b small { font-size: 12px; color: var(--text-3); font-weight: 500; margin-left: 3px; }
+.evid span { font-size: 11px; color: var(--text-3); }
+.evid .g { color: var(--green); }
+
+.canvasp { position: relative; display: flex; flex-direction: column; overflow: hidden; height: 512px; }
+.cv-top { display: flex; align-items: center; gap: 10px; }
+.cv-top .sp { flex: 1; }
+.cvbody { position: relative; flex: 1; display: flex; flex-direction: column; }
+.wavlane { position: relative; height: 128px; border-bottom: 1px solid var(--line); background: #05080c; }
+.speclane { position: relative; flex: 1; background: #04070b; }
+.wavlane canvas, .speclane canvas { position: absolute; inset: 0; }
+.lanelbl { position: absolute; left: 10px; top: 8px; font-size: 9.5px; font-weight: 650; letter-spacing: .12em; color: var(--text-3); z-index: 3; }
+.lanelbl.r { left: auto; right: 10px; }
+.split { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: linear-gradient(var(--red), rgba(255,61,77,.8)); box-shadow: 0 0 14px rgba(255,61,77,.8), 0 0 40px rgba(255,61,77,.25); z-index: 6; }
+.split .knob { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px; border-radius: 50%; background: #0c1219; border: 2px solid var(--red); display: grid; place-items: center; color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.6); }
+.split .knob i { width: 14px; height: 14px; }
+.sweep { position: absolute; top: 0; bottom: 0; width: 120px; background: linear-gradient(90deg, rgba(255,61,77,0), rgba(255,61,77,.07)); z-index: 5; }
+.sidelbl { position: absolute; top: 10px; z-index: 7; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 9px; border-radius: 5px; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.sidelbl.o { background: rgba(5,8,12,.86); border: 1px solid var(--line-3); color: var(--text-2); }
+.sidelbl.p { background: rgba(5,8,12,.86); border: 1px solid rgba(49,207,125,.5); color: #a7ecc6; }
+.ann { position: absolute; z-index: 4; }
+.ann .bx { position: absolute; inset: 0; border: 1px solid var(--c); border-radius: 4px; background: color-mix(in srgb, var(--c) 8%, transparent); }
+.ann .bx.d { border-style: dashed; }
+.ann .tg { position: absolute; white-space: nowrap; display: flex; gap: 6px; align-items: center; height: 18px; padding: 0 6px; border-radius: 4px; background: rgba(5,8,12,.88); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); color: var(--c); font-size: 9.5px; font-weight: 700; letter-spacing: .09em; }
+.ann .tg b { font: 600 9.5px var(--mono); color: var(--text-2); letter-spacing: 0; }
+.hl { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--c); z-index: 4; }
+.okchip { position: absolute; z-index: 7; display: flex; gap: 6px; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; background: rgba(5,12,9,.88); border: 1px solid rgba(49,207,125,.4); color: #a7ecc6; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.okchip i { width: 12px; height: 12px; color: var(--green); }
+.okchip b { font: 600 10px var(--mono); color: #fff; }
+.faxis { position: absolute; right: 0; top: 0; bottom: 0; width: 40px; z-index: 6; background: linear-gradient(90deg, rgba(4,7,11,0), rgba(4,7,11,.85) 40%); }
+.faxis span { position: absolute; right: 6px; transform: translateY(-50%); font: 9px var(--mono); color: var(--text-3); }
+.cvfoot { display: flex; align-items: center; gap: 18px; height: 36px; padding: 0 12px; border-top: 1px solid var(--line); font-size: 11px; color: var(--text-3); }
+.cvfoot b { color: var(--text); font-weight: 600; font-family: var(--mono); font-size: 11px; }
+.cvfoot .prog { flex: 1; height: 4px; border-radius: 2px; background: #141d27; position: relative; overflow: hidden; }
+.cvfoot .prog s { position: absolute; inset: 0 auto 0 0; width: 62%; background: linear-gradient(90deg, var(--red-solid), var(--red)); box-shadow: 0 0 8px rgba(255,61,77,.6); }
+
+.pipe { position: absolute; top: 620px; left: 48px; right: 48px; }
+.pipe-hd { display: flex; align-items: flex-end; justify-content: space-between; }
+.pipe-hd h2 { margin: 0; font: 650 24px 'Inter Display', Inter; letter-spacing: -.02em; }
+.pipe-hd p { margin: 4px 0 0; color: var(--text-3); font-size: 13px; }
+.track { position: relative; height: 34px; margin-top: 16px; }
+.track .ln { position: absolute; left: 30px; right: 30px; top: 16px; height: 2px; background: #1a2430; }
+.track .ln s { position: absolute; inset: 0 auto 0 0; width: 89%; background: linear-gradient(90deg, var(--green), var(--green) 75%, var(--red)); }
+.track .pulse { position: absolute; top: 12px; width: 10px; height: 10px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 4px rgba(255,61,77,.2), 0 0 14px var(--red); }
+.cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.card { height: 440px; display: flex; flex-direction: column; padding: 16px 16px 14px; position: relative; }
+.card .num { display: flex; align-items: center; gap: 10px; }
+.card .num em { font-style: normal; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 650 12px var(--mono); color: var(--text-2); background: #121b25; border: 1px solid var(--line-3); }
+.card .num em.ok { color: var(--green); border-color: rgba(49,207,125,.45); background: var(--green-wash); }
+.card .num em.act { color: #fff; border-color: #ff5161; background: var(--red-solid); box-shadow: 0 0 14px rgba(255,61,77,.45); }
+.card .num b { font-size: 12px; font-weight: 700; letter-spacing: .14em; }
+.card .num .st { margin-left: auto; }
+.card h3 { margin: 12px 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.card p.d { margin: 0 0 12px; color: var(--text-3); font-size: 12px; line-height: 1.45; }
+.viz { position: relative; border-radius: 8px; background: #05080c; border: 1px solid var(--line); overflow: hidden; }
+.viz canvas { position: absolute; inset: 0; }
+.facts { margin-top: auto; display: grid; gap: 0; }
+.facts div { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.04); font-size: 11.5px; color: var(--text-3); }
+.facts b { color: var(--text); font: 600 11.5px var(--mono); }
+.facts b.g { color: var(--green); }
+.det { display: grid; gap: 0; }
+.det .r { display: grid; grid-template-columns: 9px 1fr 70px 38px; gap: 8px; align-items: center; height: 26px; font-size: 12px; }
+.det .r .sw { width: 8px; height: 8px; }
+.det .r .v { font: 600 11.5px var(--mono); text-align: right; }
+.det .r .bar s { background: var(--c); }
+.det .r.lo .v { color: var(--amber); }
+.mlane { position: relative; height: 29px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 0 8px; }
+.mlane:last-child { border-bottom: 0; }
+.mlane .n { width: 82px; font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.mlane .a { position: relative; flex: 1; height: 22px; }
+.mlane .a canvas { position: absolute; inset: 0; }
+.mlane.res { opacity: .75; }
+.mlane .shim { position: absolute; top: 0; bottom: 0; width: 40px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent); }
+.dec .r { display: grid; grid-template-columns: 1fr 84px 70px; gap: 10px; align-items: center; height: 32px; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 12px; }
+.dec .bip { position: relative; height: 4px; border-radius: 2px; background: #18222d; }
+.dec .bip::before { content: ''; position: absolute; left: 50%; top: -3px; width: 1px; height: 10px; background: var(--line-3); }
+.dec .bip s { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--c); }
+.dec .v { font: 600 12px var(--mono); text-align: right; }
+.dec .v.on { font: 700 10px Inter; letter-spacing: .1em; color: var(--green); }
+.met { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.met div { padding: 9px 10px; border-radius: 8px; background: rgba(255,255,255,.018); border: 1px solid var(--line); }
+.met span { display: block; font-size: 10.5px; color: var(--text-3); }
+.met b { font: 650 17px Inter; letter-spacing: -.01em; }
+.met b small { font-size: 10.5px; font-weight: 500; color: var(--text-3); margin-left: 2px; }
+.met b.g { color: var(--green); }
+.legend2 { position: absolute; top: 6px; left: 8px; display: flex; gap: 10px; font-size: 9.5px; color: var(--text-3); z-index: 2; }
+.legend2 span { display: flex; gap: 4px; align-items: center; }
+.foot { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; display: flex; align-items: center; gap: 26px; padding: 0 48px; border-top: 1px solid var(--line); background: #070b10; font-size: 11px; color: var(--text-3); }
+.foot span { display: flex; align-items: center; gap: 7px; }
+.foot i { width: 13px; height: 13px; color: var(--green); }
+.foot b { color: var(--text-2); font-weight: 600; }
+</style>
+</head>
+<body>
+<header id="topbar"></header>
+
+<section class="hero">
+  <div class="copy">
+    <span class="eyebrow"><i></i>How VoiceIsolate works</span>
+    <h1>Hear What<br>Was <em>Hidden.</em></h1>
+    <p class="lede">VoiceIsolate-Pro analyzes, identifies, isolates and restores audio locally on your device, without uploading the recording anywhere.</p>
+    <div class="ctas"><button class="btn primary"><i data-i="folder"></i>Open Audio</button><button class="btn"><i data-i="chip"></i>Explore the Engine</button></div>
+    <div class="trust"><i data-i="shield"></i>Zero-cloud processing <b>•</b> Local AI <b>•</b> Non-destructive workflow</div>
+    <div class="evid">
+      <div><b class="g">0<small>bytes</small></b><span>Audio uploaded this session</span></div>
+      <div><b>+13.8<small>dB</small></b><span>SNR gain on this file</span></div>
+      <div><b>97<small>%</small></b><span>Speech preserved</span></div>
+    </div>
+  </div>
+
+  <div class="panel canvasp">
+    <div class="ph cv-top">
+      <span class="t"><i data-i="wave"></i>Interview_042.wav <span style="font:10.5px var(--mono);color:var(--text-3);letter-spacing:0;text-transform:none">02:00.0 – 02:24.0</span></span>
+      <span class="sp"></span>
+      <span class="chip">L+R</span><span class="chip">Log frequency</span><span class="chip cy">Live analysis</span>
+    </div>
+    <div class="rulerwrap" style="position:relative"><div class="ruler" id="hruler"></div></div>
+    <div class="cvbody" id="cvbody">
+      <div class="wavlane" id="wl"><canvas id="hw"></canvas><span class="lanelbl">WAVEFORM</span></div>
+      <div class="speclane" id="sl"><canvas id="hs"></canvas><span class="lanelbl">SPECTROGRAM</span><div class="faxis" id="hfax"></div></div>
+      <div id="hov" style="position:absolute;inset:0;pointer-events:none"></div>
+    </div>
+    <div class="cvfoot">
+      <span>Processing locally</span><div class="prog"><s></s></div><b>62%</b>
+      <span>Elapsed <b>00:26</b></span><span>Engine <b>WebGPU</b></span><span style="color:var(--green);display:flex;gap:6px;align-items:center"><i data-i="shield" style="width:13px;height:13px"></i>No network audio</span>
+    </div>
+  </div>
+</section>
+
+<section class="pipe">
+  <div class="pipe-hd">
+    <div><h2>What happens to your audio</h2><p>Five steps, all on this device. Shown here for Interview_042.wav.</p></div>
+    <div style="display:flex;gap:8px"><span class="chip ok"><i data-i="check" style="width:11px;height:11px"></i>4 of 5 complete</span><span class="chip">Original kept untouched</span></div>
+  </div>
+  <div class="track"><div class="ln"><s></s></div><div class="pulse" id="pulse"></div></div>
+  <div class="cards">
+    <div class="panel card">
+      <div class="num"><em class="ok">01</em><b>LISTEN</b><span class="chip ok st">Done</span></div>
+      <h3>Reads the signal locally</h3>
+      <p class="d">Decoded on this device and resampled to 48 kHz. Nothing is sent anywhere.</p>
+      <div class="viz" id="c1v" style="height:118px"><span class="lanelbl" style="top:6px">L</span><span class="lanelbl" style="top:64px">R</span></div>
+      <div class="viz" style="height:92px;margin-top:8px"><canvas id="c1f"></canvas><span class="lanelbl r" style="top:6px">FFT • 02:05.5</span></div>
+      <div class="facts">
+        <div>Format<b>48 kHz • 24-bit • 2 ch</b></div>
+        <div>Duration<b>12:48.000</b></div>
+        <div>Decoded in<b>3.1 s</b></div>
+        <div>Sent to network<b class="g">0 bytes</b></div>
+      </div>
+    </div>
+
+    <div class="panel card">
+      <div class="num"><em class="ok">02</em><b>UNDERSTAND</b><span class="chip ok st">Done</span></div>
+      <h3>Finds what is in the recording</h3>
+      <p class="d">Every region gets a label and a confidence score you can check.</p>
+      <div class="viz" style="height:58px;margin-bottom:8px"><canvas id="c2m"></canvas></div>
+      <div class="det" id="det"></div>
+    </div>
+
+    <div class="panel card">
+      <div class="num"><em class="ok">03</em><b>SEPARATE</b><span class="chip ok st">Automatic</span></div>
+      <h3>Sources appear on their own</h3>
+      <p class="d">No separation step to run. Sources become lanes you can play, mute or isolate.</p>
+      <div class="viz" id="lanes3" style="flex:none"></div>
+      <div class="facts">
+        <div>Sources discovered<b>7</b></div>
+        <div>Stem pair<b>Clean voice + residual</b></div>
+        <div>Inference passes<b>1 per file</b></div>
+      </div>
+    </div>
+
+    <div class="panel card" style="border-color:rgba(255,61,77,.35);box-shadow:0 0 0 1px rgba(255,61,77,.08),0 14px 40px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.03)">
+      <div class="num"><em class="act">04</em><b>REPAIR</b><span class="chip red st">Running 62%</span></div>
+      <h3>Makes reversible decisions</h3>
+      <p class="d">Each repair is a visible, adjustable setting. Nothing is baked in until you export.</p>
+      <div class="viz" style="height:96px;margin-bottom:6px"><canvas id="c4"></canvas><div class="legend2"><span><i class="sw" style="background:var(--cyan)"></i>Gain vs. frequency</span></div></div>
+      <div class="dec">
+        <div class="r" style="--c:var(--src-hvac)"><span>Noise Floor</span><div class="bip"><s style="right:50%;width:32%"></s></div><span class="v">−16 dB</span></div>
+        <div class="r" style="--c:var(--src-hum)"><span>Hum 60/120 Hz</span><div class="bip"><s style="right:50%;width:42%"></s></div><span class="v">−21 dB</span></div>
+        <div class="r" style="--c:var(--src-rv)"><span>Dereverb</span><div class="bip"><s style="left:50%;width:14%"></s></div><span class="v">28%</span></div>
+        <div class="r" style="--c:var(--cyan)"><span>Voice Presence</span><div class="bip"><s style="left:50%;width:17%"></s></div><span class="v">+3.4 dB</span></div>
+        <div class="r" style="--c:var(--src-w);border-bottom:0"><span>Whisper Protection</span><span class="toggle on" style="justify-self:center"></span><span class="v on">ACTIVE</span></div>
+      </div>
+    </div>
+
+    <div class="panel card">
+      <div class="num"><em>05</em><b>VERIFY</b><span class="chip st">Next</span></div>
+      <h3>Proves the result</h3>
+      <p class="d">Measured before and after, side by side. You decide what ships.</p>
+      <div class="viz" style="height:112px"><canvas id="c5"></canvas><div class="legend2"><span><i class="sw" style="background:#5b6878"></i>Original</span><span><i class="sw" style="background:var(--cyan)"></i>Processed</span></div></div>
+      <div class="met">
+        <div><span>SNR</span><b class="g">+13.8<small>dB</small></b></div>
+        <div><span>Loudness</span><b>−16.0<small>LUFS-I</small></b></div>
+        <div><span>Noise reduction</span><b>−18.6<small>dB</small></b></div>
+        <div><span>Speech preservation</span><b class="g">97<small>%</small></b></div>
+        <div><span>Voice clarity</span><b>+41<small>%</small></b></div>
+        <div><span>Confidence</span><b>93<small>%</small></b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <span><i data-i="shield"></i><b>Local engine</b> WebGPU, WASM fallback</span>
+  <span><i data-i="chip"></i><b>Models</b> bsrnn_vocals, rnnoise • SHA-256 verified</span>
+  <span><i data-i="check"></i><b>Network audio egress</b> 0 bytes</span>
+  <span><i data-i="history"></i><b>Non-destructive</b> original file never modified</span>
+  <span style="margin-left:auto;color:var(--text-4)">Microphone access is disabled by design. VoiceIsolate works on files you open.</span>
+</footer>
+
+<script src="viz.js"></script>
+<script>
+(function () {
+  VIP.shell('explain');
+  const T0 = 120, T1 = 144, FMIN = 40, FMAX = 16000, SPLIT = 135.2;
+  const sc = VIP.makeScene({
+    seed: 21,
+    voices: [
+      { id: 'a', f0: 116, level: -27, amp: 0.62, segs: [[120.4, 124.9], [127.9, 131.6], [136.0, 140.3], [141.6, 144]] },
+      { id: 'b', f0: 212, level: -36, amp: 0.26, segs: [[125.2, 127.6], [132.0, 134.6], [140.5, 141.4]] },
+    ],
+    whispers: [{ segs: [[131.75, 132.9], [138.4, 139.6]], level: -57, amp: 0.09 }],
+    tv: { level: -57, amp: 0.09, boost: [[121.5, 126, 4]] },
+    hvac: -55, hum: -40, rt60: 0.7,
+    transients: [{ t: 129.8, level: -28, amp: 0.65 }],
+  });
+  const clean = { tv: -26, hvac: -18, hum: -24, floor: -6, reverb: -14, transient: -14, a: 1, b: 4, whisper: 3 };
+
+  const sl = document.getElementById('sl'), wl = document.getElementById('wl');
+  const W = sl.clientWidth, SH = sl.clientHeight, L = Math.log(FMAX / FMIN);
+  const X = (t) => ((t - T0) / (T1 - T0)) * W;
+  const Y = (f) => SH * (1 - Math.log(f / FMIN) / L);
+  VIP.drawSpectrogram(document.getElementById('hs'), sc, { t0: T0, t1: T1, fmin: FMIN, fmax: FMAX, dbMin: -100, dbMax: -24, split: SPLIT, splitFade: 0.5, gainsAfter: clean });
+  VIP.drawWaveform(document.getElementById('hw'), sc, { t0: T0, t1: T1, split: SPLIT, splitFade: 0.5, gainsAfter: clean, color: 'rgba(132,150,170,0.55)', rmsColor: 'rgba(196,210,224,0.85)', colorAfter: 'rgba(46,213,229,0.45)', rmsAfter: 'rgba(170,244,250,0.95)', scale: 0.47 });
+  VIP.ruler(document.getElementById('hruler'), T0, T1, 2, 0.5, (t) => VIP.mmss(t, 1));
+
+  const fax = document.getElementById('hfax');
+  [100, 500, 1000, 2000, 5000, 10000].forEach((f) => fax.insertAdjacentHTML('beforeend', `<span style="top:${Y(f)}px">${f >= 1000 ? f / 1000 + 'k' : f}</span>`));
+
+  const ov = document.getElementById('hov');
+  const top = wl.clientHeight + 1; // spectrogram offset inside cvbody
+  const ann = (t0, t1, f0, f1, c, label, conf, dash, tagPos) => {
+    const x = X(t0), w = X(t1) - x, y = top + Y(f1), h = Y(f0) - Y(f1);
+    const tp = tagPos || 'top:-21px;left:-1px';
+    return `<div class="ann" style="--c:${c};left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="bx ${dash ? 'd' : ''}"></div><span class="tg" style="${tp}">${label}<b>${conf}</b></span></div>`;
+  };
+  let h = '';
+  h += ann(120.4, 124.9, 95, 4800, 'var(--src-a)', 'VOICE A', '96%');
+  h += ann(125.2, 127.6, 180, 4200, 'var(--src-b)', 'QUIET VOICE', '84%', false, 'top:-21px;left:-1px');
+  h += ann(131.75, 132.9, 650, 8000, 'var(--src-w)', 'WHISPER', '78%', false, 'top:-21px;left:-1px');
+  h += ann(121.4, 126.1, 230, 3600, 'var(--src-tv)', 'TV BLEED', '91%', true, 'top:4px;right:4px');
+  h += ann(120.15, 135.0, 42, 300, 'var(--src-hvac)', 'ROOM NOISE', '88%', true, 'bottom:4px;left:4px');
+  h += ann(128.0, 131.0, 120, 2400, 'var(--src-rv)', 'REVERB TAIL', '73%', true, 'bottom:4px;left:4px');
+  h += `<div class="hl" style="--c:var(--src-hum);top:${top + Y(60)}px;width:${X(SPLIT)}px;right:auto"></div><div class="ann" style="--c:var(--src-hum);left:${X(126.4)}px;top:${top + Y(60) - 22}px"><span class="tg" style="position:static">60 Hz HUM<b>99%</b></span></div>`;
+  // processed side receipts
+  h += `<div class="okchip" style="left:${X(136.1)}px;top:${top + Y(9000)}px"><i data-i="check"></i>Voice A preserved<b>99.1%</b></div>`;
+  h += `<div class="okchip" style="left:${X(140.6)}px;top:${top + Y(6400)}px"><i data-i="check"></i>Whisper kept<b>+3 dB</b></div>`;
+  h += `<div class="okchip" style="left:${X(139.4)}px;top:${top + Y(70) - 30}px"><i data-i="check"></i>Hum<b>−21 dB</b></div>`;
+  h += `<div class="okchip" style="left:${X(136.1)}px;top:${top + Y(260)}px"><i data-i="check"></i>Room noise<b>−16 dB</b></div>`;
+  // split + sweep + labels
+  h += `<div class="sweep" style="left:${X(SPLIT) - 120}px"></div><div class="split" style="left:${X(SPLIT)}px"><span class="knob"><i data-i="compare"></i></span></div>`;
+  h += `<span class="sidelbl o" style="left:${X(SPLIT) - 104}px">ORIGINAL</span><span class="sidelbl p" style="left:${X(SPLIT) + 12}px">PROCESSED</span>`;
+  ov.insertAdjacentHTML('beforeend', h);
+
+  // card 1: stereo waveform + FFT
+  const c1v = document.getElementById('c1v');
+  const cc = document.createElement('canvas'); cc.style.cssText = 'position:absolute;left:0;top:0;height:50%;width:100%'; c1v.appendChild(cc);
+  const cc2 = document.createElement('canvas'); cc2.style.cssText = 'position:absolute;left:0;top:50%;height:50%;width:100%;border-top:1px solid #19242f'; c1v.appendChild(cc2);
+  VIP.drawWaveform(cc, sc, { t0: 121, t1: 130, color: 'rgba(132,150,170,0.6)', rmsColor: 'rgba(205,218,230,0.9)', scale: 0.45, seed: 1 });
+  VIP.drawWaveform(cc2, sc, { t0: 121, t1: 130, color: 'rgba(132,150,170,0.6)', rmsColor: 'rgba(205,218,230,0.9)', scale: 0.45, seed: 2, gain: 0.92 });
+  const spec = VIP.spectrumAt(sc, 125.5, { N: 300, fmin: 30, fmax: 20000 });
+  const pts = spec.db.map((d, i) => [i / (spec.db.length - 1), Math.max(0, Math.min(1, (d + 100) / 74))]);
+  VIP.drawCurve(document.getElementById('c1f'), [{ pts, color: '#2ed5e5', fill: 'rgba(46,213,229,0.25)', width: 1.2 }]);
+
+  // card 2: detections
+  const det = [
+    ['Speaker A', 96, 'var(--src-a)'], ['Quiet Speaker', 84, 'var(--src-b)'], ['Whisper Event', 78, 'var(--src-w)'],
+    ['Music (TV)', 91, 'var(--src-tv)'], ['Transient Noise', 93, 'var(--src-tr)'], ['Environmental', 88, 'var(--src-hvac)'],
+    ['Hum 60 Hz', 99, 'var(--src-hum)'], ['Reverberation', 73, 'var(--src-rv)'],
+  ];
+  document.getElementById('det').innerHTML = det.map(([n, v, c]) => `<div class="r ${v < 80 ? 'lo' : ''}" style="--c:${c}"><i class="sw" style="background:${c}"></i><span>${n}</span><div class="bar"><s style="width:${v}%"></s></div><span class="v">${v}%</span></div>`).join('');
+  const m = document.getElementById('c2m'); const { ctx, w: mw } = VIP.setup(m);
+  const R = VIP.rng(8); const rows = ['#2ed5e5', '#a77dff', '#ff7ab6', '#f59e57', '#e6edf5', '#8aa4bb'];
+  rows.forEach((c, i) => {
+    const y = 5 + i * 8.2; ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(0, y, mw, 6);
+    let x = R() * 20;
+    while (x < mw) { const ww = i === 3 ? 30 + R() * 80 : i === 4 ? 2 : 6 + R() * 26; if (R() < (i === 0 ? 0.7 : i === 4 ? 0.25 : 0.35)) { ctx.fillStyle = c; ctx.globalAlpha = 0.85; ctx.fillRect(x, y, ww, 6); } x += ww + 4 + R() * 18; }
+    ctx.globalAlpha = 1;
+  });
+
+  // card 3: lanes resolving
+  const l3 = document.getElementById('lanes3');
+  const lanes = [['Speaker A', '#2ed5e5', 'a', 0.6], ['Quiet voice', '#a77dff', 'b', 0.24], ['Whispers', '#ff7ab6', 'whisper', 0.07], ['Television', '#f59e57', 'tv', 0.16], ['Room noise', '#8aa4bb', 'hvac', 0.12], ['Transients', '#e6edf5', 'transient', 0.15], ['Reverb', '#5b8cff', 'reverb', 0.1]];
+  lanes.forEach(([n, c], i) => l3.insertAdjacentHTML('beforeend', `<div class="mlane ${i === 6 ? 'res' : ''}"><span class="n"><i class="sw" style="background:${c}"></i>${n}</span><div class="a"><canvas></canvas>${i === 6 ? '<div class="shim" style="left:55%"></div>' : ''}</div></div>`));
+  l3.querySelectorAll('canvas').forEach((c, i) => {
+    const [, col, id, ref] = lanes[i];
+    if (i === 6) { c.style.width = '58%'; }
+    VIP.drawLane(c, sc, id, col, { t0: T0, t1: i === 6 ? T0 + 24 * 0.58 : T1, ref });
+  });
+  l3.insertAdjacentHTML('beforeend', '<div style="position:absolute;right:8px;bottom:8px;font-size:10px;color:var(--text-3)">Resolving reverb…</div>');
+
+  // card 4: gain curve
+  const gpts = []; for (let i = 0; i <= 300; i++) {
+    const f = 30 * Math.pow(20000 / 30, i / 300);
+    let g = 0;
+    [60, 120, 180].forEach((n, k) => { g -= (21 - k * 6) * Math.exp(-0.5 * Math.pow(Math.log2(f / n) / 0.04, 2)); });
+    g -= 9 / (1 + Math.pow(f / 180, 2));
+    g += 3.4 * Math.exp(-0.5 * Math.pow(Math.log2(f / 3000) / 0.8, 2));
+    g -= 6 / (1 + Math.pow(9000 / f, 3));
+    gpts.push([i / 300, 0.62 + g / 40]);
+  }
+  VIP.drawCurve(document.getElementById('c4'), [{ pts: gpts.map(([x]) => [x, 0.62]), color: 'rgba(255,255,255,0.12)', dash: [3, 3] }, { pts: gpts, color: '#2ed5e5', width: 1.6 }]);
+
+  // card 5: before / after spectra
+  const before = VIP.spectrumAt(sc, 130.5, { N: 260, fmin: 30, fmax: 20000 });
+  const after = VIP.spectrumAt(sc, 130.5, { N: 260, fmin: 30, fmax: 20000, gains: clean });
+  const nz = (s) => s.db.map((d, i) => [i / (s.db.length - 1), Math.max(0, Math.min(1, (d + 102) / 76))]);
+  VIP.drawCurve(document.getElementById('c5'), [{ pts: nz(before), color: 'rgba(120,136,154,0.85)', fill: 'rgba(120,136,154,0.18)', width: 1 }, { pts: nz(after), color: '#2ed5e5', fill: 'rgba(46,213,229,0.22)', width: 1.4 }]);
+
+  document.getElementById('pulse').style.left = 'calc(30px + (100% - 60px) * 0.89 - 5px)';
+  VIP.icons();
+})();
+</script>
+</body>
+</html>

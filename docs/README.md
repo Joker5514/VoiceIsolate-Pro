@@ -33,6 +33,7 @@ This index separates **current implementation/release truth** from historical au
 | [`architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`](architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) | Web + Electron + Android mandate; iOS deferred from v1.0 scope |
 | [`PRODUCTION_PIPELINE.md`](PRODUCTION_PIPELINE.md) | Shipping processing path and Engineer Console integration |
 | [`product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) | Product definition, roadmap, risks, and release gates |
+| [`design/mockups/README.md`](design/mockups/README.md) | Explain / Stems / Engineer UI mockups: design direction only, not implementation truth |
 
 ## Current guides
 
