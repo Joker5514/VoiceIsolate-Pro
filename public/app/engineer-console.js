@@ -361,9 +361,12 @@
    * Header → workspace tabs → session bar (#vipHero) → stage | rack | inspector
    * columns that scroll on their own → transport pinned to the bottom edge.
    * Only nodes move; IDs and listeners stay. Below the breakpoint every move is
-   * undone so phones and tablets keep the flowing layout.
+   * undone so phones and tablets keep the flowing layout. 1024x560 admits
+   * small laptops and 1920x1080 at 150-175% scaling (~1100-1280 x ~600 CSS px);
+   * below 1280 the CSS stacks rack over inspector in one right-hand column.
+   * The visual skin (body.ec-skin) applies at every size.
    */
-  const WS_QUERY = '(min-width: 1280px) and (min-height: 640px)';
+  const WS_QUERY = '(min-width: 1024px) and (min-height: 560px)';
   const wsMoves = [];
 
   function wsPlace(node, parent, before) {
@@ -405,6 +408,7 @@
   }
 
   function installWorkstation() {
+    document.body.classList.add('ec-skin');
     if (!window.matchMedia) return;
     const mq = window.matchMedia(WS_QUERY);
     applyWorkstation(mq.matches);
