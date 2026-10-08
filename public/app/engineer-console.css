@@ -606,12 +606,14 @@ details.vip-section.filter-empty {
 
 /* ══════════════════════════════════════════════════════════════════════
    Workstation shell — desktop (body.ws, set by engineer-console.js at
-   ≥1280×640). One screen: header → workspace tabs → session bar → stage |
+   ≥1024×560). One screen: header → workspace tabs → session bar → stage |
    rack | inspector (each column scrolls) → transport bar. Layout + visual
    only; every ID, slider binding and listener is the same node as before.
    Colours stay on the AA-pinned Precision Studio text tiers.
+   Paint (tokens, header, panels, buttons) is on body.ec-skin, which
+   engineer-console.js sets at every size; layout stays on body.ws.
    ══════════════════════════════════════════════════════════════════════ */
-body.eng-console.ws {
+body.eng-console.ec-skin {
   --ws-bg: #05080c;
   --ws-panel: #0a1017;
   --ws-panel-2: #0d141c;
@@ -629,6 +631,12 @@ body.eng-console.ws {
   --ws-green: var(--state-success, #31cf7d);
   --ws-amber: var(--state-warning, #f0b541);
   --ws-radius: 12px;
+  background:
+    radial-gradient(1200px 520px at 50% -180px, rgba(46, 213, 229, 0.035), transparent 70%),
+    radial-gradient(900px 600px at 85% 110%, rgba(255, 61, 77, 0.025), transparent 70%),
+    var(--ws-bg) !important;
+}
+body.eng-console.ws {
   height: 100vh;
   height: 100dvh;
   /* No overflow clip here: the columns scroll themselves, and a clipping body
@@ -636,10 +644,6 @@ body.eng-console.ws {
   display: flex;
   flex-direction: column;
   padding: 0 !important;
-  background:
-    radial-gradient(1200px 520px at 50% -180px, rgba(46, 213, 229, 0.035), transparent 70%),
-    radial-gradient(900px 600px at 85% 110%, rgba(255, 61, 77, 0.025), transparent 70%),
-    var(--ws-bg) !important;
 }
 body.eng-console.ws > * { flex: none; }
 
@@ -648,28 +652,30 @@ body.eng-console.ws .hdr {
   order: -3;
   position: relative;
   top: auto;
+}
+body.eng-console.ec-skin .hdr {
   background: linear-gradient(#0b1118, #090e14) !important;
   border-bottom: 1px solid var(--ws-line) !important;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02), 0 8px 24px rgba(0, 0, 0, 0.35);
   backdrop-filter: none;
 }
-body.eng-console.ws .hdr-badge {
+body.eng-console.ec-skin .hdr-badge {
   border-color: var(--ws-line-2);
   background: rgba(255, 255, 255, 0.02);
   color: var(--ws-text-2);
   border-radius: 5px;
   letter-spacing: 0.08em;
 }
-body.eng-console.ws .ec-mode-badge {
+body.eng-console.ec-skin .ec-mode-badge {
   border-radius: 6px;
   color: #bff0d4;
   background: rgba(49, 207, 125, 0.1);
   border-color: rgba(49, 207, 125, 0.32);
 }
-body.eng-console.ws .hdr-stat .hs-val { color: var(--ws-text); }
-body.eng-console.ws .hdr-stat .hs-lbl { color: var(--ws-text-3); }
-body.eng-console.ws .hdr-actions .btn,
-body.eng-console.ws .hdr-scale .btn-xs {
+body.eng-console.ec-skin .hdr-stat .hs-val { color: var(--ws-text); }
+body.eng-console.ec-skin .hdr-stat .hs-lbl { color: var(--ws-text-3); }
+body.eng-console.ec-skin .hdr-actions .btn,
+body.eng-console.ec-skin .hdr-scale .btn-xs {
   border-color: var(--ws-line-2);
   background: linear-gradient(#17212c, #121a23);
   color: var(--ws-text);
@@ -696,6 +702,10 @@ body.eng-console.ws.ps-workstation .ps-workspace-nav {
 }
 body.eng-console.ws.ps-workstation .ps-workspace-nav[hidden] { display: none !important; }
 body.eng-console.ws.ps-workstation .ps-workspace-nav a {
+  /* precision-studio.css only shapes these links from 1100px. */
+  display: flex;
+  align-items: center;
+  text-decoration: none;
   min-height: 28px;
   padding: 0 12px;
   border-radius: 6px;
@@ -877,6 +887,18 @@ body.eng-console.ws .ec-col {
   scrollbar-color: var(--ws-line-3) transparent;
   scroll-padding-top: 8px;
 }
+/* 1024-1279: two columns. The stage keeps the left; the rack (top) and the
+   inspector (bottom) share the right, each scrolling on its own. The rack
+   cell stays >=310px so the @container vip-rack rows still fit. */
+@media (max-width: 1279px) {
+  body.eng-console.ws .main-grid.ec-grid {
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  body.eng-console.ws .ec-col-stage { grid-column: 1; grid-row: 1 / span 2; }
+  body.eng-console.ws .ec-col-rack { grid-column: 2; grid-row: 1; }
+  body.eng-console.ws .ec-col-session { grid-column: 2; grid-row: 2; }
+}
 /* Fixed-height flex columns would otherwise squeeze every panel to fit. */
 body.eng-console.ws .ec-col > * { flex-shrink: 0; }
 body.eng-console.ws .ec-col-stage { order: 1; }
@@ -894,17 +916,17 @@ body.eng-console.ws .ec-col-session { order: 3; }
 body.eng-console.ws .ec-col-session { display: flex; }
 
 /* ── Panels ──────────────────────────────────────────────────────────── */
-body.eng-console.ws .card,
-body.eng-console.ws details.vip-section,
-body.eng-console.ws .cockpit-card {
+body.eng-console.ec-skin .card,
+body.eng-console.ec-skin details.vip-section,
+body.eng-console.ec-skin .cockpit-card {
   background: linear-gradient(180deg, var(--ws-panel-2), var(--ws-panel));
   border: 1px solid var(--ws-line);
   border-radius: var(--ws-radius);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025), 0 10px 30px rgba(0, 0, 0, 0.3);
 }
-body.eng-console.ws details.card:hover { border-color: var(--ws-line-2); }
-body.eng-console.ws .vip-section-summary,
-body.eng-console.ws .viz-hdr {
+body.eng-console.ec-skin details.card:hover { border-color: var(--ws-line-2); }
+body.eng-console.ec-skin .vip-section-summary,
+body.eng-console.ec-skin .viz-hdr {
   font-size: 10.5px;
   font-weight: 650;
   letter-spacing: 0.1em;
@@ -921,8 +943,8 @@ body.eng-console.ws .vip-workstation__inspector {
   width: auto;
   min-width: 0;
 }
-body.eng-console.ws .vip-workstation__inspector h3 { color: var(--ws-text-2) !important; }
-body.eng-console.ws .vip-compare-toggle {
+body.eng-console.ec-skin .vip-workstation__inspector h3 { color: var(--ws-text-2) !important; }
+body.eng-console.ec-skin .vip-compare-toggle {
   padding: 12px;
   border: 1px solid var(--ws-line);
   border-radius: var(--ws-radius);
@@ -935,19 +957,19 @@ body.eng-console.ws #vizCard #spectro3d-container,
 body.eng-console.ws #vizCard #spectroCanvas { min-height: 340px; }
 
 /* Buttons share the console's two weights: neutral and the action red. */
-body.eng-console.ws .btn {
+body.eng-console.ec-skin .btn {
   border-radius: 7px;
 }
 /* White text sits on the solid red only (5.05:1); the bright red fails AA. */
-body.eng-console.ws .btn-primary,
-body.eng-console.ws #vipHero #heroCtaProcess:not(:disabled) {
+body.eng-console.ec-skin .btn-primary,
+body.eng-console.ec-skin #vipHero #heroCtaProcess:not(:disabled) {
   background: var(--ws-red-solid) !important;
   border-color: #ff5161 !important;
   color: #fff !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 14px rgba(216, 31, 48, 0.28);
 }
 /* In the session bar Process is the call to action; Upload is secondary. */
-body.eng-console.ws #vipHero #heroCtaUpload {
+body.eng-console.ec-skin #vipHero #heroCtaUpload {
   background: linear-gradient(#17212c, #121a23) !important;
   border-color: var(--ws-line-2) !important;
   color: var(--ws-text) !important;
