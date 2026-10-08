@@ -760,9 +760,11 @@ export function installAnalysisWorkspace(app) {
       }
       // USM source matrix is optional and expensive — do NOT block Analyze on it.
       // Fire-and-forget so user can Process / listen immediately after analysis.
-      if (els.progressLabel) els.progressLabel.textContent = 'Analysis complete — Process to isolate';
+      // Auto-analysis also runs after Process; don't ask for a Process that already ran.
+      const nextStep = (app.procBuffer || app.outputBuffer) ? 'processed audio ready' : 'Process to isolate';
+      if (els.progressLabel) els.progressLabel.textContent = `Analysis complete — ${nextStep}`;
       if (typeof app.setStatus === 'function') {
-        app.setStatus(`Analysis complete — ${preset || 'ready'} · Process to isolate (USM in background)`);
+        app.setStatus(`Analysis complete — ${preset || 'ready'} · ${nextStep} (USM in background)`);
       }
       void runUsmBackend({ mode: 'auto', numSources: 6 })
         .then(() => {

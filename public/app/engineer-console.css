@@ -976,6 +976,21 @@ body.eng-console.ec-skin #vipHero #heroCtaUpload {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+/* The session bar must span the window; the legacy hero caps it at 1720px. */
+body.eng-console.ws #vipHero.vip-hero { max-width: none; }
+
+/* Narrow columns: button rows wrap instead of squeezing labels out of view
+   (measured 41-61px boxes around 93-132px labels in the 360px inspector). */
+body.eng-console.ec-skin .file-library-toolbar,
+body.eng-console.ec-skin .save-row { flex-wrap: wrap; }
+body.eng-console.ec-skin .file-library-toolbar > .btn,
+body.eng-console.ec-skin .save-row > .btn { flex: 1 1 auto; min-width: max-content; justify-content: center; }
+body.eng-console.ec-skin .save-row > .hint { flex-basis: 100%; }
+body.eng-console.ec-skin .actions-row { flex-wrap: wrap; }
+body.eng-console.ec-skin .actions-row > .btn { flex: 1 1 auto; min-width: max-content; }
+/* A fixed column count left 75px cells for unbreakable labels ("Phone/Radio"). */
+body.eng-console.ec-skin .presets-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 104px), 1fr)); }
+
 /* ── Transport bar ───────────────────────────────────────────────────── */
 body.eng-console.ws > .transport-card {
   order: 1;
