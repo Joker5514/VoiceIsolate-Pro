@@ -6,6 +6,29 @@
 
 import { Tokens } from '../../tokens/design-tokens.js';
 
+/** Cap on samples read per column when estimating its level. */
+const MAX_SAMPLES_PER_COLUMN = 1024;
+
+/** Intensity ramp low → mid → high → peak, written straight into RGBA pixels. */
+function writeColor(px, o, magnitude) {
+  const intensity = Math.min(1, Math.max(0, magnitude * 8));
+  let r, g, b;
+  if (intensity < 0.25) {
+    const t = intensity / 0.25;
+    r = Math.floor(10 + t * (26 - 10)); g = Math.floor(14 + t * (42 - 14)); b = Math.floor(20 + t * (58 - 20));
+  } else if (intensity < 0.5) {
+    const t = (intensity - 0.25) / 0.25;
+    r = Math.floor(26 + t * (194 - 26)); g = Math.floor(42 + t * (65 - 42)); b = Math.floor(58 + t * (12 - 58));
+  } else if (intensity < 0.75) {
+    const t = (intensity - 0.5) / 0.25;
+    r = Math.floor(194 + t * (249 - 194)); g = Math.floor(65 + t * (115 - 65)); b = Math.floor(12 + t * (22 - 12));
+  } else {
+    const t = (intensity - 0.75) / 0.25;
+    r = Math.floor(249 + t * (251 - 249)); g = Math.floor(115 + t * (191 - 115)); b = Math.floor(22 + t * (36 - 22));
+  }
+  px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = 255;
+}
+
 export class SpectrogramLayer {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
@@ -21,6 +44,8 @@ export class SpectrogramLayer {
       ...options,
     };
     this._spectrogramData = null; // 2D array or ImageData cache
+    this._dataVersion = 0;
+    this._image = null; // { key, img } painted for one geometry + data version
     this._duration = 0;
     this._viewStart = 0;
     this._viewEnd = 1;
@@ -46,6 +71,7 @@ export class SpectrogramLayer {
   setSpectrogramData(data, duration) {
     this._spectrogramData = data;
     this._duration = duration;
+    this._dataVersion++;
     this._scheduleRender();
   }
 
@@ -57,6 +83,7 @@ export class SpectrogramLayer {
     this.options.sampleRate = sampleRate;
     this._duration = this._audioData ? this._audioData.length / sampleRate : 0;
     this._spectrogramData = null; // will compute on render
+    this._dataVersion++;
     this._scheduleRender();
   }
 
@@ -104,7 +131,16 @@ export class SpectrogramLayer {
     const viewEnd = Math.floor(totalSamples * this._viewEnd);
     const viewLength = viewEnd - viewStart;
     const samplesPerColumn = Math.max(1, Math.floor(viewLength / width));
-    
+    // A column's level is a mean |x|; a bounded stride estimates it. Summing
+    // every sample made each render two full passes over the file.
+    const stride = Math.max(1, Math.ceil((samplesPerColumn * 2) / MAX_SAMPLES_PER_COLUMN));
+    // The band shape depends only on y: computed once, not per pixel.
+    const shape = new Float32Array(height);
+    for (let y = 0; y < height; y++) {
+      const freqNorm = 1 - y / height;
+      shape[y] = 0.3 + 0.7 * Math.exp(-Math.pow((freqNorm - 0.3) * 3, 2));
+    }
+
     const spectrogram = [];
     for (let x = 0; x < width; x++) {
       const start = viewStart + x * samplesPerColumn;
@@ -112,18 +148,36 @@ export class SpectrogramLayer {
       // Simple energy per frequency band approximation
       const column = new Float32Array(height);
       let sum = 0;
-      for (let i = start; i < end; i++) sum += Math.abs(data[i]);
-      const avg = sum / Math.max(1, end - start);
-      // Fake frequency distribution: higher energy at low freqs
-      for (let y = 0; y < height; y++) {
-        const freqNorm = 1 - y / height; // 0 = high freq at top, 1 = low at bottom? Actually invert
-        // Simulate speech energy concentrated in mid
-        const speechBoost = Math.exp(-Math.pow((freqNorm - 0.3) * 3, 2));
-        column[y] = avg * (0.3 + 0.7 * speechBoost) + Math.random() * 0.02;
-      }
+      let count = 0;
+      for (let i = start; i < end; i += stride) { sum += Math.abs(data[i]); count++; }
+      const avg = sum / Math.max(1, count);
+      // Fake frequency distribution: speech energy concentrated in the mids
+      for (let y = 0; y < height; y++) column[y] = avg * shape[y] + Math.random() * 0.02;
       spectrogram.push(column);
     }
     return spectrogram;
+  }
+
+  /**
+   * Paint column data into one ImageData. One fillRect (and one colour
+   * string) per device pixel was ~400k canvas calls per render on a phone
+   * canvas: a 1.8 s task on a 4x-throttled mobile profile.
+   */
+  _paintColumns(ctx, spectrogram, width, height) {
+    const img = ctx.createImageData(width, height);
+    const px = img.data;
+    const cols = spectrogram.length;
+    for (let x = 0; x < width; x++) {
+      const column = spectrogram[Math.min(cols - 1, Math.floor((x * cols) / width))];
+      const bins = column ? column.length : 0;
+      for (let py = 0; py < height; py++) {
+        // Column index 0 is painted at the bottom row (same mapping as the
+        // per-pixel fillRect loop this replaced).
+        const y = bins ? Math.min(bins - 1, Math.floor(((height - 1 - py) * bins) / height)) : 0;
+        writeColor(px, (py * width + x) * 4, column ? column[y] || 0 : 0);
+      }
+    }
+    return img;
   }
 
   _render() {
@@ -152,67 +206,21 @@ export class SpectrogramLayer {
       return;
     }
 
-    let spectrogram = this._spectrogramData;
-    if (!spectrogram) {
-      spectrogram = this._computeSimpleSpectrogram(width, height);
-    }
-
-    if (!spectrogram) return;
-
-    // Render spectrogram columns
-    // Use offscreen for better performance if we have precomputed image
-    if (spectrogram instanceof ImageData) {
-      ctx.putImageData(spectrogram, 0, 0);
-      return;
-    }
-
-    // If spectrogram is array of columns
-    if (Array.isArray(spectrogram) && spectrogram.length > 0) {
-      const cols = spectrogram.length;
-      const colWidth = width / cols;
-      
-      for (let x = 0; x < cols; x++) {
-        const column = spectrogram[x];
-        if (!column) continue;
-        const bins = column.length;
-        const binHeight = height / bins;
-        
-        for (let y = 0; y < bins; y++) {
-          const magnitude = column[y] || 0;
-          // Map magnitude to color gradient
-          const intensity = Math.min(1, Math.max(0, magnitude * 8));
-          
-          let r, g, b;
-          if (intensity < 0.25) {
-            // low -> mid
-            const t = intensity / 0.25;
-            r = Math.floor(10 + t * (26 - 10));
-            g = Math.floor(14 + t * (42 - 14));
-            b = Math.floor(20 + t * (58 - 20));
-          } else if (intensity < 0.5) {
-            const t = (intensity - 0.25) / 0.25;
-            r = Math.floor(26 + t * (194 - 26));
-            g = Math.floor(42 + t * (65 - 42));
-            b = Math.floor(58 + t * (12 - 58));
-          } else if (intensity < 0.75) {
-            const t = (intensity - 0.5) / 0.25;
-            r = Math.floor(194 + t * (249 - 194));
-            g = Math.floor(65 + t * (115 - 65));
-            b = Math.floor(12 + t * (22 - 12));
-          } else {
-            const t = (intensity - 0.75) / 0.25;
-            r = Math.floor(249 + t * (251 - 249));
-            g = Math.floor(115 + t * (191 - 115));
-            b = Math.floor(22 + t * (36 - 22));
-          }
-          
-          ctx.fillStyle = `rgb(${r},${g},${b})`;
-          // y=0 is top (high freq), invert so low freq at bottom
-          const yPos = height - (y + 1) * binHeight;
-          ctx.fillRect(x * colWidth, yPos, Math.ceil(colWidth), Math.ceil(binHeight));
-        }
+    const key = `${width}x${height}|${this._viewStart}|${this._viewEnd}|${this._dataVersion}`;
+    if (!this._image || this._image.key !== key) {
+      let spectrogram = this._spectrogramData;
+      if (!spectrogram) spectrogram = this._computeSimpleSpectrogram(width, height);
+      if (!spectrogram) return;
+      if (spectrogram instanceof ImageData) {
+        ctx.putImageData(spectrogram, 0, 0);
+        return;
       }
+      if (!Array.isArray(spectrogram) || spectrogram.length === 0) return;
+      // Re-renders for the same geometry and data (resize jitter, unrelated
+      // redraws) reuse the painted image instead of recomputing it.
+      this._image = { key, img: this._paintColumns(ctx, spectrogram, width, height) };
     }
+    ctx.putImageData(this._image.img, 0, 0);
 
     // Frequency grid
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';

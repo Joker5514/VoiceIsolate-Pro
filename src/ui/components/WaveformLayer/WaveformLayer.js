@@ -4,6 +4,12 @@
  */
 
 import { Tokens } from '../../tokens/design-tokens.js';
+import { createYieldBudget } from '../../../pipeline/ui-yield.js';
+
+/** Samples per min/max bucket in the long-file peak pyramid. */
+const BUCKET = 256;
+/** Files longer than this (~44 s at 48 kHz) get a cooperative pyramid. */
+const PYRAMID_MIN_SAMPLES = BUCKET * 8192;
 
 export class WaveformLayer {
   constructor(canvas, options = {}) {
@@ -25,6 +31,7 @@ export class WaveformLayer {
     this._dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     this._cachedPeaks = null;
     this._peaksVersion = 0;
+    this._buckets = null; // { version, mins, maxs } for long files
     this._raf = 0;
     this._needsRender = false;
 
@@ -41,6 +48,41 @@ export class WaveformLayer {
     this.options.sampleRate = sampleRate;
     this._cachedPeaks = null;
     this._peaksVersion++;
+    this._buckets = null;
+    void this._buildBuckets(this._peaksVersion);
+    this._scheduleRender();
+  }
+
+  /**
+   * Min/max per BUCKET samples, built in time-budgeted slices. A full-file
+   * min/max scan in the render callback was 286 ms for 5 min on a
+   * 4x-throttled phone, repeated on every zoom/selection view change.
+   */
+  async _buildBuckets(version) {
+    const channel = this._data?.[0];
+    if (!channel || channel.length < PYRAMID_MIN_SAMPLES) return;
+    const n = Math.ceil(channel.length / BUCKET);
+    const mins = new Float32Array(n);
+    const maxs = new Float32Array(n);
+    const maybeYield = createYieldBudget();
+    for (let b = 0; b < n; b++) {
+      const end = Math.min(channel.length, (b + 1) * BUCKET);
+      let min = 0;
+      let max = 0;
+      for (let i = b * BUCKET; i < end; i++) {
+        const v = channel[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      mins[b] = min;
+      maxs[b] = max;
+      if ((b & 1023) === 1023) {
+        await maybeYield();
+        if (version !== this._peaksVersion) return; // superseded by new data
+      }
+    }
+    if (version !== this._peaksVersion) return;
+    this._buckets = { version, mins, maxs };
     this._scheduleRender();
   }
 
@@ -82,6 +124,28 @@ export class WaveformLayer {
     const cacheKey = `${this._peaksVersion}-${width}-${viewStartSample}-${viewEndSample}`;
     if (this._cachedPeaks && this._cachedPeaks.key === cacheKey) {
       return this._cachedPeaks.data;
+    }
+
+    if (totalSamples >= PYRAMID_MIN_SAMPLES && samplesPerPixel >= BUCKET) {
+      const pyramid = this._buckets;
+      // Not built yet: draw nothing this frame rather than scan the file here.
+      if (!pyramid || pyramid.version !== this._peaksVersion) return null;
+      let idx = 0;
+      for (let x = 0; x < width; x++) {
+        const start = viewStartSample + Math.floor(x * samplesPerPixel);
+        const end = Math.min(viewStartSample + Math.floor((x + 1) * samplesPerPixel), viewEndSample);
+        let min = 0;
+        let max = 0;
+        const bEnd = Math.min(pyramid.mins.length, Math.ceil(end / BUCKET));
+        for (let b = Math.floor(start / BUCKET); b < bEnd; b++) {
+          if (pyramid.mins[b] < min) min = pyramid.mins[b];
+          if (pyramid.maxs[b] > max) max = pyramid.maxs[b];
+        }
+        peaks[idx++] = min;
+        peaks[idx++] = max;
+      }
+      this._cachedPeaks = { key: cacheKey, data: peaks };
+      return peaks;
     }
 
     let peakIdx = 0;
@@ -198,6 +262,10 @@ export class WaveformLayer {
   }
 
   dispose() {
+    // Stops an in-flight pyramid build at its next slice.
+    this._peaksVersion++;
+    this._buckets = null;
+    this._data = null;
     if (this._raf) cancelAnimationFrame(this._raf);
     if (this._resizeObserver) {
       try { this._resizeObserver.disconnect(); } catch {}

@@ -288,6 +288,21 @@ export function createYieldBudget(intervalMs) {
 }
 
 /**
+ * {@link createYieldBudget} that throws AbortError after a yield once
+ * `signal` aborts, so a superseded pass stops at its next slice.
+ * @param {AbortSignal|null|undefined} signal
+ * @param {number} [intervalMs]
+ * @returns {() => Promise<void>}
+ */
+export function createAbortableYield(signal, intervalMs) {
+  const budget = createYieldBudget(intervalMs);
+  return async function maybeYield() {
+    await budget();
+    throwIfAborted(signal);
+  };
+}
+
+/**
  * Fast typed-array copy; only chunks on very long clips.
  * @param {Float32Array} src
  * @param {{ yieldBudget?: () => Promise<void>, largeThreshold?: number }} [opts]
@@ -412,6 +427,7 @@ export default {
   anySignal,
   downmixToMonoAsync,
   copyFloat32Channel,
+  createAbortableYield,
   copyChannelsToAudioBuffer,
   yieldToBrowser,
   throwIfAborted,

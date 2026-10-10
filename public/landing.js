@@ -32,7 +32,7 @@ import {
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
-import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKey } from '/src/pipeline/MLStemCache.js';
+import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKeyAsync } from '/src/pipeline/MLStemCache.js';
 import { copyFloat32Channel, createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
@@ -342,6 +342,9 @@ const PIPELINE_WEIGHTS = Object.freeze({
 });
 
 let _procState = { active: 0, progress: 0 };
+let _procRendered = null;
+/** Aborts the current import's automatic analysis when a new file arrives. */
+let autoAnalysisAbort = null;
 let _procRenderRAF = 0;
 let _procFallbackEl = null;
 
@@ -410,6 +413,11 @@ function cancelLandingJob() {
 function _renderProcLoader() {
   const mount = ui.procLoaderMount;
   if (!mount) return;
+  // Progress events outnumber visible changes; rebuilding the loader subtree
+  // for an identical state was a full DOM + style pass per frame.
+  if (_procRendered && _procRendered.active === _procState.active
+    && _procRendered.progress === _procState.progress && mount.firstChild) return;
+  _procRendered = { ..._procState };
   if (DS && DS.ProcessLoader) {
     try {
       mount.innerHTML = '';
@@ -1109,6 +1117,13 @@ async function ingestFrom(file) {
   const seq = ++ingestSeq;
   requestSeq += 1;
   ingestInFlight = true;
+  // The previous file's import analysis must not keep running or publish.
+  if (autoAnalysisAbort) {
+    autoAnalysisAbort.abort();
+    autoAnalysisAbort = null;
+    // Not left "analyzing" if the replacement file then fails to decode.
+    if (sessionStore.isAnalyzing()) sessionStore.setAnalysisResult({ state: 'idle', regions: [] });
+  }
   ingested = null;
   hasProcessed = false;
   invalidateComparison();
@@ -1178,8 +1193,10 @@ async function ingestFrom(file) {
 
     // ── Unified UX: preserve raw immutable, dispatch for automatic analysis
     try {
-      const rawClone = next.channelData.map((ch) => ch.slice());
-      processingController.setRaw(rawClone, next.sampleRate);
+      // Decoded ingest buffers are never mutated (Process copies before the
+      // worker transfer), so raw adopts them: an eager clone here was a
+      // synchronous full-file copy plus one more resident copy per import.
+      const rawClone = processingController.setRaw(next.channelData, next.sampleRate, { adopt: true });
       sessionStore.importSource({
         file,
         name: file.name,
@@ -1190,22 +1207,34 @@ async function ingestFrom(file) {
         rawBuffer: rawClone,
         fingerprint: next.sourceName || file.name,
       });
-      // Dispatch for premium module to run automatic analysis
+      // One cooperative analysis per import, shared with listeners through
+      // detail.analysis. landing-premium used to start a second, identical
+      // full-file pass, and both ran in the import task (5.8 s for 5 min of
+      // stereo on a 4x-throttled mobile profile).
+      const analysisAbort = new AbortController();
+      autoAnalysisAbort = analysisAbort;
+      sessionStore.startAnalysis();
+      const analysis = runAutoAnalysis(rawClone, next.sampleRate, {
+        signal: analysisAbort.signal,
+        maybeYield: createYieldBudget(),
+        onProgress: (pct, extra) => {
+          if (!analysisAbort.signal.aborted) sessionStore.updateAnalysisProgress(pct, extra);
+        },
+      });
+      analysis.catch(() => {}); // awaited below; listeners handle their own copy
       window.dispatchEvent(new CustomEvent('vip:fileImported', {
         detail: {
           channelData: rawClone,
           sampleRate: next.sampleRate,
           duration: next.duration || (rawClone[0]?.length / next.sampleRate) || 0,
           file,
+          analysis,
         },
       }));
-      // Also run local DSP analysis directly as fallback (never blocks)
       (async () => {
         try {
-          sessionStore.startAnalysis();
-          const analysisResult = await runAutoAnalysis(rawClone, next.sampleRate, {
-            onProgress: (pct, extra) => sessionStore.updateAnalysisProgress(pct, extra),
-          });
+          const analysisResult = await analysis;
+          if (analysisAbort.signal.aborted) return;
           sessionStore.setAnalysisResult({
             ...analysisResult,
             regions: analysisResult.regions,
@@ -1220,7 +1249,7 @@ async function ingestFrom(file) {
             outputLevelDb: 20 * Math.log10(Math.max(1e-6, analysisResult.rms || 0.01)),
           });
         } catch (e) {
-          console.warn('[VIP][landing] auto analysis failed (non-fatal)', e);
+          if (e?.name !== 'AbortError') console.warn('[VIP][landing] auto analysis failed (non-fatal)', e);
         }
       })();
     } catch (e) {
@@ -1329,16 +1358,21 @@ async function onProcess() {
     ui.fileInput.disabled = true;
     ui.modelSelect.disabled = true;
     const modelIds = processPlan.modelIds;
-    const cacheKey = stemCacheKey(ingested.channelData, ingested.sampleRate, modelIds, ingested.sourceName);
     const job = beginJob('Separate stems', { kind: 'separate' });
     window.__vipLandingJobId = job.id;
     currentJobLabel = `${processPlan.label} — processing locally…`;
     quickClean.setState('processing', currentJobLabel);
     setProcStage('separate', 0, currentJobLabel);
     const id = ++requestSeq;
-    ingested._stemCacheKey = cacheKey;
     // Full-length copies run in budgeted slices (0.3 s per copy at 15 min).
     const yieldBudget = createYieldBudget();
+    // The full-content hash yields too: in one task it was 303 ms for 5 min
+    // of stereo on a 4x-throttled mobile profile, and grows with length.
+    const source = ingested;
+    const cacheKey = await stemCacheKeyAsync(source.channelData, source.sampleRate, modelIds,
+      source.sourceName, '', { maybeYield: yieldBudget });
+    if (id !== requestSeq || !processingInFlight || source !== ingested) return;
+    source._stemCacheKey = cacheKey;
     const copyAll = async (channels) => {
       const out = [];
       for (const c of channels) out.push(await copyFloat32Channel(c, { yieldBudget }));
@@ -1353,7 +1387,6 @@ async function onProcess() {
       return;
     }
     stageStart('model_load');
-    const source = ingested;
     const channelData = await copyAll(source.channelData);
     if (id !== requestSeq || !processingInFlight) return;
     lastProcessProgress = lastRealProgress = Date.now();
@@ -1484,18 +1517,7 @@ async function installStems({ requestId, clean, noise, sampleRate, passthrough, 
     ...ui.mixSliders]) {
     if (el) el.disabled = false;
   }
-  // wireTransportRegion attaches listeners and paints crop/loop UI once;
-  // re-sync is not needed on landing (no external region mutations).
-  wireTransportRegion({
-    mixer,
-    loopBtn: ui.loopBtn,
-    cropInBtn: ui.cropInBtn,
-    cropOutBtn: ui.cropOutBtn,
-    cropClearBtn: ui.cropClearBtn,
-    seekEl: ui.seekSlider,
-    regionBar: ui.regionBar,
-    onChange: () => visualizer?.invalidate?.(),
-  });
+  syncTransportRegionUi();
   applyPreset('original', { ...RT_SLIDER_DEFAULTS, noiseReductionSlider: 100 - (processPlan?.background || 0) });
   quickClean.setState('processed', 'Processing complete. Prepare matched A/B, adjust Voice and Background, then export the mix.');
   setStatus('Stems ready — compare, listen and export.', 'active');
@@ -1512,6 +1534,33 @@ async function installStems({ requestId, clean, noise, sampleRate, passthrough, 
     const fingerprint = ingested?._stemCacheKey;
     const backend = quickClean.backend === 'webgpu' ? 'webgpu' : 'wasm';
     void getAnalysisInsights()?.analyze(clean, sampleRate, { contentFingerprint: fingerprint, backend });
+  });
+}
+
+/** Repaints crop/loop UI; null until the transport is wired. */
+let syncTransportRegion = null;
+
+/**
+ * Wire crop/loop controls once per page, then only repaint. Wiring on every
+ * install stacked one click listener per Process (Loop toggled N times per
+ * click), and each listener's closure pinned that run's full-length stems.
+ * Module scope on purpose: a closure created inside installStems would keep
+ * its stems alive through the shared context.
+ */
+function syncTransportRegionUi() {
+  if (syncTransportRegion) {
+    syncTransportRegion();
+    return;
+  }
+  syncTransportRegion = wireTransportRegion({
+    mixer,
+    loopBtn: ui.loopBtn,
+    cropInBtn: ui.cropInBtn,
+    cropOutBtn: ui.cropOutBtn,
+    cropClearBtn: ui.cropClearBtn,
+    seekEl: ui.seekSlider,
+    regionBar: ui.regionBar,
+    onChange: () => visualizer?.invalidate?.(),
   });
 }
 

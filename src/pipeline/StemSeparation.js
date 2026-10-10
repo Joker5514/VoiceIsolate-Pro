@@ -9,7 +9,7 @@
 import { DEFAULT_ML_MODEL_IDS } from '../core/ml-defaults.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
-import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKey } from './MLStemCache.js';
+import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKeyAsync } from './MLStemCache.js';
 import { copyChannelsToAudioBuffer, copyFloat32Channel, createYieldBudget } from './ui-yield.js';
 
 let _worker = null;
@@ -225,21 +225,23 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   // Engineer spectral controls alter the reconstructed stems, so the result
   // cache must be keyed by their Process-time snapshot. Slider drags do not
   // reach this path; the key changes only when the user presses Process.
-  const cacheKey = stemCacheKey(
+  const cacheKey = await stemCacheKeyAsync(
     channelData,
     sampleRate,
     modelIds,
     options.sourceName,
     processingRevision,
+    { signal: options.signal || null },
   );
   const cached = getCachedStems(cacheKey);
   if (cached) {
     options.onProgress?.({ type: 'stage', stage: 'separate', percent: 100, label: 'Using cached stems…' });
-    const copyChannel = budgetedChannelCopy();
+    const copyChannel = budgetedChannelCopy(options.signal || null);
     const clean = [];
     for (const c of cached.clean) clean.push(await copyChannel(c));
     const noise = [];
     for (const c of cached.noise) noise.push(await copyChannel(c));
+    if (options.signal?.aborted) throw createAbortError();
     return {
       clean,
       noise,
