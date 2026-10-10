@@ -236,11 +236,12 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const cached = getCachedStems(cacheKey);
   if (cached) {
     options.onProgress?.({ type: 'stage', stage: 'separate', percent: 100, label: 'Using cached stems…' });
-    const copyChannel = budgetedChannelCopy();
+    const copyChannel = budgetedChannelCopy(options.signal || null);
     const clean = [];
     for (const c of cached.clean) clean.push(await copyChannel(c));
     const noise = [];
     for (const c of cached.noise) noise.push(await copyChannel(c));
+    if (options.signal?.aborted) throw createAbortError();
     return {
       clean,
       noise,
