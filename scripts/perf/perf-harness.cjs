@@ -436,6 +436,9 @@ async function main() {
           if (PROFILE) {
             const { profile } = await cdp.send('Profiler.stop');
             run.importHotspots = hotspots(profile, ptUp, P.longTasks.filter((x) => x.t >= ptUp && x.t <= ptIn));
+            const dir = path.join(ROOT, 'output', 'performance');
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, `${SURFACE}-${secs}s-c${cycle}-import.cpuprofile`), JSON.stringify(profile));
           }
         }
 
@@ -519,7 +522,7 @@ async function main() {
         // Page-attributed bytes incl. ArrayBuffer backing stores (the PCM
         // copies a Process retains); heapAfterGcMb counts the JS heap only.
         run.pageMemMb = await page.evaluate(async () => {
-          if (!self.crossOriginIsolated || typeof performance.measureUserAgentSpecificMemory !== 'function') return null;
+          if (!globalThis.crossOriginIsolated || typeof performance.measureUserAgentSpecificMemory !== 'function') return null;
           try { return Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch { return null; }
         });
         runs.push(run);

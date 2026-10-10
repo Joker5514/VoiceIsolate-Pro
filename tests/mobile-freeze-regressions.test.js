@@ -68,18 +68,24 @@ describe('AutoAnalysis cooperative scheduling', () => {
     expect(plain.whisperCandidates.length).toBeGreaterThan(0);
   });
 
-  test('an abort between slices stops the run', async () => {
+  test('an abort stops the run at the next slice, inside the first pass', async () => {
     const ch = speechLike(40);
     const abort = new AbortController();
     let yields = 0;
+    const stages = [];
     const run = runAutoAnalysis([ch], 16000, {
       signal: abort.signal,
-      maybeYield: async () => { if (++yields === 3) abort.abort(); },
+      onProgress: (_pct, extra) => stages.push(extra.stage),
+      maybeYield: async () => { if (++yields === 1) abort.abort(); },
     });
     await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    expect(yields).toBe(1);
+    expect(stages).toEqual(['noise_floor']);
   });
 
-  test('whisper candidates never fall inside a speech segment', async () => {
+  // The frame-start test is the original semantics (a candidate may extend
+  // into the next segment); the moving cursor must reproduce it exactly.
+  test('no whisper candidate starts inside a speech segment', async () => {
     const r = await runAutoAnalysis([speechLike(30, 16000, 9)], 16000);
     for (const w of r.whisperCandidates) {
       for (const s of r.speechSegments) {
@@ -122,6 +128,31 @@ describe('MLStemCache: yielding key + byte budget', () => {
     expect(mod.getDigestComputationCount() - before).toBe(1);
   });
 
+  test('stemCacheKeyAsync stops hashing when its signal aborts', async () => {
+    const ch = [new Float32Array(2_000_000)];
+    const abort = new AbortController();
+    let yields = 0;
+    const run = mod.stemCacheKeyAsync(ch, 48000, ['m'], '', '', {
+      signal: abort.signal,
+      maybeYield: async () => { if (++yields === 1) abort.abort(); },
+    });
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    expect(yields).toBe(1);
+  });
+
+  test('older entries are evicted before a fitting result is copied', async () => {
+    const entry = () => ({ clean: [new Float32Array(100)], noise: [new Float32Array(100)], sampleRate: 48000 });
+    mod.setStemCacheByteBudget(1000);
+    mod.setCachedStems('old', entry());
+    let bytesDuringCopy = -1;
+    await mod.setCachedStemsAsync('new', entry(), async (c) => {
+      if (bytesDuringCopy < 0) bytesDuringCopy = mod.getStemCacheBytes();
+      return new Float32Array(c);
+    });
+    expect(bytesDuringCopy).toBe(0);
+    expect(mod.getCachedStems('new')).not.toBeNull();
+  });
+
   test('a result larger than the budget is not copied into the cache', async () => {
     mod.setStemCacheByteBudget(1000);
     const big = { clean: [new Float32Array(200)], noise: [new Float32Array(200)], sampleRate: 48000 };
@@ -157,6 +188,7 @@ describe('performance tier', () => {
     [{ deviceMemory: 4, hardwareConcurrency: 8 }, 'BALANCED'],
     [{ coarsePointer: true, viewportWidth: 412, deviceMemory: 8, hardwareConcurrency: 8 }, 'BALANCED'],
     [{ coarsePointer: true, viewportWidth: 1366, deviceMemory: 8, hardwareConcurrency: 8 }, 'HIGH'],
+    [{ coarsePointer: true, viewportWidth: 1366, hardwareConcurrency: 8 }, 'BALANCED'],
     [{ deviceMemory: 8, hardwareConcurrency: 8 }, 'HIGH'],
     [{}, 'HIGH'],
   ])('%j -> %s', (signals, expected) => {
@@ -325,6 +357,8 @@ describe('listener and pipeline duplication guards', () => {
   test('Engineer premium workspace handles one import once and coalesces drag redraws', () => {
     const src = read('public/app/premium-workspace.js');
     expect(src).toMatch(/channelData\[0\] === state\.channelData\?\.\[0\]\) return;/);
+    // Selection/regions are drawn even while peaks are still computing.
+    expect(src).toMatch(/\n  drawWaveOverlays\(ctx, w, h\);\n\}/);
     expect(src).toMatch(/maybeYield: createYieldBudget\(\)/);
     const moves = src.split("addEventListener('pointermove'").slice(1).map((s) => s.slice(0, 900));
     expect(moves).toHaveLength(2);

@@ -126,15 +126,15 @@ heap and RSS; it asserts stability only, never machine-specific timings).
 **Import is a main-thread path too.** The mobile freeze was the import window,
 which the harness did not measure until `--import-settle MS` (reports
 `importLt`/`importGap`; `--mobile` emulates a 4x-throttled Pixel 7; `pageMem`
-counts ArrayBuffer bytes). Pinned by `tests/mobile-freeze-regressions.test.js`:
+is page-attributed memory, including ArrayBuffer backing stores). Pinned by `tests/mobile-freeze-regressions.test.js`:
 one `runAutoAnalysis` per import, with `maybeYield` and an `AbortSignal`, shared
 with listeners through `vip:fileImported` `detail.analysis` on Landing and
 de-duplicated by channel identity in `premium-workspace.js`; key hashing uses
 `stemCacheKeyAsync`; `FileIngestion` extracts channels with `copyFloat32Channel`.
 Long-lived listeners are wired once per page (Landing transport crop/loop), never
-per Process: each closure pinned that run's stems. `AudioSessionStore._history`
+per Process: the old per-Process closures each pinned that run's stems. `AudioSessionStore._history`
 records `{ event, ts }` only. `src/core/PerformanceTier.js` (feature-detected,
-no UA sniffing) bounds memory such as the stem-cache byte budget; it must never
+no UA sniffing) selects a per-tier stem-cache byte budget (HIGH is unbounded); it must never
 change processed audio.
 
 **Timelines (realistic):** Electron MVP 3–4 weeks (signing + auto-update); Android hardening 5–6 weeks.

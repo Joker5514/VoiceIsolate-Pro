@@ -279,7 +279,12 @@ export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, opt
   const { signal, onProgress } = options;
   // Main-thread callers pass a time-budgeted yield (ui-yield createYieldBudget):
   // run as one task this was 1.2 s per 5 min of audio on a 4x-throttled phone.
-  const maybeYield = typeof options.maybeYield === 'function' ? options.maybeYield : noYield;
+  const workYield = typeof options.maybeYield === 'function' ? options.maybeYield : noYield;
+  // An abort stops the run at its next slice, not at the end of a pass.
+  const maybeYield = async () => {
+    await workYield();
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  };
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   const primary = channelData[0] || new Float32Array(0);

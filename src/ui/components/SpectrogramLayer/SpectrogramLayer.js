@@ -133,7 +133,7 @@ export class SpectrogramLayer {
     const samplesPerColumn = Math.max(1, Math.floor(viewLength / width));
     // A column's level is a mean |x|; a bounded stride estimates it. Summing
     // every sample made each render two full passes over the file.
-    const stride = Math.max(1, Math.floor((samplesPerColumn * 2) / MAX_SAMPLES_PER_COLUMN));
+    const stride = Math.max(1, Math.ceil((samplesPerColumn * 2) / MAX_SAMPLES_PER_COLUMN));
     // The band shape depends only on y: computed once, not per pixel.
     const shape = new Float32Array(height);
     for (let y = 0; y < height; y++) {
@@ -171,7 +171,8 @@ export class SpectrogramLayer {
       const column = spectrogram[Math.min(cols - 1, Math.floor((x * cols) / width))];
       const bins = column ? column.length : 0;
       for (let py = 0; py < height; py++) {
-        // y=0 is the lowest band, painted at the bottom row.
+        // Column index 0 is painted at the bottom row (same mapping as the
+        // per-pixel fillRect loop this replaced).
         const y = bins ? Math.min(bins - 1, Math.floor(((height - 1 - py) * bins) / height)) : 0;
         writeColor(px, (py * width + x) * 4, column ? column[y] || 0 : 0);
       }

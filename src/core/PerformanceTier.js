@@ -44,7 +44,10 @@ export function selectPerformanceTier(s = {}) {
   if ((mem > 0 && mem <= 2) || (cores > 0 && cores <= 2) || s.saveData === true) {
     return PerformanceTier.CONSTRAINED;
   }
-  const touchSized = s.coarsePointer === true && Number(s.viewportWidth) > 0 && s.viewportWidth < 1024;
+  // Touch-first with a phone/tablet viewport, or touch-first with unknown
+  // memory (deviceMemory is Chromium-only): never the unbounded HIGH tier.
+  const touchSized = s.coarsePointer === true
+    && ((Number(s.viewportWidth) > 0 && s.viewportWidth < 1024) || !(mem > 0));
   if ((mem > 0 && mem <= 4) || (cores > 0 && cores <= 4) || touchSized) {
     return PerformanceTier.BALANCED;
   }

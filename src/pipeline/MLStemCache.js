@@ -5,7 +5,7 @@
 'use strict';
 
 import { detectPerformanceTier, tierBudgets } from '../core/PerformanceTier.js';
-import { createYieldBudget } from './ui-yield.js';
+import { createAbortableYield, createYieldBudget } from './ui-yield.js';
 
 /** Max retained full stem results (each can be tens of MB). */
 const MAX_ENTRIES = 2;
@@ -148,14 +148,15 @@ export function stemCacheKey(channelData, sampleRate, modelIds, _sourceName = ''
  * @param {string[]} modelIds
  * @param {string} [_sourceName]
  * @param {string} [processingRevision]
- * @param {{ maybeYield?: () => Promise<void> }} [opts]
+ * @param {{ maybeYield?: () => Promise<void>, signal?: AbortSignal }} [opts]
+ *   signal: an abort stops the hash at its next slice (AbortError)
  * @returns {Promise<string>}
  */
 export async function stemCacheKeyAsync(channelData, sampleRate, modelIds, _sourceName = '', processingRevision = '', opts = {}) {
   let digest = '0';
   if (channelData[0]?.length) {
     digest = memoHit(channelData)
-      ?? memoStore(channelData, await contentDigestAsync(channelData, opts.maybeYield || createYieldBudget()));
+      ?? memoStore(channelData, await contentDigestAsync(channelData, abortAware(opts)));
   }
   return formatKey(channelData, sampleRate, modelIds, processingRevision, digest);
 }
@@ -167,6 +168,19 @@ export function getCachedStems(key) {
   _cache.delete(key);
   _cache.set(key, val);
   return val || null;
+}
+
+function abortAware({ maybeYield, signal } = {}) {
+  if (!maybeYield) return signal ? createAbortableYield(signal) : createYieldBudget();
+  if (!signal) return maybeYield;
+  return async () => {
+    await maybeYield();
+    if (signal.aborted) {
+      throw typeof DOMException !== 'undefined'
+        ? new DOMException('Processing cancelled', 'AbortError')
+        : Object.assign(new Error('Processing cancelled'), { name: 'AbortError' });
+    }
+  };
 }
 
 function channelBytes(channels) {
@@ -201,13 +215,24 @@ export function getStemCacheBytes() {
   return n;
 }
 
-/** A result too large for the budget is not cached (no copy is made). */
-function fits(result) {
-  return entryBytes(result) <= byteBudget();
+/**
+ * A result too large for the budget is not cached (no copy is made).
+ * One that fits first evicts LRU entries until it can be added within the
+ * budget, so the cache never holds old entries plus the new copies at once.
+ */
+function fits(result, key) {
+  const bytes = entryBytes(result);
+  const budget = byteBudget();
+  if (bytes > budget) return false;
+  _cache.delete(key);
+  while (_cache.size > 0 && getStemCacheBytes() + bytes > budget) {
+    _cache.delete(_cache.keys().next().value);
+  }
+  return true;
 }
 
 export function setCachedStems(key, result) {
-  if (!key || !result || result.passthrough || !fits(result)) return;
+  if (!key || !result || result.passthrough || !fits(result, key)) return;
   // Always store independent copies so callers can mutate/transfer sources safely.
   const clean = result.clean.map((c) => new Float32Array(c));
   const noise = (result.noise || []).map((c) => new Float32Array(c));
@@ -223,7 +248,7 @@ export function setCachedStems(key, result) {
  * @param {(src: Float32Array) => Promise<Float32Array>} copyChannel
  */
 export async function setCachedStemsAsync(key, result, copyChannel) {
-  if (!key || !result || result.passthrough || !fits(result)) return;
+  if (!key || !result || result.passthrough || !fits(result, key)) return;
   // clearStemCache() during the copy (source changed) must not be undone.
   const gen = _cacheGen;
   const clean = [];

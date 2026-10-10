@@ -262,6 +262,10 @@ export class WaveformLayer {
   }
 
   dispose() {
+    // Stops an in-flight pyramid build at its next slice.
+    this._peaksVersion++;
+    this._buckets = null;
+    this._data = null;
     if (this._raf) cancelAnimationFrame(this._raf);
     if (this._resizeObserver) {
       try { this._resizeObserver.disconnect(); } catch {}

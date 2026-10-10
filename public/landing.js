@@ -1118,8 +1118,12 @@ async function ingestFrom(file) {
   requestSeq += 1;
   ingestInFlight = true;
   // The previous file's import analysis must not keep running or publish.
-  autoAnalysisAbort?.abort();
-  autoAnalysisAbort = null;
+  if (autoAnalysisAbort) {
+    autoAnalysisAbort.abort();
+    autoAnalysisAbort = null;
+    // Not left "analyzing" if the replacement file then fails to decode.
+    if (sessionStore.isAnalyzing()) sessionStore.setAnalysisResult({ state: 'idle', regions: [] });
+  }
   ingested = null;
   hasProcessed = false;
   invalidateComparison();

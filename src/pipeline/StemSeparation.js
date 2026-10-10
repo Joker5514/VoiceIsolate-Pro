@@ -231,6 +231,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     modelIds,
     options.sourceName,
     processingRevision,
+    { signal: options.signal || null },
   );
   const cached = getCachedStems(cacheKey);
   if (cached) {

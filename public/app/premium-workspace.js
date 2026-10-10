@@ -44,21 +44,25 @@ async function computeWavePeaks(canvas, channel, w) {
   wavePeaks = entry;
   const samplesPerPx = Math.max(1, Math.floor(channel.length / w));
   const maybeYield = createYieldBudget();
+  const SLICE = 1 << 16;
   for (let x = 0; x < w; x++) {
     const start = x * samplesPerPx;
     const end = Math.min(channel.length, start + samplesPerPx);
     let min = 1, max = -1;
-    for (let i = start; i < end; i++) {
-      const v = channel[i];
-      if (v < min) min = v;
-      if (v > max) max = v;
-    }
-    entry.mins[x] = min;
-    entry.maxs[x] = max;
-    if ((x & 31) === 31) {
+    // Sliced by samples, not columns: a narrow (or hidden) canvas has few
+    // columns, each covering a large share of the file.
+    for (let s = start; s < end; s += SLICE) {
+      const sliceEnd = Math.min(end, s + SLICE);
+      for (let i = s; i < sliceEnd; i++) {
+        const v = channel[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
       await maybeYield();
       if (wavePeaks !== entry) return; // new file or width
     }
+    entry.mins[x] = min;
+    entry.maxs[x] = max;
   }
   entry.ready = true;
   if (state.channelData?.[0] === channel) drawWaveform(canvas, state.channelData);
@@ -102,13 +106,18 @@ function drawWaveform(canvas, data) {
   // selection pointermove a full-file pass (~1.5 s on a phone at 5 min).
   const channel = data[0];
   const peaks = wavePeaks.channel === channel && wavePeaks.w === w ? wavePeaks : null;
+  const mid = h / 2;
   if (!peaks || !peaks.ready) {
     if (!peaks) void computeWavePeaks(canvas, channel, w);
     ctx.fillStyle = '#1d2a34';
     ctx.fillRect(0, h / 2 - 1, w, 2);
-    return;
+  } else {
+    drawWavePeaks(ctx, peaks, w, mid);
   }
-  const mid = h / 2;
+  drawWaveOverlays(ctx, w, h);
+}
+
+function drawWavePeaks(ctx, peaks, w, mid) {
 
   ctx.strokeStyle = '#2ed5e5';
   ctx.lineWidth = 1;
@@ -125,7 +134,10 @@ function drawWaveform(canvas, data) {
   ctx.fillStyle = 'rgba(46,213,229,0.18)';
   ctx.fill();
   ctx.stroke();
+}
 
+/** Selection and analysis regions: drawn even while peaks are computing. */
+function drawWaveOverlays(ctx, w, h) {
   // Selection overlay
   if (state.selection) {
     const x0 = Math.floor(state.selection.start * w);
