@@ -29,31 +29,39 @@ function dbFromLinear(linear) {
   return 20 * Math.log10(linear);
 }
 
-function computeRMS(channel) {
-  let sum = 0;
-  for (let i = 0; i < channel.length; i++) {
-    sum += channel[i] * channel[i];
-  }
-  return Math.sqrt(sum / channel.length);
-}
+/** Samples per cooperative slice (~1-3 ms of work on desktop). */
+const SAMPLE_SLICE = 1 << 18;
+/** Analysis frames between cooperative yield checks. */
+const FRAME_SLICE = 1024;
 
-function computePeak(channel) {
+const noYield = async () => {};
+
+/** RMS and peak in one pass, yielding between slices. */
+async function computeLevels(channel, maybeYield) {
+  let sum = 0;
   let peak = 0;
-  for (let i = 0; i < channel.length; i++) {
-    const abs = Math.abs(channel[i]);
-    if (abs > peak) peak = abs;
+  for (let start = 0; start < channel.length; start += SAMPLE_SLICE) {
+    const end = Math.min(channel.length, start + SAMPLE_SLICE);
+    for (let i = start; i < end; i++) {
+      const s = channel[i];
+      sum += s * s;
+      const abs = Math.abs(s);
+      if (abs > peak) peak = abs;
+    }
+    await maybeYield();
   }
-  return peak;
+  return { rms: Math.sqrt(sum / channel.length), peak };
 }
 
 /**
  * Simple noise floor tracking via histogram of low-energy frames
  */
-function estimateNoiseFloor(channelData, sampleRate) {
+async function estimateNoiseFloor(channelData, sampleRate, maybeYield) {
   const frameSize = Math.floor(sampleRate * 0.02); // 20ms
   const hop = frameSize;
   const rmsValues = [];
-  for (let pos = 0; pos + frameSize < channelData.length; pos += hop) {
+  for (let pos = 0, f = 0; pos + frameSize < channelData.length; pos += hop, f++) {
+    if (f % FRAME_SLICE === FRAME_SLICE - 1) await maybeYield();
     let sum = 0;
     for (let i = 0; i < frameSize; i++) {
       const s = channelData[pos + i];
@@ -74,7 +82,7 @@ function estimateNoiseFloor(channelData, sampleRate) {
  * Simple VAD: energy + zero-crossing heuristic
  * Returns segments [{ start, end, confidence, type }]
  */
-function detectSpeech(channelData, sampleRate, noiseFloor) {
+async function detectSpeech(channelData, sampleRate, noiseFloor, maybeYield) {
   const frameSize = Math.floor(sampleRate * 0.025); // 25ms
   const hop = Math.floor(sampleRate * 0.01); // 10ms
   const segments = [];
@@ -82,7 +90,8 @@ function detectSpeech(channelData, sampleRate, noiseFloor) {
   let segStart = 0;
   let confidences = [];
 
-  for (let pos = 0; pos + frameSize < channelData.length; pos += hop) {
+  for (let pos = 0, f = 0; pos + frameSize < channelData.length; pos += hop, f++) {
+    if (f % FRAME_SLICE === FRAME_SLICE - 1) await maybeYield();
     let sum = 0;
     let zc = 0;
     let prev = channelData[pos];
@@ -138,12 +147,18 @@ function detectSpeech(channelData, sampleRate, noiseFloor) {
 /**
  * Whisper detection: low-energy speech candidates
  */
-function detectWhisper(channelData, sampleRate, noiseFloor, speechSegments) {
+async function detectWhisper(channelData, sampleRate, noiseFloor, speechSegments, maybeYield) {
   const whisper = [];
   // Look for low-energy regions that are just above noise floor but below normal speech
   const frameSize = Math.floor(sampleRate * 0.03);
   const hop = Math.floor(sampleRate * 0.015);
-  for (let pos = 0; pos + frameSize < channelData.length; pos += hop) {
+  // detectSpeech emits sorted, non-overlapping segments and t only grows, so
+  // one moving cursor answers "inside a speech segment?". A per-frame
+  // speechSegments.some() made this pass frames × segments.
+  const speech = [...speechSegments].sort((a, b) => a.start - b.start);
+  let cursor = 0;
+  for (let pos = 0, f = 0; pos + frameSize < channelData.length; pos += hop, f++) {
+    if (f % FRAME_SLICE === FRAME_SLICE - 1) await maybeYield();
     let sum = 0;
     for (let i = 0; i < frameSize; i++) sum += channelData[pos + i] * channelData[pos + i];
     const rms = Math.sqrt(sum / frameSize);
@@ -153,7 +168,8 @@ function detectWhisper(channelData, sampleRate, noiseFloor, speechSegments) {
     if (!isLowEnergy) continue;
     const t = pos / sampleRate;
     // check if inside speech segment with low confidence already, or isolated
-    const insideSpeech = speechSegments.some((s) => t >= s.start && t <= s.end);
+    while (cursor < speech.length && speech[cursor].end < t) cursor++;
+    const insideSpeech = cursor < speech.length && t >= speech[cursor].start;
     if (insideSpeech) continue; // already speech, not whisper
     // check surrounding energy: if isolated low-energy blip, candidate whisper
     whisper.push({
@@ -261,6 +277,9 @@ function mergeSegments(segments, gap = 0.1) {
  */
 export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, options = {}) {
   const { signal, onProgress } = options;
+  // Main-thread callers pass a time-budgeted yield (ui-yield createYieldBudget):
+  // run as one task this was 1.2 s per 5 min of audio on a 4x-throttled phone.
+  const maybeYield = typeof options.maybeYield === 'function' ? options.maybeYield : noYield;
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   const primary = channelData[0] || new Float32Array(0);
@@ -271,15 +290,15 @@ export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, opt
   };
 
   emit(5, { stage: 'noise_floor' });
-  const noiseFloor = estimateNoiseFloor(primary, sampleRate);
+  const noiseFloor = await estimateNoiseFloor(primary, sampleRate, maybeYield);
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   emit(20, { stage: 'vad' });
-  const speechSegments = detectSpeech(primary, sampleRate, noiseFloor);
+  const speechSegments = await detectSpeech(primary, sampleRate, noiseFloor, maybeYield);
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   emit(40, { stage: 'whisper' });
-  const whisperCandidates = detectWhisper(primary, sampleRate, noiseFloor, speechSegments);
+  const whisperCandidates = await detectWhisper(primary, sampleRate, noiseFloor, speechSegments, maybeYield);
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   emit(60, { stage: 'hum' });
@@ -298,8 +317,8 @@ export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, opt
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   emit(90, { stage: 'metrics' });
-  const rms = computeRMS(primary);
-  const peak = computePeak(primary);
+  const { rms, peak } = await computeLevels(primary, maybeYield);
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   const snrDb = dbFromLinear(rms) - noiseFloor.floorDb;
   const speechRatio = speechSegments.reduce((sum, s) => sum + (s.end - s.start), 0) / Math.max(0.001, duration);
 

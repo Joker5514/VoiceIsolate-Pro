@@ -29,6 +29,7 @@ import { inferMediaKind, isGenericMimeType, resolveMediaKind } from '../core/med
 import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
+import { copyFloat32Channel, createYieldBudget } from './ui-yield.js';
 
 export { isDesktopShell, pickAudioFile } from '../core/DesktopBridge.js';
 
@@ -266,12 +267,15 @@ export async function resampleToCanonical(buffer, options = {}) {
  * @param {AudioBuffer} buffer
  * @returns {Float32Array[]}
  */
-function extractChannels(buffer) {
+async function extractChannels(buffer) {
   const channels = Math.min(buffer.numberOfChannels, MAX_CHANNELS);
   const out = [];
+  // Budgeted slices: one full-file copy per channel in the import task was
+  // 506 ms for 5 min of stereo on a 4x-throttled mobile profile.
+  const yieldBudget = createYieldBudget();
   for (let ch = 0; ch < channels; ch++) {
     // Copy: getChannelData views internal storage we must not transfer away.
-    out.push(new Float32Array(buffer.getChannelData(ch)));
+    out.push(await copyFloat32Channel(buffer.getChannelData(ch), { yieldBudget }));
   }
   return out;
 }
@@ -345,7 +349,8 @@ export async function ingestFile(file, hooks = {}) {
   onProgress('resampling', 100);
 
   onProgress('done', 100);
-  const channelData = extractChannels(canonical);
+  const channelData = await extractChannels(canonical);
+  throwIfCancelled(signal);
   
   // Get model IDs for the selected isolation mode
   const modelIds = getModelIdsForMode(isolationMode);

@@ -4,8 +4,19 @@
  */
 'use strict';
 
+import { detectPerformanceTier, tierBudgets } from '../core/PerformanceTier.js';
+import { createYieldBudget } from './ui-yield.js';
+
 /** Max retained full stem results (each can be tens of MB). */
 const MAX_ENTRIES = 2;
+
+/**
+ * Total bytes the cache may retain, from the device's performance tier
+ * (unbounded on desktop, 384 MB on touch/4 GB devices, 160 MB on 2 GB ones).
+ * Resolved on first use so Node tests and workers can import this module.
+ * @type {number|null}
+ */
+let _byteBudget = null;
 
 /** @type {Map<string, { clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>} */
 const _cache = new Map();
@@ -41,6 +52,36 @@ function contentDigest(channelData) {
   return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
 }
 
+/** 256 Ki samples per slice: ~2 ms on desktop, ~10 ms on a 4x-throttled phone. */
+const DIGEST_SLICE = 1 << 18;
+
+/**
+ * {@link contentDigest} with `maybeYield()` between slices; identical result.
+ * Done in one task it was 303 ms for 5 min of stereo on a 4x CPU-throttled
+ * mobile profile, scaling linearly (~1.8 s at 30 min).
+ * @param {Float32Array[]} channelData
+ * @param {() => Promise<void>} maybeYield
+ */
+async function contentDigestAsync(channelData, maybeYield) {
+  let h1 = 0x811c9dc5 | 0;
+  let h2 = 0x9e3779b9 | 0;
+  for (let c = 0; c < channelData.length; c++) {
+    const ch = channelData[c];
+    const words = new Uint32Array(ch.buffer, ch.byteOffset, ch.length);
+    h1 = Math.imul(h1 ^ (c + 1), 16777619);
+    for (let start = 0; start < words.length; start += DIGEST_SLICE) {
+      const end = Math.min(words.length, start + DIGEST_SLICE);
+      for (let i = start; i < end; i++) {
+        const v = words[i];
+        h1 = Math.imul(h1 ^ v, 16777619);
+        h2 = (Math.imul(h2 ^ v, 0x85ebca6b) + i) | 0;
+      }
+      await maybeYield();
+    }
+  }
+  return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
+}
+
 /**
  * Digests memoised per decoded buffer. Ingested channel arrays are never
  * mutated after decode (callers copy before transferring them to a worker),
@@ -55,15 +96,29 @@ export function getDigestComputationCount() {
   return _digestComputations;
 }
 
-function memoDigest(channelData) {
+function memoHit(channelData) {
   const hit = _digests.get(channelData[0]);
   if (hit && hit.channels.length === channelData.length && hit.channels.every((ch, i) => ch === channelData[i])) {
     return hit.digest;
   }
-  const digest = contentDigest(channelData);
+  return null;
+}
+
+function memoStore(channelData, digest) {
   _digestComputations += 1;
   _digests.set(channelData[0], { channels: [...channelData], digest });
   return digest;
+}
+
+function memoDigest(channelData) {
+  return memoHit(channelData) ?? memoStore(channelData, contentDigest(channelData));
+}
+
+function formatKey(channelData, sampleRate, modelIds, processingRevision, digest) {
+  const models = modelIds.join('→');
+  const variant = processingRevision ? `|engineer:${processingRevision}` : '';
+  const len = channelData[0]?.length || 0;
+  return `${KEY_SCHEMA}|${models}|${sampleRate}|${channelData.length}|${len}|${digest}${variant}`;
 }
 
 /**
@@ -80,11 +135,29 @@ function memoDigest(channelData) {
  * @param {string} [processingRevision] Process-time Engineer configuration.
  */
 export function stemCacheKey(channelData, sampleRate, modelIds, _sourceName = '', processingRevision = '') {
-  const models = modelIds.join('→');
-  const variant = processingRevision ? `|engineer:${processingRevision}` : '';
-  const len = channelData[0]?.length || 0;
-  const digest = len ? memoDigest(channelData) : '0';
-  return `${KEY_SCHEMA}|${models}|${sampleRate}|${channelData.length}|${len}|${digest}${variant}`;
+  const digest = channelData[0]?.length ? memoDigest(channelData) : '0';
+  return formatKey(channelData, sampleRate, modelIds, processingRevision, digest);
+}
+
+/**
+ * {@link stemCacheKey} for the main thread: the same key, but the
+ * full-content hash yields between slices instead of blocking one task.
+ * Shares the per-buffer memo with the synchronous version.
+ * @param {Float32Array[]} channelData
+ * @param {number} sampleRate
+ * @param {string[]} modelIds
+ * @param {string} [_sourceName]
+ * @param {string} [processingRevision]
+ * @param {{ maybeYield?: () => Promise<void> }} [opts]
+ * @returns {Promise<string>}
+ */
+export async function stemCacheKeyAsync(channelData, sampleRate, modelIds, _sourceName = '', processingRevision = '', opts = {}) {
+  let digest = '0';
+  if (channelData[0]?.length) {
+    digest = memoHit(channelData)
+      ?? memoStore(channelData, await contentDigestAsync(channelData, opts.maybeYield || createYieldBudget()));
+  }
+  return formatKey(channelData, sampleRate, modelIds, processingRevision, digest);
 }
 
 export function getCachedStems(key) {
@@ -96,8 +169,45 @@ export function getCachedStems(key) {
   return val || null;
 }
 
+function channelBytes(channels) {
+  let n = 0;
+  for (const c of channels || []) n += c?.byteLength || 0;
+  return n;
+}
+
+function entryBytes(result) {
+  return channelBytes(result.clean) + channelBytes(result.noise);
+}
+
+function byteBudget() {
+  if (_byteBudget === null) _byteBudget = tierBudgets(detectPerformanceTier()).stemCacheBytes;
+  return _byteBudget;
+}
+
+/**
+ * Override the tier-derived byte budget (tests, diagnostics). Evicts LRU
+ * entries that no longer fit. `null` re-derives it from the device tier.
+ * @param {number|null} bytes
+ */
+export function setStemCacheByteBudget(bytes) {
+  _byteBudget = bytes === null ? null : Math.max(0, Number(bytes) || 0);
+  evict();
+}
+
+/** Bytes currently retained by cached stems. */
+export function getStemCacheBytes() {
+  let n = 0;
+  for (const v of _cache.values()) n += entryBytes(v);
+  return n;
+}
+
+/** A result too large for the budget is not cached (no copy is made). */
+function fits(result) {
+  return entryBytes(result) <= byteBudget();
+}
+
 export function setCachedStems(key, result) {
-  if (!key || !result || result.passthrough) return;
+  if (!key || !result || result.passthrough || !fits(result)) return;
   // Always store independent copies so callers can mutate/transfer sources safely.
   const clean = result.clean.map((c) => new Float32Array(c));
   const noise = (result.noise || []).map((c) => new Float32Array(c));
@@ -113,7 +223,7 @@ export function setCachedStems(key, result) {
  * @param {(src: Float32Array) => Promise<Float32Array>} copyChannel
  */
 export async function setCachedStemsAsync(key, result, copyChannel) {
-  if (!key || !result || result.passthrough) return;
+  if (!key || !result || result.passthrough || !fits(result)) return;
   // clearStemCache() during the copy (source changed) must not be undone.
   const gen = _cacheGen;
   const clean = [];
@@ -132,7 +242,12 @@ function storeEntry(key, clean, noise, sampleRate) {
     sampleRate,
     passthrough: false,
   });
-  while (_cache.size > MAX_ENTRIES) {
+  evict();
+}
+
+function evict() {
+  const budget = byteBudget();
+  while (_cache.size > MAX_ENTRIES || (_cache.size > 0 && getStemCacheBytes() > budget)) {
     const oldest = _cache.keys().next().value;
     _cache.delete(oldest);
   }

@@ -5,6 +5,7 @@
 
 import SpeakerDiarizer from '/app/speaker-diarizer.js';
 import { speakerLabel } from '../core/diarization.js';
+import { copyFloat32Channel, createYieldBudget } from './ui-yield.js';
 
 const MODEL_URLS = Object.freeze({
   segmentation: '/models/pyannote-segmentation-3.0.onnx',
@@ -58,7 +59,11 @@ function abortError() {
     : Object.assign(new Error('Speaker detection superseded'), { name: 'AbortError' });
 }
 
-function kMeansDiarize(cleanChannel, sampleRate, signal = null) {
+async function kMeansDiarize(cleanChannel, sampleRate, signal = null) {
+  if (signal?.aborted) throw abortError();
+  // The transfer copy runs in budgeted slices: one synchronous copy of the
+  // clean stem was an 891 ms task for 5 min on a 4x-throttled mobile profile.
+  const samples = await copyFloat32Channel(cleanChannel, { yieldBudget: createYieldBudget() });
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(abortError());
@@ -80,7 +85,6 @@ function kMeansDiarize(cleanChannel, sampleRate, signal = null) {
     };
     const done = () => signal?.removeEventListener?.('abort', onAbort);
     signal?.addEventListener?.('abort', onAbort, { once: true });
-    const samples = new Float32Array(cleanChannel);
     w.onmessage = (ev) => {
       const msg = ev.data || {};
       if (msg.requestId !== requestId) return;

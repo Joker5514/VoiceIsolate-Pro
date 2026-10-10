@@ -20,6 +20,8 @@
  *          --no-ml  (blocks MLWorker.js so Engineer measures its DSP fallback path)
  *          --mobile (Pixel 7 viewport/UA/touch + CPU throttle, default 4x;
  *                    --cpu-throttle N overrides the rate)
+ *          --import-settle MS (idle after upload before Process, so the
+ *                    post-import analysis lands in the reported import window)
  */
 'use strict';
 
@@ -52,6 +54,7 @@ const PROFILE = has('profile');
 const TRACE = has('trace');
 const MARKER = `vip-perf-${process.pid}-${Date.now()}`;
 const SETTLE = Number(arg('settle', '0'));
+const IMPORT_SETTLE = Number(arg('import-settle', '0'));
 const MOBILE = has('mobile');
 const CPU_THROTTLE = Number(arg('cpu-throttle', MOBILE ? '4' : '1'));
 {
@@ -62,6 +65,7 @@ const CPU_THROTTLE = Number(arg('cpu-throttle', MOBILE ? '4' : '1'));
   if (![1, 2].includes(CH)) bad.push(`--channels ${CH}`);
   if (!Number.isInteger(CYCLES) || CYCLES < 1) bad.push(`--cycles ${CYCLES}`);
   if (!Number.isFinite(SETTLE) || SETTLE < 0) bad.push(`--settle ${SETTLE}`);
+  if (!Number.isFinite(IMPORT_SETTLE) || IMPORT_SETTLE < 0) bad.push(`--import-settle ${IMPORT_SETTLE}`);
   if (!Number.isFinite(CPU_THROTTLE) || CPU_THROTTLE < 1) bad.push(`--cpu-throttle ${CPU_THROTTLE}`);
   if (bad.length) {
     console.error(`invalid arguments: ${bad.join(', ')}`);
@@ -386,7 +390,8 @@ async function main() {
 
   const browser = await launchChromium({
     headless: !HEADED,
-    args: ['--no-sandbox', '--enable-precise-memory-info', '--js-flags=--expose-gc', `--${MARKER}`],
+    args: ['--no-sandbox', '--enable-precise-memory-info', '--js-flags=--expose-gc',
+      '--enable-blink-features=ForceEagerMeasureMemory', `--${MARKER}`],
   });
   const runs = [];
   const errors = [];
@@ -418,8 +423,21 @@ async function main() {
       for (let cycle = 1; cycle <= CYCLES; cycle++) {
         const run = { secs, cycle, sr: SR, channels: CH };
         const tUp = Date.now();
+        const ptUp = await page.evaluate(() => performance.now());
+        if (PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }
         await S.upload(page, file);
         run.uploadMs = Date.now() - tUp;
+        if (IMPORT_SETTLE > 0) await page.waitForTimeout(IMPORT_SETTLE);
+        {
+          const ptIn = await page.evaluate(() => performance.now());
+          const P = await page.evaluate(() => ({ longTasks: window.__vipPerf.longTasks, gaps: window.__vipPerf.gaps }));
+          run.importLongTasks = summarize(P.longTasks, ptUp, ptIn);
+          run.importHeartbeatGaps = summarize(P.gaps, ptUp, ptIn);
+          if (PROFILE) {
+            const { profile } = await cdp.send('Profiler.stop');
+            run.importHotspots = hotspots(profile, ptUp, P.longTasks.filter((x) => x.t >= ptUp && x.t <= ptIn));
+          }
+        }
 
         if (DO_CANCEL) {
           await S.start(page);
@@ -498,11 +516,18 @@ async function main() {
         run.offlineCtxMade = R.offlineMade;
         run.heapAfterGcMb = await gcHeapMb(cdp);
         run.rssAfterMb = chromiumRssMb();
+        // Page-attributed bytes incl. ArrayBuffer backing stores (the PCM
+        // copies a Process retains); heapAfterGcMb counts the JS heap only.
+        run.pageMemMb = await page.evaluate(async () => {
+          if (!self.crossOriginIsolated || typeof performance.measureUserAgentSpecificMemory !== 'function') return null;
+          try { return Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch { return null; }
+        });
         runs.push(run);
         console.log(JSON.stringify({
           secs, cycle, ok: run.success, engine: run.engine, stages: run.stageMs, ms: run.processMs, rtf: run.rtf, cancelMs: run.cancelMs,
+          importLt: run.importLongTasks.max, importGap: run.importHeartbeatGaps.max,
           lt: run.longTasks.max, settleLt: run.settleLongTaskMax, lt100: run.longTasks.count100, gap: run.heartbeatGaps.max,
-          heap: run.heapAfterGcMb, rss: run.rssAfterMb, peakRss, w: run.workersLive, ctx: run.audioCtxLive, st: s?.status,
+          heap: run.heapAfterGcMb, pageMem: run.pageMemMb, rss: run.rssAfterMb, peakRss, w: run.workersLive, ctx: run.audioCtxLive, st: s?.status,
         }));
         if (crashed) break;
       }

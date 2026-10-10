@@ -14,10 +14,18 @@ export class ProcessingController {
     this._removed = null;
   }
 
-  setRaw(channelData, _sampleRate) {
+  /**
+   * @param {Float32Array[]} channelData
+   * @param {number} _sampleRate
+   * @param {{ adopt?: boolean }} [opts] adopt: take the caller's arrays as the
+   *   immutable raw without a copy. Only for callers that never mutate them
+   *   afterwards (decoded ingest buffers): a full-length clone per import was
+   *   one more resident copy of the file and a synchronous copy on the main thread.
+   */
+  setRaw(channelData, _sampleRate, opts = {}) {
     this._asyncGen = (this._asyncGen || 0) + 1;
-    // Deep clone to preserve immutable raw
-    this._raw = channelData.map((ch) => ch.slice());
+    // Deep clone to preserve immutable raw, unless the caller hands ownership over.
+    this._raw = opts.adopt ? [...channelData] : channelData.map((ch) => ch.slice());
     this.store?.setProcessingState('idle', 0, 'raw_set');
     return this._raw;
   }
@@ -125,7 +133,9 @@ export class ProcessingController {
     }
     if (!live()) return null;
     const update = {
-      rawBuffer: await clone(raw),
+      // Raw is immutable and already shared with the session's source; a
+      // clone here was one more full-length copy per Process.
+      rawBuffer: raw,
       processedBuffer: await clone(processedCopy),
       removedBuffer: await clone(opts.storeRemoved || removed),
       sampleRate,
