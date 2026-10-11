@@ -133,7 +133,10 @@ de-duplicated by channel identity in `premium-workspace.js`; key hashing uses
 `stemCacheKeyAsync`; `FileIngestion` extracts channels with `copyFloat32Channel`.
 Long-lived listeners are wired once per page (Landing transport crop/loop), never
 per Process: the old per-Process closures each pinned that run's stems. `AudioSessionStore._history`
-records `{ event, ts }` only. `src/core/PerformanceTier.js` (feature-detected,
+records `{ event, ts }` only. Raw PCM is shared, not cloned: `ProcessingController.setRaw(…, { adopt: true })`
+keeps the decoded ingest arrays, and the session store's `source.rawBuffer` /
+`processing.rawBuffer` alias them, so they are **read-only** (typed arrays
+cannot be frozen; never write to them, copy first). `src/core/PerformanceTier.js` (feature-detected,
 no UA sniffing) selects a per-tier stem-cache byte budget (HIGH is unbounded); it must never
 change processed audio.
 
