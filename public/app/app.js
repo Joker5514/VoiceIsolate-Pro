@@ -2681,10 +2681,18 @@ class VoiceIsolatePro {
         await this.ensureDecoded();
       }
       if (this.origBuffer || this.inputBuffer) {
+        // The encode now yields, so a second click could start a second
+        // full-length encode alongside the first.
+        if (this._savingOriginal) return;
+        this._savingOriginal = true;
+        if (d.saveOrigBtn) d.saveOrigBtn.disabled = true;
         try {
           await downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
         } catch (err) {
           this.showNotification(err?.message || 'Export failed', 'error');
+        } finally {
+          this._savingOriginal = false;
+          if (d.saveOrigBtn) d.saveOrigBtn.disabled = false;
         }
       } else {
         this.showNotification('Nothing to save yet — load and decode a file first.', 'info');

@@ -115,11 +115,14 @@ function readFrame(samples, start, N, win, dst) {
     for (let i = 0; i < N; i++) dst[i] = samples[start + i] * win[i];
     return;
   }
+  // Periodic reflection (period 2(len-1)) so clips shorter than the pad are
+  // still mirrored, not zero-filled after the first bounce.
+  const period = 2 * (len - 1);
   for (let i = 0; i < N; i++) {
-    let j = start + i;
-    if (j < 0) j = -j;
-    if (j >= len) j = 2 * (len - 1) - j;
-    dst[i] = j >= 0 && j < len ? samples[j] * win[i] : 0;
+    if (period === 0) { dst[i] = samples[0] * win[i]; continue; }
+    let j = (start + i) % period;
+    if (j < 0) j += period;
+    dst[i] = samples[j < len ? j : period - j] * win[i];
   }
 }
 

@@ -144,5 +144,38 @@ describe('MLWorker spectral sample-rate contract', () => {
     const err = posted.find((m) => m.type === 'error' && m.requestId === 7);
     expect(err?.message).toMatch(/expects 48000 Hz input, got 44100 Hz/);
     expect(posted.some((m) => m.type === 'stems')).toBe(false);
+    // The rejected request must not stay "active": an id-less cancel would
+    // otherwise be recorded against it.
+    posted.length = 0;
+    await worker.onmessage({ data: { type: 'cancel' } });
+    expect(posted).toEqual([]);
+  });
+});
+
+describe('MLWorker reflect padding on clips shorter than the window', () => {
+  // A constant clip reflects to the same constant everywhere, so every frame's
+  // DC magnitude must equal value × Σwindow. Zero-filling after one bounce
+  // (the reviewer's 3000-sample case reaches index 6143) shrinks later frames.
+  test.each([1, 2, 3000, 4096])('%i-sample constant clip fills every frame', async (len) => {
+    const worker = loadWorker('node-test X11');
+    const seen = [];
+    const session = {
+      async run(feeds) {
+        seen.push(new Float32Array(feeds.in.data));
+        return { out: { data: new Float32Array(feeds.in.data.length).fill(1) } };
+      },
+    };
+    const raw = { ...ENTRY, inputNormalization: undefined, maskExponent: undefined };
+    const x = new Float32Array(len).fill(0.25);
+    await worker.__fused([{ entry: raw, session }], x, () => {}, null, SR, null);
+    const mags = seen[0];
+    const frames = mags.length / ENTRY.bins;
+    expect(frames).toBeGreaterThan(1);
+    const n = ENTRY.fftSize;
+    let winSum = 0;
+    for (let i = 0; i < n; i++) winSum += 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)));
+    for (let f = 0; f < frames; f++) {
+      expect(mags[f * ENTRY.bins]).toBeCloseTo(0.25 * winSum, 0);
+    }
   });
 });

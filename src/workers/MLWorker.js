@@ -882,10 +882,14 @@ async function runFusedSpectralMaskChain(
   // Reflect-pad the pre/post-roll (as center=True STFTs do): zero padding would
   // hand the frame-max-normalised model and the Engineer noise tracker
   // near-silent frames at both edges.
+  // Periodic reflection (period 2(len-1)) so clips shorter than the pad are
+  // still mirrored, not zero-filled after the first bounce.
+  const period = 2 * (len - 1);
   const sampleAt = (i) => {
-    if (i < 0) i = -i;
-    if (i >= len) i = 2 * (len - 1) - i;
-    return i >= 0 && i < len ? samples[i] : 0;
+    if (period === 0) return samples[0];
+    let j = i % period;
+    if (j < 0) j += period;
+    return samples[j < len ? j : period - j];
   };
 
   // Geometry must match for fusion (caller guarantees for multi-head).
@@ -1412,6 +1416,14 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     }
   }
 
+  // Spectral masks are trained on fixed bin frequencies; another rate would
+  // shift every bin and mask the wrong band without any error. Hosts resample
+  // to 48 kHz first (FileIngestion.resampleToCanonical).
+  for (const entry of chain.map((id) => MANIFEST[id])) {
+    if (entry.strategy === 'spectral-mask' && entry.sampleRate && sampleRate !== entry.sampleRate) {
+      throw new Error(`[VIP][MLWorker] '${entry.id}' expects ${entry.sampleRate} Hz input, got ${sampleRate} Hz. Resample before Process.`);
+    }
+  }
   ACTIVE_REQUEST_ID = requestId;
   resetStftCounters();
   let lastProgressSent = -1;
@@ -1425,14 +1437,6 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   };
 
   const entries = chain.map((id) => MANIFEST[id]);
-  // Spectral masks are trained on fixed bin frequencies; another rate would
-  // shift every bin and mask the wrong band without any error. Hosts resample
-  // to 48 kHz first (FileIngestion.resampleToCanonical).
-  for (const entry of entries) {
-    if (entry.strategy === 'spectral-mask' && entry.sampleRate && sampleRate !== entry.sampleRate) {
-      throw new Error(`[VIP][MLWorker] '${entry.id}' expects ${entry.sampleRate} Hz input, got ${sampleRate} Hz. Resample before Process.`);
-    }
-  }
   const engineerConfigAccepted = typeof self.sanitizeEngineerProcessingConfig === 'function'
     && Boolean(self.sanitizeEngineerProcessingConfig(processingConfig));
   const requestedProcessingRevision = engineerConfigAccepted && typeof processingConfig?.revision === 'string'
