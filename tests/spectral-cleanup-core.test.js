@@ -265,7 +265,14 @@ describe('reflected pre-roll stays out of dereverb history', () => {
     expect(Math.abs(levelDb(run()))).toBeLessThan(0.5);
   });
 
-  test('rejects a hop longer than the frame', () => {
-    expect(() => sc.dereverb(tone, { amount: 0.5, frameSize: 2048, hopSize: 4096 })).toThrow(RangeError);
+  test.each([4096, 2048, 1640])('rejects hop %i (> half the 2048 frame)', (hopSize) => {
+    expect(() => sc.dereverb(tone, { amount: 0.5, frameSize: 2048, hopSize })).toThrow(RangeError);
+  });
+
+  test('the largest accepted hop (half the frame) reconstructs at a near-zero amount', () => {
+    const y = sc.dereverb(tone, { amount: 1e-6, frameSize: 2048, hopSize: 1024 });
+    let maxErr = 0;
+    for (let i = 0; i < tone.length; i++) maxErr = Math.max(maxErr, Math.abs(y[i] - tone[i]));
+    expect(maxErr).toBeLessThan(1e-4);
   });
 });

@@ -96,8 +96,10 @@ function fftInPlace(re, im, inverse) {
  * and gave both edges partial window² coverage that the OLA floor attenuated.
  */
 function frameCount(length, N, hop) {
-  // hop > N would leave gaps between windows that silently zero samples.
-  if (!Number.isInteger(hop) || hop < 1 || hop > N) {
+  // Hann² overlap stays at or above half its peak only for hop <= N/2. Larger
+  // hops dip below the OLA floor (attenuating frame boundaries), and hop >= N
+  // leaves samples with no window coverage at all.
+  if (!Number.isInteger(hop) || hop < 1 || hop > N / 2) {
     throw new RangeError(`[VIP][SpectralCleanup] invalid hopSize ${hop} for frameSize ${N}`);
   }
   return length > 0 ? Math.ceil((length + N - hop) / hop) : 0;
