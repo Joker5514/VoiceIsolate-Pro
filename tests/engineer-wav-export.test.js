@@ -13,10 +13,13 @@ const app = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8'
 const body = app.slice(app.indexOf('async function encodeWavBuffer('), app.indexOf('async function downloadWav('));
 
 let encodeWavBuffer;
+let build;
 beforeAll(async () => {
   const { processInChunks, throwIfAborted } = await import('../src/pipeline/ui-yield.js');
+  // ArrayBuffer is a parameter so a test can observe allocations.
   // eslint-disable-next-line no-new-func
-  encodeWavBuffer = new Function('processInChunks', 'throwIfAborted', `${body}; return encodeWavBuffer;`)(processInChunks, throwIfAborted);
+  build = (AB = ArrayBuffer) => new Function('processInChunks', 'throwIfAborted', 'ArrayBuffer', `${body}; return encodeWavBuffer;`)(processInChunks, throwIfAborted, AB);
+  encodeWavBuffer = build();
 });
 
 function fakeBuffer(channels, sampleRate = 48000) {
@@ -62,8 +65,14 @@ describe('Engineer encodeWavBuffer', () => {
     const ctrl = new AbortController();
     ctrl.abort();
     const buf = fakeBuffer([new Float32Array(48000 * 3)]);
-    await expect(encodeWavBuffer(buf, 0, ctrl.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    let allocations = 0;
+    const CountingArrayBuffer = function (n) { allocations += 1; return new ArrayBuffer(n); };
+    await expect(build(CountingArrayBuffer)(buf, 0, ctrl.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(allocations).toBe(0);
     expect(buf.calls).toBe(0);
+    // The counter does see allocations when the export is not cancelled.
+    await build(CountingArrayBuffer)(fakeBuffer([new Float32Array(10)]), 0);
+    expect(allocations).toBe(1);
   });
 
   test('refuses exports past the 4 GB RIFF limit instead of wrapping the header', async () => {
