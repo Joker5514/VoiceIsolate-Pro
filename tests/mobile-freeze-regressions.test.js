@@ -313,6 +313,22 @@ describe('render layers', () => {
     layer.dispose?.();
   });
 
+  test('SpectrogramLayer subsampling does not alias a periodic tone to silence', async () => {
+    const { SpectrogramLayer } = await import('../src/ui/components/SpectrogramLayer/SpectrogramLayer.js');
+    const { canvas } = stubCanvas(100, 8);
+    const layer = new SpectrogramLayer(canvas);
+    // Period 16 samples, starting at a zero crossing: a fixed stride that is a
+    // multiple of 16 reads only zeros.
+    const n = 100 * 16 * 1024;
+    const tone = Float32Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * i) / 16));
+    layer._audioData = tone;
+    const cols = layer._computeSimpleSpectrogram(100, 8);
+    // Band shape at y=0 is >= 0.3 and mean |sin| is 2/pi, so a fair estimate
+    // exceeds 0.15 everywhere; an aliased one is ~0.
+    for (const c of cols) expect(c[0]).toBeGreaterThan(0.15);
+    layer.dispose();
+  });
+
   test('SpectrogramLayer paints one ImageData and reuses it for identical renders', async () => {
     global.ImageData = class {};
     try {
@@ -345,6 +361,11 @@ describe('listener and pipeline duplication guards', () => {
     const install = src.slice(src.indexOf('async function installStems('), src.indexOf('function syncTransportRegionUi('));
     expect(install).not.toMatch(/wireTransportRegion\(/);
     expect(install).toMatch(/syncTransportRegionUi\(\)/);
+  });
+
+  test('Landing Cancel aborts the stem-cache hash', () => {
+    const src = read('public/landing.js');
+    expect(src).toMatch(/stemCacheKeyAsync\([^;]*signal: job\.controller\.signal/s);
   });
 
   test('Landing runs one import analysis and shares it with listeners', () => {

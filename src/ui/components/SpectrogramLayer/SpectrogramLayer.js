@@ -8,6 +8,8 @@ import { Tokens } from '../../tokens/design-tokens.js';
 
 /** Cap on samples read per column when estimating its level. */
 const MAX_SAMPLES_PER_COLUMN = 1024;
+/** Fractional part of the golden ratio: a low-discrepancy step in [0, 1). */
+const GOLDEN = 0.6180339887498949;
 
 /** Intensity ramp low → mid → high → peak, written straight into RGBA pixels. */
 function writeColor(px, o, magnitude) {
@@ -131,9 +133,13 @@ export class SpectrogramLayer {
     const viewEnd = Math.floor(totalSamples * this._viewEnd);
     const viewLength = viewEnd - viewStart;
     const samplesPerColumn = Math.max(1, Math.floor(viewLength / width));
-    // A column's level is a mean |x|; a bounded stride estimates it. Summing
-    // every sample made each render two full passes over the file.
-    const stride = Math.max(1, Math.ceil((samplesPerColumn * 2) / MAX_SAMPLES_PER_COLUMN));
+    // A column's level is a mean |x|, estimated from at most
+    // MAX_SAMPLES_PER_COLUMN reads; summing every sample made each render two
+    // full passes over the file. Reads are spread by a golden-ratio sequence,
+    // not a fixed stride, so a periodic signal whose period divides the stride
+    // cannot alias to near-silence or vertical striping.
+    const span = samplesPerColumn * 2;
+    const reads = Math.min(span, MAX_SAMPLES_PER_COLUMN);
     // The band shape depends only on y: computed once, not per pixel.
     const shape = new Float32Array(height);
     for (let y = 0; y < height; y++) {
@@ -147,9 +153,18 @@ export class SpectrogramLayer {
       const end = Math.min(start + samplesPerColumn * 2, viewEnd);
       // Simple energy per frequency band approximation
       const column = new Float32Array(height);
+      const len = end - start;
       let sum = 0;
       let count = 0;
-      for (let i = start; i < end; i += stride) { sum += Math.abs(data[i]); count++; }
+      if (len <= reads) {
+        for (let i = start; i < end; i++) { sum += Math.abs(data[i]); count++; }
+      } else {
+        for (let k = 0; k < reads; k++) {
+          const u = (k * GOLDEN) % 1;
+          sum += Math.abs(data[start + Math.floor(u * len)]);
+          count++;
+        }
+      }
       const avg = sum / Math.max(1, count);
       // Fake frequency distribution: speech energy concentrated in the mids
       for (let y = 0; y < height; y++) column[y] = avg * shape[y] + Math.random() * 0.02;

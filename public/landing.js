@@ -1369,8 +1369,15 @@ async function onProcess() {
     // The full-content hash yields too: in one task it was 303 ms for 5 min
     // of stereo on a 4x-throttled mobile profile, and grows with length.
     const source = ingested;
-    const cacheKey = await stemCacheKeyAsync(source.channelData, source.sampleRate, modelIds,
-      source.sourceName, '', { maybeYield: yieldBudget });
+    // Cancel aborts the job, which stops the hash at its next slice.
+    let cacheKey;
+    try {
+      cacheKey = await stemCacheKeyAsync(source.channelData, source.sampleRate, modelIds,
+        source.sourceName, '', { maybeYield: yieldBudget, signal: job.controller.signal });
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // cancelLandingJob already reset the UI
+      throw err;
+    }
     if (id !== requestSeq || !processingInFlight || source !== ingested) return;
     source._stemCacheKey = cacheKey;
     const copyAll = async (channels) => {
