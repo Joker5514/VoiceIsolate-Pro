@@ -26,6 +26,8 @@ Chromium in a Linux container. Nothing here is a listening test.
 | 4 | Engineer "Save processed" and "Save original" froze the tab | Chromium: 670 ms per stereo minute before, 200 ms after hoisting; a 15 min file was about 10 s in one task | `getChannelData(ch)` called per sample; whole file encoded synchronously | Hoisted channel views; encoding runs through `processInChunks` with the export job's `AbortSignal` | `tests/engineer-wav-export.test.js` (chunk seams, one call per channel, abort) | Fixed, verified in unit test and `engineer-upload-smoke` real download |
 | 5 | 16-bit quantisation had a 2-LSB dead zone around zero | `setInt16` truncates toward zero | No rounding before `setInt16` | `Math.round` in `app.js`, `ExportManager.encodeWav`, `AudioEncoderWorker` | `tests/engineer-wav-export.test.js` rounding case | Fixed |
 | 6 | Exports over 4 GB would write a wrapped RIFF header | uint32 size fields | No size check | Engineer encoder throws a clear `RangeError` | `tests/engineer-wav-export.test.js` | Fixed in Engineer path only |
+| 8 | Opening onset attenuated as reverb when dereverb is on (introduced and fixed in this PR's review) | Tone from sample 0, dereverb at full: Engineer -5.03 dB, `SpectralCleanup.dereverb` -1.77 dB over the first 40 ms | Reflected pre-roll frames seeded the reverb-tail history with the opening's mirror | Pre-roll frames are processed but never update the tail (`applyFrame(..., preRoll)`, SpectralCleanup `tail`/`ring`). Now -0.16 dB and -0.01 dB | `mlworker-ola-edges` Engineer dereverb case, `spectral-cleanup-core` pre-roll cases | Fixed, verified |
+| 9 | Short clips zero-filled after one reflection | 3000-sample clip: padded index 6143 mapped to -145 → 0 | Single-bounce reflection | Periodic reflection with period 2(len-1); one-sample clips repeat their sample | Constant-clip frame test (1, 2, 3000, 4096 samples) | Fixed, verified |
 | 7 | A non-48 kHz buffer sent to a spectral model would be masked in the wrong bands, silently | Masks are trained on fixed bin frequencies | Worker trusted the host's rate | `processRequest` rejects a mismatched rate with an actionable error. All current hosts resample first | `tests/mlworker-ola-edges.test.js` rate contract | Fixed (guard) |
 
 ## Verified invariants
@@ -70,7 +72,7 @@ framing defect. The baseline was not re-pinned.
 |---|---|
 | `pnpm lint` | 0 errors, 8 pre-existing warnings |
 | `pnpm validate` | All checks passed |
-| `pnpm test` | 209 suites, 3593 tests passed (baseline 207 / 3571) |
+| `pnpm test` | 209 suites, all passing (baseline 207 / 3571); see the PR for the final count |
 | `pnpm test:quality` | PASS |
 | `node scripts/live-smoke.cjs` | PASS |
 | `node scripts/landing-smoke.cjs` | PASS |

@@ -96,6 +96,10 @@ function fftInPlace(re, im, inverse) {
  * and gave both edges partial window² coverage that the OLA floor attenuated.
  */
 function frameCount(length, N, hop) {
+  // hop > N would leave gaps between windows that silently zero samples.
+  if (!Number.isInteger(hop) || hop < 1 || hop > N) {
+    throw new RangeError(`[VIP][SpectralCleanup] invalid hopSize ${hop} for frameSize ${N}`);
+  }
   return length > 0 ? Math.ceil((length + N - hop) / hop) : 0;
 }
 
@@ -176,7 +180,7 @@ function overlapProcess(samples, N, hop, transform) {
     im.fill(0);
     fftInPlace(re, im, false);
 
-    transform(re, im, bins, f);
+    transform(re, im, bins, f, start);
 
     // Rebuild the Hermitian-symmetric upper half from the modified lower half.
     for (let k = bins; k < N; k++) {
@@ -365,7 +369,10 @@ export function dereverb(samples, opts = {}) {
   const ring = Array.from({ length: D }, () => new Float32Array(bins));
   let ringPos = 0;
 
-  const out = overlapProcess(input, N, hop, (re, im) => {
+  const out = overlapProcess(input, N, hop, (re, im, _bins, _f, start) => {
+    // Reflected pre-roll mirrors the opening; feeding it into the tail history
+    // would subtract the first onset as reverb of itself.
+    const preRoll = start < 0;
     const delayed = ring[ringPos];
     for (let k = 0; k < bins; k++) {
       const pow = re[k] * re[k] + im[k] * im[k];
@@ -378,8 +385,9 @@ export function dereverb(samples, opts = {}) {
       re[k] *= blended;
       im[k] *= blended;
       // The reverberant input feeds the decaying tail envelope for later frames.
-      tail[k] = Math.max(decay * tail[k], pow);
+      if (!preRoll) tail[k] = Math.max(decay * tail[k], pow);
     }
+    if (preRoll) return;
     delayed.set(tail);                  // snapshot this frame's tail …
     ringPos = (ringPos + 1) % D;        // … to be read D frames from now
   });
@@ -439,7 +447,10 @@ export function cleanupSpectral(samples, opts = {}) {
   const ring = Array.from({ length: D }, () => new Float32Array(bins));
   let ringPos = 0;
 
-  const out = overlapProcess(input, N, hop, (re, im) => {
+  const out = overlapProcess(input, N, hop, (re, im, _bins, _f, start) => {
+    // Reflected pre-roll mirrors the opening; feeding it into the tail history
+    // would subtract the first onset as reverb of itself.
+    const preRoll = start < 0;
     const delayed = ring[ringPos];
     for (let k = 0; k < bins; k++) {
       const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
@@ -463,8 +474,9 @@ export function cleanupSpectral(samples, opts = {}) {
       const blendDr = 1 - drAmt * (1 - gDr);
       re[k] *= blendDr;
       im[k] *= blendDr;
-      tail[k] = Math.max(decay * tail[k], pow);
+      if (!preRoll) tail[k] = Math.max(decay * tail[k], pow);
     }
+    if (preRoll) return;
     delayed.set(tail);
     ringPos = (ringPos + 1) % D;
   });

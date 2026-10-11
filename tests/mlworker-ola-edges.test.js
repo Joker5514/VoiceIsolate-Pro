@@ -179,3 +179,24 @@ describe('MLWorker reflect padding on clips shorter than the window', () => {
     }
   });
 });
+
+describe('Engineer dereverb ignores the reflected pre-roll', () => {
+  // The pre-roll mirrors the opening. If it seeded the reverb tail, a tone
+  // starting at sample 0 would be attenuated as reverb of itself (-5 dB here).
+  test('opening keeps its level with derevAmt 100', async () => {
+    const worker = loadWorker('node-test X11');
+    const x = tones(SR);
+    const run = (derevAmt) => worker.__fused(
+      [{ entry: ENTRY, session: sessionReturning(1) }], x, () => {},
+      { version: 1, spectral: { derevAmt, nrAmount: 0 } }, SR, null,
+    );
+    const [wet, dry] = [await run(100), await run(0)];
+    const rms = (a, from, to) => {
+      let e = 0;
+      for (let i = from; i < to; i++) e += a[i] * a[i];
+      return Math.sqrt(e / (to - from));
+    };
+    const onsetDb = 20 * Math.log10(rms(wet, FADE, 2304) / rms(dry, FADE, 2304));
+    expect(Math.abs(onsetDb)).toBeLessThan(1);
+  });
+});

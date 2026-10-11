@@ -250,3 +250,22 @@ describe('full-coverage framing (edges and tail)', () => {
     expect(maxErr).toBeLessThan(1e-4);
   });
 });
+
+describe('reflected pre-roll stays out of dereverb history', () => {
+  // A tone that starts at sample 0 has no past. If the mirrored pre-roll fed
+  // the tail estimate, the opening would be subtracted as its own reverb.
+  const tone = new Float32Array(SR);
+  for (let i = 0; i < SR; i++) tone[i] = 0.5 * Math.sin((2 * Math.PI * 300 * i) / SR);
+  const levelDb = (y) => 20 * Math.log10(rms(y, 0, 1920) / rms(tone, 0, 1920));
+
+  test.each([
+    ['dereverb', () => sc.dereverb(tone, { amount: 1 })],
+    ['cleanupSpectral', () => sc.cleanupSpectral(tone, { noiseReduction: 0.01, dereverb: 1 })],
+  ])('%s keeps the first 40 ms at full level', (_name, run) => {
+    expect(Math.abs(levelDb(run()))).toBeLessThan(0.5);
+  });
+
+  test('rejects a hop longer than the frame', () => {
+    expect(() => sc.dereverb(tone, { amount: 0.5, frameSize: 2048, hopSize: 4096 })).toThrow(RangeError);
+  });
+});

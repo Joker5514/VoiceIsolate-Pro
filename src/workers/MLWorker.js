@@ -1044,7 +1044,7 @@ async function runFusedSpectralMaskChain(
         im[k] = cur.batchIm[off + k] * m;
       }
       if (engineerProcessor) {
-        engineerProcessor.applyFrame(re, im, cur.batchMags, off);
+        engineerProcessor.applyFrame(re, im, cur.batchMags, off, (f0 + b) * hop < pad);
       }
       hasPrevMask = true;
       realFftInverse(re, im, N, frame, halfRe, halfIm);
