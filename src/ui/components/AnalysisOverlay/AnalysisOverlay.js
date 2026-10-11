@@ -57,6 +57,7 @@ export class AnalysisOverlay {
     };
     this._regions = [];
     this._elements = new Map();
+    this._regionById = new Map();
     this._overlayEl = null;
     this._initDOM();
   }
@@ -75,6 +76,33 @@ export class AnalysisOverlay {
     const style = window.getComputedStyle(this.container);
     if (style.position === 'static') this.container.style.position = 'relative';
     this.container.appendChild(this._overlayEl);
+    // Delegated: three listeners per region element were rebuilt (and
+    // retained by the closures) on every regions update.
+    const regionOf = (e) => {
+      const el = e.target?.closest?.('.vip-overlay-region');
+      return el && this._overlayEl.contains(el) ? el : null;
+    };
+    this._overlayEl.addEventListener('mouseover', (e) => {
+      const el = regionOf(e);
+      if (!el || el.contains(e.relatedTarget)) return;
+      const style = OverlayStyles[el.dataset.type] || OverlayStyles.background_noise;
+      el.style.background = style.bg.replace('0.18', '0.28').replace('0.14', '0.24').replace('0.12', '0.22');
+      el.style.zIndex = '6';
+    });
+    this._overlayEl.addEventListener('mouseout', (e) => {
+      const el = regionOf(e);
+      if (!el || el.contains(e.relatedTarget)) return;
+      const style = OverlayStyles[el.dataset.type] || OverlayStyles.background_noise;
+      el.style.background = style.bg;
+      el.style.zIndex = 'auto';
+    });
+    this._overlayEl.addEventListener('click', (e) => {
+      const el = regionOf(e);
+      const region = el && this._regionById.get(el.dataset.regionId);
+      if (!region) return;
+      e.stopPropagation();
+      this._emit('regionClicked', region);
+    });
   }
 
   setDuration(duration) {
@@ -91,16 +119,20 @@ export class AnalysisOverlay {
     // Clear existing
     for (const el of this._elements.values()) el.remove();
     this._elements.clear();
+    this._regionById.clear();
 
     if (!this._regions.length || !this.options.duration) return;
 
     const containerWidth = this.container.clientWidth;
+    // One insertion for every region instead of one per element.
+    const frag = document.createDocumentFragment();
 
     for (const region of this._regions) {
       const style = OverlayStyles[region.type] || OverlayStyles.background_noise;
       const el = document.createElement('div');
       el.className = `vip-overlay-region vip-overlay-${region.type}`;
       el.dataset.regionId = region.id;
+      el.dataset.type = region.type;
       el.dataset.confidence = region.confidence;
 
       const startNorm = region.start / this.options.duration;
@@ -169,25 +201,11 @@ export class AnalysisOverlay {
         el.appendChild(confBar);
       }
 
-      // Hover effect
-      el.addEventListener('mouseenter', () => {
-        el.style.background = style.bg.replace('0.18', '0.28').replace('0.14', '0.24').replace('0.12', '0.22');
-        el.style.zIndex = '6';
-      });
-      el.addEventListener('mouseleave', () => {
-        el.style.background = style.bg;
-        el.style.zIndex = 'auto';
-      });
-
-      // Click to select
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._emit('regionClicked', region);
-      });
-
-      this._overlayEl.appendChild(el);
+      frag.appendChild(el);
       this._elements.set(region.id, el);
+      this._regionById.set(String(region.id), region);
     }
+    this._overlayEl.appendChild(frag);
   }
 
   _listeners = new Map();

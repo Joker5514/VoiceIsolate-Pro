@@ -16,6 +16,7 @@ import { createPlatformAdapter } from '/src/platform/index.js';
 import { ComparisonModes, Profiles } from '/src/ui/tokens/design-tokens.js';
 import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
 import { ProcessingController } from '/src/core/audio/processing/ProcessingController.js';
+import { createYieldBudget } from '/src/pipeline/ui-yield.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,6 +35,50 @@ const state = {
 };
 
 // ── Waveform / Spectrogram rendering (decoupled, no alloc in loop) ────────
+/** Per-pixel min/max for the current file and canvas width. */
+let wavePeaks = { channel: null, w: 0, ready: false, mins: null, maxs: null };
+
+/** Fill wavePeaks in time-budgeted slices, then redraw if still current. */
+async function computeWavePeaks(canvas, channel, w) {
+  const entry = { channel, w, ready: false, mins: new Float32Array(w), maxs: new Float32Array(w) };
+  wavePeaks = entry;
+  const samplesPerPx = Math.max(1, Math.floor(channel.length / w));
+  const maybeYield = createYieldBudget();
+  const SLICE = 1 << 16;
+  for (let x = 0; x < w; x++) {
+    const start = x * samplesPerPx;
+    const end = Math.min(channel.length, start + samplesPerPx);
+    let min = 1, max = -1;
+    // Sliced by samples, not columns: a narrow (or hidden) canvas has few
+    // columns, each covering a large share of the file.
+    for (let s = start; s < end; s += SLICE) {
+      const sliceEnd = Math.min(end, s + SLICE);
+      for (let i = s; i < sliceEnd; i++) {
+        const v = channel[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      await maybeYield();
+      if (wavePeaks !== entry) return; // new file or width
+    }
+    entry.mins[x] = min;
+    entry.maxs[x] = max;
+  }
+  entry.ready = true;
+  if (state.channelData?.[0] === channel) drawWaveform(canvas, state.channelData);
+}
+
+/** Coalesce pointer-driven redraws to one per frame. */
+let drawFrame = 0;
+function scheduleSelectionDraw(waveCanvas, specCanvas) {
+  if (drawFrame) return;
+  drawFrame = requestAnimationFrame(() => {
+    drawFrame = 0;
+    if (specCanvas) drawSpectrogram(specCanvas);
+    drawWaveform(waveCanvas, state.channelData);
+  });
+}
+
 function drawWaveform(canvas, data) {
   if (!canvas) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -56,45 +101,43 @@ function drawWaveform(canvas, data) {
     return;
   }
 
-  // Decimate for performance: one min/max per pixel column
+  // One min/max per pixel column, computed once per (file, width) off the
+  // input path. Rescanning the whole file here twice per call made every
+  // selection pointermove a full-file pass (~1.5 s on a phone at 5 min).
   const channel = data[0];
-  const samplesPerPx = Math.max(1, Math.floor(channel.length / w));
+  const peaks = wavePeaks.channel === channel && wavePeaks.w === w ? wavePeaks : null;
   const mid = h / 2;
+  if (!peaks || !peaks.ready) {
+    if (!peaks) void computeWavePeaks(canvas, channel, w);
+    ctx.fillStyle = '#1d2a34';
+    ctx.fillRect(0, h / 2 - 1, w, 2);
+  } else {
+    drawWavePeaks(ctx, peaks, w, mid);
+  }
+  drawWaveOverlays(ctx, w, h);
+}
+
+function drawWavePeaks(ctx, peaks, w, mid) {
 
   ctx.strokeStyle = '#2ed5e5';
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = 0; x < w; x++) {
-    const start = x * samplesPerPx;
-    const end = Math.min(channel.length, start + samplesPerPx);
-    let min = 1, max = -1;
-    for (let i = start; i < end; i++) {
-      const v = channel[i];
-      if (v < min) min = v;
-      if (v > max) max = v;
-    }
-    const yMin = mid + min * mid * 0.9;
-    const yMax = mid + max * mid * 0.9;
+    const yMin = mid + peaks.mins[x] * mid * 0.9;
     if (x === 0) ctx.moveTo(x, yMin);
     else ctx.lineTo(x, yMin);
   }
   for (let x = w - 1; x >= 0; x--) {
-    const start = x * samplesPerPx;
-    const end = Math.min(channel.length, start + samplesPerPx);
-    let min = 1, max = -1;
-    for (let i = start; i < end; i++) {
-      const v = channel[i];
-      if (v < min) min = v;
-      if (v > max) max = v;
-    }
-    const yMax = mid + max * mid * 0.9;
-    ctx.lineTo(x, yMax);
+    ctx.lineTo(x, mid + peaks.maxs[x] * mid * 0.9);
   }
   ctx.closePath();
   ctx.fillStyle = 'rgba(46,213,229,0.18)';
   ctx.fill();
   ctx.stroke();
+}
 
+/** Selection and analysis regions: drawn even while peaks are computing. */
+function drawWaveOverlays(ctx, w, h) {
   // Selection overlay
   if (state.selection) {
     const x0 = Math.floor(state.selection.start * w);
@@ -162,7 +205,13 @@ function drawSpectrogram(canvas) {
     return;
   }
 
-  // Simple gradient noise + voice band
+  // Simple gradient noise + voice band. The base image depends only on the
+  // canvas size and file, so selection drags reuse it.
+  if (specBase.w === w && specBase.h === h && specBase.channel === state.channelData[0]) {
+    ctx.putImageData(specBase.img, 0, 0);
+    drawSpectrogramSelection(ctx, w, h);
+    return;
+  }
   const imageData = ctx.createImageData(w, h);
   const data = imageData.data;
   for (let y = 0; y < h; y++) {
@@ -184,7 +233,13 @@ function drawSpectrogram(canvas) {
     }
   }
   ctx.putImageData(imageData, 0, 0);
+  specBase = { w, h, channel: state.channelData[0], img: imageData };
+  drawSpectrogramSelection(ctx, w, h);
+}
 
+let specBase = { w: 0, h: 0, channel: null, img: null };
+
+function drawSpectrogramSelection(ctx, w, h) {
   // Spectrogram rectangle selection
   if (state.spectrogramDrag) {
     const { x0, y0, x1, y1 } = state.spectrogramDrag;
@@ -291,8 +346,8 @@ function wireSelection() {
     if (!state.isDragging) return;
     const current = getNormX(e, waveCanvas);
     state.selection = { start: Math.min(state.dragStart, current), end: Math.max(state.dragStart, current) };
-    // <100ms feedback: immediate redraw without waiting for animation frame? Use rAF for 60fps but still <16ms
-    drawWaveform(waveCanvas, state.channelData);
+    // One redraw per frame, however many pointer events arrive.
+    scheduleSelectionDraw(waveCanvas, null);
     updateSelectionInfo();
   });
 
@@ -326,8 +381,7 @@ function wireSelection() {
       const startNorm = Math.min(state.spectrogramDrag.x0, state.spectrogramDrag.x1) / specCanvas.width;
       const endNorm = Math.max(state.spectrogramDrag.x0, state.spectrogramDrag.x1) / specCanvas.width;
       state.selection = { start: startNorm, end: endNorm };
-      drawSpectrogram(specCanvas);
-      drawWaveform(waveCanvas, state.channelData);
+      scheduleSelectionDraw(waveCanvas, specCanvas);
     });
 
     specCanvas.addEventListener('pointerup', (e) => {
@@ -544,8 +598,18 @@ function wireInspectorActions() {
 }
 
 // ── Automatic analysis on import ──────────────────────────────────────────
+/** Abort handle of the current import's analysis. */
+let importAnalysis = null;
+
 async function handleFileImported(detail) {
   const { channelData, sampleRate, duration } = detail;
+  // One import reaches here up to three times (vip:fileImported, app.js's
+  // direct call, signal-canvas-integration's forward). Each used to run its
+  // own full-file analysis and waveform passes in the import task.
+  if (channelData?.[0] && channelData[0] === state.channelData?.[0]) return;
+  importAnalysis?.abort();
+  const abort = new AbortController();
+  importAnalysis = abort;
   state.channelData = channelData;
   state.sampleRate = sampleRate;
   state.duration = duration || (channelData[0]?.length / sampleRate) || 0;
@@ -553,16 +617,20 @@ async function handleFileImported(detail) {
   drawWaveform($('engineerWaveCanvas'), channelData);
   drawSpectrogram($('engineerSpecCanvas'));
 
-  // Run auto analysis if not already running
   try {
     sessionStore.startAnalysis();
     const result = await runAutoAnalysis(channelData, sampleRate, {
-      onProgress: (pct, extra) => sessionStore.updateAnalysisProgress(pct, extra),
+      signal: abort.signal,
+      maybeYield: createYieldBudget(),
+      onProgress: (pct, extra) => {
+        if (!abort.signal.aborted) sessionStore.updateAnalysisProgress(pct, extra);
+      },
     });
+    if (abort.signal.aborted) return;
     sessionStore.setAnalysisResult(result);
     drawWaveform($('engineerWaveCanvas'), channelData);
   } catch (e) {
-    console.warn('[VIP][premium] auto analysis failed', e);
+    if (e?.name !== 'AbortError') console.warn('[VIP][premium] auto analysis failed', e);
   }
 }
 

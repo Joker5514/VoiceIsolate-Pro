@@ -65,6 +65,24 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- **Mobile freeze on import** (4x-throttled Pixel 7 profile, 5 min stereo): the
+  longest Landing import task fell from 10.3 s to 0.43 s and Engineer's from
+  5.3 s to 0.67 s. Import analysis (`AutoAnalysis`) now yields, runs once per
+  import instead of two (Landing) or three (Engineer) times, and is aborted when
+  a new file arrives; whisper detection is linear instead of frames x segments.
+  Engineer no longer decodes one pick twice. Channel extraction, stem-cache key
+  hashing and the diarization transfer copy run in budgeted slices.
+- **Selection drag freeze (Engineer)**: waveform peaks are computed once per file
+  and width and drag redraws are coalesced per frame; a `pointermove` used to
+  rescan the whole file twice.
+- **Memory growth across files (Landing)**: crop/loop listeners were re-wired on
+  every Process, each closure pinning that run's stems, and the session store's
+  history kept 50 past sessions' PCM. Retained full-length buffers after 6
+  import→Process cycles fell from 41 to 19 (flat from cycle 2). Raw no longer gets
+  two extra clones per import; the stem cache has a device-tier byte budget.
+- Spectrogram fallback layer paints one `ImageData` instead of one `fillRect` per
+  device pixel, and reuses it for identical renders.
+
 - **Worker error stale-message guard** (`landing.js`) — `'error'` worker messages
   were not guarded against stale requests when `requestId` was absent; now always
   breaks on stale, consistent with all other message cases.
