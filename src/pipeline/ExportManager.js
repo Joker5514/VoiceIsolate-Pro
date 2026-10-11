@@ -58,7 +58,8 @@ export function encodeWav(channels, sampleRate, options = {}) {
         s += shaped;
       }
       s = Math.max(-1, Math.min(1, s));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
+      view.setInt16(offset, Math.round(s < 0 ? s * 0x8000 : s * 0x7fff), true);
       offset += 2;
     }
   }

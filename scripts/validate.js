@@ -118,7 +118,7 @@ console.log('\nWired Sliders (Phase 2):');
 if (isLegacyMonolith) {
   const wiredSliders = ['applyBgSuppress','applyCrosstalkCancel','applyFormantShift','applyPhaseCorr','applyDereverb'];
   wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
-  check(appJs.includes('function encodeWavBuffer(audioBuffer, ditherMode = 0)'), 'dither encoding boundary implemented');
+  check(appJs.includes('async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null)'), 'dither encoding boundary implemented');
   check(!appJs.includes('applyDither'), 'Dither stays out of preview PCM');
 } else {
   console.log('  ℹ  Wired-slider body checks skipped (modular Engineer shell)');

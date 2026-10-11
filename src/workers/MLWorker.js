@@ -871,7 +871,22 @@ async function runFusedSpectralMaskChain(
     ...heads.map((h) => effectiveBatchFrames(h.entry, h.entry.id)),
   );
   const win = hann(N);
-  const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
+  const len = samples.length;
+  // Frames start N-hop samples before the file and run past its end, so every
+  // real sample sits under the full N/hop overlapping windows. Without this
+  // pre/post-roll the first and last ~N/2 samples had only partial window²
+  // coverage and the OLA floor below attenuated them (an identity mask lost
+  // ~40 ms at each edge, and up to hop-1 tail samples went silent).
+  const pad = N - hop;
+  const totalFrames = len > 0 ? Math.ceil((len + pad) / hop) : 0;
+  // Reflect-pad the pre/post-roll (as center=True STFTs do): zero padding would
+  // hand the frame-max-normalised model and the Engineer noise tracker
+  // near-silent frames at both edges.
+  const sampleAt = (i) => {
+    if (i < 0) i = -i;
+    if (i >= len) i = 2 * (len - 1) - i;
+    return i >= 0 && i < len ? samples[i] : 0;
+  };
 
   // Geometry must match for fusion (caller guarantees for multi-head).
   for (const h of heads) {
@@ -925,10 +940,12 @@ async function runFusedSpectralMaskChain(
 
   const forwardStftBatch = (buf, f0, count) => {
     for (let b = 0; b < count; b++) {
-      const start = (f0 + b) * hop;
-      const avail = Math.max(0, Math.min(N, samples.length - start));
-      for (let i = 0; i < avail; i++) frame[i] = samples[start + i] * win[i];
-      if (avail < N) frame.fill(0, avail);
+      const start = (f0 + b) * hop - pad;
+      if (start >= 0 && start + N <= len) {
+        for (let i = 0; i < N; i++) frame[i] = samples[start + i] * win[i];
+      } else {
+        for (let i = 0; i < N; i++) frame[i] = sampleAt(start + i) * win[i];
+      }
       const off = b * bins;
       realFftForward(frame, N, buf.batchRe, buf.batchIm, off, halfRe, halfIm);
       let peak = 0;
@@ -1028,9 +1045,10 @@ async function runFusedSpectralMaskChain(
       hasPrevMask = true;
       realFftInverse(re, im, N, frame, halfRe, halfIm);
 
-      const start = (f0 + b) * hop;
-      const avail = Math.max(0, Math.min(N, samples.length - start));
-      for (let i = 0; i < avail; i++) {
+      const start = (f0 + b) * hop - pad;
+      const i0 = Math.max(0, -start);
+      const i1 = Math.min(N, len - start);
+      for (let i = i0; i < i1; i++) {
         out[start + i] += frame[i] * win[i];
         norm[start + i] += win[i] * win[i];
       }
@@ -1039,14 +1057,16 @@ async function runFusedSpectralMaskChain(
     onProgress(Math.min(1, (f0 + count) / totalFrames));
   }
 
-  // Edge-safe OLA normalize: floor divisor at half peak window² so partial
-  // overlap at file edges cannot amplify residual into clicks (matches
-  // SpectralCleanup + AudioClickFix.olaNormalizeFloor).
+  // OLA normalize by the summed window². The pre/post-roll keeps every real
+  // sample at full overlap, so the floor is only a guard against degenerate
+  // input.
   let maxNorm = 0;
   for (let i = 0; i < norm.length; i++) {
     if (norm[i] > maxNorm) maxNorm = norm[i];
   }
-  const floorNorm = Math.max(1e-12, 0.5 * maxNorm);
+  // 50% hop makes Hann² sum dip to exactly half its peak, so the guard sits
+  // below that or it would modulate the output at the hop rate.
+  const floorNorm = Math.max(1e-12, 0.25 * maxNorm);
   for (let i = 0; i < out.length; i++) {
     out[i] /= Math.max(norm[i], floorNorm);
   }
@@ -1405,6 +1425,14 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   };
 
   const entries = chain.map((id) => MANIFEST[id]);
+  // Spectral masks are trained on fixed bin frequencies; another rate would
+  // shift every bin and mask the wrong band without any error. Hosts resample
+  // to 48 kHz first (FileIngestion.resampleToCanonical).
+  for (const entry of entries) {
+    if (entry.strategy === 'spectral-mask' && entry.sampleRate && sampleRate !== entry.sampleRate) {
+      throw new Error(`[VIP][MLWorker] '${entry.id}' expects ${entry.sampleRate} Hz input, got ${sampleRate} Hz. Resample before Process.`);
+    }
+  }
   const engineerConfigAccepted = typeof self.sanitizeEngineerProcessingConfig === 'function'
     && Boolean(self.sanitizeEngineerProcessingConfig(processingConfig));
   const requestedProcessingRevision = engineerConfigAccepted && typeof processingConfig?.revision === 'string'

@@ -34,7 +34,7 @@ describe('audit 2026-10-06 truthfulness', () => {
   });
 
   test('AUD-001: every Engineer export path renders the Live-Mix', () => {
-    const exportBody = app.slice(app.indexOf('async _downloadProcessed()'), app.indexOf('downloadWav(buf, \'processed-\''));
+    const exportBody = app.slice(app.indexOf('async _downloadProcessed()'), app.indexOf('await downloadWav(buf, \'processed-\''));
     expect(exportBody).toContain('this._renderProcessedMix(');
     const drive = app.slice(app.indexOf('async _saveProcessedToGoogleDrive()'), app.indexOf('async _downloadProcessed()'));
     expect(drive).toContain('this._renderProcessedMix()');

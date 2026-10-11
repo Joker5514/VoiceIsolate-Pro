@@ -65,6 +65,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- **Edge loss in the fused ML STFT** - frames now start `N - hop` before the
+  file and run past its end (reflect-padded), so the first and last ~40 ms of
+  the clean stem are no longer attenuated and the 50%-hop path no longer
+  modulates at the hop rate. `SpectralCleanup.js` had the same framing and
+  also silenced up to `hop - 1` tail samples. See
+  `docs/audits/DSP_EXPORT_AUDIT_2026-10-11.md`.
+- **Engineer WAV export freeze** - encoding reads each channel once, runs in
+  time-budgeted chunks, honours the export job's Cancel, rounds to the nearest
+  16-bit code and refuses exports past the 4 GB RIFF limit.
+- MLWorker rejects non-48 kHz input to spectral-mask models instead of masking
+  the wrong bands.
 - **Worker error stale-message guard** (`landing.js`) — `'error'` worker messages
   were not guarded against stale requests when `requestId` was absent; now always
   breaks on stale, consistent with all other message cases.

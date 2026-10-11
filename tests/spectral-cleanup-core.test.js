@@ -230,3 +230,23 @@ describe('invariants', () => {
     expect(y.length).toBe(4);
   });
 });
+
+describe('full-coverage framing (edges and tail)', () => {
+  // Length is not a multiple of the hop, so the old framing left the tail
+  // uncovered (silenced) and attenuated ~N/2 samples at each edge.
+  const len = SR + 777;
+  const tone = new Float32Array(len);
+  for (let i = 0; i < len; i++) tone[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / SR);
+
+  test.each([
+    ['dereverb', (x) => sc.dereverb(x, { amount: 1e-6 })],
+    ['cleanupSpectral', (x) => sc.cleanupSpectral(x, { noiseReduction: 1e-6, dereverb: 1e-6 })],
+  ])('%s at a near-zero amount reconstructs both edges', (_name, fn) => {
+    const y = fn(tone);
+    expect(y.length).toBe(len);
+    let maxErr = 0;
+    for (let i = 0; i < 2048; i++) maxErr = Math.max(maxErr, Math.abs(y[i] - tone[i]));
+    for (let i = len - 2048; i < len; i++) maxErr = Math.max(maxErr, Math.abs(y[i] - tone[i]));
+    expect(maxErr).toBeLessThan(1e-4);
+  });
+});

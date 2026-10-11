@@ -22,7 +22,7 @@
 'use strict';
 
 import { SAMPLE_RATE, FRAME_SIZE, HOP_SIZE } from './audio-config.js';
-import { periodicHann, frameCount as stftFrameCount } from './stft-math.js';
+import { periodicHann } from './stft-math.js';
 import { STFT_OWNERS } from './stft-budget.js';
 
 // ─── FFT primitives (radix-2, power-of-two) ──────────────────────────────────
@@ -88,13 +88,39 @@ function fftInPlace(re, im, inverse) {
 
 // ─── STFT scaffolding ────────────────────────────────────────────────────────
 
-/** Canonical frame count (stft-math). Pad short clips to one frame at call sites. */
+/**
+ * Frames for a full-coverage STFT: they start N-hop samples before the signal
+ * and run past its end, so every real sample sits under all N/hop overlapping
+ * windows. Framing only whole windows inside the signal (stft-math
+ * frameCount) left up to hop-1 tail samples uncovered — silenced on output —
+ * and gave both edges partial window² coverage that the OLA floor attenuated.
+ */
 function frameCount(length, N, hop) {
-  const n = stftFrameCount(length, N, hop);
-  // Preserve prior “at least one partial frame” behaviour for edge-padded short files
-  // when length > 0 but < N: treat as a single zero-padded frame.
-  if (n === 0 && length > 0) return 1;
-  return n;
+  return length > 0 ? Math.ceil((length + N - hop) / hop) : 0;
+}
+
+/** First sample of frame f (negative inside the pre-roll). */
+function frameStart(f, N, hop) {
+  return f * hop - (N - hop);
+}
+
+/**
+ * Hann-windowed frame into dst. Pre/post-roll is reflect-padded (as
+ * center=True STFTs do) so the edge frames are not near-silent, which would
+ * otherwise drag the minimum-statistics noise floor toward zero.
+ */
+function readFrame(samples, start, N, win, dst) {
+  const len = samples.length;
+  if (start >= 0 && start + N <= len) {
+    for (let i = 0; i < N; i++) dst[i] = samples[start + i] * win[i];
+    return;
+  }
+  for (let i = 0; i < N; i++) {
+    let j = start + i;
+    if (j < 0) j = -j;
+    if (j >= len) j = 2 * (len - 1) - j;
+    dst[i] = j >= 0 && j < len ? samples[j] * win[i] : 0;
+  }
 }
 
 /**
@@ -116,10 +142,8 @@ function forwardSTFT(samples, N, hop, visit) {
   const im = new Float32Array(N);
   const frames = frameCount(samples.length, N, hop);
   for (let f = 0; f < frames; f++) {
-    const start = f * hop;
-    const avail = Math.max(0, Math.min(N, samples.length - start));
-    re.fill(0); im.fill(0);
-    for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
+    readFrame(samples, frameStart(f, N, hop), N, win, re);
+    im.fill(0);
     fftInPlace(re, im, false);
     visit(re, im, bins, f);
   }
@@ -142,11 +166,11 @@ function overlapProcess(samples, N, hop, transform) {
   const norm = new Float32Array(samples.length);
   const frames = frameCount(samples.length, N, hop);
 
+  const len = samples.length;
   for (let f = 0; f < frames; f++) {
-    const start = f * hop;
-    const avail = Math.max(0, Math.min(N, samples.length - start));
-    re.fill(0); im.fill(0);
-    for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
+    const start = frameStart(f, N, hop);
+    readFrame(samples, start, N, win, re);
+    im.fill(0);
     fftInPlace(re, im, false);
 
     transform(re, im, bins, f);
@@ -158,18 +182,20 @@ function overlapProcess(samples, N, hop, transform) {
     }
     fftInPlace(re, im, true);
 
-    for (let i = 0; i < avail; i++) {
+    const i0 = Math.max(0, -start);
+    const i1 = Math.min(N, len - start);
+    for (let i = i0; i < i1; i++) {
       out[start + i] += re[i] * win[i];
       norm[start + i] += win[i] * win[i];
     }
   }
-  // Normalize by the summed window² envelope. At the very edges only one or two
-  // frames overlap, so dividing by that tiny norm would amplify the per-bin
-  // gain's frame-edge ringing into a click. Floor the divisor at half the
-  // steady-state overlap: edges are gently attenuated instead of blown up.
+  // Normalize by the summed window² envelope. Full-coverage framing keeps
+  // every sample at steady-state overlap; the floor only guards degenerate
+  // geometry and sits below the 50%-hop Hann² dip (exactly half the peak) so
+  // it never modulates the output.
   let maxNorm = 0;
   for (let i = 0; i < norm.length; i++) if (norm[i] > maxNorm) maxNorm = norm[i];
-  const floorNorm = 0.5 * maxNorm;
+  const floorNorm = 0.25 * maxNorm;
   if (floorNorm > 0) {
     for (let i = 0; i < out.length; i++) out[i] /= Math.max(norm[i], floorNorm);
   }
@@ -210,11 +236,11 @@ function estimateNoiseMag(samples, N, hop) {
   // frames below a fraction of the median energy handles silence, fades, and
   // those partial frames in one robust step.
   const energy = new Float32Array(frames);
+  const frame = new Float32Array(N);
   for (let f = 0; f < frames; f++) {
-    const start = f * hop;
-    const avail = Math.max(0, Math.min(N, samples.length - start));
+    readFrame(samples, frameStart(f, N, hop), N, win, frame);
     let e = 0;
-    for (let i = 0; i < avail; i++) { const s = samples[start + i] * win[i]; e += s * s; }
+    for (let i = 0; i < N; i++) e += frame[i] * frame[i];
     energy[f] = e;
   }
   const active = Array.from(energy).filter((e) => e > 1e-12).sort((a, b) => a - b);
