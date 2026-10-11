@@ -853,6 +853,8 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
   if (36 + dataBytes > 0xFFFFFFFF) {
     throw new RangeError('This export exceeds the 4 GB WAV limit. Trim the region and export again.');
   }
+  // Check before allocating the whole file, not only between chunks.
+  throwIfAborted(signal);
   const buf = new ArrayBuffer(44 + dataBytes);
   const v = new DataView(buf);
   const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };

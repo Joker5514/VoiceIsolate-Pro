@@ -14,9 +14,9 @@ const body = app.slice(app.indexOf('async function encodeWavBuffer('), app.index
 
 let encodeWavBuffer;
 beforeAll(async () => {
-  const { processInChunks } = await import('../src/pipeline/ui-yield.js');
+  const { processInChunks, throwIfAborted } = await import('../src/pipeline/ui-yield.js');
   // eslint-disable-next-line no-new-func
-  encodeWavBuffer = new Function('processInChunks', `${body}; return encodeWavBuffer;`)(processInChunks);
+  encodeWavBuffer = new Function('processInChunks', 'throwIfAborted', `${body}; return encodeWavBuffer;`)(processInChunks, throwIfAborted);
 });
 
 function fakeBuffer(channels, sampleRate = 48000) {
@@ -58,11 +58,12 @@ describe('Engineer encodeWavBuffer', () => {
     expect([0, 1, 2, 3, 4].map((i) => v.getInt16(44 + i * 2, true))).toEqual([1, -1, 32767, -32768, 0]);
   });
 
-  test('stops on an aborted signal', async () => {
+  test('an already-aborted export stops before allocating or reading audio', async () => {
     const ctrl = new AbortController();
     ctrl.abort();
-    await expect(encodeWavBuffer(fakeBuffer([new Float32Array(48000 * 3)]), 0, ctrl.signal))
-      .rejects.toMatchObject({ name: 'AbortError' });
+    const buf = fakeBuffer([new Float32Array(48000 * 3)]);
+    await expect(encodeWavBuffer(buf, 0, ctrl.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(buf.calls).toBe(0);
   });
 
   test('refuses exports past the 4 GB RIFF limit instead of wrapping the header', async () => {
