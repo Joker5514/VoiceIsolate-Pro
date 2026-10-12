@@ -78,4 +78,9 @@ test('a panned voice keeps its image and gains over the per-sample ratio', async
   expect(sisdr(oL, sL)).toBeGreaterThan(sisdr(old(L), sL));
   expect(sisdr(oR, sR)).toBeGreaterThan(sisdr(old(R), sR));
   expect(sisdr(oL, sL)).toBeGreaterThan(sisdr(L, sL));
+  // The image survives: per-channel SI-SDR alone would pass a mono collapse
+  // (oL = oR = clean), so the side signal must carry the voice's L/R difference.
+  const side = oL.map((v, i) => v - oR[i]);
+  const trueSide = sL.map((v, i) => v - sR[i]);
+  expect(sisdr(side, trueSide)).toBeGreaterThan(10);
 });

@@ -162,9 +162,12 @@ describe('SegmentMerger', () => {
     const frames = [0, 0.1, 0.2, 5, 5.1, 5.2].map(at);
     const segs = framesToSegments(frames, 0.1, { minSec: 0.1, mergeGapSec: 0.18 });
     expect(segs.map((x) => [x.start, +x.end.toFixed(2)])).toEqual([[0, 0.3], [5, 5.3]]);
-    // A gap within mergeGapSec still merges.
-    const near = framesToSegments([0, 0.1, 0.25, 0.35].map(at), 0.1, { minSec: 0.1, mergeGapSec: 0.18 });
-    expect(near).toHaveLength(1);
+    // A frame jump (0.17 s > 1.5 hops) starts a new raw segment; the 0.07 s
+    // gap between the two segments is within mergeGapSec, so mergeGaps joins them.
+    const near = framesToSegments([0, 0.1, 0.27, 0.37].map(at), 0.1, { minSec: 0.1, mergeGapSec: 0.18 });
+    expect(near.map((x) => [x.start, +x.end.toFixed(2)])).toEqual([[0, 0.47]]);
+    const far = framesToSegments([0, 0.1, 0.4, 0.5].map(at), 0.1, { minSec: 0.1, mergeGapSec: 0.18 });
+    expect(far).toHaveLength(2);
   });
 
   test('majoritySmooth reduces flicker', () => {

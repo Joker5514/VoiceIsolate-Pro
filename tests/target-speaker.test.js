@@ -60,7 +60,10 @@ describe('TargetSpeaker local enrollment', () => {
     const emb = TS.extractLocalVoiceprint(a, sr);
     const one = [{ speakerId: 'S1', start: 0, end: 2 }, { speakerId: 'S1', start: 2, end: 4 }];
     expect(TS.matchEmbeddingToDiarization(x, sr, emb, one)).toBeNull();
-    const two = [{ speakerId: 'S1', start: 0, end: 2 }, { speakerId: 'S2', start: 2, end: 4 }];
+    // The other cluster is listed first, so a "first cluster wins" bug would fail.
+    const two = [{ speakerId: 'S2', start: 2, end: 4 }, { speakerId: 'S1', start: 0, end: 2 }];
     expect(TS.matchEmbeddingToDiarization(x, sr, emb, two)).toMatchObject({ speakerId: 'S1' });
+    const embB = TS.extractLocalVoiceprint(b, sr);
+    expect(TS.matchEmbeddingToDiarization(x, sr, embB, two)).toMatchObject({ speakerId: 'S2' });
   });
 });
