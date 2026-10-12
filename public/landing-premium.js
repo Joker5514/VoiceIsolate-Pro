@@ -13,6 +13,7 @@ import { ComparisonToggle } from '/src/ui/components/ComparisonToggle/Comparison
 import { LiveMeters } from '/src/ui/components/LiveMeters/LiveMeters.js';
 import { OnDeviceBadge } from '/src/ui/components/OnDeviceBadge/OnDeviceBadge.js';
 import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
+import { createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { Profiles, ComparisonModes } from '/src/ui/tokens/design-tokens.js';
 
 function initUnifiedWorkspace() {
@@ -149,24 +150,32 @@ function initUnifiedWorkspace() {
   // Automatic analysis on import — enhance existing landing.js ingestion
   // Listen for file ingestion via custom event or intercept
   window.addEventListener('vip:fileImported', async (e) => {
-    const { channelData, sampleRate, duration } = e.detail || {};
+    const { channelData, sampleRate, analysis } = e.detail || {};
     if (!channelData) return;
     try {
-      sessionStore.startAnalysis();
-      const result = await runAutoAnalysis(channelData, sampleRate, {
-        onProgress: (pct, extra) => {
-          sessionStore.updateAnalysisProgress(pct, extra);
-        },
-      });
-      sessionStore.setAnalysisResult({
-        ...result,
-        regions: result.regions,
-        snrDb: result.snrDb,
-        speechRatio: result.speechRatio,
-      });
+      let result;
+      if (analysis) {
+        // landing.js owns this import's analysis and publishes it to the store.
+        result = await analysis;
+      } else {
+        sessionStore.startAnalysis();
+        result = await runAutoAnalysis(channelData, sampleRate, {
+          maybeYield: createYieldBudget(),
+          onProgress: (pct, extra) => {
+            sessionStore.updateAnalysisProgress(pct, extra);
+          },
+        });
+        sessionStore.setAnalysisResult({
+          ...result,
+          regions: result.regions,
+          snrDb: result.snrDb,
+          speechRatio: result.speechRatio,
+        });
+      }
       document.getElementById('analysisOverlayStatus').textContent =
         `Analysis ready — ${result.regions.length} regions detected (Speech ${result.speechSegments.length}, Whisper ${result.whisperCandidates.length}, Noise ${result.noiseSegments.length})`;
     } catch (err) {
+      if (err?.name === 'AbortError') return; // superseded by a newer import
       console.warn('[Premium] auto analysis failed', err);
       sessionStore.setAnalysisResult({ state: 'error', error: err.message });
     }

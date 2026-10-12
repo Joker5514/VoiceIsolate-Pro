@@ -88,6 +88,18 @@
 
   async function patchedHandleFile(file) {
     if (!file) return;
+    // Two change listeners (this patch's re-bind and mobile-upload-fix's)
+    // can deliver one pick twice; each decoded and analysed the whole file.
+    if (this._vipHandleFileActive === file) return;
+    this._vipHandleFileActive = file;
+    try {
+      return await loadPickedFile.call(this, file);
+    } finally {
+      if (this._vipHandleFileActive === file) this._vipHandleFileActive = null;
+    }
+  }
+
+  async function loadPickedFile(file) {
     this.stop();
     this.setStatus('LOADING');
     if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = file.name;

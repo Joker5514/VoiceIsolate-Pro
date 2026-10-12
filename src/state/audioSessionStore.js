@@ -177,8 +177,11 @@ export class AudioSessionStore {
     const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
     next.updatedAt = new Date().toISOString();
     this._session = next;
-    // keep history
-    this._history.push({ event, payload, prev, next, ts: Date.now() });
+    // Event log only. Holding prev/next/payload retained every past
+    // session's full-length PCM (raw + processed + removed) for 50 updates,
+    // so replacing a file never released the old one.
+    void prev;
+    this._history.push({ event, ts: Date.now() });
     if (this._history.length > this._maxHistory) this._history.shift();
     this._emit(event, payload);
     return next;
