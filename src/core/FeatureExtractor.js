@@ -281,7 +281,6 @@ export function extractFrameFeatures(mono, sampleRate, opts = {}) {
   const hop = Math.max(16, Math.round(hopSec * sampleRate));
   const frames = [];
   let prevMag = null;
-  let prevFlux = 0;
 
   for (let start = 0; start + frameLen <= mono.length; start += hop) {
     const frame = mono.subarray(start, start + frameLen);
@@ -320,22 +319,39 @@ export function extractFrameFeatures(mono, sampleRate, opts = {}) {
       voiced: vu.voiced,
     });
 
-    prevFlux = flux;
     prevMag = mag;
   }
 
-  // Noise floor estimate: percentile of low-energy frames
+  // Noise floor estimate: percentile of low-energy frames (also the frame
+  // classifier's silence reference, so it is left as is).
   const rmsSorted = frames.map((f) => f.rms).sort((a, b) => a - b);
   const p10 = rmsSorted[Math.floor(rmsSorted.length * 0.1)] || 0;
   const noiseFloor = p10;
   const signalRms = globalLevels(mono).rms;
-  const snrDb = 20 * Math.log10((signalRms + 1e-12) / (noiseFloor + 1e-12));
+  // Digital silence (below -120 dBFS) is not a noise floor for the SNR: one
+  // silent intro made p10 = 0 and the SNR read +215 dB, hiding the noise from
+  // every recommendation. Use the audible frames' p10 when it sits well below
+  // their p90 (quiet frames exist); otherwise there is no measurable floor
+  // and the SNR caps at 60 dB.
+  let snrFloor = p10;
+  if (p10 <= 1e-6) {
+    const audible = rmsSorted.filter((r) => r > 1e-6);
+    const q10 = audible[Math.floor(audible.length * 0.1)] || 0;
+    const q90 = audible[Math.floor(audible.length * 0.9)] || 0;
+    snrFloor = q10 < 0.3 * q90 ? q10 : 0;
+  }
+  const snrRaw = 20 * Math.log10((signalRms + 1e-12) / (snrFloor + 1e-12));
+  const snrDb = snrFloor > 0 ? snrRaw : Math.min(snrRaw, 60);
 
   // Reverb / decay estimate: average decay of RMS after high-flux onsets
   let decaySum = 0;
   let decayN = 0;
   for (let i = 1; i < frames.length - 5; i++) {
-    if (frames[i].flux > prevFlux * 2 && frames[i].flux > 0.01) {
+    // Every high-flux frame. This used to also require flux > 2x a stale
+    // `prevFlux` left over from the file's LAST frame, so a loud final 100 ms
+    // zeroed the estimate; a quiet ending reduced it to this same rule, which
+    // the downstream reverb thresholds (0.3-0.45) were set against.
+    if (frames[i].flux > 0.01) {
       const r0 = frames[i].rms + 1e-12;
       const r1 = frames[i + 4].rms + 1e-12;
       decaySum += Math.max(0, Math.log(r0 / r1));

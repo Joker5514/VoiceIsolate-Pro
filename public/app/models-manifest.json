@@ -50,7 +50,7 @@
       ]
     }
   },
-  "_sha256_note": "SHA256 last updated: 2026-08-23. Regenerate with: pnpm worklets:hash",
+  "_sha256_note": "SHA256 last updated: 2026-10-12. Regenerate with: pnpm worklets:hash",
   "worklets": {
     "dsp_processor": {
       "filename": "dsp-processor.js",
@@ -87,7 +87,7 @@
         {
           "provider": "same-origin",
           "url": "/src/workers/DeEsserProcessor.js",
-          "sha256": "904ad547b57c7d7a8a43df0984c41ffe212b5cab08ff8e9af967a4da320d01de"
+          "sha256": "0e1393827428275495e7a678fcae3d523474fb5ea49c9cf99b21472c0c9ec425"
         }
       ]
     }

@@ -59,8 +59,11 @@ class DeEsserProcessor extends AudioWorkletProcessor {
       a1: 0, a2: 0
     };
     
-    // Last frequency used (to detect when to recalculate coefficients)
-    this.lastFrequency = 6500;
+    // Frequency and rate the coefficients were built for. NaN forces the first
+    // process() to build them: starting at 6500 left the identity filter in
+    // place at the 6500 Hz default, so the "de-esser" compressed the full band.
+    this.lastFrequency = NaN;
+    this.lastSampleRate = NaN;
     
     // Sample rate
     this.sampleRate = 48000; // Default, will be updated
@@ -170,9 +173,10 @@ class DeEsserProcessor extends AudioWorkletProcessor {
     frequency = Math.min(frequency, this.sampleRate * 0.45);
 
     // Recalculate filter coefficients if frequency changed
-    if (Math.abs(frequency - this.lastFrequency) > 0.1) {
+    if (!(Math.abs(frequency - this.lastFrequency) <= 0.1) || this.sampleRate !== this.lastSampleRate) {
       this.calculateHighPassCoeffs(frequency, this.sampleRate, 0.707);
       this.lastFrequency = frequency;
+      this.lastSampleRate = this.sampleRate;
     }
 
     // Time constants for envelope follower

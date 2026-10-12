@@ -304,7 +304,10 @@ export function mountTargetSpeakerUI(opts) {
         : null;
       let targetSpeakerId = null;
       let matchNote = '';
-      if (segs && segs.length) {
+      const clusters = new Set((segs || []).map((x) => x?.speakerId).filter((x) => x != null));
+      if (clusters.size === 1) {
+        matchNote = ' · diarization found one speaker (voiceprint-only gain)';
+      } else if (clusters.size > 1) {
         const match = matchEmbeddingToDiarization(mono, sr, embedding, segs);
         if (match && match.similarity >= 0.25) {
           targetSpeakerId = match.speakerId;
