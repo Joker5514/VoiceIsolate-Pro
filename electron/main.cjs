@@ -25,6 +25,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 const { autoUpdater } = require('electron-updater');
 const { IPC } = require('./ipc-channels.cjs');
+const { createSamProxy } = require('./sam-proxy.cjs');
 const {
   authDomain, isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInsideReal,
 } = require('./navigation-policy.cjs');
@@ -36,6 +37,7 @@ const DEV_URL = process.env.VIP_DEV_URL || 'http://localhost:3000';
 /** @type {import('child_process').ChildProcess|null} */
 let samWorkerProc = null;
 let samWorkerPort = Number(process.env.SAM_AUDIO_PORT || 8765) || 8765;
+const samProxy = createSamProxy({ port: () => samWorkerPort });
 
 /** Essential ONNX assets for offline isolation (DEFAULT_ML_CHAIN + common fallbacks). */
 const OFFLINE_MODELS = Object.freeze([
@@ -563,6 +565,11 @@ function registerIpc() {
     }
     return { ok: true };
   });
+
+  // The renderer's CSP blocks loopback fetches and the worker answers no CORS
+  // preflight, so separation and cancellation go through the main process.
+  handleTrusted(IPC.SAM_WORKER_SEPARATE, (_evt, req) => samProxy.separate(req));
+  handleTrusted(IPC.SAM_WORKER_CANCEL, (_evt, jobId) => samProxy.cancel(jobId));
 
   handleTrusted(IPC.SAM_WORKER_CAPABILITIES, async () => {
     const baseUrl = `http://127.0.0.1:${samWorkerPort}`;

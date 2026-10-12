@@ -8,9 +8,22 @@
  *   Noise stem ─► Source ───────────────► NoiseGain ─► NoiseMute ─┘
  *
  *   [Tier-A bus] = gate ─► highpass ─► lowpass ─► lowShelf ─► eqLowMid ─► eqMid
- *                  ─► eqHighMid ─► highShelf ─► compressor ─► makeupGain
- *                  ─► de-esser ─► [stereo-width mid/side matrix] ─► Master
- *                  ─► Analyser ─► destination
+ *                  ─► eqHighMid ─► highShelf ─► graphic EQ ─► tilt ─► compressor*
+ *                  ─► makeupGain ─► de-esser ─► outputTrim ─► wet ─┐
+ *   [Tier-A bus input] ─► dryDelay ─► dry ─────────────────────────┴─► [M/S width]
+ *                  ─► limiter* ─► ceiling clip ─► Master ─► Analyser ─► destination
+ *
+ *   * each compressor sits in parallel with a delay of its own lookahead and
+ *     is selected only while engaged (ratio > 1); see the constructor.
+ *
+ * Output contract (F08/F09): the dry tap is delayed by exactly the wet path's
+ * latency (gate lookahead + the engine's DynamicsCompressor lookahead, which is
+ * measured, not assumed), so dry/wet blends never comb-filter. The limiter is
+ * the last stage before Master Volume (≤ unity): once a ceiling is set, every
+ * gain stage — makeup, output trim, dry, width — sits before it, and a
+ * memoryless clip at the ceiling catches the compressor's attack overshoot, so
+ * no output sample exceeds the ceiling. Without a ceiling the clip stage is
+ * transparent to ±24 dBFS, so over-full-scale mixes stay visible to callers.
  *
  * The Tier-A console (HP/LP filters, 5-band EQ, bus compressor) is shared by
  * both stems and defaults to fully transparent — adding it never changes how
@@ -199,6 +212,60 @@ const GRAPHIC_EQ_BANDS = Object.freeze([
 /** Pivot frequency for the spectral-tilt shelf pair. */
 const TILT_PIVOT_HZ = 1000;
 
+/** Longest dry-path compensation: gate lookahead (20 ms) + compressor lookahead. */
+const MAX_DRY_DELAY_SEC = 0.1;
+
+/**
+ * The ceiling clip is a WaveShaper, whose curve spans input [-1, 1]. A 1/16
+ * pre-gain and ×16 post-gain (exact in float) widen that to ±16 (+24 dBFS), so
+ * the stage is the identity for every realistic level until a ceiling is set.
+ */
+const CEILING_HEADROOM = 16;
+const CEILING_CURVE_POINTS = 4097;
+
+/** Engine DynamicsCompressor lookahead in frames, measured once per rate. */
+const _compressorLatency = new Map();
+
+/**
+ * Measure the DynamicsCompressorNode's fixed lookahead delay on this engine by
+ * rendering an impulse through a transparent (ratio 1) compressor. Chromium's
+ * kernel uses 6 ms; the value is not specified, so it is measured. Falls back
+ * to 6 ms when offline rendering is unavailable.
+ * @param {number} sampleRate
+ * @returns {Promise<number>} frames
+ */
+export function measureCompressorLatency(sampleRate) {
+  if (_compressorLatency.has(sampleRate)) return _compressorLatency.get(sampleRate);
+  const fallback = Math.round(0.006 * sampleRate);
+  const Offline = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  const probe = (async () => {
+    if (!Offline) return fallback;
+    const n = 4096;
+    const ctx = new Offline(1, n, sampleRate);
+    const impulse = ctx.createBuffer(1, n, sampleRate);
+    impulse.getChannelData(0)[0] = 0.5;
+    const src = ctx.createBufferSource();
+    src.buffer = impulse;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = 0;
+    comp.knee.value = 0;
+    comp.ratio.value = 1;
+    src.connect(comp);
+    comp.connect(ctx.destination);
+    src.start(0);
+    const out = (await ctx.startRendering()).getChannelData(0);
+    let at = -1;
+    let peak = 0;
+    for (let i = 0; i < out.length; i++) {
+      const a = Math.abs(out[i]);
+      if (a > peak) { peak = a; at = i; }
+    }
+    return at >= 0 ? at : fallback;
+  })().catch(() => fallback);
+  _compressorLatency.set(sampleRate, probe);
+  return probe;
+}
+
 export class PlaybackMixer {
   /**
    * @param {object} [options]
@@ -211,6 +278,9 @@ export class PlaybackMixer {
     }
     /** @type {AudioContext} */
     this.ctx = options.context || new Ctx({ sampleRate: SAMPLE_RATE });
+    // Only a context this mixer created is closed by dispose(); an injected
+    // one (Engineer's app context, an OfflineAudioContext) belongs to the caller.
+    this._ownsContext = !options.context;
     verifyContextSampleRate(this.ctx);
     this._parameterTargets = new WeakMap();
     /** Params with a setTargetAtTime ramp in flight; settled when playback stops. */
@@ -288,6 +358,31 @@ export class PlaybackMixer {
     // 100% wet (wetGain 1 / dryGain 0) → identical to a no-mix straight chain.
     this.wetGain = this.ctx.createGain();
     this.dryGain = this.ctx.createGain();
+    // The dry tap is delayed by the wet path's latency so the two line up.
+    this.dryDelay = this.ctx.createDelay(MAX_DRY_DELAY_SEC);
+    // Chromium's DynamicsCompressor is not transparent from a cold start even
+    // at ratio 1 (a 0.5 impulse leaves the bus compressor at 0.27 and the
+    // limiter at 0.08 in the first ~100 ms), so every export opened coloured
+    // while settled live playback did not. Each compressor therefore has a
+    // bypass leg delayed by the same measured lookahead; the gains pick the
+    // compressor only once it is engaged (ratio > 1). Latency never changes.
+    this.compBypass = this.ctx.createDelay(MAX_DRY_DELAY_SEC);
+    this.compBypassGain = this.ctx.createGain();
+    this.compEngagedGain = this.ctx.createGain();
+    this.compOut = this.ctx.createGain();
+    this.limiterBypass = this.ctx.createDelay(MAX_DRY_DELAY_SEC);
+    this.limiterBypassGain = this.ctx.createGain();
+    this.limiterEngagedGain = this.ctx.createGain();
+    this.limiterOut = this.ctx.createGain();
+    // Output ceiling: limiter (shapes overs) → memoryless clip at the ceiling.
+    this.ceilingIn = this.ctx.createGain();
+    this.ceilingShaper = this.ctx.createWaveShaper();
+    this.ceilingOut = this.ctx.createGain();
+    this.ceilingIn.gain.value = 1 / CEILING_HEADROOM;
+    this.ceilingOut.gain.value = CEILING_HEADROOM;
+    /** Ceiling in dBFS once the limiter is engaged; null = no ceiling. */
+    this._ceilingDb = null;
+    this._applyCeilingCurve();
 
     this.lowShelf.type = 'lowshelf';
     this.lowShelf.frequency.value = 250;
@@ -337,6 +432,11 @@ export class PlaybackMixer {
     this.outputTrim.gain.value = 1;  // 0 dB
     this.wetGain.gain.value = 1;     // 100% wet
     this.dryGain.gain.value = 0;
+    // Both compressors start bypassed (their defaults compress nothing).
+    this.compEngagedGain.gain.value = 0;
+    this.compBypassGain.gain.value = 1;
+    this.limiterEngagedGain.gain.value = 0;
+    this.limiterBypassGain.gain.value = 1;
 
     this.speakerGain.connect(this.cleanGain);
     this.cleanGain.connect(this.voiceMuteGain);
@@ -359,18 +459,23 @@ export class PlaybackMixer {
     this._graphicChain[this._graphicChain.length - 1].connect(this.tiltLow);
     this.tiltLow.connect(this.tiltHigh);
     this.tiltHigh.connect(this.compressor);
-    this.compressor.connect(this.makeupGain);
-    // De-esser slot (worklet spliced in on load): makeupGain → deEsserInput → limiter.
+    this.compressor.connect(this.compEngagedGain);
+    this.compEngagedGain.connect(this.compOut);
+    this.tiltHigh.connect(this.compBypass);
+    this.compBypass.connect(this.compBypassGain);
+    this.compBypassGain.connect(this.compOut);
+    this.compOut.connect(this.makeupGain);
+    // De-esser slot (worklet spliced in on load): makeupGain → deEsserInput → outputTrim.
     this.makeupGain.connect(this.deEsserInput);
-    // Tail: deEsserInput → limiter → outputTrim → wetGain ─┐
-    //                      pre-effects gateInput → dryGain ─┴→ stereoIn → M/S → master.
-    this.deEsserInput.connect(this.limiter);
-    this.limiter.connect(this.outputTrim);
+    // Tail: deEsserInput → outputTrim → wetGain ─┐
+    //       gateInput → dryDelay → dryGain ──────┴→ stereoIn → M/S → limiter → ceiling → master.
+    this.deEsserInput.connect(this.outputTrim);
     this.outputTrim.connect(this.wetGain);
     this.wetGain.connect(this.stereoIn);
     // Dry tap is taken pre-effects (at the gate input) so dry/wet blends the
     // unprocessed stem mix against the fully processed bus.
-    this.gateInput.connect(this.dryGain);
+    this.gateInput.connect(this.dryDelay);
+    this.dryDelay.connect(this.dryGain);
     this.dryGain.connect(this.stereoIn);
     // Stereo-width mid/side matrix: stereoIn → split → M/S → merge → master.
     this.stereoIn.connect(this.msSplit);
@@ -391,7 +496,17 @@ export class PlaybackMixer {
     this.sideSNeg.connect(this.rightSum);
     this.leftSum.connect(this.msMerge, 0, 0);
     this.rightSum.connect(this.msMerge, 0, 1);
-    this.msMerge.connect(this.masterGain);
+    // Master-bus limiter + ceiling clip, then Master Volume (≤ unity).
+    this.msMerge.connect(this.limiter);
+    this.limiter.connect(this.limiterEngagedGain);
+    this.limiterEngagedGain.connect(this.limiterOut);
+    this.msMerge.connect(this.limiterBypass);
+    this.limiterBypass.connect(this.limiterBypassGain);
+    this.limiterBypassGain.connect(this.limiterOut);
+    this.limiterOut.connect(this.ceilingIn);
+    this.ceilingIn.connect(this.ceilingShaper);
+    this.ceilingShaper.connect(this.ceilingOut);
+    this.ceilingOut.connect(this.masterGain);
     this.masterGain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
@@ -417,6 +532,16 @@ export class PlaybackMixer {
     this._deEsserParams = { frequency: 6500, amount: 0 };
     this._deEsserLoadState = 'pending';
     this._deEsserPromise = this._loadDeEsser();
+
+    // Wet-path latency: the engine's compressor lookahead (assumed 6 ms until
+    // measured) plus the gate lookahead once the gate is in the path.
+    this._compressorLatencyFrames = Math.round(0.006 * this.ctx.sampleRate);
+    this._updateDryDelay();
+    this._latencyPromise = measureCompressorLatency(this.ctx.sampleRate).then((frames) => {
+      if (this._disposed) return;
+      this._compressorLatencyFrames = frames;
+      this._updateDryDelay();
+    });
 
     // ── Transport state ──────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */ this.cleanBuffer = null;
@@ -488,8 +613,10 @@ export class PlaybackMixer {
       }
       this.gate = gate;
       this._gateLoadState = 'loaded';
+      this._updateDryDelay();
       try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
     } catch (err) {
+      if (this._disposed) return;
       this._gateLoadState = 'failed';
       try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
       console.error('[VIP][PlaybackMixer] noise-gate worklet failed to load; bypassing.', err);
@@ -526,12 +653,12 @@ export class PlaybackMixer {
       if (this._disposed) return;
       const deEsser = new NodeCtor(this.ctx, 'vip-deesser');
       try {
-        this.deEsserInput.disconnect(this.limiter);
+        this.deEsserInput.disconnect(this.outputTrim);
       } catch {
         try { this.deEsserInput.disconnect(); } catch { /* ignore */ }
       }
       this.deEsserInput.connect(deEsser);
-      deEsser.connect(this.limiter);
+      deEsser.connect(this.outputTrim);
       for (const [name, value] of Object.entries(this._deEsserParams)) {
         const p = deEsser.parameters.get(name);
         if (p) p.value = value;
@@ -540,10 +667,11 @@ export class PlaybackMixer {
       this._deEsserLoadState = 'loaded';
       try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
     } catch (err) {
+      if (this._disposed) return;
       this._deEsserLoadState = 'failed';
       try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
       console.error('[VIP][PlaybackMixer] de-esser worklet failed to load; bypassing.', err);
-      try { this.deEsserInput.connect(this.limiter); } catch { /* already connected */ }
+      try { this.deEsserInput.connect(this.outputTrim); } catch { /* already connected */ }
     }
   }
 
@@ -571,9 +699,73 @@ export class PlaybackMixer {
   /** Remember a gate parameter and apply it to the live worklet if present. */
   _setGateParam(name, value) {
     this._gateParams[name] = value;
+    if (name === 'lookahead') this._updateDryDelay();
     if (!this.gate) return;
     const param = this.gate.parameters.get(name);
     if (param) this._applyParam(param, value);
+  }
+
+  /** Gate lookahead actually delaying the wet path, in frames (0 when bypassed). */
+  _gateLatencyFrames() {
+    if (!this.gate) return 0;
+    const sr = this.ctx.sampleRate;
+    // Mirrors GateProcessor: round(ms·sr), capped by its ceil(20 ms·sr)+1 ring.
+    return Math.min(Math.ceil(0.02 * sr), Math.round(Number(this._gateParams.lookahead || 0) * 0.001 * sr));
+  }
+
+  /** Wet-path latency in frames: gate lookahead + compressor lookahead. */
+  _wetLatencyFrames() {
+    return this._compressorLatencyFrames + this._gateLatencyFrames();
+  }
+
+  /**
+   * Total input→output latency in frames: the wet path plus the master-bus
+   * limiter's own lookahead. renderMix() compensates exactly this much.
+   */
+  latencyFrames() {
+    return this._wetLatencyFrames() + this._compressorLatencyFrames;
+  }
+
+  /**
+   * Delay the dry tap by the wet path's latency (so dry/wet never comb-
+   * filters) and each compressor's bypass leg by the compressor lookahead.
+   */
+  _updateDryDelay() {
+    const sr = this.ctx.sampleRate;
+    const set = (param, frames) => {
+      const seconds = Math.min(MAX_DRY_DELAY_SEC, frames / sr);
+      // A delay time must change at once; gliding it would pitch-shift the
+      // signal. Changes only follow a gate-lookahead edit, a gate load or the
+      // one-time latency measurement.
+      param.cancelScheduledValues(0);
+      param.value = seconds;
+      this._parameterTargets.set(param, seconds);
+    };
+    set(this.dryDelay.delayTime, this._wetLatencyFrames());
+    set(this.compBypass.delayTime, this._compressorLatencyFrames);
+    set(this.limiterBypass.delayTime, this._compressorLatencyFrames);
+  }
+
+  /** Route each compressor in only while it can compress (ratio > 1). */
+  _updateCompressorRouting() {
+    const engaged = (node) => (this._parameterTargets.get(node.ratio) ?? node.ratio.value) > 1;
+    const comp = engaged(this.compressor);
+    this._applyParam(this.compEngagedGain.gain, comp ? 1 : 0);
+    this._applyParam(this.compBypassGain.gain, comp ? 0 : 1);
+    const lim = engaged(this.limiter);
+    this._applyParam(this.limiterEngagedGain.gain, lim ? 1 : 0);
+    this._applyParam(this.limiterBypassGain.gain, lim ? 0 : 1);
+  }
+
+  /** WaveShaper curve: identity to ±CEILING_HEADROOM, or a clamp at the ceiling. */
+  _applyCeilingCurve() {
+    const c = this._ceilingDb == null ? Infinity : Math.pow(10, this._ceilingDb / 20);
+    const curve = new Float32Array(CEILING_CURVE_POINTS);
+    for (let k = 0; k < CEILING_CURVE_POINTS; k++) {
+      const x = ((2 * k) / (CEILING_CURVE_POINTS - 1) - 1) * CEILING_HEADROOM;
+      curve[k] = Math.max(-c, Math.min(c, x)) / CEILING_HEADROOM;
+    }
+    this.ceilingShaper.curve = curve;
   }
 
   // ─── Stem loading ──────────────────────────────────────────────────────
@@ -942,6 +1134,7 @@ export class PlaybackMixer {
   /** Bus compressor ratio (1 … 20). 1 = no compression. */
   setCompRatio(ratio) {
     this._applyParam(this.compressor.ratio, clamp(ratio, 1, 20));
+    this._updateCompressorRouting();
   }
 
   /** Bus compressor attack in milliseconds (0 … 200); stored as seconds. */
@@ -1011,9 +1204,18 @@ export class PlaybackMixer {
   setLimiterThreshold(db) {
     // Engage the limiter the moment a ceiling is dialled in. Ramp the ratio
     // (not a bare value = jump) so engaging mid-playback stays click-free.
+    const ceiling = clamp(db, -24, 0);
     this._applyParam(this.limiter.ratio, 20);
-    this._applyParam(this.limiter.threshold, clamp(db, -24, 0));
+    this._applyParam(this.limiter.threshold, ceiling);
+    this._updateCompressorRouting();
+    // The compressor's 20:1 ratio and finite attack let transients through;
+    // the clip stage makes the ceiling a hard guarantee.
+    this._ceilingDb = ceiling;
+    this._applyCeilingCurve();
   }
+
+  /** Output ceiling in dBFS, or null when the limiter is not engaged. */
+  getCeilingDb() { return this._ceilingDb; }
 
   /** Limiter release in milliseconds (1 … 500); stored as seconds. */
   setLimiterRelease(ms) {
@@ -1272,7 +1474,15 @@ export class PlaybackMixer {
     const start = Math.max(0, Math.floor(startSec * SAMPLE_RATE));
     const end = Math.min(cleanBuffer.length, Math.ceil((endSec ?? cleanBuffer.duration) * SAMPLE_RATE));
     if (end <= start) throw new Error('Choose a non-empty export region.');
-    const ctx = new Offline(cleanBuffer.numberOfChannels, end - start, SAMPLE_RATE);
+    // The graph delays its output by its latency (compressor + limiter
+    // lookahead, gate lookahead). Render that many extra frames and drop the
+    // leading ones, so the export starts and ends on the region's own samples
+    // instead of opening with silence and losing the region's last frames.
+    // Sized for the worst case (dry delay cap + limiter) so params are still
+    // captured before the first await.
+    const regionFrames = end - start;
+    const latencyBudget = Math.ceil(2 * MAX_DRY_DELAY_SEC * SAMPLE_RATE);
+    const ctx = new Offline(cleanBuffer.numberOfChannels, regionFrames + latencyBudget, SAMPLE_RATE);
     const render = new PlaybackMixer({ context: ctx });
     // Reuse immutable AudioBuffers; no whole-file copies during graph construction.
     // A missing noise stem is silence: no source, no allocation.
@@ -1291,6 +1501,8 @@ export class PlaybackMixer {
     for (const [key, node] of this.graphicBands) copyNode(node, render.graphicBands.get(key));
     render._gateParams = { ...this._gateParams };
     render._deEsserParams = { ...this._deEsserParams };
+    render._ceilingDb = this._ceilingDb;
+    render._applyCeilingCurve();
     render._segments = this.getSpeakerSegments();
     render._speakers = new Map([...this._speakers].map(([id, state]) => [id, { ...state }]));
     render._soloId = this._soloId;
@@ -1305,7 +1517,7 @@ export class PlaybackMixer {
       timer = setTimeout(() => reject(new Error('Mix rendering timed out. Retry with a shorter recording.')), 120000);
     });
     try {
-      await Promise.race([render.workletsReady(), interruption]);
+      await Promise.race([Promise.all([render.workletsReady(), render._latencyPromise]), interruption]);
       if (signal?.aborted) throw cancelled();
       if ((gateRequired && !render.gate) || (deEsserRequired && !render.deEsser)) {
         throw new Error('This browser cannot export the active gate/de-esser. Disable those effects or use another browser.');
@@ -1313,6 +1525,10 @@ export class PlaybackMixer {
       // Preserve the actual live bypass state even when the offline context supports a worklet.
       if (!this.gate) render._setGateParam('range', 0);
       if (!this.deEsser) render._setDeEsserParam('amount', 0);
+      // Settle the dry-path delay for the render graph's own gate state.
+      render._updateDryDelay();
+      const latency = render.latencyFrames();
+      if (latency > latencyBudget) throw new Error(`[VIP][PlaybackMixer] graph latency ${latency} exceeds the render budget.`);
       render._isPlaying = true;
       render._offset = start / SAMPLE_RATE;
       render._startedAt = -render._offset;
@@ -1325,41 +1541,81 @@ export class PlaybackMixer {
         source.start(0, start / SAMPLE_RATE, (end - start) / SAMPLE_RATE);
         sources.push(source);
       }
-      return await Promise.race([ctx.startRendering(), interruption]);
+      const rendered = await Promise.race([ctx.startRendering(), interruption]);
+      if (signal?.aborted) throw cancelled();
+      // Aligned view of the region, copied cooperatively into an exact-length buffer.
+      const aligned = [];
+      for (let c = 0; c < rendered.numberOfChannels; c++) {
+        aligned.push(rendered.getChannelData(c).subarray(latency, latency + regionFrames));
+      }
+      const out = createBufferLike(rendered, aligned.length, regionFrames);
+      return await copyChannelsToAudioBuffer(out, aligned, { signal });
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
       for (const source of sources) { try { source.stop(); source.disconnect(); } catch { /* already ended */ } }
-      render._disposed = true;
-      // A stalled worklet load must not block cancellation of the owning job.
+      // dispose() never waits on worklet loads, so a stalled one cannot hold this.
       void render.dispose();
     }
   }
 
-  /** Release all audio resources. The instance is unusable afterwards. */
-  async dispose() {
+  /**
+   * Release all audio resources; the instance is unusable afterwards.
+   * Bounded: it never waits on a worklet load (a load that settles later sees
+   * `_disposed` and does nothing). Closes the AudioContext only when this mixer
+   * created it. Idempotent — repeat calls return the first call's promise.
+   * @returns {Promise<void>}
+   */
+  dispose() {
+    if (this._disposePromise) return this._disposePromise;
     this._disposed = true;
+    this._stemLoadGen = (this._stemLoadGen || 0) + 1; // abandon in-flight loadStemsAsync
     this.stop();
-    // Let any in-flight gate-worklet load settle (it bails on _disposed) before teardown.
-    for (const p of [this._gatePromise, this._deEsserPromise]) {
-      if (p) { try { await p; } catch { /* ignore */ } }
-    }
     for (const node of [this.speakerGain, this.cleanGain, this.voiceMuteGain,
       this.noiseGain, this.noiseMuteGain, this.gateInput, this.gate,
       this.highpass, this.lowpass,
       this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
       this.highShelf, ...this._graphicChain, this.tiltLow, this.tiltHigh,
-      this.compressor, this.makeupGain,
-      this.deEsserInput, this.deEsser, this.limiter, this.outputTrim,
-      this.wetGain, this.dryGain,
+      this.compressor, this.compEngagedGain, this.compBypass, this.compBypassGain, this.compOut,
+      this.makeupGain,
+      this.deEsserInput, this.deEsser, this.outputTrim,
+      this.wetGain, this.dryDelay, this.dryGain,
       this.stereoIn, this.msSplit, this.sideRNeg, this.midGain, this.sideGain,
       this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
+      this.limiter, this.limiterEngagedGain, this.limiterBypass, this.limiterBypassGain, this.limiterOut,
+      this.ceilingIn, this.ceilingShaper, this.ceilingOut,
       this.masterGain, this.analyser]) {
       if (!node) continue;
       try { node.disconnect(); } catch { /* already disconnected */ }
     }
-    try { await this.ctx.close(); } catch { /* already closed */ }
+    for (const worklet of [this.gate, this.deEsser]) {
+      try { worklet?.port?.close?.(); } catch { /* already closed */ }
+    }
+    this.gate = null;
+    this.deEsser = null;
+    // Drop stem references so a retained (or leaked) mixer pins no audio.
+    this.cleanBuffer = null;
+    this.noiseBuffer = null;
+    this._segments = [];
+    this._speakers = new Map();
+    this._rampingParams.clear();
+    const close = this._ownsContext && typeof this.ctx.close === 'function'
+      ? Promise.resolve().then(() => this.ctx.close()).catch(() => { /* already closed */ })
+      : Promise.resolve();
+    this._disposePromise = close.then(() => undefined);
+    return this._disposePromise;
   }
+}
+
+/**
+ * Empty AudioBuffer of the given shape, from the buffer's own context class
+ * when available (AudioBuffer constructor), else via an offline context.
+ */
+function createBufferLike(like, channels, length) {
+  const opts = { numberOfChannels: channels, length: Math.max(1, length), sampleRate: like.sampleRate };
+  if (typeof globalThis.AudioBuffer === 'function') return new globalThis.AudioBuffer(opts);
+  const Offline = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  return new Offline(channels, opts.length, like.sampleRate).createBuffer(channels, opts.length, like.sampleRate);
 }
 
 function clamp(v, lo, hi) {

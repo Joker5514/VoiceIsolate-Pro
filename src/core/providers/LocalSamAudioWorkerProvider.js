@@ -1,10 +1,11 @@
 /**
  * Local SAM-Audio worker client (Option B).
- * Speaks only to loopback hosts. Never uploads to fal/Replicate/HF from the browser.
+ * Speaks only to loopback hosts (directly, or through the Electron main process).
+ * Never uploads to fal/Replicate/HF from the browser.
  */
 'use strict';
 
-import { AudioIsolationProvider } from './AudioIsolationProvider.js';
+import { AudioIsolationProvider, assertSupportedTargeting } from './AudioIsolationProvider.js';
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
 
@@ -29,19 +30,67 @@ export function assertLoopbackBaseUrl(baseUrl) {
   return u;
 }
 
+/** server.py caps a request body at 64 MiB; base64 float32 costs 16/3 bytes a sample. */
+export const MAX_JOB_SAMPLES = Math.floor(((64 * 1024 * 1024 - 4096) * 3) / 4 / 4);
+const MAX_PENDING_CANCELS = 64;
+
+/**
+ * Globally unique job id. Per-instance counters restarted at `sam-1`, so a
+ * cancel for one provider's job also cancelled every later provider's first job.
+ */
+export function newSamJobId() {
+  const c = globalThis.crypto;
+  if (typeof c?.randomUUID === 'function') return `sam-${c.randomUUID()}`;
+  if (typeof c?.getRandomValues === 'function') {
+    const b = c.getRandomValues(new Uint8Array(16));
+    return `sam-${Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')}`;
+  }
+  throw new Error('[VIP][sam-worker] no secure random source for job ids');
+}
+
+function cancelledError() {
+  return Object.assign(new Error('[VIP][sam-worker] cancelled'), {
+    name: 'CancellationError',
+    code: 'CANCELLED',
+  });
+}
+
+function unavailableCaps(reasons) {
+  return {
+    available: false,
+    mode: 'local-worker',
+    backends: [],
+    live: false,
+    offline: true,
+    browserSam: false,
+    localWorker: true,
+    reasons,
+  };
+}
+
+/**
+ * Transports, in order:
+ *   fetch — an injected fetchImpl, or global fetch outside a document (Node tools/tests)
+ *   ipc   — Electron: window.vipDesktop.samWorkerSeparate (main process talks to loopback)
+ *   none  — a web page: CSP connect-src blocks loopback and the worker answers no
+ *           CORS preflight, so a direct fetch can never succeed there.
+ */
 export class LocalSamAudioWorkerProvider extends AudioIsolationProvider {
   /**
    * @param {object} [opts]
    * @param {string} [opts.baseUrl='http://127.0.0.1:8765']
    * @param {typeof fetch} [opts.fetchImpl]
+   * @param {object} [opts.desktop] Electron bridge (defaults to globalThis.vipDesktop)
    * @param {number} [opts.timeoutMs=120000]
    */
   constructor(opts = {}) {
     super();
     this.baseUrl = String(opts.baseUrl || 'http://127.0.0.1:8765').replace(/\/$/, '');
+    this._injectedFetch = typeof opts.fetchImpl === 'function';
     this._fetch = opts.fetchImpl || (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+    this._desktop = opts.desktop !== undefined ? opts.desktop : (globalThis.vipDesktop || null);
     this.timeoutMs = opts.timeoutMs || 120000;
-    this._jobId = 0;
+    /** Job ids cancelled locally; entries leave when their job settles. */
     this._aborted = new Set();
   }
 
@@ -49,65 +98,53 @@ export class LocalSamAudioWorkerProvider extends AudioIsolationProvider {
     return 'sam-local-worker';
   }
 
+  /** @returns {'fetch'|'ipc'|'none'} */
+  get transport() {
+    if (this._injectedFetch) return 'fetch';
+    if (typeof this._desktop?.samWorkerSeparate === 'function') return 'ipc';
+    if (typeof document !== 'undefined') return 'none';
+    return this._fetch ? 'fetch' : 'none';
+  }
+
   async initialize() {
-    assertLoopbackBaseUrl(this.baseUrl);
+    if (this.transport === 'fetch') assertLoopbackBaseUrl(this.baseUrl);
     const caps = await this.getCapabilities();
     return { ok: caps.available, capabilities: caps };
   }
 
   async getCapabilities() {
-    if (!this._fetch) {
-      return {
-        available: false,
-        mode: 'local-worker',
-        backends: [],
-        live: false,
-        offline: true,
-        browserSam: false,
-        localWorker: true,
-        reasons: ['fetch-unavailable'],
-      };
+    const transport = this.transport;
+    if (transport === 'none') {
+      return unavailableCaps([this._fetch ? 'browser-transport-unavailable' : 'fetch-unavailable']);
     }
     try {
-      assertLoopbackBaseUrl(this.baseUrl);
-      const res = await this._timedFetch(`${this.baseUrl}/capabilities`, { method: 'GET' });
-      if (!res.ok) {
-        return {
-          available: false,
-          mode: 'local-worker',
-          backends: [],
-          live: false,
-          offline: true,
-          browserSam: false,
-          localWorker: true,
-          reasons: [`http-${res.status}`],
-        };
+      let body;
+      if (transport === 'ipc') {
+        const r = await this._desktop.samWorkerCapabilities();
+        if (!r?.ok) return unavailableCaps([r?.reason || 'worker-unreachable']);
+        body = r.capabilities || {};
+      } else {
+        assertLoopbackBaseUrl(this.baseUrl);
+        const res = await this._timedFetch(`${this.baseUrl}/capabilities`, { method: 'GET' });
+        if (!res.ok) return unavailableCaps([`http-${res.status}`]);
+        body = await res.json();
       }
-      const body = await res.json();
       return {
         available: !!body.available,
         mode: 'local-worker',
+        transport,
         backends: body.backends || ['sam-audio-worker'],
         live: false,
         offline: true,
         browserSam: false,
         localWorker: true,
-        model: body.model || null,
+        model: body.model || body.modelId || null,
         device: body.device || null,
         mock: !!body.mock,
         reasons: body.reasons || [],
       };
     } catch (err) {
-      return {
-        available: false,
-        mode: 'local-worker',
-        backends: [],
-        live: false,
-        offline: true,
-        browserSam: false,
-        localWorker: true,
-        reasons: [err?.message || 'worker-unreachable'],
-      };
+      return unavailableCaps([err?.message || 'worker-unreachable']);
     }
   }
 
@@ -118,80 +155,109 @@ export class LocalSamAudioWorkerProvider extends AudioIsolationProvider {
     if ((request.processingMode || 'creator') === 'live') {
       throw new Error('[VIP][sam-worker] not available in live mode');
     }
-    assertLoopbackBaseUrl(this.baseUrl);
-    if (!this._fetch) throw new Error('[VIP][sam-worker] fetch unavailable');
+    assertSupportedTargeting(request, this.id);
+    const transport = this.transport;
+    if (transport === 'none') {
+      throw new Error('[VIP][sam-worker] no transport to the local worker from a web page; use the desktop app.');
+    }
+    if (transport === 'fetch') assertLoopbackBaseUrl(this.baseUrl);
 
-    const jobId = `sam-${++this._jobId}`;
     const mono = toMono(request.audio);
+    if (mono.length > MAX_JOB_SAMPLES) {
+      const secs = Math.floor(MAX_JOB_SAMPLES / (request.sampleRate || 48000));
+      throw new RangeError(`[VIP][sam-worker] one job is limited to ${MAX_JOB_SAMPLES} samples (about ${secs} s).`);
+    }
+    if (request.signal?.aborted) throw cancelledError();
+
+    const jobId = newSamJobId();
+    const onExtAbort = () => { void this.cancel(jobId); };
+    try {
+      request.signal?.addEventListener?.('abort', onExtAbort, { once: true });
+    } catch { /* ignore */ }
+
+    try {
+      const body = transport === 'ipc'
+        ? await this._separateIpc(jobId, mono, request)
+        : await this._separateFetch(jobId, mono, request);
+      if (this._aborted.has(jobId) || request.signal?.aborted) throw cancelledError();
+      /** @type {import('./AudioIsolationProvider.js').IsolationResult} */
+      const out = {
+        sampleRate: body.sampleRate || request.sampleRate,
+        provider: this.id,
+        jobId,
+        meta: { mock: !!body.mock, model: body.model, device: body.device, transport },
+      };
+      if (body.target) out.target = body.target;
+      if (body.residual) out.residual = body.residual;
+      return out;
+    } catch (err) {
+      if (this._aborted.has(jobId) || request.signal?.aborted) throw cancelledError();
+      throw err;
+    } finally {
+      try { request.signal?.removeEventListener?.('abort', onExtAbort); } catch { /* ignore */ }
+      this._aborted.delete(jobId);
+    }
+  }
+
+  async _separateIpc(jobId, mono, request) {
+    const r = await this._desktop.samWorkerSeparate({
+      jobId,
+      audio: mono,
+      sampleRate: request.sampleRate,
+      prompt: String(request.prompt || 'person speaking'),
+      predictSpans: !!request.predictSpans,
+      rerankingCandidates: request.rerankingCandidates ?? 1,
+      output: request.output || 'both',
+      timeoutMs: this.timeoutMs,
+    });
+    if (!r?.ok) throw new Error(`[VIP][sam-worker] separate failed: ${r?.status ?? 0} ${String(r?.error || '').slice(0, 200)}`);
+    return r;
+  }
+
+  async _separateFetch(jobId, mono, request) {
     const payload = {
       jobId,
       sampleRate: request.sampleRate,
       channels: 1,
       prompt: String(request.prompt || 'person speaking'),
-      mode: request.mode || 'text',
-      anchors: request.anchors || [],
+      mode: 'text',
+      anchors: [],
       predictSpans: !!request.predictSpans,
       rerankingCandidates: request.rerankingCandidates ?? 1,
       output: request.output || 'both',
       // PCM as base64 float32 LE
       audioBase64: float32ToBase64(mono),
     };
-
-    // External AbortSignal (JobController) + internal job abort set.
-    if (request.signal?.aborted) {
-      this._aborted.add(jobId);
-      throw Object.assign(new Error('[VIP][sam-worker] cancelled'), {
-        name: 'CancellationError',
-        code: 'CANCELLED',
-      });
-    }
-    const onExtAbort = () => {
-      this._aborted.add(jobId);
-      void this.cancel(jobId);
-    };
-    try {
-      request.signal?.addEventListener?.('abort', onExtAbort, { once: true });
-    } catch { /* ignore */ }
-
-    let res;
-    try {
-      res = await this._timedFetch(`${this.baseUrl}/separate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        externalSignal: request.signal,
-      });
-    } finally {
-      try { request.signal?.removeEventListener?.('abort', onExtAbort); } catch { /* ignore */ }
-    }
-    if (this._aborted.has(jobId) || request.signal?.aborted) {
-      throw Object.assign(new Error('[VIP][sam-worker] cancelled'), {
-        name: 'CancellationError',
-        code: 'CANCELLED',
-      });
-    }
+    const res = await this._timedFetch(`${this.baseUrl}/separate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      externalSignal: request.signal,
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`[VIP][sam-worker] separate failed: ${res.status} ${text.slice(0, 200)}`);
     }
     const body = await res.json();
-    /** @type {import('./AudioIsolationProvider.js').IsolationResult} */
-    const out = {
-      sampleRate: body.sampleRate || request.sampleRate,
-      provider: this.id,
-      jobId,
-      meta: { mock: !!body.mock, model: body.model, device: body.device },
+    return {
+      ...body,
+      target: body.targetBase64 ? base64ToFloat32(body.targetBase64) : undefined,
+      residual: body.residualBase64 ? base64ToFloat32(body.residualBase64) : undefined,
     };
-    if (body.targetBase64) out.target = base64ToFloat32(body.targetBase64);
-    if (body.residualBase64) out.residual = base64ToFloat32(body.residualBase64);
-    return out;
   }
 
   async cancel(jobId) {
     this._aborted.add(jobId);
+    // Cancels for jobs that never settle here (another provider's id) stay bounded.
+    while (this._aborted.size > MAX_PENDING_CANCELS) {
+      this._aborted.delete(this._aborted.values().next().value);
+    }
     try {
-      assertLoopbackBaseUrl(this.baseUrl);
-      if (this._fetch) {
+      const transport = this.transport;
+      if (transport === 'ipc' && typeof this._desktop.samWorkerCancel === 'function') {
+        await this._desktop.samWorkerCancel(jobId);
+      } else if (transport === 'fetch') {
+        assertLoopbackBaseUrl(this.baseUrl);
         await this._timedFetch(`${this.baseUrl}/cancel`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

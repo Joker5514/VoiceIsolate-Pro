@@ -26,10 +26,24 @@ export function openIdb(name, version, onUpgrade) {
       try {
         onUpgrade(req.result, ev.oldVersion || 0, req.transaction);
       } catch (err) {
+        // Abort so a half-applied schema is never committed at the new version.
+        try { req.transaction?.abort(); } catch { /* ignore */ }
         reject(err);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Let another tab upgrade instead of blocking it forever; the next
+      // openIdb() call reopens at the new version.
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* ignore */ }
+        if (_open.get(key) === p) _open.delete(key);
+      };
+      db.onclose = () => {
+        if (_open.get(key) === p) _open.delete(key);
+      };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error || new Error('[VIP][openIdb] open failed'));
     req.onblocked = () => {
       // Another tab holds an older connection — still resolve when we can.
@@ -89,54 +103,64 @@ export function idbGetAll(store) {
   });
 }
 
+/** @type {WeakMap<IDBTransaction, Promise<void>>} */
+const _txDone = new WeakMap();
+
+function listen(tx, type, fn) {
+  if (typeof tx.addEventListener === 'function') {
+    tx.addEventListener(type, fn);
+    return;
+  }
+  const prop = `on${type}`;
+  const prev = tx[prop];
+  tx[prop] = (ev) => {
+    try { prev?.(ev); } catch { /* ignore */ }
+    fn(ev);
+  };
+}
+
+function trackTx(tx) {
+  let done = _txDone.get(tx);
+  if (done) return done;
+  done = new Promise((resolve, reject) => {
+    listen(tx, 'complete', () => resolve());
+    // A failed request also aborts its transaction; `abort` is the final
+    // event either way, and carries quota errors raised at commit time.
+    listen(tx, 'abort', () => {
+      reject(tx.error || Object.assign(new Error('IDB transaction aborted'), { name: 'AbortError' }));
+    });
+  });
+  // Callers that already failed on a request never await completion.
+  done.catch(() => {});
+  _txDone.set(tx, done);
+  return done;
+}
+
 /**
+ * Open a transaction with completion tracking registered synchronously, before
+ * any request is issued. The transaction may commit while the caller awaits its
+ * requests, so tracking attached later can miss `complete` entirely.
+ * @param {IDBDatabase} db
+ * @param {string|string[]} stores
+ * @param {IDBTransactionMode} [mode]
+ * @returns {IDBTransaction}
+ */
+export function idbTransaction(db, stores, mode = 'readonly') {
+  const tx = db.transaction(stores, mode);
+  trackTx(tx);
+  return tx;
+}
+
+/**
+ * Resolves only when the transaction has committed (`complete`); rejects on
+ * abort, including errors raised at commit such as QuotaExceededError. The
+ * transaction must come from {@link idbTransaction}: one created elsewhere is
+ * tracked from this call on, which is safe only while it is still active.
  * @param {IDBTransaction} tx
+ * @returns {Promise<void>}
  */
 export function idbTxDone(tx) {
-  return new Promise((resolve, reject) => {
-    // If the transaction already finished (common in tests / fast puts), resolve.
-    if (tx.error) {
-      reject(tx.error);
-      return;
-    }
-    // Some environments expose mode/state; best-effort active check.
-    try {
-      if (typeof tx.objectStoreNames !== 'undefined' && tx._vipDone) {
-        resolve();
-        return;
-      }
-    } catch { /* ignore */ }
-
-    let settled = false;
-    const finish = (fn, arg) => {
-      if (settled) return;
-      settled = true;
-      fn(arg);
-    };
-
-    const prevComplete = tx.oncomplete;
-    const prevError = tx.onerror;
-    const prevAbort = tx.onabort;
-
-    tx.oncomplete = (ev) => {
-      try { prevComplete?.(ev); } catch { /* ignore */ }
-      finish(resolve);
-    };
-    tx.onerror = (ev) => {
-      try { prevError?.(ev); } catch { /* ignore */ }
-      finish(reject, tx.error || new Error('IDB transaction error'));
-    };
-    tx.onabort = (ev) => {
-      try { prevAbort?.(ev); } catch { /* ignore */ }
-      finish(reject, tx.error || new Error('IDB transaction aborted'));
-    };
-
-    // Fallback: if oncomplete never fires (mock races), resolve on next macrotask
-    // when no error is present — production browsers fire oncomplete reliably.
-    setTimeout(() => {
-      if (!settled && !tx.error) finish(resolve);
-    }, 0);
-  });
+  return trackTx(tx);
 }
 
 export default openIdb;

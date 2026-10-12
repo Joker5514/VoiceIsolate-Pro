@@ -105,11 +105,64 @@ describe('MLWorker spectral-mask reconstruction (runSpectralMask)', () => {
     }
     const out = await sb.runSpectralMask(ENTRY, session, input, () => {});
     expect(out.length).toBe(len);
-    // Hann/OLA edges lose the first+last partial windows; check the body.
+    // Mirror-padded framing covers the edges too: check every sample.
     let maxErr = 0;
-    for (let i = ENTRY.fftSize; i < len - ENTRY.fftSize; i++) {
+    for (let i = 0; i < len; i++) {
       maxErr = Math.max(maxErr, Math.abs(out[i] - input[i]));
     }
+    expect(maxErr).toBeLessThan(1e-3);
+  });
+
+  // F26: frames used to start at sample 0, so the first/last ~1500 samples sat
+  // under a window ramp; with the half-peak divisor floor and 8 ms fades a
+  // unity mask lost ~2850 samples and boundary impulses came out as 0.
+  const unity = {
+    run: async (feed) => ({ output: { data: new Float32Array(feed.input.data.length).fill(1) } }),
+  };
+
+  test.each([1, 2, 100, 1023, 4096, 4097, 5000, 48001])(
+    'unity mask reconstructs a %i-sample input to its edges', async (len) => {
+      const sb = loadWorkerSandbox();
+      const input = new Float32Array(len);
+      for (let i = 0; i < len; i++) input[i] = 0.5 * Math.sin((2 * Math.PI * 50 * i) / 48000 + 0.3);
+      const out = await sb.runSpectralMask(ENTRY, unity, input, () => {});
+      expect(out.length).toBe(len);
+      let maxErr = 0;
+      for (let i = 0; i < len; i++) {
+        expect(Number.isFinite(out[i])).toBe(true);
+        maxErr = Math.max(maxErr, Math.abs(out[i] - input[i]));
+      }
+      // 50 Hz sits far below the fixed HF taper (bins ≥ 35% of Nyquist), so
+      // the only error left is float32 FFT round-off plus the taper's effect
+      // on the mirror's slope discontinuity: measured ≤ 3.5e-4 at 0.5 peak.
+      expect(maxErr).toBeLessThan(1e-3);
+    },
+  );
+
+  test('a boundary impulse is treated like an interior one', async () => {
+    const sb = loadWorkerSandbox();
+    const len = 48000;
+    const input = new Float32Array(len);
+    input[10] = 1;
+    input[24000] = 1;
+    input[len - 10] = 1;
+    const out = await sb.runSpectralMask(ENTRY, unity, input, () => {});
+    // The always-on HF taper shapes every impulse identically (≈0.82 peak);
+    // the edges must match the interior instead of collapsing to 0.
+    expect(out[24000]).toBeGreaterThan(0.5);
+    expect(Math.abs(out[10] - out[24000])).toBeLessThan(0.01);
+    expect(Math.abs(out[len - 10] - out[24000])).toBeLessThan(0.01);
+  });
+
+  test('the hop-N/2 path reconstructs edges as well', async () => {
+    const sb = loadWorkerSandbox();
+    const entry = { ...ENTRY, hopSize: 2048 };
+    const len = 9001;
+    const input = new Float32Array(len);
+    for (let i = 0; i < len; i++) input[i] = 0.4 * Math.cos((2 * Math.PI * 80 * i) / 48000);
+    const out = await sb.runSpectralMask(entry, unity, input, () => {});
+    let maxErr = 0;
+    for (let i = 0; i < len; i++) maxErr = Math.max(maxErr, Math.abs(out[i] - input[i]));
     expect(maxErr).toBeLessThan(1e-3);
   });
 

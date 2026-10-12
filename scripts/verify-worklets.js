@@ -8,7 +8,7 @@
  *   1. Exist at canonical source paths with registerProcessor()
  *   2. Are present in build/ after `pnpm build` (when build/ exists)
  *   3. Match SHA-256 pins in public/app/models-manifest.json (when present)
- *   4. Are listed in public/app/sw.js APP_SHELL for offline precache
+ *   4. Are in the service-worker precache (scripts/sw-precache.cjs rules)
  *
  * Used by: pnpm validate, CI release-build, tests/worklet-packaging.test.js
  */
@@ -20,7 +20,6 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const MANIFEST_PATH = path.join(__dirname, 'worklet-manifest.json');
 const MODELS_MANIFEST = path.join(ROOT, 'public', 'app', 'models-manifest.json');
-const SW_PATH = path.join(ROOT, 'public', 'app', 'sw.js');
 
 /** LF-normalized SHA-256 so Windows CRLF working copies match Linux CI / git blobs. */
 function sha256File(absPath) {
@@ -39,14 +38,9 @@ function loadModelsManifestWorklets() {
   return doc.worklets || {};
 }
 
-function extractAppShellUrls(swSrc) {
-  const block = swSrc.match(/const APP_SHELL\s*=\s*\[([\s\S]*?)\];/);
-  if (!block) return [];
-  const urls = [];
-  const re = /['"]([^'"]+)['"]/g;
-  let m;
-  while ((m = re.exec(block[1]))) urls.push(m[1]);
-  return urls;
+function precachedUrls() {
+  const { computePrecache } = require('./sw-precache.cjs');
+  return computePrecache({ root: path.join(ROOT, 'public'), srcDir: path.join(ROOT, 'src') }).precacheUrls;
 }
 
 /**
@@ -66,8 +60,7 @@ function verifyWorklets(options = {}) {
 
   const registry = loadWorkletManifest();
   const modelsWorklets = loadModelsManifestWorklets();
-  const swSrc = fs.existsSync(SW_PATH) ? fs.readFileSync(SW_PATH, 'utf8') : '';
-  const appShell = extractAppShellUrls(swSrc);
+  const appShell = precachedUrls();
 
   for (const entry of registry.worklets) {
     const srcAbs = path.join(ROOT, entry.source);
@@ -102,9 +95,9 @@ function verifyWorklets(options = {}) {
     }
 
     if (!appShell.includes(entry.url)) {
-      errors.push(`${entry.url} missing from public/app/sw.js APP_SHELL precache`);
+      errors.push(`${entry.url} missing from the service-worker precache (scripts/sw-precache.cjs)`);
     } else {
-      log(`    ✓ APP_SHELL precache`);
+      log(`    ✓ service-worker precache`);
     }
 
     const buildAbs = path.join(ROOT, entry.buildPath);

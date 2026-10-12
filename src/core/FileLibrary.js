@@ -16,6 +16,7 @@ import {
   idbDelete,
   idbGetAll,
   idbTxDone,
+  idbTransaction,
 } from './storage/openIdb.js';
 import {
   writeSourceBlob,
@@ -125,6 +126,7 @@ export async function enforceTrackCap(keepId = null) {
  * @param {string|null} [opts.projectId]
  * @param {string[]} [opts.tags]
  * @param {boolean} [opts.forceNew]  skip fingerprint upsert
+ * @param {AbortSignal} [opts.signal]  stops the content hash (AbortError)
  * @returns {Promise<LibraryFileMeta>}
  */
 export async function importFile(file, opts = {}) {
@@ -137,11 +139,14 @@ export async function importFile(file, opts = {}) {
   const mimeType = file.type || 'application/octet-stream';
   const size = file.size || 0;
 
+  // Without a content identity there is no safe de-duplication: a
+  // name/size stand-in merged different takes into one row (and one blob).
   let fingerprint = null;
   try {
-    fingerprint = await contentFingerprint(file);
-  } catch {
-    fingerprint = `sz_${size}_${originalFilename}`;
+    fingerprint = await contentFingerprint(file, { signal: opts.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    fingerprint = null;
   }
 
   // Temporary: no catalog, no blob write
@@ -195,12 +200,13 @@ export async function importFile(file, opts = {}) {
         fingerprint,
         processingStatus: existing.processingStatus || 'imported',
       };
-      // Refresh blob only if missing
+      // Same fingerprint means identical bytes, so the stored blob is this
+      // file. Rewrite it only when the row has none.
       if (!updated.blobRef) {
         updated.blobRef = await writeSourceBlob(updated.id, file);
       }
       const db = await openLibraryDb();
-      const tx = db.transaction(META_STORE, 'readwrite');
+      const tx = idbTransaction(db, META_STORE, 'readwrite');
       await idbPut(tx.objectStore(META_STORE), updated);
       await idbTxDone(tx);
       await setSessionState({
@@ -240,7 +246,7 @@ export async function importFile(file, opts = {}) {
   meta.blobRef = await writeSourceBlob(id, file);
 
   const db = await openLibraryDb();
-  const tx = db.transaction(META_STORE, 'readwrite');
+  const tx = idbTransaction(db, META_STORE, 'readwrite');
   await idbPut(tx.objectStore(META_STORE), meta);
   await idbTxDone(tx);
 
@@ -321,7 +327,7 @@ export async function updateFileMeta(id, patch) {
     return e.meta;
   }
   const db = await openLibraryDb();
-  const tx = db.transaction(META_STORE, 'readwrite');
+  const tx = idbTransaction(db, META_STORE, 'readwrite');
   const store = tx.objectStore(META_STORE);
   const existing = await idbGet(store, id);
   if (!existing) return null;
@@ -363,7 +369,7 @@ export async function deleteFilePermanently(id) {
   }
   try {
     const db = await openLibraryDb();
-    const tx = db.transaction(META_STORE, 'readwrite');
+    const tx = idbTransaction(db, META_STORE, 'readwrite');
     await idbDelete(tx.objectStore(META_STORE), id);
     await idbTxDone(tx);
   } catch {
@@ -381,7 +387,7 @@ export async function deleteFilePermanently(id) {
 export async function setSessionState(state) {
   try {
     const db = await openLibraryDb();
-    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    const tx = idbTransaction(db, SESSION_STORE, 'readwrite');
     const prev = (await idbGet(tx.objectStore(SESSION_STORE), 'current')) || { key: 'current' };
     const next = { ...prev, ...state, key: 'current' };
     await idbPut(tx.objectStore(SESSION_STORE), next);

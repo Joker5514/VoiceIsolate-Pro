@@ -87,11 +87,8 @@ describe('Android complete app pipeline', () => {
     expect(verify).toContain('meta.version !== PACKAGE_VERSION');
   });
 
-  test('shared build stamps the Engineer service worker from current rack assets', () => {
-    expect(build).toContain('app/slider-map.js');
-    expect(build).toContain('app/workflow-tier.js');
-    expect(build).toContain('app/whisper-hunter.js');
-    expect(build).toContain('src/presentation/DspSlider.js');
-    expect(build).toMatch(/CACHE_VERSION[\s\S]*cacheVersion/);
+  test('shared build stamps the Engineer service worker from the whole served tree', () => {
+    expect(build).toMatch(/computePrecache\(\{ root: BUILD \}\)/);
+    expect(build).toMatch(/stampServiceWorker\(swPath/);
   });
 });

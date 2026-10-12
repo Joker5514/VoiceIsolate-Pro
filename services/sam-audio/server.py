@@ -13,6 +13,16 @@ Endpoints:
   GET  /ready
   POST /separate
   POST /cancel
+
+Only loopback clients without a browser Origin are served: the Electron main
+process (electron/sam-proxy.cjs) and local tools. There is deliberately no
+CORS: any web page could otherwise drive this worker. A browser cross-origin
+request either carries an Origin header (refused) or, for a non-simple POST,
+needs a preflight this server never answers; a rebinding hostname fails the
+Host check.
+
+Prompting is text only. Span and visual targeting are refused with 400
+`unsupported-targeting` rather than silently running the text prompt.
 """
 from __future__ import annotations
 
@@ -23,8 +33,11 @@ import math
 import os
 import struct
 import sys
+import re
 import threading
+import time
 import traceback
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
@@ -65,11 +78,40 @@ def _apply_hub_compat() -> Dict[str, Any]:
         }
     return _HUB_COMPAT_STATUS
 
-_cancelled: set[str] = set()
+# Cancellation bookkeeping: job id -> monotonic time of the cancel. A cancel may
+# arrive before its /separate (client aborted early), so entries for unknown
+# jobs are kept, but only for CANCEL_TTL_S and at most MAX_CANCELLED entries.
+# A job's entry is dropped when that job finishes, so ids never poison later jobs.
+CANCEL_TTL_S = 600.0
+MAX_CANCELLED = 1024
+_JOB_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+SUPPORTED_PROMPT_MODES = ("text",)
+_cancelled: Dict[str, float] = {}
 _lock = threading.Lock()
 _model_load_lock = threading.Lock()
 # (model, processor, device, mock, load_error)
 _sam_bundle: Optional[Tuple[Any, Any, str, bool, Optional[str]]] = None
+
+
+def _mark_cancelled(job: str) -> None:
+    now = time.monotonic()
+    with _lock:
+        for k in [k for k, t in _cancelled.items() if now - t > CANCEL_TTL_S]:
+            del _cancelled[k]
+        _cancelled[job] = now
+        while len(_cancelled) > MAX_CANCELLED:
+            del _cancelled[next(iter(_cancelled))]
+
+
+def _is_cancelled(job: str) -> bool:
+    with _lock:
+        t = _cancelled.get(job)
+        return t is not None and time.monotonic() - t <= CANCEL_TTL_S
+
+
+def _finish_job(job: str) -> None:
+    with _lock:
+        _cancelled.pop(job, None)
 
 
 def _log(msg: str) -> None:
@@ -330,10 +372,33 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-VIP-SAM-Worker", "1")
+        if code >= 400:
+            # An early refusal may leave an unread body on the socket; closing
+            # stops it from being parsed as the next keep-alive request.
+            self.send_header("Connection", "close")
+            self.close_connection = True
         self.end_headers()
         self.wfile.write(data)
 
+    def _allowed(self, post: bool) -> bool:
+        """Loopback Host, no browser Origin, JSON bodies only (see module doc)."""
+        port = self.server.server_address[1]
+        host = (self.headers.get("Host") or "").lower()
+        if host not in (f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"):
+            self._send(403, {"error": "forbidden-host"})
+            return False
+        if self.headers.get("Origin") is not None:
+            self._send(403, {"error": "forbidden-origin"})
+            return False
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if post and ctype != "application/json":
+            self._send(415, {"error": "json-required"})
+            return False
+        return True
+
     def do_GET(self) -> None:  # noqa: N802
+        if not self._allowed(post=False):
+            return
         path = urlparse(self.path).path
         if path == "/health":
             self._send(
@@ -358,6 +423,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not-found"})
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._allowed(post=True):
+            return
         path = urlparse(self.path).path
         length = int(self.headers.get("Content-Length") or 0)
         if length > 64 * 1024 * 1024:
@@ -370,10 +437,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": "invalid-json"})
             return
 
+        if not isinstance(body, dict):
+            self._send(400, {"error": "invalid-json"})
+            return
+
         if path == "/cancel":
-            job = str(body.get("jobId") or "")
-            with _lock:
-                _cancelled.add(job)
+            job = body.get("jobId")
+            if not isinstance(job, str) or not _JOB_ID_RE.match(job):
+                self._send(400, {"error": "invalid-jobId"})
+                return
+            _mark_cancelled(job)
             self._send(200, {"ok": True})
             return
 
@@ -385,7 +458,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send(503, {"error": "sam-disabled"})
             return
 
-        job = str(body.get("jobId") or "")
+        job = body.get("jobId")
+        if job is None:
+            job = f"srv-{uuid.uuid4()}"
+        if not isinstance(job, str) or not _JOB_ID_RE.match(job):
+            self._send(400, {"error": "invalid-jobId"})
+            return
+        try:
+            self._separate(job, body)
+        finally:
+            _finish_job(job)
+
+    def _separate(self, job: str, body: Dict[str, Any]) -> None:
+        mode = body.get("mode", "text")
+        anchors = body.get("anchors") or []
+        if mode not in SUPPORTED_PROMPT_MODES or anchors:
+            self._send(
+                400,
+                {"error": "unsupported-targeting", "supported": list(SUPPORTED_PROMPT_MODES)},
+            )
+            return
         b64 = body.get("audioBase64")
         if not b64 or not isinstance(b64, str):
             self._send(400, {"error": "audioBase64-required"})
@@ -408,10 +500,9 @@ class Handler(BaseHTTPRequestHandler):
         rerank = int(body.get("rerankingCandidates") or 1)
         out_mode = str(body.get("output") or "both")
 
-        with _lock:
-            if job and job in _cancelled:
-                self._send(499, {"error": "cancelled"})
-                return
+        if _is_cancelled(job):
+            self._send(499, {"error": "cancelled"})
+            return
 
         try:
             target, residual, mock = _real_separate(pcm, sr, prompt, predict_spans, rerank)
@@ -427,10 +518,9 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        with _lock:
-            if job and job in _cancelled:
-                self._send(499, {"error": "cancelled"})
-                return
+        if _is_cancelled(job):
+            self._send(499, {"error": "cancelled"})
+            return
 
         if mock and (_REQUIRE_REAL or not _mock_allowed()):
             self._send(503, {"error": "real-sam-required", "mock": True})

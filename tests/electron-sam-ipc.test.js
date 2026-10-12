@@ -16,6 +16,18 @@ describe('Electron SAM worker IPC', () => {
     expect(src).toMatch(/SAM_WORKER_START/);
     expect(src).toMatch(/SAM_WORKER_STOP/);
     expect(src).toMatch(/SAM_WORKER_CAPABILITIES/);
+    expect(src).toMatch(/SAM_WORKER_SEPARATE/);
+    expect(src).toMatch(/SAM_WORKER_CANCEL/);
+  });
+
+  test('separation goes through the main-process loopback proxy (F16)', () => {
+    const main = read('electron/main.cjs');
+    expect(main).toMatch(/handleTrusted\(IPC\.SAM_WORKER_SEPARATE/);
+    expect(main).toMatch(/handleTrusted\(IPC\.SAM_WORKER_CANCEL/);
+    const proxy = read('electron/sam-proxy.cjs');
+    expect(proxy).toMatch(/host: '127\.0\.0\.1'/);
+    expect(proxy).not.toMatch(/Access-Control-Allow-Origin/);
+    expect(read('electron/preload.cjs')).toMatch(/samWorkerSeparate/);
   });
 
   test('preload exposes only invoke wrappers', () => {

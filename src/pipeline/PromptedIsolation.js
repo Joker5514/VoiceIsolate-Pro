@@ -5,7 +5,7 @@
 'use strict';
 
 import { selectIsolationProvider } from '../core/providers/selectProvider.js';
-import { separateUniversal } from '../core/UniversalSourceMatrix.js';
+import { separateUniversalInWorker } from './USMWorkerClient.js';
 import { STFT_OWNERS } from '../core/stft-budget.js';
 
 /**
@@ -24,6 +24,7 @@ import { STFT_OWNERS } from '../core/stft-budget.js';
  * @param {typeof fetch} [opts.fetchImpl]
  * @param {AbortSignal} [opts.signal]
  * @param {string} [opts.jobId]
+ * @param {(percent: number, stage: string) => void} [opts.onProgress]
  */
 export async function runPromptedIsolation(opts) {
   const processingMode = opts.processingMode || 'creator';
@@ -45,7 +46,13 @@ export async function runPromptedIsolation(opts) {
     isAndroid: !!opts.isAndroid,
     isDesktop: !!opts.isDesktop,
     preferSam: opts.samMode === 'local-worker',
-    usmFn: (pcm, sr, cfg) => separateUniversal(pcm, sr, cfg),
+    // The whole-spectrogram STFT/NMF pass runs in its own worker (terminated
+    // on abort); calling separateUniversal here froze the UI thread for the
+    // full pass with no way to cancel it.
+    usmFn: (pcm, sr, cfg) => separateUniversalInWorker(pcm, sr, cfg, {
+      signal: opts.signal || null,
+      onProgress: opts.onProgress,
+    }),
     fetchImpl: opts.fetchImpl,
   });
   throwIfAborted(opts.signal, opts.jobId);

@@ -282,6 +282,7 @@ window.VIP_runAudit = function() {
 
 if (window.VIP_DEBUG) {
   document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => (window.VIP_runAudit && VIP_AUDIT()), 500);
+    // VIP_AUDIT is the IIFE's own name, out of scope here (ReferenceError).
+    setTimeout(() => (window.VIP_runAudit && window.VIP_runAudit()), 500);
   });
 }

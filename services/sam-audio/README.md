@@ -73,15 +73,29 @@ Deterministic mock separator keeps integration tests green without GPU/HF.
 - Does not log audio or prompts.
 - HF tokens only in process env / Electron main — never frontend JS.
 - Web client refuses non-loopback worker base URLs.
+- No CORS. Requests with an `Origin` header, a non-loopback `Host`, or a POST
+  body that is not `application/json` are refused (403/415), so a web page
+  cannot drive the worker (cross-origin, preflight, or DNS rebinding).
+- Job ids must match `[A-Za-z0-9._:-]{1,128}`; clients use random UUIDs. A
+  cancel is remembered for at most 10 min / 1024 ids and cleared when its job
+  finishes. Cancellation is checked before and after inference; it cannot
+  interrupt a running `model.separate` call.
+- Text prompts only: `mode` other than `text`, or any `anchors`, answers 400
+  `unsupported-targeting` (span/visual prompting is not implemented).
+- One request body is at most 64 MiB, so a job is at most 12,582,144 samples
+  (about 262 s at 48 kHz) of base64 float32.
 
 ## Electron
 
 Main process starts/stops the worker via IPC (`vip:sam-worker-*`).  
+Separation and cancellation also go through the main process
+(`vip:sam-worker-separate` / `vip:sam-worker-cancel`, `electron/sam-proxy.cjs`):
+the renderer CSP blocks loopback fetches, and the worker has no CORS.  
 Desktop defaults: `SAM_AUDIO_PRODUCTION=1`, `ALLOW_MOCK=0`, `--preload`.
 
 ## Android / Browser
 
-- **Browser:** optional same-machine worker URL, else USM/ONNX; no silent “browser SAM” claim.
+- **Browser:** no transport. The page CSP blocks loopback and the worker answers no CORS, so the provider reports `browser-transport-unavailable` and selection falls back to USM/ONNX; no silent “browser SAM” claim. Node tools can still call the worker directly.
 - **Android:** optional on-device ORT when `sam_audio.onnx` is present; else USM/BSRNN. Real Desktop-class SAM is the Python worker on a private host (advanced).
 
 ## Package identity

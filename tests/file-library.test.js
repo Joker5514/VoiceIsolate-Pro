@@ -274,3 +274,22 @@ describe('app.js library wiring', () => {
     expect(src).toMatch(/_stemFileSeq/);
   });
 });
+
+describe('FileLibrary identity (F01)', () => {
+  test('same name and size, different content → separate rows and blobs', async () => {
+    const a = new Uint8Array(200_000);
+    for (let i = 0; i < a.length; i++) a[i] = (i * 13) & 255;
+    const b = a.slice();
+    b[100_000] ^= 0xff; // outside the old head/tail sample windows
+    const m1 = await FileLibrary.importFile(makeFile(a, 'take.wav', 'audio/wav'), { mode: 'library' });
+    const m2 = await FileLibrary.importFile(makeFile(b, 'take.wav', 'audio/wav'), { mode: 'library' });
+    expect(m2.id).not.toBe(m1.id);
+    expect(m2.fingerprint).not.toBe(m1.fingerprint);
+    const o1 = await FileLibrary.openSourceFile(m1.id);
+    const o2 = await FileLibrary.openSourceFile(m2.id);
+    const d1 = new Uint8Array(await o1.file.arrayBuffer());
+    const d2 = new Uint8Array(await o2.file.arrayBuffer());
+    expect(d1[100_000]).toBe(a[100_000]);
+    expect(d2[100_000]).toBe(b[100_000]);
+  }, 15000);
+});

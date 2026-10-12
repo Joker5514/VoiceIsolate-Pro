@@ -80,19 +80,23 @@ describe('M4A decode fallback — media-decode.js', () => {
     expect(mdjs).toContain("const tag = kind === 'video' ? 'video' : 'audio'");
   });
 
-  test('video tries fast decodeAudioData then accelerated media-element fallback', () => {
+  test('video tries fast decodeAudioData then a real-time media-element fallback', () => {
     expect(mdjs).toContain("if (kind === 'video')");
-    expect(mdjs).toContain('_likelyTruncatedDecode');
+    // Truncation is judged against the container's own duration (metadata),
+    // not file size: short high-bitrate clips decode correctly (F06).
+    expect(mdjs).toContain('_decodeLooksTruncated');
+    expect(mdjs).not.toContain('_likelyTruncatedDecode');
     // Optional external AudioContext is the 4th arg (avoids context exhaustion).
     expect(mdjs).toMatch(/_decodeViaMediaElement\s*\(\s*blob\s*,\s*kind\s*,\s*onProgress/);
-    expect(mdjs).toContain('playbackRate');
-    expect(mdjs).toContain('MAX_CAPTURE_PLAYBACK_RATE');
+    // 16× capture returned 1/16 of the frames labelled 48 kHz (F06).
+    expect(mdjs).toMatch(/media\.playbackRate = 1;/);
+    expect(mdjs).not.toContain('MAX_CAPTURE_PLAYBACK_RATE');
+    expect(mdjs).not.toMatch(/preservesPitch\s*=\s*false/);
   });
 
-  test('capture timeout scales with media duration and playback rate', () => {
+  test('capture timeout scales with media duration (real-time capture)', () => {
     expect(mdjs).toContain('resetCaptureTimeout');
-    expect(mdjs).toContain('realtimeMs');
-    expect(mdjs).toMatch(/\/\s*playbackRate/);
+    expect(mdjs).toContain('realtimeMs * 2 + 60_000');
     expect(mdjs).not.toContain('capturedFrames >= estimatedFrames');
   });
 
@@ -101,8 +105,8 @@ describe('M4A decode fallback — media-decode.js', () => {
     expect(mdjs).toContain('total <= FAST_READ_BYTES');
   });
 
-  test('media capture uses larger ScriptProcessor blocks for less overhead', () => {
-    expect(mdjs).toContain('SPN_BLOCK_SIZE = 8192');
+  test('media capture block size bounds the pre-roll estimate (~85 ms)', () => {
+    expect(mdjs).toContain('SPN_BLOCK_SIZE = 4096');
   });
 
   test('decode speed benchmark script enforces sub-realtime budget', () => {

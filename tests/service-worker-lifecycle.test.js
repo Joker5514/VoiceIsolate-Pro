@@ -56,7 +56,7 @@ describe('service-worker lifecycle', () => {
 
   test('does not force a waiting update over an active processing tab', () => {
     expect(swSource).not.toMatch(/skipWaiting\s*\(/);
-    expect(swSource).toMatch(/normal waiting lifecycle/);
+    expect(swSource).toMatch(/no skipWaiting/);
   });
 
   test('controllerchange clears its safety timer and listener', async () => {

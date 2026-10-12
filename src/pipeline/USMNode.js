@@ -24,6 +24,7 @@ import {
   USM_MAX_SOURCES,
 } from '../core/UniversalSourceMatrix.js';
 import { SAMPLE_RATE } from '../core/audio-config.js';
+import { hashPcmChannels } from '../core/content-hash.js';
 import { copyChannelsToAudioBuffer } from './ui-yield.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 
@@ -381,13 +382,11 @@ export class USMNode {
   }
 
   _buildCacheKey(mono, sampleRate, cfg) {
+    // Full-content identity: a 64-point |x| sum plus the middle and last
+    // samples let a different take of the same length reuse stale stems.
     const n = mono?.length || 0;
-    const mid = n ? mono[n >> 1] : 0;
-    const end = n ? mono[n - 1] : 0;
-    let sum = 0;
-    const step = Math.max(1, Math.floor(n / 64));
-    for (let i = 0; i < n; i += step) sum += Math.abs(mono[i]);
-    return `${sampleRate}|${n}|${sum.toFixed(4)}|${mid}|${end}|${cfg.mode}|${cfg.numSources}|${(cfg.queries || []).join(',')}`;
+    const digest = n ? hashPcmChannels([mono]) : '0';
+    return `${sampleRate}|${n}|${digest}|${cfg.mode}|${cfg.numSources}|${(cfg.queries || []).join(',')}`;
   }
 
   /**

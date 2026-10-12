@@ -319,7 +319,7 @@ export class EngineerModeBridge {
   markCropIn(at) { return this.mixer ? this.mixer.markCropIn(at) : undefined; }
   markCropOut(at) { return this.mixer ? this.mixer.markCropOut(at) : undefined; }
 
-  /** Release the underlying mixer and its AudioContext. Idempotent. */
+  /** Release the underlying mixer (and its AudioContext only if the mixer created it). Idempotent. */
   async dispose() {
     this._loaded = false;
     this._stemSource = null;

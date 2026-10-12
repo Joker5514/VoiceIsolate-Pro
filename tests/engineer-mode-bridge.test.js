@@ -42,6 +42,8 @@ function mockContext() {
       threshold: mockParam(0), knee: mockParam(0), ratio: mockParam(1),
       attack: mockParam(0), release: mockParam(0), reduction: 0,
     }),
+    createDelay: () => mockNode({ delayTime: mockParam(0) }),
+    createWaveShaper: () => mockNode({ curve: null }),
     createBuffer: (channels, length, sampleRate) => ({
       numberOfChannels: channels,
       length,

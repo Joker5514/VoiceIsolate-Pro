@@ -317,3 +317,52 @@ describe('USM engineer UI contract (source)', () => {
     expect(indexHtml).toMatch(/btnUsmSeparate[\s\S]*hidden/);
   });
 });
+
+describe('F04 — edge-covering USM framing', () => {
+  const unity = (st) => new Float32Array(st.frames * st.bins).fill(1);
+
+  test.each([1, 7, 100, 4095, 4096, 4097, 5000, 48001])(
+    'unity mask reconstructs every sample of a %i-sample input', (len) => {
+      const x = new Float32Array(len);
+      for (let i = 0; i < len; i++) x[i] = Math.sin(i * 0.031) * 0.6;
+      x[len - 1] += 0.3; // final-sample impulse
+      const st = computeStft(x, 4096, 1024);
+      const y = maskToPcm(st, unity(st), len);
+      let maxErr = 0;
+      for (let i = 0; i < len; i++) maxErr = Math.max(maxErr, Math.abs(y[i] - x[i]));
+      // float32 FFT round-off; the old floor framing lost 904 tail samples of 5000.
+      expect(maxErr).toBeLessThan(1e-5);
+    },
+  );
+
+  test('a final-sample impulse survives a full query separation (target + residual)', () => {
+    const len = 5000;
+    const x = new Float32Array(len);
+    x[len - 1] = 0.8;
+    const r = separateUniversal(x, 48000, { mode: 'query', queries: ['speech'] });
+    let sum = 0;
+    for (const s of r.sources) sum += s.pcm[len - 1];
+    // Query masks partition the spectrum, so the stems still add up to the input.
+    expect(sum).toBeCloseTo(0.8, 3);
+  });
+
+  test('working-memory budget refuses long inputs with a clear limit', async () => {
+    const { estimateUsmWorkingBytes } = await import('../src/core/UniversalSourceMatrix.js');
+    const perMinute = estimateUsmWorkingBytes(48000 * 60, { numSources: 6 });
+    expect(perMinute).toBeGreaterThan(300 * 1024 * 1024);
+    expect(() => separateUniversal(new Float32Array(48000 * 10), 48000, { maxWorkingBytes: 1024 }))
+      .toThrow(/limited to about \d+ s/);
+  });
+});
+
+describe('F01 — USMNode cache identity', () => {
+  test('a same-length take differing off the old 64-point probe gets a new key', () => {
+    const node = new USMNode();
+    const a = new Float32Array(48000).map((_, i) => Math.sin(i / 10) * 0.4);
+    const b = new Float32Array(a);
+    b[12345] += 0.25; // not on the n/64 stride, not mid, not last
+    const cfg = { mode: 'auto', numSources: 6, queries: [] };
+    expect(node._buildCacheKey(a, 48000, cfg)).not.toBe(node._buildCacheKey(b, 48000, cfg));
+    expect(node._buildCacheKey(a, 48000, cfg)).toBe(node._buildCacheKey(new Float32Array(a), 48000, cfg));
+  });
+});

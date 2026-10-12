@@ -173,6 +173,43 @@ describe('StemSeparation worker lifecycle', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  test('F02: a worker that never acks cancel is recycled within the grace window', async () => {
+    jest.useFakeTimers();
+    try {
+      const worker = await readyWorker();
+      const ac = new AbortController();
+      const pending = StemSeparation.separateStems(
+        [new Float32Array([0.1, -0.1])],
+        48000,
+        { transferOwned: true, sourceName: 'stalled-cancel.wav', signal: ac.signal },
+      );
+      pending.catch(() => {});
+      await waitForPost(worker, 'process');
+      ac.abort();
+      // Stalled inference: no 'cancelled' arrives, so the host must not wait.
+      await jest.advanceTimersByTimeAsync(1499);
+      expect(worker.terminate).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(2);
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      expect(worker.terminate).toHaveBeenCalledTimes(1);
+      // The next job gets a fresh worker at once instead of queuing behind it.
+      const next = await readyWorker();
+      expect(next).not.toBe(worker);
+      const second = StemSeparation.separateStems(
+        [new Float32Array([0.4])],
+        48000,
+        { transferOwned: true, sourceName: 'after-cancel.wav' },
+      );
+      const requestId = (await waitForPost(next, 'process'))[0].requestId;
+      next.dispatch('message', {
+        data: { type: 'stems', requestId, clean: [new Float32Array([0.4])], noise: [new Float32Array([0])], sampleRate: 48000 },
+      });
+      await expect(second).resolves.toMatchObject({ sampleRate: 48000 });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('a throwing progress callback cannot strand the active request', async () => {
     const worker = await readyWorker();
     const pending = StemSeparation.separateStems(

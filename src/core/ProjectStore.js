@@ -4,7 +4,7 @@
  */
 'use strict';
 
-import { openIdb, idbGet, idbPut, idbDelete, idbGetAll, idbTxDone } from './storage/openIdb.js';
+import { openIdb, idbGet, idbPut, idbDelete, idbGetAll, idbTxDone, idbTransaction } from './storage/openIdb.js';
 
 const DB_NAME = 'vip-projects';
 const DB_VERSION = 1;
@@ -58,7 +58,7 @@ export async function createProject(opts = {}) {
     activePreset: null,
   };
   const db = await open();
-  const tx = db.transaction(STORE, 'readwrite');
+  const tx = idbTransaction(db, STORE, 'readwrite');
   await idbPut(tx.objectStore(STORE), project);
   await idbTxDone(tx);
   return project;
@@ -99,7 +99,7 @@ export async function getProject(projectId) {
  */
 export async function updateProject(projectId, patch) {
   const db = await open();
-  const tx = db.transaction(STORE, 'readwrite');
+  const tx = idbTransaction(db, STORE, 'readwrite');
   const store = tx.objectStore(STORE);
   const existing = await idbGet(store, projectId);
   if (!existing) return null;
@@ -126,7 +126,7 @@ export async function linkSourceFile(projectId, fileId) {
  */
 export async function deleteProject(projectId) {
   const db = await open();
-  const tx = db.transaction(STORE, 'readwrite');
+  const tx = idbTransaction(db, STORE, 'readwrite');
   await idbDelete(tx.objectStore(STORE), projectId);
   await idbTxDone(tx);
 }

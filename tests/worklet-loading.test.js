@@ -40,7 +40,7 @@ describe('PlaybackMixer load path', () => {
 
   test('graph reconnects on load failure', () => {
     expect(mixer).toContain('gateInput.connect(this.highpass)');
-    expect(mixer).toContain('deEsserInput.connect(this.limiter)');
+    expect(mixer).toContain('deEsserInput.connect(this.outputTrim)');
   });
 });
 

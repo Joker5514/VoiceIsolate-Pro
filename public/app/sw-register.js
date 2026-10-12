@@ -1,12 +1,13 @@
 // sw-register.js — VoiceIsolate Pro
-// Registers the canonical Service Worker at /app/sw.js with scope '/'.
-// The root /sw.js shim also delegates to /app/sw.js via importScripts(),
-// so both registration paths converge on the same implementation.
+// Registers the root /sw.js shim with scope '/'; it importScripts() the
+// canonical /app/sw.js. Registering /app/sw.js itself at scope '/' needs a
+// Service-Worker-Allowed header no host sends, so it always threw SecurityError.
+// No shipping page calls registerSW() yet (see the header of /app/sw.js).
 // Initializes the same-origin model loader (window.ModelCDNLoader).
 // All canonical model URLs must remain local /app/models/*.onnx paths.
 
 /**
- * registerSW — registers /app/sw.js (canonical) and waits for it to control
+ * registerSW — registers /sw.js (→ /app/sw.js) and waits for it to control
  * this page. Returns the active ServiceWorkerRegistration, or null if
  * SW is unavailable.
  */
@@ -38,9 +39,7 @@ export async function registerSW() {
       return null;
     }
 
-    // Register the canonical SW directly. The /sw.js root shim also points
-    // here via importScripts, so existing cached clients converge seamlessly.
-    const reg = await navigator.serviceWorker.register('/app/sw.js', { scope: '/' });
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
     if (navigator.serviceWorker.controller) return reg;
     await new Promise((resolve) => {
       let settled = false;

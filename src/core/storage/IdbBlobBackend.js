@@ -4,7 +4,7 @@
  */
 'use strict';
 
-import { openIdb, idbGet, idbPut, idbDelete } from './openIdb.js';
+import { openIdb, idbGet, idbPut, idbDelete, idbTransaction, idbTxDone } from './openIdb.js';
 
 const DB_NAME = 'vip-blob-store';
 const DB_VERSION = 1;
@@ -24,19 +24,11 @@ function open() {
  */
 export async function idbBlobWrite(key, data) {
   const db = await open();
-  const tx = db.transaction(STORE, 'readwrite');
+  const tx = idbTransaction(db, STORE, 'readwrite');
   const blob = data instanceof Blob ? data : new Blob([data]);
   await idbPut(tx.objectStore(STORE), blob, key);
-  // put success is enough; oncomplete is best-effort (see openIdb.idbTxDone).
-  await new Promise((resolve, reject) => {
-    let done = false;
-    const ok = () => { if (!done) { done = true; resolve(); } };
-    const fail = () => { if (!done) { done = true; reject(tx.error || new Error('idb write failed')); } };
-    tx.oncomplete = ok;
-    tx.onerror = fail;
-    tx.onabort = fail;
-    setTimeout(ok, 0);
-  });
+  // A successful put is not a durable write: quota is enforced at commit.
+  await idbTxDone(tx);
 }
 
 /**
@@ -62,16 +54,9 @@ export async function idbBlobRead(key) {
 export async function idbBlobDelete(key) {
   try {
     const db = await open();
-    const tx = db.transaction(STORE, 'readwrite');
+    const tx = idbTransaction(db, STORE, 'readwrite');
     await idbDelete(tx.objectStore(STORE), key);
-    await new Promise((resolve) => {
-      let done = false;
-      const ok = () => { if (!done) { done = true; resolve(); } };
-      tx.oncomplete = ok;
-      tx.onerror = ok;
-      tx.onabort = ok;
-      setTimeout(ok, 0);
-    });
+    await idbTxDone(tx);
   } catch {
     // ignore
   }

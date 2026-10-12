@@ -29,7 +29,18 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
+      // `/* global window, fetch */` headers (ml-worker-fetch-cache.js) are not redeclarations.
+      'no-redeclare': ['error', { builtinGlobals: false }],
     },
+  },
+  {
+    // Runtime globals from other scripts, each use guarded by `typeof`.
+    files: ['public/app/vip-boot.js'],
+    languageOptions: { globals: { VoiceIsolatePro: 'readonly', Auth: 'readonly' } },
+  },
+  {
+    files: ['public/app/batch-orchestrator.js'],
+    languageOptions: { globals: { createFFmpeg: 'readonly', DSPCore: 'readonly' } },
   },
 
   // ── Specific file overrides (come after catch-all; later entries win) ─────────
@@ -162,15 +173,13 @@ export default [
     },
   },
   {
-    // session-persist.js — browser script with optional CommonJS export guard
+    // session-persist.js — ES module (app.js imports it); configuring it as a
+    // script made every lint run stop at a parse error on its first export.
     files: ['public/app/session-persist.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script', // overrides catch-all's 'module'
-      globals: {
-        ...globals.browser,
-        module: 'readonly',
-      },
+      sourceType: 'module',
+      globals: { ...globals.browser },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
@@ -367,7 +376,21 @@ export default [
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-redeclare': ['error', { builtinGlobals: false }],
     },
+  },
+  {
+    // Browser-driving tools: page.evaluate()/addInitScript() callbacks and the
+    // a11y probes run inside the page, so browser globals are real there.
+    files: [
+      'scripts/*-smoke.cjs',
+      'scripts/*-check.cjs',
+      'scripts/bench-isolation-speed.cjs',
+      'scripts/perf/perf-harness.cjs',
+      'scripts/lib/a11y-probes.js',
+    ],
+    languageOptions: { globals: { ...globals.browser } },
   },
   {
     // ESM scripts (.mjs)
@@ -383,6 +406,16 @@ export default [
     },
   },
 
+  {
+    // Shared SAM runtime package (ships in the Electron bundle) — Node.js ESM
+    files: ['packages/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
+
   // ── Ignores ───────────────────────────────────────────────────────────────────
   {
     ignores: [
@@ -392,6 +425,7 @@ export default [
       'android/**',
       'ios/**',
       'build/**',
+      'public/src/**',   // Vercel build copy of src/ (linted at the source)
       'fastlane/**',
     ],
   },

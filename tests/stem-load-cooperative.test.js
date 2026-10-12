@@ -57,6 +57,8 @@ function mockContext() {
       threshold: mockParam(0), knee: mockParam(0), ratio: mockParam(1),
       attack: mockParam(0), release: mockParam(0), reduction: 0,
     }),
+    createDelay: () => mockNode({ delayTime: mockParam(0) }),
+    createWaveShaper: () => mockNode({ curve: null }),
     createBuffer: fakeBuffer,
     createBufferSource: () => mockNode({ buffer: null, start: jest.fn(), stop: jest.fn(), onended: null }),
     resume: jest.fn().mockResolvedValue(undefined),

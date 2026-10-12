@@ -12,12 +12,13 @@ import {
   readSourceBlob,
   deleteSourceBlob,
 } from './BlobStore.js';
-import { openIdb, idbGet, idbPut, idbDelete, idbTxDone } from './openIdb.js';
+import { openIdb, idbGet, idbPut, idbDelete, idbTxDone, idbTransaction } from './openIdb.js';
 import {
   MAX_DURABLE_STEM_BYTES,
   MAX_DURABLE_STEM_SAMPLES,
   estimateStemPackBytes,
 } from './memory-limits.js';
+import { modelChainRevision } from '../ModelManifest.js';
 
 const META_DB = 'vip-derived-cache';
 const META_VER = 1;
@@ -42,7 +43,9 @@ function openMeta() {
  * @param {string} [processingRevision]
  */
 export function stemDurableKey(fileId, modelIds = [], processingRevision = '') {
-  const chain = (modelIds || []).join('→') || 'default';
+  // Model bytes and inference revision are part of the key: replacing a model
+  // or changing reconstruction must not replay stems persisted by the old one.
+  const chain = `${(modelIds || []).join('→') || 'default'}@${modelChainRevision(modelIds || [])}`;
   const variant = processingRevision ? `:engineer-${String(processingRevision).replace(/[^a-zA-Z0-9._-]/g, '_')}` : '';
   return `stems:${fileId}:${chain}${variant}`;
 }
@@ -181,7 +184,7 @@ export async function saveStemsDurable(fileId, modelIds, result, processingRevis
     processingRevision: processingRevision || undefined,
   };
   const db = await openMeta();
-  const tx = db.transaction(META_STORE, 'readwrite');
+  const tx = idbTransaction(db, META_STORE, 'readwrite');
   await idbPut(tx.objectStore(META_STORE), meta);
   await idbTxDone(tx);
   return meta;
@@ -237,7 +240,7 @@ export async function saveAnalysisDurable(fileId, analysis) {
     createdAt: Date.now(),
   };
   const db = await openMeta();
-  const tx = db.transaction(META_STORE, 'readwrite');
+  const tx = idbTransaction(db, META_STORE, 'readwrite');
   await idbPut(tx.objectStore(META_STORE), meta);
   await idbTxDone(tx);
   return meta;
@@ -279,7 +282,7 @@ export async function deleteDerivedForFile(fileId) {
     const mine = all.filter((e) => e.fileId === fileId);
     for (const e of mine) {
       if (e.blobRef) await deleteSourceBlob(e.blobRef);
-      const w = db.transaction(META_STORE, 'readwrite');
+      const w = idbTransaction(db, META_STORE, 'readwrite');
       await idbDelete(w.objectStore(META_STORE), e.key);
       await idbTxDone(w);
     }

@@ -40,9 +40,14 @@ public/app/dsp-processor.js              ──►              ──► build/
 
 ## Offline precache
 
-`public/app/sw.js` `APP_SHELL` precaches all three worklet URLs and the offline
-Engineer spectral helper so the service worker can serve them without a network
-round-trip after install.
+The service-worker precache is generated, not hand-kept: `scripts/sw-precache.cjs`
+lists every served code file (landing, `/app`, `/src`, `/lib` JS/CSS/HTML/fonts;
+not models or ORT `.wasm`) and stamps it with a content-hash generation into
+`app/sw.js` during `pnpm build` and the Vercel build. `pnpm worklets:verify`
+checks that all three worklet URLs and the Engineer spectral helper are in it.
+No shipping page registers the worker yet (`registerSW()` has no caller);
+`node scripts/sw-offline-check.cjs` drives its offline and upgrade behaviour in
+Chromium.
 
 ## Integrity
 
@@ -52,7 +57,7 @@ CI and git blobs. Regenerate after any worklet edit:
 
 ```bash
 pnpm worklets:hash      # recompute + update models-manifest.json
-pnpm worklets:verify    # source + manifest + APP_SHELL checks
+pnpm worklets:verify    # source + manifest + precache checks
 pnpm worklets:verify:build   # also requires build/ copies in sync
 ```
 

@@ -26,7 +26,11 @@ describe('DerivedCache codec', () => {
 
   test('stemDurableKey is stable for model chain', () => {
     expect(Derived.stemDurableKey('abc', ['bsrnn_vocals', 'rnnoise']))
-      .toBe('stems:abc:bsrnn_vocals→rnnoise');
+      .toMatch(/^stems:abc:bsrnn_vocals→rnnoise@ir\d+-[\w-]+-[0-9a-f]{16}$/);
+    expect(Derived.stemDurableKey('abc', ['bsrnn_vocals', 'rnnoise']))
+      .toBe(Derived.stemDurableKey('abc', ['bsrnn_vocals', 'rnnoise']));
+    expect(Derived.stemDurableKey('abc', ['bsrnn_vocals']))
+      .not.toBe(Derived.stemDurableKey('abc', ['bsrnn_vocals', 'rnnoise']));
     expect(Derived.analysisDurableKey('abc')).toBe('analysis:abc');
   });
 

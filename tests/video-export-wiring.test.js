@@ -23,11 +23,12 @@ describe('Video export module', () => {
 });
 
 describe('Media decode video fallback', () => {
-  test('uses muted capture + silentGain (autoplay-safe; SPN still hears graph)', () => {
-    // muted=true unblocks play() under autoplay policy; ScriptProcessor still
-    // receives PCM from createMediaElementSource. silentGain=0 avoids speaker bleed.
-    expect(mediaDecode).toMatch(/media\.muted\s*=\s*true/);
-    expect(mediaDecode).toMatch(/media\.volume\s*=\s*0/);
+  test('captures unmuted through a zero-gain sink (muted capture is silent)', () => {
+    // Measured in Chromium (F06): with muted=true the MediaElementAudioSourceNode
+    // delivers zeros, so a 10 s 440 Hz WebM came back as silence. The element's
+    // audio is re-routed into the graph; silentGain=0 keeps it inaudible.
+    expect(mediaDecode).toMatch(/media\.muted = false;/);
+    expect(mediaDecode).not.toMatch(/media\.muted\s*=\s*true;\s*\n\s*try \{ media\.volume = 0/);
     expect(mediaDecode).toContain('silentGain');
   });
 });

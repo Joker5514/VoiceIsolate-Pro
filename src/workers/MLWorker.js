@@ -871,7 +871,17 @@ async function runFusedSpectralMaskChain(
     ...heads.map((h) => effectiveBatchFrames(h.entry, h.entry.id)),
   );
   const win = hann(N);
-  const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
+  // Frames run over the input reflection-padded by N − hop on both sides, so
+  // every input sample — including the first and last — is covered by the
+  // full set of overlapping windows and divided by a steady-state window² sum.
+  // Frames that started at sample 0 left the edges under a window ramp: a
+  // unity mask dropped ~60 ms of signal (impulses at the boundaries vanished)
+  // and the noise residual received the voice there. Odd reflection rather
+  // than zero (or even) padding avoids an artificial step (or kink) at the
+  // edge, which the HF taper below would otherwise smear into the first and
+  // last samples.
+  const pad = N - hop;
+  const totalFrames = Math.max(1, Math.floor((samples.length - 1 + pad) / hop) + 1);
 
   // Geometry must match for fusion (caller guarantees for multi-head).
   for (const h of heads) {
@@ -925,10 +935,12 @@ async function runFusedSpectralMaskChain(
 
   const forwardStftBatch = (buf, f0, count) => {
     for (let b = 0; b < count; b++) {
-      const start = (f0 + b) * hop;
-      const avail = Math.max(0, Math.min(N, samples.length - start));
-      for (let i = 0; i < avail; i++) frame[i] = samples[start + i] * win[i];
-      if (avail < N) frame.fill(0, avail);
+      const start = (f0 + b) * hop - pad;
+      const lo = Math.max(0, -start);
+      const hi = Math.max(lo, Math.min(N, samples.length - start));
+      for (let i = 0; i < lo; i++) frame[i] = edgeExtension(samples, start + i) * win[i];
+      for (let i = lo; i < hi; i++) frame[i] = samples[start + i] * win[i];
+      for (let i = hi; i < N; i++) frame[i] = edgeExtension(samples, start + i) * win[i];
       const off = b * bins;
       realFftForward(frame, N, buf.batchRe, buf.batchIm, off, halfRe, halfIm);
       let peak = 0;
@@ -1028,9 +1040,10 @@ async function runFusedSpectralMaskChain(
       hasPrevMask = true;
       realFftInverse(re, im, N, frame, halfRe, halfIm);
 
-      const start = (f0 + b) * hop;
-      const avail = Math.max(0, Math.min(N, samples.length - start));
-      for (let i = 0; i < avail; i++) {
+      const start = (f0 + b) * hop - pad;
+      const lo = Math.max(0, -start);
+      const hi = Math.min(N, samples.length - start);
+      for (let i = lo; i < hi; i++) {
         out[start + i] += frame[i] * win[i];
         norm[start + i] += win[i] * win[i];
       }
@@ -1039,27 +1052,44 @@ async function runFusedSpectralMaskChain(
     onProgress(Math.min(1, (f0 + count) / totalFrames));
   }
 
-  // Edge-safe OLA normalize: floor divisor at half peak window² so partial
-  // overlap at file edges cannot amplify residual into clicks (matches
-  // SpectralCleanup + AudioClickFix.olaNormalizeFloor).
-  let maxNorm = 0;
-  for (let i = 0; i < norm.length; i++) {
-    if (norm[i] > maxNorm) maxNorm = norm[i];
-  }
-  const floorNorm = Math.max(1e-12, 0.5 * maxNorm);
+  // With the padded framing every sample carries the steady-state window²
+  // sum (≥ 0.5 for the COLA-safe hops N/4 and N/2), so this divides exactly.
+  // The old floor at half the peak sum, and the unconditional 8 ms edge fades,
+  // only existed to hide the uncovered edges; a unity mask now reconstructs
+  // the whole input and the clean stem starts and ends where the input does.
   for (let i = 0; i < out.length; i++) {
-    out[i] /= Math.max(norm[i], floorNorm);
-  }
-  // Short edge fades (8 ms @ 48 kHz ≈ 384 samples) kill process-boundary pops.
-  const fadeN = Math.min(Math.floor(out.length / 4), Math.round(0.008 * 48000));
-  for (let i = 0; i < fadeN; i++) {
-    const g = i / Math.max(1, fadeN);
-    out[i] *= g;
-    out[out.length - 1 - i] *= g;
+    out[i] /= Math.max(norm[i], 1e-12);
   }
   checkCancelled(requestId);
   onProgress(1);
   return out;
+}
+
+/**
+ * Index into a signal of length `len` extended by even (whole-sample)
+ * reflection about its first and last samples, repeated as needed.
+ * @param {number} idx
+ * @param {number} len
+ */
+function mirrorIndex(idx, len) {
+  if (len <= 1) return 0;
+  const period = 2 * (len - 1);
+  let m = idx % period;
+  if (m < 0) m += period;
+  return m < len ? m : period - m;
+}
+
+/**
+ * Sample of `x` outside [0, len) by odd (point) reflection about the nearest
+ * edge sample: x(−k) = 2·x(0) − x(k). Value and slope stay continuous, so the
+ * padding adds no step or kink for the fixed HF taper to react to.
+ * @param {Float32Array} x
+ * @param {number} idx
+ */
+function edgeExtension(x, idx) {
+  const len = x.length;
+  if (idx < 0) return 2 * x[0] - x[mirrorIndex(idx, len)];
+  return 2 * x[len - 1] - x[mirrorIndex(idx, len)];
 }
 
 /** True when all entries share spectral-mask geometry (compatible fusion). */
@@ -1508,19 +1538,71 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
 
 // ─── Message loop ────────────────────────────────────────────────────────────
 
+/**
+ * Requests this worker still holds (queued or running), by requestId.
+ * @type {Map<unknown, { started: boolean, ackPending: boolean, promise: Promise<void> }>}
+ */
+const _requests = new Map();
+/** Cap on remembered cancels for requests this worker does not hold. */
+const MAX_ORPHAN_CANCELS = 64;
+
+/** Run one request after every earlier one; a request cancelled while queued never starts. */
+function enqueueRequest(msg, handler) {
+  const id = msg.requestId;
+  const entry = { started: false, ackPending: false, promise: null };
+  const run = _processChain.then(() => {
+    entry.started = true;
+    checkCancelled(id);
+    return handler(msg);
+  }).finally(() => {
+    _cancelledRequests.delete(id);
+    if (_requests.get(id) === entry) _requests.delete(id);
+  });
+  entry.promise = run;
+  if (id != null) _requests.set(id, entry);
+  _processChain = run.catch(() => {});
+  return run;
+}
+
 self.onmessage = async (event) => {
   const msg = event.data || {};
   try {
     // Request-scoped cooperative cancellation. The active ONNX call cannot be
     // interrupted, but its next boundary exits without starting another batch.
+    //
+    // 'cancelled' means the request has stopped and the worker is free: hosts
+    // treat it as the end of their recycle window. It is posted when a queued
+    // request is dropped, when a running request reaches its next cancellation
+    // point and unwinds, or at once for a request this worker no longer holds.
+    // An inference call that never returns produces no ack, so the host's
+    // grace timer terminates the worker instead of queuing behind it.
     if (msg.type === 'cancel') {
       const targetId = msg.requestId ?? ACTIVE_REQUEST_ID;
-      if (targetId != null) {
-        _cancelledRequests.add(targetId);
-        self.postMessage({
-          type: 'cancelled',
-          requestId: targetId,
-        });
+      if (targetId == null) return;
+      const run = _requests.get(targetId);
+      _cancelledRequests.add(targetId);
+      if (!run) {
+        // Finished, never received, or run outside the queue: remember a
+        // bounded number of such ids so a direct run still stops.
+        if (_cancelledRequests.size > MAX_ORPHAN_CANCELS) {
+          for (const id of _cancelledRequests) {
+            if (_cancelledRequests.size <= MAX_ORPHAN_CANCELS) break;
+            if (!_requests.has(id)) _cancelledRequests.delete(id);
+          }
+        }
+        self.postMessage({ type: 'cancelled', requestId: targetId });
+        return;
+      }
+      if (!run.started) {
+        self.postMessage({ type: 'cancelled', requestId: targetId });
+        return;
+      }
+      if (!run.ackPending) {
+        run.ackPending = true;
+        run.promise.then(
+          () => self.postMessage({ type: 'cancelled', requestId: targetId }),
+          () => self.postMessage({ type: 'cancelled', requestId: targetId }),
+        );
       }
       return;
     }
@@ -1566,10 +1648,7 @@ self.onmessage = async (event) => {
         break;
       }
       case 'process': {
-        const run = _processChain.then(() => processRequest(msg))
-          .finally(() => _cancelledRequests.delete(msg.requestId));
-        _processChain = run.catch(() => {});
-        await run;
+        await enqueueRequest(msg, processRequest);
         break;
       }
       case 'warmup':
@@ -1579,17 +1658,11 @@ self.onmessage = async (event) => {
         });
         break;
       case 'vad': {
-        const run = _processChain.then(() => runVadRequest(msg))
-          .finally(() => _cancelledRequests.delete(msg.requestId));
-        _processChain = run.catch(() => {});
-        await run;
+        await enqueueRequest(msg, runVadRequest);
         break;
       }
       case 'universal_separate': {
-        const run = _processChain.then(() => runUniversalSeparate(msg))
-          .finally(() => _cancelledRequests.delete(msg.requestId));
-        _processChain = run.catch(() => {});
-        await run;
+        await enqueueRequest(msg, runUniversalSeparate);
         break;
       }
       default:

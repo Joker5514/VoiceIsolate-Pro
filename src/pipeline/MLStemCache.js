@@ -6,6 +6,8 @@
 
 import { detectPerformanceTier, tierBudgets } from '../core/PerformanceTier.js';
 import { createAbortableYield, createYieldBudget } from './ui-yield.js';
+import { hashPcmChannels, hashPcmChannelsAsync } from '../core/content-hash.js';
+import { modelChainRevision } from '../core/ModelManifest.js';
 
 /** Max retained full stem results (each can be tens of MB). */
 const MAX_ENTRIES = 2;
@@ -24,63 +26,13 @@ const _cache = new Map();
 let _cacheGen = 0;
 
 /** Bumped whenever the key derivation changes so old entries never alias. */
-const KEY_SCHEMA = 'sk2';
+const KEY_SCHEMA = 'sk3';
 
-/**
- * Two independent 32-bit FNV-style lanes over every sample's bit pattern of
- * every channel. A sparse sample of the waveform let an edited file with the
- * same name and length (e.g. a click removed between probe points) reuse the
- * previous file's stems. Cost is ~60 ms per 10 min of mono audio on desktop,
- * paid once per Process click, never per slider event.
- *
- * @param {Float32Array[]} channelData
- * @returns {string}
- */
-function contentDigest(channelData) {
-  let h1 = 0x811c9dc5 | 0;
-  let h2 = 0x9e3779b9 | 0;
-  for (let c = 0; c < channelData.length; c++) {
-    const ch = channelData[c];
-    const words = new Uint32Array(ch.buffer, ch.byteOffset, ch.length);
-    h1 = Math.imul(h1 ^ (c + 1), 16777619);
-    for (let i = 0; i < words.length; i++) {
-      const v = words[i];
-      h1 = Math.imul(h1 ^ v, 16777619);
-      h2 = (Math.imul(h2 ^ v, 0x85ebca6b) + i) | 0;
-    }
-  }
-  return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
-}
-
-/** 256 Ki samples per slice: ~2 ms on desktop, ~10 ms on a 4x-throttled phone. */
-const DIGEST_SLICE = 1 << 18;
-
-/**
- * {@link contentDigest} with `maybeYield()` between slices; identical result.
- * Done in one task it was 303 ms for 5 min of stereo on a 4x CPU-throttled
- * mobile profile, scaling linearly (~1.8 s at 30 min).
- * @param {Float32Array[]} channelData
- * @param {() => Promise<void>} maybeYield
- */
-async function contentDigestAsync(channelData, maybeYield) {
-  let h1 = 0x811c9dc5 | 0;
-  let h2 = 0x9e3779b9 | 0;
-  for (let c = 0; c < channelData.length; c++) {
-    const ch = channelData[c];
-    const words = new Uint32Array(ch.buffer, ch.byteOffset, ch.length);
-    h1 = Math.imul(h1 ^ (c + 1), 16777619);
-    for (let start = 0; start < words.length; start += DIGEST_SLICE) {
-      const end = Math.min(words.length, start + DIGEST_SLICE);
-      for (let i = start; i < end; i++) {
-        const v = words[i];
-        h1 = Math.imul(h1 ^ v, 16777619);
-        h2 = (Math.imul(h2 ^ v, 0x85ebca6b) + i) | 0;
-      }
-      await maybeYield();
-    }
-  }
-  return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
-}
+// Keys digest every sample of every channel with a 128-bit hash
+// (core/content-hash.js). sk2 used multiply-only FNV word lanes, which never
+// carry a difference downward: inverting a channel's polarity, or flipping the
+// sign of any two samples, produced the same key and replayed the other
+// signal's stems. Paid once per Process click, never per slider event.
 
 /**
  * Digests memoised per decoded buffer. Ingested channel arrays are never
@@ -110,12 +62,20 @@ function memoStore(channelData, digest) {
   return digest;
 }
 
+function abortError() {
+  return typeof DOMException !== 'undefined'
+    ? new DOMException('Processing cancelled', 'AbortError')
+    : Object.assign(new Error('Processing cancelled'), { name: 'AbortError' });
+}
+
 function memoDigest(channelData) {
-  return memoHit(channelData) ?? memoStore(channelData, contentDigest(channelData));
+  return memoHit(channelData) ?? memoStore(channelData, hashPcmChannels(channelData));
 }
 
 function formatKey(channelData, sampleRate, modelIds, processingRevision, digest) {
-  const models = modelIds.join('→');
+  // Model bytes (sha256), inference calibration and the worker's
+  // reconstruction revision all change the stems for identical input.
+  const models = `${modelIds.join('→')}@${modelChainRevision(modelIds)}`;
   const variant = processingRevision ? `|engineer:${processingRevision}` : '';
   const len = channelData[0]?.length || 0;
   return `${KEY_SCHEMA}|${models}|${sampleRate}|${channelData.length}|${len}|${digest}${variant}`;
@@ -155,8 +115,10 @@ export function stemCacheKey(channelData, sampleRate, modelIds, _sourceName = ''
 export async function stemCacheKeyAsync(channelData, sampleRate, modelIds, _sourceName = '', processingRevision = '', opts = {}) {
   let digest = '0';
   if (channelData[0]?.length) {
+    // Concurrent callers each hash the same read-only buffers; whichever
+    // finishes first memoises, and an aborted caller stores nothing.
     digest = memoHit(channelData)
-      ?? memoStore(channelData, await contentDigestAsync(channelData, abortAware(opts)));
+      ?? memoStore(channelData, await hashPcmChannelsAsync(channelData, abortAware(opts)));
   }
   return formatKey(channelData, sampleRate, modelIds, processingRevision, digest);
 }
@@ -175,11 +137,7 @@ function abortAware({ maybeYield, signal } = {}) {
   if (!signal) return maybeYield;
   return async () => {
     await maybeYield();
-    if (signal.aborted) {
-      throw typeof DOMException !== 'undefined'
-        ? new DOMException('Processing cancelled', 'AbortError')
-        : Object.assign(new Error('Processing cancelled'), { name: 'AbortError' });
-    }
+    if (signal.aborted) throw abortError();
   };
 }
 

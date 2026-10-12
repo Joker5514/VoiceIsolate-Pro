@@ -36,6 +36,8 @@ function mockCtx() {
       release: { value: 0 },
     }),
     createAnalyser: () => makeNode({ fftSize: 2048, frequencyBinCount: 1024 }),
+    createDelay: () => makeNode({ delayTime: { value: 0, cancelScheduledValues() {} } }),
+    createWaveShaper: () => makeNode({ curve: null }),
     createChannelSplitter: () => makeNode(),
     createChannelMerger: () => makeNode(),
     createBuffer: (ch, len, sr) => ({

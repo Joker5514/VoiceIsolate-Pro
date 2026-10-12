@@ -116,7 +116,7 @@ describe('CacheManifest', () => {
     const a = await contentFingerprint(b);
     const c = await contentFingerprint(b);
     expect(a).toBe(c);
-    expect(a.startsWith('fp_')).toBe(true);
+    expect(a.startsWith('c128_')).toBe(true);
     expect(cacheKey('stems', 'x')).toContain(APP_CACHE_VERSION);
   });
 

@@ -80,3 +80,75 @@ test('a cancel message posted mid-run is dispatched between batches (no full-fil
   expect(session.run.mock.calls.length).toBeLessThan(10);
   expect(messages).toContainEqual({ type: 'cancelled', requestId: 'job-long' });
 });
+
+/** Load MLWorker.js with its queue internals exposed (no ORT, no models). */
+function loadWorkerQueue(messages) {
+  const source = fs.readFileSync(path.join(__dirname, '../src/workers/MLWorker.js'), 'utf8') + `
+    self.__q = { enqueueRequest, cancellationPoint };
+  `;
+  const sandbox = {
+    importScripts() {}, console, Promise, Error, Object, Set, Map, ArrayBuffer,
+    Float32Array, Uint8Array, Uint32Array, Int32Array, BigInt64Array,
+    setTimeout, clearTimeout,
+    ort: { env: { wasm: {} }, Tensor: class Tensor {}, InferenceSession: {} },
+    self: { navigator: {}, postMessage: (m) => messages.push(m) },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox);
+  return sandbox.self;
+}
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+test('F02: cancelled is acknowledged only once the running request has stopped', async () => {
+  const messages = [];
+  const self = loadWorkerQueue(messages);
+  const gate = deferred();
+  let reachedEnd = false;
+  const running = self.__q.enqueueRequest({ requestId: 'a' }, async () => {
+    await gate.promise; // an inference call that has not returned yet
+    await self.__q.cancellationPoint('a');
+    reachedEnd = true;
+    self.postMessage({ type: 'stems', requestId: 'a' });
+  });
+  running.catch(() => {});
+  await flush();
+  await self.onmessage({ data: { type: 'cancel', requestId: 'a' } });
+  await flush();
+  // Still inside the stalled call: no ack, so the host's grace timer stays armed.
+  expect(messages.filter((m) => m.type === 'cancelled')).toHaveLength(0);
+  gate.resolve();
+  await expect(running).rejects.toMatchObject({ code: 'VIP_CANCELLED' });
+  await flush();
+  expect(reachedEnd).toBe(false);
+  expect(messages).toContainEqual({ type: 'cancelled', requestId: 'a' });
+  expect(messages.some((m) => m.type === 'stems')).toBe(false);
+});
+
+test('F02: a request cancelled while queued is acked at once and never starts', async () => {
+  const messages = [];
+  const self = loadWorkerQueue(messages);
+  const gate = deferred();
+  const first = self.__q.enqueueRequest({ requestId: 'a' }, () => gate.promise);
+  let bStarted = false;
+  const second = self.__q.enqueueRequest({ requestId: 'b' }, async () => { bStarted = true; });
+  second.catch(() => {});
+  await self.onmessage({ data: { type: 'cancel', requestId: 'b' } });
+  expect(messages).toContainEqual({ type: 'cancelled', requestId: 'b' });
+  gate.resolve();
+  await first;
+  await expect(second).rejects.toMatchObject({ code: 'VIP_CANCELLED' });
+  expect(bStarted).toBe(false);
+  // The next request runs immediately on the same worker.
+  let cRan = false;
+  await self.__q.enqueueRequest({ requestId: 'c' }, async () => { cRan = true; });
+  expect(cRan).toBe(true);
+});
+
+test('F02: cancel for a request the worker no longer holds is acked immediately', async () => {
+  const messages = [];
+  const self = loadWorkerQueue(messages);
+  await self.__q.enqueueRequest({ requestId: 'done' }, async () => {});
+  await self.onmessage({ data: { type: 'cancel', requestId: 'done' } });
+  expect(messages).toContainEqual({ type: 'cancelled', requestId: 'done' });
+});
