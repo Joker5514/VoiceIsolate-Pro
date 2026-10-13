@@ -56,7 +56,7 @@
       "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/:filename"
     },
     {
-      "source": "/((?!app/|blueprint/|docs/|download/|lib/|src/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.js|landing\\.css).*)",
+      "source": "/((?!app/|blueprint/|docs/|download/|lib/|src/|stems/|engineer/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.js|landing\\.css).*)",
       "destination": "/index.html"
     }
   ],

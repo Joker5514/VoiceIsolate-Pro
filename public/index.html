@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="/premium-refresh.css">
   <link rel="stylesheet" href="/premium-signal.css">
   <link rel="stylesheet" href="/landing-v3.css">
+  <link rel="stylesheet" href="/lib/cinematic/cinematic.css">
 </head>
 <body class="ps-shell v3">
   <a class="ps-skip-link" href="#workspace">Skip to audio workspace</a>
@@ -39,6 +40,8 @@
       <a href="#home"><span>01</span>How it works</a>
       <a href="#stems"><span>02</span>Stems</a>
       <a href="#engineer"><span>03</span>Engineer</a>
+      <a href="/stems/" class="cine-nav__page"><span>⧉</span>Stems page</a>
+      <a href="/engineer/" class="cine-nav__page"><span>⧉</span>Engineer page</a>
     </nav>
     <span class="v3-header__links">
       <a href="/download/" class="v3-link">Download</a>
@@ -67,6 +70,10 @@
 
   <!-- 01 · How it works -->
   <section class="vip-hero ps-hero v3-hero" aria-labelledby="heroTitle" id="home">
+    <video class="cine-hero-video" autoplay muted loop playsinline preload="metadata"
+           poster="/media/hero-waveform.jpg" aria-hidden="true" tabindex="-1">
+      <source src="/media/hero-tunnel.mp4" type="video/mp4">
+    </video>
     <div class="v3-hero__grid">
       <div class="v3-hero__lead">
         <p class="v3-eyebrow v3-in"><span aria-hidden="true"></span>Voice isolation for recorded audio</p>
@@ -389,6 +396,7 @@
       </main>
 
       <p class="v3-aside">Need per-band EQ, dynamics, gate, per-speaker lanes or forensic views? <a href="#engineer">Open the Engineer Console</a>.</p>
+      <p class="v3-aside" style="margin-top:14px;"><a class="cine-page-link" href="/stems/">Explore the Stems page <span aria-hidden="true">→</span></a></p>
     </div>
   </section>
 
@@ -408,6 +416,9 @@
         <img src="/media/engineer-console.jpg" width="1440" height="900" alt="Engineer Console: signal canvas, source lanes and DSP rack" loading="lazy" decoding="async">
         <span class="v3-console__cta">Open the Engineer Console <span aria-hidden="true">→</span></span>
       </a>
+    </div>
+    <div class="v3-wrap" style="margin-top:26px; margin-bottom:6px;">
+      <a class="cine-page-link" href="/engineer/">Explore the Engineer page <span aria-hidden="true">→</span></a>
     </div>
     <div class="v3-wrap">
       <section class="ps-modes v3-modes" aria-labelledby="modesLabel">
@@ -475,5 +486,6 @@
   <script type="module" src="/landing.js"></script>
   <script type="module" src="/landing-premium.js"></script>
   <script type="module" src="/landing-v3.js"></script>
+  <script defer src="/lib/cinematic/cinematic.js"></script>
 </body>
 </html>

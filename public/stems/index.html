@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="VoiceIsolate Pro stems — every recording split into a clean voice stem and a background stem, separated on your device. No cloud audio.">
+  <meta name="theme-color" content="#050508">
+  <meta name="color-scheme" content="dark">
+  <meta property="og:title" content="VoiceIsolate Pro — Stems">
+  <meta property="og:description" content="Clean voice and background stems, separated 100% on-device. Batch AI once, mix forever.">
+  <meta property="og:type" content="website">
+  <title>Stems — VoiceIsolate Pro</title>
+  <link rel="icon" href="/icon.jpg">
+  <link rel="stylesheet" href="/lib/cinematic/cinematic.css">
+  <style>
+    /* Stems page — local composition (CSP allows inline styles) */
+    .stem-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 8px; }
+    .stem-card {
+      border-radius: var(--c-r); overflow: clip; border: 1px solid var(--c-line);
+      background: linear-gradient(165deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015));
+    }
+    .stem-card__bar { height: 120px; position: relative; overflow: clip; }
+    .stem-card__bar canvas { width: 100%; height: 100%; display: block; }
+    .stem-card__body { padding: 24px 26px 28px; }
+    .stem-card__body h3 { font-family: var(--c-font-d); font-size: 1.25rem; margin: 0 0 10px; }
+    .stem-card__body p { color: var(--c-mut); font-size: 0.94rem; line-height: 1.7; margin: 0; }
+    .stem-card--voice .stem-card__bar { background: radial-gradient(80% 130% at 50% 120%, rgba(58,226,255,0.25), transparent 70%), #071318; }
+    .stem-card--bgx .stem-card__bar { background: radial-gradient(80% 130% at 50% 120%, rgba(255,61,129,0.22), transparent 70%), #150a10; }
+    .stem-tag {
+      display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.2em;
+      text-transform: uppercase; margin-bottom: 12px;
+    }
+    .stem-card--voice .stem-tag { color: var(--c-cyan); }
+    .stem-card--bgx .stem-tag { color: var(--c-mag); }
+    @media (max-width: 760px) { .stem-duo { grid-template-columns: 1fr; } }
+    .chain-note { color: var(--c-dim); font-size: 0.86rem; margin-top: 26px; max-width: 720px; line-height: 1.7; }
+  </style>
+</head>
+<body class="cine-page">
+  <nav class="cine-nav" aria-label="Site">
+    <a class="cine-nav__brand" href="/" aria-label="VoiceIsolate Pro home">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff3d4d" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M8 6v12M4 10v4M16 6v12M20 10v4"/></svg>
+      <span class="cine-nav__word">VoiceIsolate <em>Pro</em></span>
+    </a>
+    <div class="cine-nav__links">
+      <a href="/">Overview</a>
+      <a href="/stems/" aria-current="page">Stems</a>
+      <a href="/engineer/">Engineer</a>
+      <a href="/app/">Studio</a>
+      <a href="/download/" class="cine-nav__cta">Download</a>
+    </div>
+  </nav>
+
+  <header class="cine-hero">
+    <div class="cine-hero__media" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="metadata" poster="/media/stems-layers.jpg">
+        <source src="/media/stems-separation.mp4" type="video/mp4">
+      </video>
+    </div>
+    <div class="cine-hero__shade" aria-hidden="true"></div>
+    <canvas class="cine-hero__particles" aria-hidden="true"></canvas>
+    <div class="cine-hero__inner">
+      <p class="cine-kicker">Stem-Split architecture</p>
+      <h1 class="cine-title">Two stems.<br><span class="grad">Total control.</span></h1>
+      <p class="cine-sub">Every recording becomes a <strong style="color:var(--c-ink)">clean voice stem</strong> and a <strong style="color:var(--c-ink)">background stem</strong> — separated once by on-device AI, then yours to mix, solo, mute, and export. The AI runs a single batch pass. Everything after that is instant.</p>
+      <div class="cine-actions">
+        <a class="cine-btn cine-btn--primary" href="/#uploadPanel">Separate a file now</a>
+        <a class="cine-btn cine-btn--ghost" href="/engineer/">For engineers</a>
+      </div>
+    </div>
+    <div class="cine-scroll-hint" aria-hidden="true">Scroll</div>
+  </header>
+
+  <div class="cine-marquee" aria-hidden="true">
+    <div class="cine-marquee__track">
+      <span><i>◆</i>Clean voice stem</span><span><i>◆</i>Background stem</span><span><i>◆</i>Batch AI · one pass</span><span><i>◆</i>Zero-ML mixing</span><span><i>◆</i>100% on-device</span>
+      <span><i>◆</i>Clean voice stem</span><span><i>◆</i>Background stem</span><span><i>◆</i>Batch AI · one pass</span><span><i>◆</i>Zero-ML mixing</span><span><i>◆</i>100% on-device</span>
+    </div>
+  </div>
+
+  <section class="cine-section">
+    <div class="cine-wrap">
+      <p class="cine-kicker cine-reveal">What you get</p>
+      <h2 class="cine-h2 cine-reveal">One file in.<br>Two precise stems out.</h2>
+      <p class="cine-lede cine-reveal">Separation runs as an explicit batch process in an isolated worker — never from a slider, never in the cloud. When it finishes, you hold two independent, full-resolution stems.</p>
+      <div class="stem-duo">
+        <article class="stem-card stem-card--voice cine-reveal">
+          <div class="stem-card__bar"><canvas data-wave="voice" aria-hidden="true"></canvas></div>
+          <div class="stem-card__body">
+            <span class="stem-tag">Stem 01</span>
+            <h3>Clean voice</h3>
+            <p>Speech reconstructed through a masked inverse STFT — the voice, isolated from everything around it. Solo it for transcripts, boost it for podcasts, or carve it with EQ.</p>
+          </div>
+        </article>
+        <article class="stem-card stem-card--bgx cine-reveal" data-delay="1">
+          <div class="stem-card__bar"><canvas data-wave="bg" aria-hidden="true"></canvas></div>
+          <div class="stem-card__body">
+            <span class="stem-tag">Stem 02</span>
+            <h3>Background</h3>
+            <p>The sample-wise residual — everything the voice mask removed: room tone, hum, traffic, crowd. Audit it with the residual monitor to hear exactly what was taken out.</p>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="cine-section cine-section--glow">
+    <div class="cine-wrap">
+      <div class="cine-split">
+        <div class="cine-split__media cine-reveal">
+          <img src="/media/voice-isolation.jpg" alt="Voice waveform separating from noise in 3D" loading="lazy" decoding="async">
+        </div>
+        <div class="cine-split__copy cine-reveal" data-delay="1">
+          <span class="cine-split__num">How it works</span>
+          <h3>One pass. No phase damage.</h3>
+          <p>The fused spectral chain runs <strong>one forward STFT and one inverse STFT</strong> — masks for voice, noise, and speech multiply in a single representation, so the audio never passes through repeated analysis damage.</p>
+          <ul class="cine-list">
+            <li>Batch ONNX inference in a worker — WebGPU when available, WASM fallback</li>
+            <li>Model integrity verified by SHA-256 before every session</li>
+            <li>Sliders and mix moves never re-trigger the AI</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cine-split cine-split--flip">
+        <div class="cine-split__media cine-reveal">
+          <img src="/media/stems-layers.jpg" alt="Translucent audio layers separating" loading="lazy" decoding="async">
+        </div>
+        <div class="cine-split__copy cine-reveal" data-delay="1">
+          <span class="cine-split__num">Live-Mix</span>
+          <h3>Separated once.<br>Mixed forever.</h3>
+          <p>Stems play through a <strong>zero-ML playback graph</strong>: per-stem gains, a full EQ rack, dynamics, a real-time gate and de-esser. Every move is immediate and reversible — the AI already did its part.</p>
+          <ul class="cine-list">
+            <li>Voice clarity, podcast, and whisper-boost presets</li>
+            <li>Mute / solo per stem, stereo width, output safety</li>
+            <li>Export locally — WAV or MP3, video keeps its picture</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cine-section">
+    <div class="cine-wrap">
+      <p class="cine-kicker cine-reveal">Separation models</p>
+      <h2 class="cine-h2 cine-reveal">Pick your engine.</h2>
+      <p class="cine-lede cine-reveal">Four chains, one contract: everything runs on your device, verified before it runs.</p>
+      <div class="cine-models">
+        <article class="cine-model cine-reveal">
+          <span class="size">~3.7 MB · Default</span>
+          <h3>BS-RNN Vocals</h3>
+          <p>Band-split RNN vocal extractor. The recommended balance of quality and speed for everyday isolation.</p>
+        </article>
+        <article class="cine-model cine-reveal" data-delay="1">
+          <span class="size">2-pass · Slowest</span>
+          <h3>Maximum Isolation</h3>
+          <p>BS-RNN followed by a denoise stage. For the hardest recordings — heavy crowds, machinery, wind.</p>
+        </article>
+        <article class="cine-model cine-reveal" data-delay="2">
+          <span class="size">~2 MB · Fastest</span>
+          <h3>RNNoise</h3>
+          <p>BiGRU noise suppression only. Near-instant cleanup when you need speed over surgery.</p>
+        </article>
+        <article class="cine-model cine-reveal" data-delay="3">
+          <span class="size">~149 MB · Optional</span>
+          <h3>Demucs v4</h3>
+          <p>Waveform-domain specialist for studio-grade work. Large download, worth it on demanding material.</p>
+        </article>
+      </div>
+      <p class="chain-note cine-reveal">Voice activity detection gates silence before speaker analysis, so quiet passages and whispers are handled deliberately — not discarded.</p>
+    </div>
+  </section>
+
+  <section class="cine-section">
+    <div class="cine-wrap">
+      <div class="cine-stats cine-reveal">
+        <div class="cine-stat"><b data-count="48" data-suffix=" kHz">48<span class="u"> kHz</span></b><span>Studio pipeline</span></div>
+        <div class="cine-stat"><b data-count="1" data-suffix=" × STFT">1<span class="u"> × STFT</span></b><span>Single pass chain</span></div>
+        <div class="cine-stat"><b data-count="100" data-suffix="%">100<span class="u">%</span></b><span>On-device</span></div>
+        <div class="cine-stat"><b data-count="0" data-suffix=" bytes">0<span class="u"> bytes</span></b><span>Audio uploaded</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cine-section" style="padding-top:0">
+    <div class="cine-wrap">
+      <div class="cine-cta cine-reveal">
+        <h2>Hear what others miss.</h2>
+        <p>Drop a recording on the landing page and watch it split — or open the full console for the deep controls.</p>
+        <div class="cine-actions" style="justify-content:center">
+          <a class="cine-btn cine-btn--primary" href="/#uploadPanel">Try it now</a>
+          <a class="cine-btn cine-btn--ghost" href="/app/">Open Studio</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="cine-footer">
+    <span>© <span data-year>2026</span> VoiceIsolate Pro · 100% on-device</span>
+    <nav aria-label="Footer">
+      <a href="/">Overview</a><a href="/stems/">Stems</a><a href="/engineer/">Engineer</a><a href="/download/">Download</a>
+    </nav>
+  </footer>
+
+  <script defer src="/lib/cinematic/cinematic.js"></script>
+</body>
+</html>

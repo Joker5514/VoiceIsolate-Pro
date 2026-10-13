@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="VoiceIsolate Pro for engineers — a 67-control precision console, forensic spectrogram inspection, and per-speaker surgery. 100% on-device.">
+  <meta name="theme-color" content="#050508">
+  <meta name="color-scheme" content="dark">
+  <meta property="og:title" content="VoiceIsolate Pro — Engineer">
+  <meta property="og:description" content="A precision console for audio engineers: 67 controls, forensic inspection, per-speaker surgery. 100% on-device.">
+  <meta property="og:type" content="website">
+  <title>Engineer — VoiceIsolate Pro</title>
+  <link rel="icon" href="/icon.jpg">
+  <link rel="stylesheet" href="/lib/cinematic/cinematic.css">
+  <style>
+    /* Engineer page — local composition (CSP allows inline styles) */
+    .eng-shot {
+      border-radius: calc(var(--c-r) + 6px); overflow: clip;
+      border: 1px solid var(--c-line); position: relative;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 80px rgba(58,226,255,0.06);
+    }
+    .eng-shot img { width: 100%; display: block; }
+    .contract { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 34px; }
+    .contract article {
+      border: 1px solid var(--c-line); border-radius: var(--c-r); padding: 28px;
+      background: linear-gradient(165deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012));
+    }
+    .contract h3 { font-family: var(--c-font-d); font-size: 1.15rem; margin: 0 0 4px; }
+    .contract .n { font-family: var(--c-font-m); font-size: 2rem; color: var(--c-cyan); display: block; margin-bottom: 10px; }
+    .contract p { color: var(--c-mut); font-size: 0.93rem; line-height: 1.7; margin: 0; }
+    @media (max-width: 760px) { .contract { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body class="cine-page">
+  <nav class="cine-nav" aria-label="Site">
+    <a class="cine-nav__brand" href="/" aria-label="VoiceIsolate Pro home">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff3d4d" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M8 6v12M4 10v4M16 6v12M20 10v4"/></svg>
+      <span class="cine-nav__word">VoiceIsolate <em>Pro</em></span>
+    </a>
+    <div class="cine-nav__links">
+      <a href="/">Overview</a>
+      <a href="/stems/">Stems</a>
+      <a href="/engineer/" aria-current="page">Engineer</a>
+      <a href="/app/">Studio</a>
+      <a href="/download/" class="cine-nav__cta">Download</a>
+    </div>
+  </nav>
+
+  <header class="cine-hero">
+    <div class="cine-hero__media" aria-hidden="true">
+      <img class="kenburns" src="/media/engineer-cinematic.jpg" alt="" decoding="async">
+    </div>
+    <div class="cine-hero__shade" aria-hidden="true"></div>
+    <canvas class="cine-hero__particles" aria-hidden="true"></canvas>
+    <div class="cine-hero__inner">
+      <p class="cine-kicker">For audio engineers</p>
+      <h1 class="cine-title">A console,<br><span class="grad">not a black box.</span></h1>
+      <p class="cine-sub">The Engineer Console is a precision workstation: <strong style="color:var(--c-ink)">67 calibrated controls</strong>, a spectrogram-first forensic workspace, and per-speaker surgery — every stage inspectable, every move reversible, everything on your device.</p>
+      <div class="cine-actions">
+        <a class="cine-btn cine-btn--primary" href="/app/">Open the console</a>
+        <a class="cine-btn cine-btn--ghost" href="/stems/">How stems work</a>
+      </div>
+    </div>
+    <div class="cine-scroll-hint" aria-hidden="true">Scroll</div>
+  </header>
+
+  <div class="cine-marquee" aria-hidden="true">
+    <div class="cine-marquee__track">
+      <span><i>◆</i>67 precision controls</span><span><i>◆</i>Forensic spectrogram</span><span><i>◆</i>Per-speaker surgery</span><span><i>◆</i>32 DSP stages</span><span><i>◆</i>100% on-device</span>
+      <span><i>◆</i>67 precision controls</span><span><i>◆</i>Forensic spectrogram</span><span><i>◆</i>Per-speaker surgery</span><span><i>◆</i>32 DSP stages</span><span><i>◆</i>100% on-device</span>
+    </div>
+  </div>
+
+  <section class="cine-section">
+    <div class="cine-wrap">
+      <p class="cine-kicker cine-reveal">The contract</p>
+      <h2 class="cine-h2 cine-reveal">Two kinds of controls.<br>Zero surprises.</h2>
+      <p class="cine-lede cine-reveal">Every control declares when it acts. Live controls move sound instantly. Process controls are captured as one immutable snapshot the moment you press Process — dragging one never re-runs the AI.</p>
+      <div class="contract">
+        <article class="cine-reveal">
+          <span class="n">37</span>
+          <h3>Live-Mix controls</h3>
+          <p>Gains, EQ bands, dynamics, gate, and de-esser drive AudioParams on the already-separated stems. Immediate, smooth, reversible — the neural net is never involved.</p>
+        </article>
+        <article class="cine-reveal" data-delay="1">
+          <span class="n">27</span>
+          <h3>Process-time spectral controls</h3>
+          <p>Mask shaping, floors, and spectral surgery travel in a versioned snapshot to the inference worker. One explicit run per file and configuration.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="cine-section cine-section--glow">
+    <div class="cine-wrap">
+      <div class="cine-split">
+        <div class="cine-split__media cine-reveal">
+          <img src="/media/engineer-console.jpg" alt="Engineer Console signal canvas and DSP rack" loading="lazy" decoding="async">
+        </div>
+        <div class="cine-split__copy cine-reveal" data-delay="1">
+          <span class="cine-split__num">Forensics</span>
+          <h3>Inspect the evidence.</h3>
+          <p>A <strong>spectrogram-first workspace</strong> with time-frequency selection: isolate a region, audition the Removed (Delta) view to hear exactly what the process took out, and verify before you commit.</p>
+          <ul class="cine-list">
+            <li>Analysis overlays appear only from real analysis — never placeholders</li>
+            <li>Source confidence, voice/noise balance, and SNR from measured signal</li>
+            <li>Raw source stays immutable; processed and removed are derived views</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cine-split cine-split--flip">
+        <div class="cine-split__media cine-reveal">
+          <img src="/media/voice-isolation.jpg" alt="Voice separating from noise" loading="lazy" decoding="async">
+        </div>
+        <div class="cine-split__copy cine-reveal" data-delay="1">
+          <span class="cine-split__num">Speakers</span>
+          <h3>Operate on voices,<br>not just waveforms.</h3>
+          <p>On-device <strong>speaker detection</strong> clusters the clean stem by voice timbre — mute, solo, or rebalance each speaker with instant gain automation. Enroll a <strong>target voiceprint</strong> to focus the process on one voice in a crowd.</p>
+          <ul class="cine-list">
+            <li>Whisper-level speech still detected — low-energy voices aren't discarded</li>
+            <li>Per-speaker boost up to +6 dB for faint voices</li>
+            <li>All diarization and enrollment stays on the device</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cine-section">
+    <div class="cine-wrap">
+      <p class="cine-kicker cine-reveal">Under the hood</p>
+      <h2 class="cine-h2 cine-reveal">Strict where it counts.</h2>
+      <div class="cine-grid" style="margin-top:44px">
+        <article class="cine-card cine-reveal">
+          <div class="cine-card__body">
+            <span class="cine-card__tag">Pipeline</span>
+            <h3>One STFT in, one iSTFT out</h3>
+            <p>The fused spectral chain shares a single time-frequency representation — no repeated phase damage from stacked analysis passes.</p>
+          </div>
+        </article>
+        <article class="cine-card cine-reveal" data-delay="1">
+          <div class="cine-card__body">
+            <span class="cine-card__tag">Playback</span>
+            <h3>Worklets, not magic</h3>
+            <p>The real-time gate and de-esser are true AudioWorklets on the playback path — k-rate params, sample-accurate, zero ML.</p>
+          </div>
+        </article>
+        <article class="cine-card cine-reveal" data-delay="2">
+          <div class="cine-card__body">
+            <span class="cine-card__tag">Integrity</span>
+            <h3>Verified models</h3>
+            <p>Every model carries a pinned SHA-256, checked before each session. Mismatches are refused — silently swapping weights is impossible.</p>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="cine-section">
+    <div class="cine-wrap">
+      <div class="cine-stats cine-reveal">
+        <div class="cine-stat"><b data-count="67">67</b><span>Precision controls</span></div>
+        <div class="cine-stat"><b data-count="32">32</b><span>DSP stages</span></div>
+        <div class="cine-stat"><b data-count="48" data-suffix=" kHz">48<span class="u"> kHz</span></b><span>Throughout</span></div>
+        <div class="cine-stat"><b data-count="100" data-suffix="%">100<span class="u">%</span></b><span>On-device</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cine-section" style="padding-top:0">
+    <div class="cine-wrap">
+      <div class="eng-shot cine-reveal" style="margin-bottom:64px">
+        <img src="/media/engineer-console.jpg" alt="The Engineer Console" loading="lazy" decoding="async">
+      </div>
+      <div class="cine-cta cine-reveal">
+        <h2>Open the console.</h2>
+        <p>The full workstation runs in your browser — same engine as Android and desktop. No account, no upload, no waiting.</p>
+        <div class="cine-actions" style="justify-content:center">
+          <a class="cine-btn cine-btn--primary" href="/app/">Launch Engineer Console</a>
+          <a class="cine-btn cine-btn--ghost" href="/">Back to overview</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="cine-footer">
+    <span>© <span data-year>2026</span> VoiceIsolate Pro · 100% on-device</span>
+    <nav aria-label="Footer">
+      <a href="/">Overview</a><a href="/stems/">Stems</a><a href="/engineer/">Engineer</a><a href="/download/">Download</a>
+    </nav>
+  </footer>
+
+  <script defer src="/lib/cinematic/cinematic.js"></script>
+</body>
+</html>
