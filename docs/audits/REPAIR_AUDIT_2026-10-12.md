@@ -21,7 +21,7 @@ environment does not have), **NOT VERIFIED** (no runtime evidence obtainable her
 - First review round, 60 threads on PR #846: 56 fixed; 4 closed without a
   code change (2 answered with evidence, 2 product questions left open for
   the owner). Second round, 21 threads: see §7.
-- Jest 222 suites / 3788 tests pass (baseline 208 / 3603).
+- Jest 222 suites / 3794 tests pass at `131c5c7` (baseline 208 / 3603).
   `pnpm lint` 0 errors over every shipped first-party group. SI-SDR gate PASS.
 - Not production-ready as a release claim: see release blockers.
 
@@ -189,7 +189,7 @@ pnpm, pre-installed Chromium). Final-state runs are at the head listed in §8.
 | Command | Result |
 |---|---|
 | `pnpm install --frozen-lockfile` | PASS (approved) |
-| `pnpm test` (final) | PASS: 222 suites, 3788 tests, 0 failed |
+| `pnpm test` (final, `131c5c7`) | PASS: 222 suites, 3794 tests, 0 failed |
 | `pnpm lint` | PASS: 0 errors, 88 warnings (all pre-existing lines) |
 | `pnpm validate` | PASS ("All checks passed") |
 | `pnpm worklets:verify` | PASS |
