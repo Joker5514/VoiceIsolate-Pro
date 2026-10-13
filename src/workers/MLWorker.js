@@ -1048,7 +1048,7 @@ async function runFusedSpectralMaskChain(
         im[k] = cur.batchIm[off + k] * m;
       }
       if (engineerProcessor) {
-        engineerProcessor.applyFrame(re, im, cur.batchMags, off);
+        engineerProcessor.applyFrame(re, im, cur.batchMags, off, (f0 + b) * hop < pad);
       }
       hasPrevMask = true;
       realFftInverse(re, im, N, frame, halfRe, halfIm);
@@ -1435,6 +1435,14 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     }
   }
 
+  // Spectral masks are trained on fixed bin frequencies; another rate would
+  // shift every bin and mask the wrong band without any error. Hosts resample
+  // to 48 kHz first (FileIngestion.resampleToCanonical).
+  for (const entry of chain.map((id) => MANIFEST[id])) {
+    if (entry.strategy === 'spectral-mask' && entry.sampleRate && sampleRate !== entry.sampleRate) {
+      throw new Error(`[VIP][MLWorker] '${entry.id}' expects ${entry.sampleRate} Hz input, got ${sampleRate} Hz. Resample before Process.`);
+    }
+  }
   ACTIVE_REQUEST_ID = requestId;
   resetStftCounters();
   let lastProgressSent = -1;

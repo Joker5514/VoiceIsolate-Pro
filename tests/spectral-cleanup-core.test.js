@@ -230,3 +230,49 @@ describe('invariants', () => {
     expect(y.length).toBe(4);
   });
 });
+
+describe('full-coverage framing (edges and tail)', () => {
+  // Length is not a multiple of the hop, so the old framing left the tail
+  // uncovered (silenced) and attenuated ~N/2 samples at each edge.
+  const len = SR + 777;
+  const tone = new Float32Array(len);
+  for (let i = 0; i < len; i++) tone[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / SR);
+
+  test.each([
+    ['dereverb', (x) => sc.dereverb(x, { amount: 1e-6 })],
+    ['cleanupSpectral', (x) => sc.cleanupSpectral(x, { noiseReduction: 1e-6, dereverb: 1e-6 })],
+  ])('%s at a near-zero amount reconstructs both edges', (_name, fn) => {
+    const y = fn(tone);
+    expect(y.length).toBe(len);
+    let maxErr = 0;
+    for (let i = 0; i < 2048; i++) maxErr = Math.max(maxErr, Math.abs(y[i] - tone[i]));
+    for (let i = len - 2048; i < len; i++) maxErr = Math.max(maxErr, Math.abs(y[i] - tone[i]));
+    expect(maxErr).toBeLessThan(1e-4);
+  });
+});
+
+describe('reflected pre-roll stays out of dereverb history', () => {
+  // A tone that starts at sample 0 has no past. If the mirrored pre-roll fed
+  // the tail estimate, the opening would be subtracted as its own reverb.
+  const tone = new Float32Array(SR);
+  for (let i = 0; i < SR; i++) tone[i] = 0.5 * Math.sin((2 * Math.PI * 300 * i) / SR);
+  const levelDb = (y) => 20 * Math.log10(rms(y, 0, 1920) / rms(tone, 0, 1920));
+
+  test.each([
+    ['dereverb', () => sc.dereverb(tone, { amount: 1 })],
+    ['cleanupSpectral', () => sc.cleanupSpectral(tone, { noiseReduction: 0.01, dereverb: 1 })],
+  ])('%s keeps the first 40 ms at full level', (_name, run) => {
+    expect(Math.abs(levelDb(run()))).toBeLessThan(0.5);
+  });
+
+  test.each([4096, 2048, 1640])('rejects hop %i (> half the 2048 frame)', (hopSize) => {
+    expect(() => sc.dereverb(tone, { amount: 0.5, frameSize: 2048, hopSize })).toThrow(RangeError);
+  });
+
+  test('the largest accepted hop (half the frame) reconstructs at a near-zero amount', () => {
+    const y = sc.dereverb(tone, { amount: 1e-6, frameSize: 2048, hopSize: 1024 });
+    let maxErr = 0;
+    for (let i = 0; i < tone.length; i++) maxErr = Math.max(maxErr, Math.abs(y[i] - tone[i]));
+    expect(maxErr).toBeLessThan(1e-4);
+  });
+});

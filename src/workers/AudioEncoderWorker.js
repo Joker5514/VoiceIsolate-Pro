@@ -99,7 +99,8 @@ export function encodeWAV(channels, sampleRate) {
     for (let ch = 0; ch < numChannels; ch++) {
       let sample = channels[ch][i];
       if (sample > 1) { sample = 1; clippedSamples++; } else if (sample < -1) { sample = -1; clippedSamples++; }
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+      // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
+      view.setInt16(offset, Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF), true);
       offset += 2;
     }
   }

@@ -21,7 +21,7 @@ environment does not have), **NOT VERIFIED** (no runtime evidence obtainable her
 - First review round, 60 threads on PR #846: 56 fixed; 4 closed without a
   code change (2 answered with evidence, 2 product questions left open for
   the owner). Second round, 21 threads: see §7.
-- Jest 222 suites / 3794 tests pass at `131c5c7` (baseline 208 / 3603).
+- Jest 224 suites / 3828 tests pass after merging `main` (#845) (baseline 208 / 3603).
   `pnpm lint` 0 errors over every shipped first-party group. SI-SDR gate PASS.
 - Not production-ready as a release claim: see release blockers.
 
@@ -189,7 +189,7 @@ pnpm, pre-installed Chromium). Final-state runs are at the head listed in §8.
 | Command | Result |
 |---|---|
 | `pnpm install --frozen-lockfile` | PASS (approved) |
-| `pnpm test` (final, `131c5c7`) | PASS: 222 suites, 3794 tests, 0 failed |
+| `pnpm test` (final, after merging #845) | PASS: 224 suites, 3828 tests, 0 failed |
 | `pnpm lint` | PASS: 0 errors, 88 warnings (all pre-existing lines) |
 | `pnpm validate` | PASS ("All checks passed") |
 | `pnpm worklets:verify` | PASS |
@@ -335,4 +335,13 @@ Jest's Node environment. The helper was hardened anyway.
 - Branch `ccr-58149caf-j14xcr`, draft PR #846. All changes on it are this
   repair's, except `cebcfb0` and `5ffeaa2`, which the owner applied from
   review suggestions; both are superseded by equivalent text in `6627b7e`.
-- `git diff --stat 0b020cc..HEAD`: 133 files changed, 7548 insertions(+), 1998 deletions(-).
+- `main` advanced with #845 (fused-STFT framing, Engineer WAV export). It
+  overlapped F26 and F24. The merge keeps this branch's odd-reflection framing
+  without the 8 ms edge fades (#845 listed them as observed but unchanged),
+  adopts #845's sample-rate guard, SpectralCleanup framing and WAV rounding,
+  and corrects #845's notes that said the fades remain. Checks after the
+  merge: Jest 224/3828 (one F24 test now expects rounding: 16384, not 16383),
+  lint 0 errors, validate, `test:quality` PASS, and the live, landing,
+  engineer, calibration and engineer-upload smokes PASS. `#845`'s
+  `mlworker-ola-edges` tests pass on this framing.
+- `git diff --stat origin/main..HEAD` after the merge: 136 files changed, 7562 insertions(+), 2023 deletions(-).

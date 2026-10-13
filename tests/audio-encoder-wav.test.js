@@ -51,7 +51,8 @@ test('clipping policy: clamped to full scale and counted', async () => {
   const { blob, clippedSamples } = enc.encodeWAV([new Float32Array([1.5, -2, 0.5, 1, -1])], 48000);
   expect(clippedSamples).toBe(2);
   const w = await parseWav(blob);
-  expect(Array.from(w.ch[0])).toEqual([32767, -32768, 16383, 32767, -32768]);
+  // 0.5 × 32767 = 16383.5 rounds to 16384 (truncation would give 16383).
+  expect(Array.from(w.ch[0])).toEqual([32767, -32768, 16384, 32767, -32768]);
 });
 
 describe('malformed PCM is rejected, never silently encoded', () => {
