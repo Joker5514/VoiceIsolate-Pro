@@ -18,9 +18,9 @@ environment does not have), **NOT VERIFIED** (no runtime evidence obtainable her
   storage, SAM/SAM3, native/CI and test realism. 16 FIXED and 3 PARTIAL with
   regressions, 1 BLOCKED, 1 owner decision, 28 reported with evidence (§6).
   UI handler and native/CI coverage is partial (§5).
-- 60 automated review threads on PR #846: 53 fixed, the rest answered with
-  evidence; 2 product questions (purchase flow, reconciliation) left open for
-  the owner (§7).
+- 60 automated review threads on PR #846: 56 fixed, 4 answered with evidence
+  and no code change; 2 of those (purchase flow, reconciliation) are product
+  questions left open for the owner (§7).
 - Jest 222 suites / 3788 tests pass (baseline 208 / 3603).
   `pnpm lint` 0 errors over every shipped first-party group. SI-SDR gate PASS.
 - Not production-ready as a release claim: see release blockers.
@@ -205,7 +205,7 @@ pnpm, pre-installed Chromium). Final-state runs are at the head listed in §8.
 | `pnpm provenance:validate:strict` | FAIL (expected, unaltered): web `unknown`, Android/Windows `stale` |
 | `docker build` | BLOCKED: no Docker daemon |
 | Android AAB / Windows NSIS | NOT VERIFIED: no JDK/signing; Linux host |
-| GitHub Actions CI | BLOCKED: account runner lock (jobs fail in ~2 s, `runner_id` 0; `main` identical) |
+| GitHub Actions CI | BLOCKED: account runner lock (earlier heads: jobs failed in ~2 s, `runner_id` 0, `main` identical; on `c63274c` no Actions run started at all) |
 | Model metadata + forward pass (onnxruntime-web 1.25.1, wasm) | All four shipped models load; sha256 and size match `ModelManifest.js`; spectral I/O `[batch, 2049]` both ways; masks finite (bsrnn 0.0003-0.9998, rnnoise 0.0001-0.448) |
 
 Tolerances: identity reconstruction ≤ 4.8e-7 (float32 round-off over a
@@ -299,12 +299,14 @@ upstream exports, hash-pinned.
 
 ## 7. Review threads (PR #846)
 
-60 cubic-dev-ai threads plus 2 follow-ups. Fixed: 53 (commits 1d2e9f9,
-af3f4b7, f03b430). Answered without a code change, with evidence: MLWorker
-short-clip reflection (bounded by design; parity test added), USM worker
-timeout (input bounded at ~128 s; ~25× headroom), Firestore/landing follow-ups.
-Open for the owner: the checkout success-page wiring and Stripe reconciliation
-(product decisions; purchase flow dormant).
+60 cubic-dev-ai threads. Fixed: 56 (commits 1d2e9f9, af3f4b7, 6627b7e,
+f03b430, c63274c). Answered without a code change, with evidence: MLWorker
+short-clip reflection (bounded by design; a parity test now pins it to
+`stft-math`) and the USM worker timeout (input bounded at ~128 s; ~25×
+headroom). Two earlier follow-ups (reverb onset rule, Landing ONNX diarizer
+cancel) were answered with measurements. Open for the owner: the checkout
+success-page wiring and Stripe reconciliation (product decisions; purchase
+flow dormant).
 
 ## 8. Git state
 
