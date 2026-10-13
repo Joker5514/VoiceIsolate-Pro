@@ -34,13 +34,29 @@ describe('SAM3 local-only policy', () => {
     expect(sam3.assertLocalModelAsset('https://example.com/app/models/sam3/x.onnx').ok).toBe(false);
   });
 
-  test('allows localhost for desktop tooling', () => {
-    expect(sam3.assertLocalModelAsset('http://127.0.0.1:8765/model').ok).toBe(true);
+  test('allows localhost for desktop tooling, inside the same path allowlist', () => {
+    expect(sam3.assertLocalModelAsset('http://127.0.0.1:8765/app/models/sam3/model.onnx').ok).toBe(true);
+    expect(sam3.assertLocalModelAsset('http://127.0.0.1:8765/model').ok).toBe(false);
+    expect(sam3.assertLocalModelAsset('http://localhost:3000/app/models/bsrnn_vocals.onnx').ok).toBe(false);
   });
 
   test('rejects path traversal and non-allowlisted paths', () => {
     expect(sam3.assertLocalModelAsset('/app/models/sam3/../secret').ok).toBe(false);
     expect(sam3.assertLocalModelAsset('/app/models/bsrnn_vocals.onnx').ok).toBe(false);
+  });
+
+  test.each([
+    '/app/models/sam3/%2e%2e/bsrnn_vocals.onnx',
+    '/app/models/sam3/%2E%2E/%2e%2e/secret',
+    '/app/models/sam3/..%2fbsrnn_vocals.onnx',
+    '/app/models/sam3\\..\\bsrnn_vocals.onnx',
+    '/app/models/sam3evil/x.onnx',
+    '/app/models/sam3-runtime.marker.json',
+    '/app/models/sam3',
+    '/app/models/sam3/',
+    '/app/models/sam3/%zz',
+  ])('rejects encoded traversal and sibling paths: %s', (p) => {
+    expect(sam3.assertLocalModelAsset(p).ok).toBe(false);
   });
 
   test('findForbiddenRemoteHosts detects policy violations', () => {

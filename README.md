@@ -120,9 +120,14 @@ Key constraints:
 
 The shipping local stack is model-manifest driven and uses ONNX Runtime Web with WebGPU when available and WASM fallback where supported. Current core model families include:
 
-- Band-Split RNN vocals isolation
-- RNNoise-compatible suppression path where configured
+- A small band-split vocal-mask network (`bsrnn_vocals.onnx`)
+- An optional second-stage noise-suppression mask (`rnnoise_suppressor.onnx`, a BiGRU
+  trained from scratch; not Mozilla RNNoise and not RNNoise-compatible)
 - Silero VAD
+
+Both spectral models are custom networks trained for 600 steps on synthetic
+mixtures (see `public/app/models/models-manifest.json`); they are single-frame
+and weak, and the quality gate (`pnpm test:quality`) is the measure of what they do.
 
 Large optional model families may be excluded from standard native packages because of memory/size constraints. See [`docs/guides/MODEL_DELIVERY.md`](docs/guides/MODEL_DELIVERY.md) for the actual delivery contract.
 

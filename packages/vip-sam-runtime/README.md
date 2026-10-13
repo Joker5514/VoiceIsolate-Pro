@@ -25,13 +25,8 @@ set SAM_AUDIO_ALLOW_MOCK=1
 pnpm sam:worker
 ```
 
-## Android / Web (on-device ORT)
+## Android / Web
 
-Place licensed ONNX at `public/app/models/sam_audio.onnx` then rebuild:
-
-```bash
-pnpm build
-pnpm cap:sync
-```
-
-Without ONNX, prompted isolation still runs fully local via USM + BSRNN.
+There is no on-device SAM-Audio loader. A `sam_audio.onnx` file is never
+used, and Android packaging excludes it. Prompted isolation runs fully local
+via USM + BSRNN.

@@ -7,8 +7,8 @@
 | Live-Mix worklets (gate/de-ess) | ✅ | ✅ if WebAudio OK | ✅ |
 | Live microphone capture | ❌ by design | ❌ by design | ❌ by design |
 | Prompted Isolation (USM query) | ✅ offline | ✅ offline | ✅ offline |
-| Real SAM-Audio (Meta PyTorch worker) | ⚪ loopback if user runs worker | ❌ (use ONNX path) | ✅ IPC + CUDA/CPU |
-| SAM-Audio ONNX on-device | ⚪ if `sam_audio.onnx` shipped | ⚪ if model in assets/WebView | ⚪ optional |
+| Real SAM-Audio (Meta PyTorch worker) | ❌ page cannot reach it | ❌ | ⚪ IPC + CUDA/CPU; no shipping UI calls it yet |
+| SAM-Audio ONNX on-device | ❌ no loader | ❌ no loader (excluded from APK) | ❌ no loader |
 | Local SAM-Audio worker (loopback) | ⚪ user-run | ⚪ advanced (ADB reverse) | ✅ IPC spawn |
 | **SAM 3 vision sidecar** (`src/sam3_integration`) | ✅ bundled (flag OFF) | ✅ in WebView build (flag OFF) | ✅ in app + extraResources (flag OFF) |
 | SAM 3 real browser weights | ⚪ if `/app/models/sam3/*` | ⚪ if assets present | ⚪ if assets present |
@@ -20,8 +20,8 @@
 ## Android notes
 
 - minSdk effective **26**, target/compile **35**, Capacitor **8.3**
-- Real on-device SAM = optional **SAM-Audio ONNX** under `/app/models/sam_audio.onnx` (ORT in WebView)
-- Without that file, prompted isolation uses **USM + existing ONNX** (still fully local)
+- No on-device SAM-Audio: no loader exists, and `sam_audio.onnx` is excluded from the APK
+- Prompted isolation uses **USM + existing ONNX** (fully local)
 - largeHeap enabled; long jobs must yield / cancel
 
 ## Desktop notes

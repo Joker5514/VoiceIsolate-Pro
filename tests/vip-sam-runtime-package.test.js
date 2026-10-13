@@ -90,7 +90,10 @@ describe('vip-sam-runtime package in program', () => {
     });
     expect(r.status).toBe(0);
     expect(fs.existsSync(path.join(ROOT, 'build/app/models/sam-runtime.marker.json'))).toBe(true);
-    expect(fs.existsSync(path.join(ROOT, 'build/sam-audio/server.py'))).toBe(true);
+    // Desktop-only worker and FFmpeg ship via electron-builder extraResources,
+    // never through build/ (the Capacitor webDir and app.asar).
+    expect(fs.existsSync(path.join(ROOT, 'build/sam-audio'))).toBe(false);
+    expect(fs.existsSync(path.join(ROOT, 'build/ffmpeg-shared'))).toBe(false);
     expect(fs.existsSync(path.join(ROOT, 'build/packages/vip-sam-runtime/package.json'))).toBe(true);
     // SAM 3 vision on all three surfaces via build/
     expect(fs.existsSync(path.join(ROOT, 'build/app/models/sam3-runtime.marker.json'))).toBe(true);

@@ -65,7 +65,7 @@ Deterministic mock separator keeps integration tests green without GPU/HF.
 - **`sam_hub_compat.py`** — fixes hub 1.x vs sam_audio `proxies`/`resume_download` break (facebookresearch/sam-audio#89).
 - **No cloud SAM** — all audio stays on-device / loopback.
 - **No AudioWorklet SAM** — DSP worklets never load SAM.
-- **Browser** — does not claim real SAM without verified ONNX at `/app/models/sam_audio.onnx`.
+- **Browser** — no SAM: there is no ONNX loader, and the page cannot reach this worker.
 
 ## Security
 
@@ -103,7 +103,7 @@ Desktop defaults: `SAM_AUDIO_PRODUCTION=1`, `ALLOW_MOCK=0`, `--preload`.
 ## Android / Browser
 
 - **Browser:** no transport. The page CSP blocks loopback and the worker answers no CORS, so the provider reports `browser-transport-unavailable` and selection falls back to USM/ONNX; no silent “browser SAM” claim. Node tools can still call the worker directly.
-- **Android:** optional on-device ORT when `sam_audio.onnx` is present; else USM/BSRNN. Real Desktop-class SAM is the Python worker on a private host (advanced).
+- **Android:** no on-device SAM (no loader; `sam_audio.onnx` is excluded from the APK). Prompted isolation uses USM/BSRNN.
 
 ## Package identity
 

@@ -175,11 +175,14 @@ export const MODEL_MANIFEST = Object.freeze({
     sha256: null,
     /** 4D complex-spectrogram BSRNN (pretrained crlandsc/bsrnn-vocals).
      * Offline-only: consumed by offline-processor.js. NOT loaded by the
-     * real-time worklet path. See scripts/export_bsrnn_onnx.py. */
+     * real-time worklet path. Geometry follows scripts/export_bsrnn_onnx.py
+     * (N_FFT 2048 → 1025 bins, hop 1024, 44.1 kHz), not the 4096-point
+     * contract of the shipped spectral-mask models. */
     strategy: 'complex-spectrogram',
-    fftSize: 4096,
+    fftSize: 2048,
     hopSize: 1024,
-    sampleRate: 48000,
+    bins: 1025,
+    sampleRate: 44100,
     io: Object.freeze({
       input: 'input',   // 4D complex spectrogram tensor
       output: 'output', // 4D complex spectrogram tensor

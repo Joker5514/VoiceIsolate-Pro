@@ -32,8 +32,6 @@ const REQUIRED_MODELS = [
 /** Optional but useful if present (still keep APK lean). */
 const OPTIONAL_MODELS = [
   'silero_vad_int8.onnx',
-  // Real SAM-Audio ONNX when shipped — stays in APK for on-device prompted isolation.
-  'sam_audio.onnx',
   'sam-runtime.marker.json',
 ];
 
@@ -42,6 +40,8 @@ const EXCLUDE_MODELS = [
   'demucs_v4_fp32.onnx',
   // Quantized Demucs is still ~149 MB and can OOM mid-tier devices; default chain is BS-RNN.
   'demucs_v4_quantized.onnx',
+  // No on-device SAM-Audio loader exists; shipping the weights only bloats the APK.
+  'sam_audio.onnx',
 ];
 
 const REQUIRED_ORT = [

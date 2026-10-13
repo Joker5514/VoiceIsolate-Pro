@@ -41,44 +41,20 @@ function main() {
   const pkgDest = path.join(BUILD, 'packages', 'vip-sam-runtime');
   if (fs.existsSync(pkgSrc)) cpDir(pkgSrc, pkgDest);
 
-  // Worker sources for Electron extraResources staging (no venv pointers / pyc)
-  const workerSrc = path.join(ROOT, 'services', 'sam-audio');
-  const workerDest = path.join(BUILD, 'sam-audio');
-  if (fs.existsSync(workerSrc)) {
-    fs.mkdirSync(workerDest, { recursive: true });
-    for (const name of fs.readdirSync(workerSrc)) {
-      if (
-        name === '__pycache__' ||
-        name.endsWith('.pyc') ||
-        name === '.python-path' ||
-        name === '.ffmpeg-bin' ||
-        name.startsWith('.')
-      ) {
-        continue;
-      }
-      const from = path.join(workerSrc, name);
-      const to = path.join(workerDest, name);
-      const st = fs.statSync(from);
-      if (st.isDirectory()) cpDir(from, to);
-      else fs.copyFileSync(from, to);
-    }
+  // The Python worker and the shared FFmpeg build are desktop-only. Electron
+  // ships them through electron-builder extraResources (services/sam-audio →
+  // resources/sam-audio); staging them here put a Python server and an
+  // unpinned GPL FFmpeg distribution into the Android APK (Capacitor webDir)
+  // and into app.asar, where nothing can execute them. Remove leftovers from
+  // older builds so they cannot reach a package.
+  for (const stale of ['sam-audio', 'ffmpeg-shared']) {
+    fs.rmSync(path.join(BUILD, stale), { recursive: true, force: true });
   }
 
-  // Copy optional onnx if present
-  const onnx = path.join(ROOT, 'public', 'app', 'models', 'sam_audio.onnx');
-  if (fs.existsSync(onnx)) {
-    fs.copyFileSync(onnx, path.join(modelsDest, 'sam_audio.onnx'));
-    console.log('[ensure-sam] included sam_audio.onnx in build');
-  } else {
-    console.log('[ensure-sam] sam_audio.onnx not present (optional); marker + worker still bundled');
-  }
-
-  // Optional shared FFmpeg for packaged Electron (process.resourcesPath/ffmpeg-shared)
-  const ffmpegSrc = path.join(ROOT, '.tools', 'ffmpeg-shared');
-  const ffmpegDest = path.join(BUILD, 'ffmpeg-shared');
-  if (fs.existsSync(ffmpegSrc)) {
-    cpDir(ffmpegSrc, ffmpegDest);
-    console.log('[ensure-sam] staged .tools/ffmpeg-shared → build/ffmpeg-shared');
+  // No loader consumes sam_audio.onnx (the manifest entry has no pinned hash
+  // and no prompt-input contract), so it is not staged for any package.
+  if (fs.existsSync(path.join(ROOT, 'public', 'app', 'models', 'sam_audio.onnx'))) {
+    console.warn('[ensure-sam] public/app/models/sam_audio.onnx present but unused: no SAM-Audio ONNX loader exists');
   }
 
   // ── SAM 3 vision sidecar (all platforms — feature-flagged, not audio) ──
