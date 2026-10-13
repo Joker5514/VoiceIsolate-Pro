@@ -204,8 +204,18 @@ function openDb() {
         db.createObjectStore(IDB_STORE);
       }
     };
-    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      _idb = req.result;
+      // Release the cache for Clear Local Data or another tab's upgrade; the
+      // next read reopens it (a deleted cache is just a miss).
+      _idb.onversionchange = () => {
+        try { _idb?.close(); } catch { /* ignore */ }
+        _idb = null;
+        _idbPromise = null;
+      };
+      resolve(_idb);
+    };
+    req.onerror = () => { _idbPromise = null; reject(req.error); };
   });
   return _idbPromise;
 }

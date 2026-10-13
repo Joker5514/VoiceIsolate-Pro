@@ -28,19 +28,22 @@ const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
  * @param {string} projectId
  * @returns {Promise<Blob>}
  */
-export async function exportProjectPack(projectId) {
+export async function exportProjectPack(projectId, opts = {}) {
   const project = await ProjectStore.getProject(projectId);
   if (!project) throw new Error('[VIP][ProjectPack] project not found');
 
   const files = [];
   const entries = [];
+  const missing = [];
 
   for (const fileId of project.sourceFileIds || []) {
     const meta = await FileLibrary.getFileMeta(fileId);
-    if (!meta) continue;
     let blob = null;
-    if (meta.blobRef) blob = await readSourceBlob(meta.blobRef);
-    if (!blob) continue;
+    if (meta?.blobRef) blob = await readSourceBlob(meta.blobRef);
+    if (!meta || !blob) {
+      missing.push(fileId);
+      continue;
+    }
     const name = `sources/${fileId}/${meta.originalFilename || 'audio.bin'}`;
     const ab = await blob.arrayBuffer();
     entries.push({ name, data: new Uint8Array(ab) });
@@ -55,6 +58,14 @@ export async function exportProjectPack(projectId) {
       tags: meta.tags || [],
       path: name,
     });
+  }
+
+  // A pack that silently drops sources looks complete to whoever imports it.
+  if (missing.length && !opts.allowMissing) {
+    throw Object.assign(
+      new Error(`[VIP][ProjectPack] ${missing.length} of ${(project.sourceFileIds || []).length} project source(s) are no longer stored on this device`),
+      { code: 'MISSING_SOURCES', missing },
+    );
   }
 
   const manifest = {
@@ -179,39 +190,91 @@ export async function parseProjectPack(input) {
  * @param {ArrayBuffer|Blob|File} input
  * @returns {Promise<{ projectId: string, fileIds: string[] }>}
  */
+const optString = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+const optNumber = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+
+/**
+ * Validate an untrusted pack manifest into the exact shape import writes.
+ * Throws before anything is stored, so a malformed pack leaves no rows.
+ * @param {object} manifest
+ * @param {Map<string, Uint8Array>} files
+ */
+export function sanitizePackManifest(manifest, files) {
+  const project = manifest?.project;
+  if (!project || typeof project !== 'object' || Array.isArray(project)) {
+    throw new Error('[VIP][ProjectPack] invalid manifest: project');
+  }
+  const list = manifest.files ?? [];
+  if (!Array.isArray(list)) throw new Error('[VIP][ProjectPack] invalid manifest: files must be an array');
+  const savedParams = {};
+  const rawParams = project.savedParams;
+  if (rawParams != null) {
+    if (typeof rawParams !== 'object' || Array.isArray(rawParams)) {
+      throw new Error('[VIP][ProjectPack] invalid manifest: savedParams');
+    }
+    for (const [k, v] of Object.entries(rawParams)) {
+      if (typeof v === 'number' && Number.isFinite(v)) savedParams[k] = v;
+    }
+  }
+  const out = list.map((f, i) => {
+    if (!f || typeof f !== 'object' || typeof f.path !== 'string' || !f.path) {
+      throw new Error(`[VIP][ProjectPack] invalid manifest: files[${i}]`);
+    }
+    if (!files.has(f.path)) throw new Error(`[VIP][ProjectPack] missing entry for files[${i}]`);
+    return {
+      path: f.path,
+      originalFilename: optString(f.originalFilename, 255) || 'import.bin',
+      mimeType: optString(f.mimeType, 127) || 'application/octet-stream',
+      duration: optNumber(f.duration),
+      sampleRate: optNumber(f.sampleRate),
+      channels: optNumber(f.channels),
+      tags: Array.isArray(f.tags) ? f.tags.filter((t) => typeof t === 'string').map((t) => t.slice(0, 64)) : [],
+    };
+  });
+  return {
+    name: optString(project.name, 200) || 'Imported project',
+    description: optString(project.description, 2000),
+    savedParams,
+    activePreset: typeof project.activePreset === 'string' ? project.activePreset.slice(0, 120) : null,
+    files: out,
+  };
+}
+
 export async function importProjectPack(input) {
   const { manifest, files } = await parseProjectPack(input);
-  const proj = await ProjectStore.createProject({
-    name: manifest.project?.name || 'Imported project',
-    description: manifest.project?.description || '',
-  });
-  await ProjectStore.updateProject(proj.projectId, {
-    savedParams: manifest.project?.savedParams || {},
-    activePreset: manifest.project?.activePreset || null,
-  });
-
+  const pack = sanitizePackManifest(manifest, files);
+  const proj = await ProjectStore.createProject({ name: pack.name, description: pack.description });
   const fileIds = [];
-  for (const f of manifest.files || []) {
-    const raw = files.get(f.path);
-    if (!raw) continue;
-    const blob = new Blob([raw], { type: f.mimeType || 'application/octet-stream' });
-    const file = blobToFile(blob, {
-      originalFilename: f.originalFilename || 'import.bin',
-      mimeType: f.mimeType,
+  try {
+    await ProjectStore.updateProject(proj.projectId, {
+      savedParams: pack.savedParams,
+      activePreset: pack.activePreset,
     });
-    const meta = await FileLibrary.importFile(file, {
-      mode: 'project',
-      projectId: proj.projectId,
-      tags: f.tags || [],
-    });
-    await FileLibrary.updateFileMeta(meta.id, {
-      duration: f.duration ?? null,
-      sampleRate: f.sampleRate ?? null,
-      channels: f.channels ?? null,
-      projectId: proj.projectId,
-    });
-    await ProjectStore.linkSourceFile(proj.projectId, meta.id);
-    fileIds.push(meta.id);
+    for (const f of pack.files) {
+      const blob = new Blob([files.get(f.path)], { type: f.mimeType });
+      const file = blobToFile(blob, { originalFilename: f.originalFilename, mimeType: f.mimeType });
+      const meta = await FileLibrary.importFile(file, {
+        mode: 'project',
+        projectId: proj.projectId,
+        tags: f.tags,
+      });
+      await FileLibrary.updateFileMeta(meta.id, {
+        duration: f.duration,
+        sampleRate: f.sampleRate,
+        channels: f.channels,
+        projectId: proj.projectId,
+      });
+      await ProjectStore.linkSourceFile(proj.projectId, meta.id);
+      fileIds.push(meta.id);
+    }
+  } catch (err) {
+    // No half-imported project: drop it. Rows already imported stay as plain
+    // library files (unlinked, so the track cap may evict them again).
+    try { await ProjectStore.deleteProject(proj.projectId); } catch { /* ignore */ }
+    for (const id of fileIds) {
+      try { await FileLibrary.updateFileMeta(id, { projectId: null }); } catch { /* ignore */ }
+    }
+    throw err;
   }
 
   return { projectId: proj.projectId, fileIds };
@@ -238,6 +301,7 @@ export default {
   exportProjectPack,
   importProjectPack,
   parseProjectPack,
+  sanitizePackManifest,
   buildPackBlob,
   downloadPackBlob,
 };

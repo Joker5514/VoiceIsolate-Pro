@@ -28,7 +28,7 @@
  *  20.  Misc:   window.VIP_PARAMS object present after slider change
  */
 
-(function VIP_AUDIT() {
+function runVipAudit() {
   'use strict';
 
   const PASS  = '✅';
@@ -272,17 +272,14 @@
   // Expose for programmatic use
   window.VIP_AUDIT_RESULTS = { results, passCount, failCount, warnCount };
   return window.VIP_AUDIT_RESULTS;
-})
+}
 
-// Expose callable version
-window.VIP_runAudit = function() {
-  // re-run synchronously and return results
-  return window.VIP_AUDIT_RESULTS || 'Run audit manually: paste debug-audit.js and call VIP_runAudit()';
-};
+// Each call re-runs the audit (the old wrapper was never invoked, so
+// VIP_runAudit only ever returned a placeholder string).
+window.VIP_runAudit = runVipAudit;
 
 if (window.VIP_DEBUG) {
   document.addEventListener('DOMContentLoaded', function() {
-    // VIP_AUDIT is the IIFE's own name, out of scope here (ReferenceError).
-    setTimeout(() => (window.VIP_runAudit && window.VIP_runAudit()), 500);
+    setTimeout(runVipAudit, 500);
   });
 }

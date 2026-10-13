@@ -13,7 +13,7 @@
  */
 'use strict';
 
-import { listLibraryFiles, deleteFilePermanently, setSessionState } from './FileLibrary.js';
+import { listLibraryFiles, deleteFilePermanently } from './FileLibrary.js';
 import { APP_CACHE_VERSION } from './storage/CacheManifest.js';
 
 /** IndexedDB database names owned by VoiceIsolate Pro. */
@@ -24,8 +24,10 @@ export const VIP_IDB_NAMES = Object.freeze([
   'vip-track-state',
   'vip-cache-manifest',
   'vip-model-cache',
+  'vip-projects', // ProjectStore (names, descriptions, source ids)
   'vip-project-store',
   'vip-research-session',
+  'VoiceIsolateProDB', // legacy speaker-embedding registry (pipeline-state.js)
 ]);
 
 /** localStorage key prefixes / exact keys that are safe to wipe. */
@@ -75,8 +77,9 @@ export async function clearOpfsTree() {
       return { ok: true }; // no OPFS — treat as cleared
     }
     const root = await navigator.storage.getDirectory();
-    // Known VIP roots under OPFS
-    const dirs = ['vip', 'vip-blobs', 'vip-stems', 'vip-models', 'voiceisolate'];
+    // Known VIP roots under OPFS; BlobStore keeps sources and stem packs in
+    // library/, including blobs of rows removed from the library list.
+    const dirs = ['library', 'vip', 'vip-blobs', 'vip-stems', 'vip-models', 'voiceisolate'];
     for (const name of dirs) {
       try {
         await root.removeEntry(name, { recursive: true });
@@ -151,6 +154,8 @@ export function clearVipSessionStorage(store) {
  *   localStorageKeys: number,
  *   sessionStorageKeys: number,
  *   cacheVersion: string,
+ *   complete: boolean,
+ *   failures: string[],
  * }>}
  */
 export async function clearAllLocalData(opts = {}) {
@@ -167,10 +172,6 @@ export async function clearAllLocalData(opts = {}) {
       } catch { /* continue */ }
     }
   } catch { /* library may be empty / unavailable */ }
-
-  try {
-    await setSessionState({ activeFileId: null, updatedAt: Date.now() });
-  } catch { /* ignore */ }
 
   // 2. Hard-drop IDB databases (covers leftovers + model cache)
   const idbNames = includeModels
@@ -200,6 +201,12 @@ export async function clearAllLocalData(opts = {}) {
     }
   } catch { /* ignore */ }
 
+  // A blocked or failed delete leaves data behind; callers must not report
+  // success unless everything went.
+  const failures = [
+    ...idb.filter((r) => !r.ok).map((r) => `${r.name}: ${r.error || 'failed'}`),
+    ...(opfs.ok ? [] : [`OPFS: ${opfs.error || 'failed'}`]),
+  ];
   return {
     filesRemoved,
     idb,
@@ -207,6 +214,8 @@ export async function clearAllLocalData(opts = {}) {
     localStorageKeys,
     sessionStorageKeys,
     cacheVersion: APP_CACHE_VERSION,
+    complete: failures.length === 0,
+    failures,
   };
 }
 

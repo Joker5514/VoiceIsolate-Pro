@@ -3,131 +3,7 @@
  */
 'use strict';
 
-function installMemoryIdb() {
-  /** @type {Map<string, object>} */
-  const dbs = new Map();
-
-  class MemReq {
-    constructor() {
-      this.result = null;
-      this.error = null;
-      this.onsuccess = null;
-      this.onerror = null;
-      this.onupgradeneeded = null;
-      this.onblocked = null;
-      this.transaction = null;
-    }
-    _ok(val) {
-      this.result = val;
-      // Defer so callers can attach onsuccess after open()/get()/put().
-      queueMicrotask(() => {
-        queueMicrotask(() => this.onsuccess?.({ target: this }));
-      });
-    }
-  }
-
-  class MemStore {
-    constructor(data) {
-      this._data = data;
-    }
-    get(key) {
-      const req = new MemReq();
-      req._ok(this._data.get(key));
-      return req;
-    }
-    put(value, key) {
-      const req = new MemReq();
-      const k = key !== undefined ? key : value?.id ?? value?.key ?? value?.projectId;
-      this._data.set(k, value);
-      req._ok(k);
-      return req;
-    }
-    delete(key) {
-      const req = new MemReq();
-      this._data.delete(key);
-      req._ok(undefined);
-      return req;
-    }
-    getAll() {
-      const req = new MemReq();
-      req._ok([...this._data.values()]);
-      return req;
-    }
-    createIndex() { /* no-op */ }
-    get indexNames() {
-      return { contains: () => false };
-    }
-  }
-
-  class MemTx {
-    constructor(db) {
-      this.db = db;
-      this.oncomplete = null;
-      this.onerror = null;
-      this.onabort = null;
-      this.error = null;
-      // Double microtask: openIdb/idbTxDone assign handlers after transaction().
-      queueMicrotask(() => {
-        queueMicrotask(() => this.oncomplete?.());
-      });
-    }
-    objectStore(name) {
-      if (!this.db._stores.has(name)) this.db._stores.set(name, new Map());
-      return new MemStore(this.db._stores.get(name));
-    }
-  }
-
-  class MemDb {
-    constructor(name) {
-      this.name = name;
-      this.objectStoreNames = {
-        _names: new Set(),
-        contains(n) { return this._names.has(n); },
-      };
-      this._stores = new Map();
-    }
-    createObjectStore(name) {
-      this.objectStoreNames._names.add(name);
-      this._stores.set(name, new Map());
-      return new MemStore(this._stores.get(name));
-    }
-    transaction() {
-      return new MemTx(this);
-    }
-  }
-
-  globalThis.indexedDB = {
-    open(name, version = 1) {
-      const req = new MemReq();
-      const cacheKey = `${name}@${version}`;
-      const existing = dbs.get(cacheKey);
-      const db = existing || new MemDb(name);
-      if (!existing) dbs.set(cacheKey, db);
-      req.transaction = {
-        objectStore: (n) => {
-          if (!db._stores.has(n)) db._stores.set(n, new Map());
-          const s = new MemStore(db._stores.get(n));
-          s.indexNames = { contains: () => false };
-          s.createIndex = () => {};
-          return s;
-        },
-      };
-      queueMicrotask(() => {
-        if (!existing) {
-          req.result = db;
-          req.onupgradeneeded?.({ target: req, oldVersion: 0 });
-        }
-        queueMicrotask(() => {
-          req.result = db;
-          req.onsuccess?.({ target: req });
-        });
-      });
-      return req;
-    },
-  };
-
-  globalThis.navigator = { storage: undefined };
-}
+const { installMemoryIdb } = require('./helpers/memory-idb.js');
 
 installMemoryIdb();
 
@@ -315,7 +191,7 @@ describe('storage migrations (review follow-ups)', () => {
     expect(m2.id).not.toBe(m1.id);
   }, 15000);
 
-  test('saving stems drops the superseded revision for the same file, chain and variant', async () => {
+  test('saving stems drops the superseded revision and keeps at most two packs per file', async () => {
     const Derived = await import('../src/core/storage/DerivedCache.js');
     const { openIdb, idbTransaction, idbPut, idbTxDone, idbGetAll } = await import('../src/core/storage/openIdb.js');
     const { writeSourceBlob, readSourceBlob } = await import('../src/core/storage/BlobStore.js');
@@ -328,17 +204,19 @@ describe('storage migrations (review follow-ups)', () => {
     const staleRef = await writeSourceBlob('derived-stale', new Blob([new Uint8Array(8)]));
     const base = { kind: 'stems', fileId: 'f-rev', modelIds: ['bsrnn_vocals'], createdAt: 1 };
     await put({ ...base, key: 'stems:f-rev:bsrnn_vocals@ir1-old', blobRef: staleRef });
-    await put({ ...base, key: 'stems:f-rev:bsrnn_vocals@ir1-old:engineer-x', processingRevision: 'x', blobRef: null });
-    await put({ ...base, key: 'stems:f-rev:other@ir1-old', modelIds: ['other'], blobRef: null });
+    await put({ ...base, key: 'stems:f-rev:bsrnn_vocals@ir1-old:engineer-x', processingRevision: 'x', blobRef: null, createdAt: 3 });
+    await put({ ...base, key: 'stems:f-rev:other@ir1-old', modelIds: ['other'], blobRef: null, createdAt: 2 });
     const clean = [new Float32Array(64).fill(0.1)];
     const meta = await Derived.saveStemsDurable('f-rev', ['bsrnn_vocals'], { clean, noise: clean, sampleRate: 48000 });
     expect(meta.key).not.toBe('stems:f-rev:bsrnn_vocals@ir1-old');
     const keys = (await idbGetAll(db.transaction('entries', 'readonly').objectStore('entries')))
       .filter((e) => e.fileId === 'f-rev').map((e) => e.key).sort();
+    // Superseded revision gone; of the other variants only the newest stays
+    // (MAX_STEM_PACKS_PER_FILE = 2 including the new pack).
+    expect(Derived.MAX_STEM_PACKS_PER_FILE).toBe(2);
     expect(keys).toEqual([
       meta.key,
       'stems:f-rev:bsrnn_vocals@ir1-old:engineer-x',
-      'stems:f-rev:other@ir1-old',
     ].sort());
     expect(await readSourceBlob(staleRef)).toBeNull();
     expect(await Derived.loadStemsDurable('f-rev', ['bsrnn_vocals'])).toMatchObject({ sampleRate: 48000 });

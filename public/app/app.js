@@ -4426,9 +4426,18 @@ class VoiceIsolatePro {
     if (!ok) return;
     try {
       this.showNotification?.('Clearing local data…', 'info');
+      // Reset the working set first: its own session write must land before
+      // the databases are dropped, not recreate them afterwards.
+      try { this._clearFile?.(); } catch { /* ignore */ }
       const { clearAllLocalData } = await import('/src/core/ClearLocalData.js');
       const result = await clearAllLocalData({ includeModels: true });
-      try { this._clearFile?.(); } catch { /* ignore */ }
+      if (!result.complete) {
+        this.showNotification?.(
+          `Some local data could not be cleared (${result.failures.join('; ')}). Close other VoiceIsolate tabs and try again.`,
+          'error',
+        );
+        return;
+      }
       this.showNotification?.(
         `Local data cleared (${result.filesRemoved} library file(s), ${result.localStorageKeys} keys). Reloading…`,
         'ok',

@@ -1844,6 +1844,13 @@ function wireClearLocalData() {
     try {
       const { clearAllLocalData } = await import('/src/core/ClearLocalData.js');
       const result = await clearAllLocalData({ includeModels: true });
+      if (!result.complete) {
+        btn.disabled = false;
+        const msg = `Some local data could not be cleared (${result.failures.join('; ')}). Close other VoiceIsolate tabs and try again.`;
+        if (statusEl) statusEl.textContent = msg;
+        setStatus(msg, 'error');
+        return;
+      }
       if (statusEl) {
         statusEl.textContent = `Cleared ${result.filesRemoved} file(s), ${result.localStorageKeys} keys. Reloading…`;
       }

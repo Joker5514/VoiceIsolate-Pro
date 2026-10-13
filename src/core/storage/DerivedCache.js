@@ -191,10 +191,15 @@ export async function saveStemsDurable(fileId, modelIds, result, processingRevis
   return meta;
 }
 
+/** Stem packs kept per file (each up to MAX_DURABLE_STEM_BYTES). */
+export const MAX_STEM_PACKS_PER_FILE = 2;
+
 /**
  * A model or inference revision change writes a new key for the same file,
  * chain and Engineer variant; the old entry can never be read again, so drop
- * its blob and row instead of leaving it to fill storage.
+ * its blob and row instead of leaving it to fill storage. Every Process-time
+ * Engineer config is its own variant, so beyond that only the newest
+ * MAX_STEM_PACKS_PER_FILE packs of a file are kept.
  * @param {IDBDatabase} db
  * @param {DerivedMeta} meta
  */
@@ -206,11 +211,12 @@ async function deleteSupersededStems(db, meta) {
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
-    const stale = all.filter((e) => e.kind === 'stems'
-      && e.fileId === meta.fileId
-      && e.key !== meta.key
-      && (e.modelIds || []).join('→') === chain
+    const others = all.filter((e) => e.kind === 'stems' && e.fileId === meta.fileId && e.key !== meta.key);
+    const superseded = others.filter((e) => (e.modelIds || []).join('→') === chain
       && (e.processingRevision || '') === (meta.processingRevision || ''));
+    const kept = others.filter((e) => !superseded.includes(e))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const stale = [...superseded, ...kept.slice(MAX_STEM_PACKS_PER_FILE - 1)];
     for (const e of stale) {
       if (e.blobRef) await deleteSourceBlob(e.blobRef);
       const w = idbTransaction(db, META_STORE, 'readwrite');

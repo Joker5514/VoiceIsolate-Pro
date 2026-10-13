@@ -27,8 +27,13 @@ export async function writeSourceBlob(id, blob) {
   const backend = await resolveBlobBackend();
   if (backend === 'opfs') {
     const path = `library/${id}.bin`;
-    await opfsWrite(path, blob);
-    return { backend: 'opfs', path };
+    try {
+      await opfsWrite(path, blob);
+      return { backend: 'opfs', path };
+    } catch (err) {
+      // The ref records its backend, so one IDB-stored blob reads back fine.
+      console.warn('[VIP][BlobStore] OPFS write failed; storing in IndexedDB:', err?.message || err);
+    }
   }
   const path = `source:${id}`;
   await idbBlobWrite(path, blob);

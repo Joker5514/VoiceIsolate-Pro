@@ -96,7 +96,9 @@ function newId() {
  */
 async function findByFingerprint(fingerprint, opts = {}) {
   if (!fingerprint) return null;
-  const files = await listLibraryFiles();
+  // Removed rows are searched too: re-importing a removed take revives its
+  // row and blob instead of storing a second copy.
+  const files = await listAllRows();
   const hit = files.find((f) => f.fingerprint === fingerprint);
   if (hit) return hit;
   // Rows written before full-content hashing carry a sampled `fp_` id that
@@ -115,18 +117,41 @@ async function findByFingerprint(fingerprint, opts = {}) {
 }
 
 /**
- * Evict oldest tracks until count ≤ MAX_LIBRARY_TRACKS (excluding keepId).
+ * Every catalog row, including ones removed from the library list.
+ * @returns {Promise<LibraryFileMeta[]>}
+ */
+async function listAllRows() {
+  try {
+    const db = await openLibraryDb();
+    const tx = db.transaction(META_STORE, 'readonly');
+    return (await idbGetAll(tx.objectStore(META_STORE))).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Evict until at most MAX_LIBRARY_TRACKS rows hold stored audio. Removed rows
+ * still hold their blob, so they count and go first; then the oldest library
+ * rows. Project sources (rows with a projectId) and keepId are never evicted:
+ * deleting them would silently drop files from a project and its exports.
  * @param {string} [keepId]
  */
 export async function enforceTrackCap(keepId = null) {
-  let files = await listLibraryFiles();
-  // Oldest first for eviction
-  files = files.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
-  while (files.length > MAX_LIBRARY_TRACKS) {
-    const victim = files.find((f) => f.id !== keepId) || files[0];
-    if (!victim) break;
+  const rows = await listAllRows();
+  if (rows.length <= MAX_LIBRARY_TRACKS) return;
+  const victims = rows
+    .filter((f) => f.id !== keepId && !f.projectId)
+    .sort((a, b) => ((a.inLibrary === false ? 0 : 1) - (b.inLibrary === false ? 0 : 1))
+      || ((a.updatedAt || 0) - (b.updatedAt || 0)));
+  let count = rows.length;
+  for (const victim of victims) {
+    if (count <= MAX_LIBRARY_TRACKS) break;
     await deleteFilePermanently(victim.id);
-    files = files.filter((f) => f.id !== victim.id);
+    count--;
+  }
+  if (count > MAX_LIBRARY_TRACKS) {
+    console.warn(`[VIP][FileLibrary] ${count} stored tracks exceed the cap of ${MAX_LIBRARY_TRACKS}; the rest belong to projects`);
   }
 }
 
@@ -361,7 +386,13 @@ export async function updateFileMeta(id, patch) {
  * @param {string} id
  */
 export async function removeFromLibrary(id) {
-  return updateFileMeta(id, { inLibrary: false, processingStatus: 'idle' });
+  const meta = await updateFileMeta(id, { inLibrary: false, processingStatus: 'idle' });
+  // A removed track must not come back as the active file on the next boot.
+  const session = await getSessionState();
+  if (session?.activeFileId === id) {
+    await setSessionState({ activeFileId: null, updatedAt: Date.now() });
+  }
+  return meta;
 }
 
 /**
@@ -446,6 +477,7 @@ export async function restoreSessionBootstrap(opts = {}) {
   const activeId = session?.activeFileId;
   if (activeId) {
     activeMeta = await getFileMeta(activeId);
+    if (activeMeta?.inLibrary === false) activeMeta = null;
     if (!activeMeta && files[0]) activeMeta = files[0];
   } else if (files[0]) {
     activeMeta = files[0];

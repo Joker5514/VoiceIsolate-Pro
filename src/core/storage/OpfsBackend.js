@@ -10,6 +10,10 @@
 export async function isOpfsAvailable() {
   try {
     if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) return false;
+    // Safari 15.2-18 exposes getDirectory() but not createWritable() on the
+    // main thread; writes would then always fail, so treat OPFS as absent.
+    if (typeof FileSystemFileHandle === 'undefined'
+      || typeof FileSystemFileHandle.prototype.createWritable !== 'function') return false;
     const root = await navigator.storage.getDirectory();
     return Boolean(root);
   } catch {
@@ -36,20 +40,20 @@ async function getFileHandle(relativePath, create = false) {
  * @param {Blob|ArrayBuffer|Uint8Array} data
  */
 export async function opfsWrite(relativePath, data) {
+  if (!(data instanceof Blob || data instanceof ArrayBuffer || ArrayBuffer.isView(data))) {
+    throw new TypeError('[VIP][OPFS] unsupported write payload');
+  }
   const handle = await getFileHandle(relativePath, true);
-  const writable = await handle.createWritable();
+  let writable = null;
   try {
-    if (data instanceof Blob) {
-      await writable.write(data);
-    } else if (data instanceof ArrayBuffer) {
-      await writable.write(data);
-    } else if (ArrayBuffer.isView(data)) {
-      await writable.write(data);
-    } else {
-      throw new TypeError('[VIP][OPFS] unsupported write payload');
-    }
-  } finally {
+    writable = await handle.createWritable();
+    await writable.write(data);
     await writable.close();
+  } catch (err) {
+    // Leave no empty or partial file behind for a failed write.
+    try { await writable?.abort?.(); } catch { /* ignore */ }
+    await opfsDelete(relativePath);
+    throw err;
   }
 }
 

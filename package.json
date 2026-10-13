@@ -116,6 +116,7 @@
     "sam:setup": "node scripts/sam-production-setup.mjs",
     "sam:setup:layout": "node scripts/sam-production-setup.mjs --skip-pip --skip-ffmpeg",
     "test:sw-offline": "node scripts/sw-offline-check.cjs",
+    "pretest:sw-offline": "playwright install chromium",
     "test:sam3": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/sam3-integration.test.js",
     "ci:apply-patches": "node scripts/apply-ci-patches.mjs",
     "ci:check-patches": "node scripts/apply-ci-patches.mjs --check"
