@@ -82,8 +82,8 @@ Deterministic mock separator keeps integration tests green without GPU/HF.
   interrupt a running `model.separate` call.
 - Text prompts only: `mode` other than `text`, or any `anchors`, answers 400
   `unsupported-targeting` (span/visual prompting is not implemented).
-- One request body is at most 64 MiB, so a job is at most 12,582,144 samples
-  (about 262 s at 48 kHz) of base64 float32.
+- One request body is at most 64 MiB; the Electron proxy caps jobs at 12,582,144 samples
+  (about 262 s at 48 kHz), while direct worker requests may be larger.
 
 ## Electron
 
