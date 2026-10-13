@@ -46,7 +46,7 @@ export const USM_MAX_WORKING_BYTES = 768 * 1024 * 1024;
 export function estimateUsmWorkingBytes(length, config = {}) {
   const fftSize = config.fftSize || USM_FFT_SIZE;
   const hopSize = config.hopSize || USM_HOP_SIZE;
-  const bins = (fftSize >> 1) + 1;
+  const bins = fftSize / 2 + 1;
   const frames = paddedFrameCount(length, fftSize, hopSize);
   const query = config.mode === 'query' && Array.isArray(config.queries) && config.queries.length;
   const stems = query
