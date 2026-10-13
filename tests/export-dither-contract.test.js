@@ -14,8 +14,8 @@ const exportSource = fs.readFileSync(path.join(ROOT, 'src/pipeline/ExportManager
 
 describe('processed WAV dither contract', () => {
   test('Save Processed snapshots dither at the 16-bit encoder boundary', () => {
-    expect(appSource).toContain("function downloadWav(audioBuffer, name, ditherMode = 0)");
-    expect(appSource).toContain('downloadWav(buf, \'processed-\' + Date.now() + \'.wav\', ditherAmt);');
+    expect(appSource).toContain("async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null)");
+    expect(appSource).toContain('await downloadWav(buf, \'processed-\' + Date.now() + \'.wav\', ditherAmt, signal);');
     expect(appSource).toContain('encodeWav(channels, mixBuf.sampleRate, { ditherAmt });');
   });
 

@@ -86,7 +86,7 @@ describe('Slider DSP wiring', () => {
   });
 
   test('dither is owned by the 16-bit encoder boundary, not preview PCM', () => {
-    expect(appJs).toContain('function encodeWavBuffer(audioBuffer, ditherMode = 0)');
+    expect(appJs).toContain('async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null)');
     const fallbackStart = appJs.indexOf('async _runFallbackPipeline');
     const fallbackEnd = appJs.indexOf('\n  _applyOutputSafetyLimit(', fallbackStart);
     expect(appJs.slice(fallbackStart, fallbackEnd)).not.toContain('applyDither');

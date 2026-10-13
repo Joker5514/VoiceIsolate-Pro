@@ -115,7 +115,10 @@
     const breathStrength = s.breathControl / 100;
     const subHarmonicStrength = s.subHarmonic / 100;
 
-    function applyFrame(re, im, sourceMagnitude, offset) {
+    // preRoll: a reflect-padded frame before sample 0. It is processed like any
+    // other frame but must not seed the reverb tail, or the opening onset is
+    // later attenuated as reverb of its own mirror.
+    function applyFrame(re, im, sourceMagnitude, offset, preRoll = false) {
       if (!re || !im || !sourceMagnitude) return;
       const maxBins = Math.min(bins, re.length, im.length, sourceMagnitude.length - offset);
       if (maxBins <= 0) return;
@@ -151,7 +154,7 @@
 
         // Tail prediction provides a low-cost dereverb/reverb-strip control.
         const tail = reverbTail[k] * tailDecay;
-        reverbTail[k] = Math.max(mag, tail);
+        if (!preRoll) reverbTail[k] = Math.max(mag, tail);
         if (derevStrength > 0 || reverbStripStrength > 0) {
           const tailRatio = clamp(tail / Math.max(mag, EPSILON), 0, 1);
           gain *= Math.max(0.08, 1 - tailRatio * (derevStrength * 0.58 + reverbStripStrength * 0.72));

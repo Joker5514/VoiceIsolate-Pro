@@ -843,45 +843,65 @@ function fmtTime(s) {
 // ---------------------------------------------------------------------------
 // WAV encoder (standalone helper)
 // ---------------------------------------------------------------------------
-function encodeWavBuffer(audioBuffer, ditherMode = 0) {
+async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
   const numCh = audioBuffer.numberOfChannels;
   const numSamples = audioBuffer.length;
   const sr = audioBuffer.sampleRate;
   const bps = 2;
-  const buf = new ArrayBuffer(44 + numSamples * numCh * bps);
+  const dataBytes = numSamples * numCh * bps;
+  // RIFF sizes are uint32; past this the header would silently wrap.
+  if (36 + dataBytes > 0xFFFFFFFF) {
+    throw new RangeError('This export exceeds the 4 GB WAV limit. Trim the region and export again.');
+  }
+  // Check before allocating the whole file, not only between chunks.
+  throwIfAborted(signal);
+  const buf = new ArrayBuffer(44 + dataBytes);
   const v = new DataView(buf);
   const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
   ws(0, 'RIFF'); v.setUint32(4, buf.byteLength - 8, true); ws(8, 'WAVE');
   ws(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
   v.setUint16(22, numCh, true); v.setUint32(24, sr, true);
   v.setUint32(28, sr * numCh * bps, true); v.setUint16(32, numCh * bps, true);
-  v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, numSamples * numCh * bps, true);
-  let off = 44;
+  v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, dataBytes, true);
   const mode = Math.max(0, Math.min(3, Math.round(Number(ditherMode) || 0)));
   const previousNoise = new Float32Array(numCh);
-  for (let i = 0; i < numSamples; i++) {
-    for (let ch = 0; ch < numCh; ch++) {
-      let s = audioBuffer.getChannelData(ch)[i];
-      if (mode > 0) {
-        // 1 = TPDF, 2 = shaped, 3 = high-pass-shaped. Dither is injected at
-        // the 16-bit quantisation boundary only and never mutates playback PCM.
-        const rawNoise = (Math.random() - Math.random()) / 32768;
-        const shaped = mode === 1
-          ? rawNoise
-          : rawNoise - previousNoise[ch] * (mode === 2 ? 0.45 : 0.82);
-        previousNoise[ch] = rawNoise;
-        s += shaped;
+  // One getChannelData() per channel: calling it per sample crossed the Web
+  // Audio binding numSamples × numCh times (3.3× slower in Chromium).
+  const data = Array.from({ length: numCh }, (_, ch) => audioBuffer.getChannelData(ch));
+  // Time-budgeted chunks: a 15-minute stereo export was a multi-second
+  // main-thread freeze when written in one task.
+  await processInChunks({
+    total: numSamples,
+    chunkSize: 48000,
+    signal,
+    runChunk: (from, to) => {
+      let off = 44 + from * numCh * bps;
+      for (let i = from; i < to; i++) {
+        for (let ch = 0; ch < numCh; ch++) {
+          let s = data[ch][i] || 0;
+          if (mode > 0) {
+            // 1 = TPDF, 2 = shaped, 3 = high-pass-shaped. Dither is injected at
+            // the 16-bit quantisation boundary only and never mutates playback PCM.
+            const rawNoise = (Math.random() - Math.random()) / 32768;
+            const shaped = mode === 1
+              ? rawNoise
+              : rawNoise - previousNoise[ch] * (mode === 2 ? 0.45 : 0.82);
+            previousNoise[ch] = rawNoise;
+            s += shaped;
+          }
+          s = Math.max(-1, Math.min(1, s));
+          // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
+          v.setInt16(off, Math.round(s < 0 ? s * 0x8000 : s * 0x7FFF), true);
+          off += 2;
+        }
       }
-      s = Math.max(-1, Math.min(1, s));
-      v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-      off += 2;
-    }
-  }
+    },
+  });
   return buf;
 }
 
-function downloadWav(audioBuffer, name, ditherMode = 0) {
-  const blob = new Blob([encodeWavBuffer(audioBuffer, ditherMode)], { type: 'audio/wav' });
+async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null) {
+  const blob = new Blob([await encodeWavBuffer(audioBuffer, ditherMode, signal)], { type: 'audio/wav' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -2663,7 +2683,19 @@ class VoiceIsolatePro {
         await this.ensureDecoded();
       }
       if (this.origBuffer || this.inputBuffer) {
-        downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
+        // The encode now yields, so a second click could start a second
+        // full-length encode alongside the first.
+        if (this._savingOriginal) return;
+        this._savingOriginal = true;
+        if (d.saveOrigBtn) d.saveOrigBtn.disabled = true;
+        try {
+          await downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
+        } catch (err) {
+          this.showNotification(err?.message || 'Export failed', 'error');
+        } finally {
+          this._savingOriginal = false;
+          if (d.saveOrigBtn) d.saveOrigBtn.disabled = false;
+        }
       } else {
         this.showNotification('Nothing to save yet — load and decode a file first.', 'info');
       }
@@ -4260,7 +4292,7 @@ class VoiceIsolatePro {
       const ditherAmt = buildMlProcessingConfig(
         this.getEffectiveParams(window.VIP_PARAMS || {}),
       ).export.ditherAmt;
-      downloadWav(buf, 'processed-' + Date.now() + '.wav', ditherAmt);
+      await downloadWav(buf, 'processed-' + Date.now() + '.wav', ditherAmt, signal);
       this.showNotification('Processed audio saved', 'info');
       if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
     } catch (err) {

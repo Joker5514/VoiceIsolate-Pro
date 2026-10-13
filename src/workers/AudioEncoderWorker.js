@@ -63,8 +63,9 @@ function encodeWAV(channels, sampleRate) {
   let offset = 44;
   for (let i = 0; i < length; i++) {
     for (let ch = 0; ch < numChannels; ch++) {
-      const sample = Math.max(-1, Math.min(1, channels[ch][i])); // Clamp
-      const int16 = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      const sample = Math.max(-1, Math.min(1, channels[ch][i] || 0)); // Clamp; NaN → 0
+      // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
+      const int16 = Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
       view.setInt16(offset, int16, true);
       offset += 2;
     }
@@ -165,8 +166,8 @@ async function encodeMP3(channels, sampleRate, bitrate, onProgress) {
 function floatTo16BitPCM(float32Array) {
   const int16Array = new Int16Array(float32Array.length);
   for (let i = 0; i < float32Array.length; i++) {
-    const sample = Math.max(-1, Math.min(1, float32Array[i])); // Clamp
-    int16Array[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+    const sample = Math.max(-1, Math.min(1, float32Array[i] || 0)); // Clamp; NaN → 0
+    int16Array[i] = Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
   }
   return int16Array;
 }
