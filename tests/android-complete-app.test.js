@@ -88,7 +88,10 @@ describe('Android complete app pipeline', () => {
   });
 
   test('shared build stamps the Engineer service worker from the whole served tree', () => {
-    expect(build).toMatch(/computePrecache\(\{ root: BUILD \}\)/);
-    expect(build).toMatch(/stampServiceWorker\(swPath/);
+    // The manifest computed over build/ is exactly what reaches the stamp call.
+    const m = build.match(/const \{ cacheVersion, precacheUrls \} = computePrecache\(\{ root: BUILD \}\);\s*stampServiceWorker\(swPath, \{ cacheVersion, precacheUrls \}\);/);
+    expect(m).not.toBeNull();
+    const swPath = build.match(/const swPath = (.+);/);
+    expect(swPath && swPath[1]).toMatch(/BUILD, 'app', 'sw\.js'/);
   });
 });

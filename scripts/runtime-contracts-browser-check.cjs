@@ -79,7 +79,14 @@ async function main() {
       }
       return { peak, nonFinite, over, length: buf.length, channels: buf.numberOfChannels, sampleRate: buf.sampleRate };
     };
-    const newMixer = () => new PlaybackMixer({ context: new AudioContext({ sampleRate: SR }) });
+    // PlaybackMixer.dispose() leaves an injected context open (F03), so the
+    // check closes every context it creates itself.
+    const contexts = [];
+    const newMixer = () => {
+      const ctx = new AudioContext({ sampleRate: SR });
+      contexts.push(ctx);
+      return new PlaybackMixer({ context: ctx });
+    };
 
     // ── F08: impulses at the region edges keep their indices ────────────
     {
@@ -249,6 +256,7 @@ async function main() {
       check('F03 injected context left open', injected.state !== 'closed', { state: injected.state });
       await injected.close();
     }
+    await Promise.all(contexts.map((c) => (c.state === 'closed' ? null : c.close().catch(() => {}))));
 
     // ── F20: real IndexedDB commit / abort ──────────────────────────────
     {
@@ -360,11 +368,18 @@ async function main() {
   const f24 = await page5.evaluate(async () => {
     const out = [];
     const check = (id, pass, detail) => out.push({ id, pass: Boolean(pass), detail });
+    // Settles on a result, an error message, a script/runtime error or a
+    // 20 s stall, so a broken worker fails the check instead of hanging it.
     const run = (message) => new Promise((resolve) => {
       const w = new Worker('/src/workers/AudioEncoderWorker.js', { type: 'module' });
+      const done = (data) => { clearTimeout(timer); w.terminate(); resolve(data); };
+      // 'crash' is distinct from the worker's own validation 'error'.
+      const timer = setTimeout(() => done({ type: 'crash', error: 'timeout' }), 20000);
+      w.onerror = (e) => { e.preventDefault?.(); done({ type: 'crash', error: e.message || 'load failed' }); };
+      w.onmessageerror = () => done({ type: 'crash', error: 'messageerror' });
       w.onmessage = ({ data }) => {
         if (data.type === 'ready') { w.postMessage(message); return; }
-        if (data.type === 'result' || data.type === 'error') { w.terminate(); resolve(data); }
+        if (data.type === 'result' || data.type === 'error') done(data);
       };
     });
     const n = 44101;
@@ -372,13 +387,19 @@ async function main() {
     for (let i = 0; i < n; i++) { l[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 44100); r[i] = -l[i]; }
     l[100] = 1.4; // one clipped sample
     const res = await run({ type: 'encode', requestId: 1, format: 'wav', sampleRate: 44100, channels: [l, r] });
-    const decoded = await new AudioContext({ sampleRate: 44100 }).decodeAudioData(await res.blob.arrayBuffer());
-    const d0 = decoded.getChannelData(0); const d1 = decoded.getChannelData(1);
-    let maxErr = 0;
-    for (let i = 0; i < n; i++) if (i !== 100) maxErr = Math.max(maxErr, Math.abs(d0[i] - l[i]), Math.abs(d1[i] - r[i]));
-    check('F24 WAV decodes independently at its rate, length and values',
-      decoded.sampleRate === 44100 && decoded.length === n && decoded.numberOfChannels === 2 && maxErr < 2 / 32767 && res.clippedSamples === 1 && Math.abs(d0[100] - 1) < 1e-4,
-      { sampleRate: decoded.sampleRate, length: decoded.length, maxErr, clippedSamples: res.clippedSamples });
+    if (res.type !== 'result') {
+      check('F24 WAV decodes independently at its rate, length and values', false, { worker: res });
+    } else {
+      const decodeCtx = new AudioContext({ sampleRate: 44100 });
+      const decoded = await decodeCtx.decodeAudioData(await res.blob.arrayBuffer());
+      await decodeCtx.close();
+      const d0 = decoded.getChannelData(0); const d1 = decoded.getChannelData(1);
+      let maxErr = 0;
+      for (let i = 0; i < n; i++) if (i !== 100) maxErr = Math.max(maxErr, Math.abs(d0[i] - l[i]), Math.abs(d1[i] - r[i]));
+      check('F24 WAV decodes independently at its rate, length and values',
+        decoded.sampleRate === 44100 && decoded.length === n && decoded.numberOfChannels === 2 && maxErr < 2 / 32767 && res.clippedSamples === 1 && Math.abs(d0[100] - 1) < 1e-4,
+        { sampleRate: decoded.sampleRate, length: decoded.length, maxErr, clippedSamples: res.clippedSamples });
+    }
     const bad = await Promise.all([
       run({ type: 'encode', requestId: 2, format: 'wav', sampleRate: 48000, channels: [new Float32Array(4), new Float32Array(3)] }),
       run({ type: 'encode', requestId: 3, format: 'wav', sampleRate: 48000, channels: [new Float32Array([0, NaN])] }),

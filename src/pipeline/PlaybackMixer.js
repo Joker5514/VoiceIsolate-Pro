@@ -702,7 +702,17 @@ export class PlaybackMixer {
     if (name === 'lookahead') this._updateDryDelay();
     if (!this.gate) return;
     const param = this.gate.parameters.get(name);
-    if (param) this._applyParam(param, value);
+    if (!param) return;
+    if (name === 'lookahead') {
+      // A delay time, like the dry compensation set above in the same task:
+      // both step together. Gliding it would pitch-shift and leave the two
+      // legs misaligned (comb filtering) for the length of the ramp.
+      param.cancelScheduledValues(0);
+      param.value = value;
+      this._parameterTargets.set(param, value);
+      return;
+    }
+    this._applyParam(param, value);
   }
 
   /** Gate lookahead actually delaying the wet path, in frames (0 when bypassed). */

@@ -91,15 +91,16 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || request.headers.has('range')) return;
   const url = new URL(request.url);
   if (!isCacheable(url)) return;
-  event.respondWith(networkFirst(request, url));
+  event.respondWith(networkFirst(request, url, event));
 });
 
-async function networkFirst(request, url) {
+async function networkFirst(request, url, event) {
   try {
     const response = await fetch(request);
     if (response.ok && response.type === 'basic') {
       const copy = response.clone();
-      caches.open(CACHE_VERSION).then((c) => c.put(request, copy)).catch(() => {});
+      // Keep the worker alive until the runtime copy is stored.
+      event.waitUntil(caches.open(CACHE_VERSION).then((c) => c.put(request, copy)).catch(() => {}));
     }
     return withCrossOriginHeaders(response);
   } catch (err) {

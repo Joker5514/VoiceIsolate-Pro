@@ -25,7 +25,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 const { autoUpdater } = require('electron-updater');
 const { IPC } = require('./ipc-channels.cjs');
-const { createSamProxy } = require('./sam-proxy.cjs');
+const { createSamProxy, isValidWorkerPort } = require('./sam-proxy.cjs');
 const {
   authDomain, isAppUrl, isSafeExternalUrl, isAllowedAuthPopup, isAllowedAuthNavigation, resolveInsideReal,
 } = require('./navigation-policy.cjs');
@@ -36,7 +36,8 @@ const DEV_URL = process.env.VIP_DEV_URL || 'http://localhost:3000';
 
 /** @type {import('child_process').ChildProcess|null} */
 let samWorkerProc = null;
-let samWorkerPort = Number(process.env.SAM_AUDIO_PORT || 8765) || 8765;
+const envSamPort = Number(process.env.SAM_AUDIO_PORT);
+let samWorkerPort = isValidWorkerPort(envSamPort) ? envSamPort : 8765;
 const samProxy = createSamProxy({ port: () => samWorkerPort });
 
 /** Essential ONNX assets for offline isolation (DEFAULT_ML_CHAIN + common fallbacks). */
@@ -487,7 +488,8 @@ function registerIpc() {
   });
 
   handleTrusted(IPC.SAM_WORKER_START, async (_evt, opts) => {
-    const port = Number(opts?.port || process.env.SAM_AUDIO_PORT || 8765) || 8765;
+    const port = opts?.port === undefined ? samWorkerPort : Number(opts.port);
+    if (!isValidWorkerPort(port)) return { ok: false, reason: 'invalid-port' };
     if (samWorkerProc && !samWorkerProc.killed) {
       return { ok: true, already: true, baseUrl: `http://127.0.0.1:${samWorkerPort}` };
     }

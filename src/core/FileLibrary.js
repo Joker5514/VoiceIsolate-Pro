@@ -94,10 +94,24 @@ function newId() {
  * @param {string} fingerprint
  * @returns {Promise<LibraryFileMeta|null>}
  */
-async function findByFingerprint(fingerprint) {
+async function findByFingerprint(fingerprint, opts = {}) {
   if (!fingerprint) return null;
   const files = await listLibraryFiles();
-  return files.find((f) => f.fingerprint === fingerprint) || null;
+  const hit = files.find((f) => f.fingerprint === fingerprint);
+  if (hit) return hit;
+  // Rows written before full-content hashing carry a sampled `fp_` id that
+  // never equals a `c128_` one. Re-hash the stored bytes of same-size legacy
+  // rows so re-importing that file adopts its row instead of duplicating it.
+  const sizeTag = fingerprint.slice(fingerprint.lastIndexOf('_'));
+  for (const f of files) {
+    if (!f.blobRef || !f.fingerprint?.startsWith('fp_') || !f.fingerprint.endsWith(sizeTag)) continue;
+    let blob = null;
+    try {
+      blob = await readSourceBlob(f.blobRef);
+    } catch { /* missing blob: not a match */ }
+    if (blob && await contentFingerprint(blob, opts) === fingerprint) return f;
+  }
+  return null;
 }
 
 /**
@@ -185,7 +199,7 @@ export async function importFile(file, opts = {}) {
 
   // Canonical upsert by fingerprint
   if (!opts.forceNew && fingerprint) {
-    const existing = await findByFingerprint(fingerprint);
+    const existing = await findByFingerprint(fingerprint, { signal: opts.signal });
     if (existing) {
       const updated = {
         ...existing,

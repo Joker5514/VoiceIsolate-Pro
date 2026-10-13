@@ -64,7 +64,17 @@ beforeAll(async () => {
   baseUrl = `http://127.0.0.1:${port}`;
   proc = spawn(PYTHON, ['server.py', '--port', String(port)], {
     cwd: path.join(ROOT, 'services/sam-audio'),
-    env: { ...process.env, SAM_AUDIO_ALLOW_MOCK: '1', SAM_AUDIO_PRODUCTION: '', PYTHONDONTWRITEBYTECODE: '1' },
+    // ALLOW_MOCK only permits the fallback; a model id that cannot load (and
+    // an offline hub) forces it, so `mock: true` holds on hosts with weights.
+    env: {
+      ...process.env,
+      SAM_AUDIO_ALLOW_MOCK: '1',
+      SAM_AUDIO_PRODUCTION: '',
+      SAM_AUDIO_REQUIRE_REAL: '',
+      SAM_AUDIO_MODEL: '/nonexistent/vip-forced-mock',
+      HF_HUB_OFFLINE: '1',
+      PYTHONDONTWRITEBYTECODE: '1',
+    },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   for (let i = 0; i < 100; i++) {
@@ -105,6 +115,37 @@ describePy('F17 — job ids are globally unique and cancellation is bounded', ()
     const body = { jobId, sampleRate: 48000, prompt: 'speech', audioBase64: b64(tone(480)) };
     expect((await postJson('/separate', body)).status).toBe(499);
     expect((await postJson('/separate', body)).status).toBe(200);
+  });
+
+  test('server job bookkeeping: one run per id, live cancels never expire, ids fullmatch', () => {
+    const script = `
+import server as s
+assert s._start_job("j1") and not s._start_job("j1")
+s._mark_cancelled("j1")
+real = s.time.monotonic
+s.time.monotonic = lambda: real() + s.CANCEL_TTL_S * 10
+for i in range(s.MAX_CANCELLED + 50):
+    s._mark_cancelled(f"idle-{i}")
+assert s._is_cancelled("j1"), "active cancel expired or was evicted"
+assert len(s._cancelled) <= s.MAX_CANCELLED + 1
+s._finish_job("j1")
+assert not s._is_cancelled("j1") and s._start_job("j1")
+assert not s._valid_job_id("x\\n") and s._valid_job_id("sam-1")
+print("ok")
+`;
+    const r = spawnSync(PYTHON, ['-c', script], {
+      cwd: path.join(ROOT, 'services/sam-audio'),
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      encoding: 'utf8',
+    });
+    expect(r.stderr.split('\n').filter((l) => /Error|assert/i.test(l))).toEqual([]);
+    expect(r.stdout.trim()).toBe('ok');
+  });
+
+  test('a jobId with a trailing newline is refused', async () => {
+    expect((await postJson('/cancel', { jobId: 'sam-x\n' })).status).toBe(400);
+    const body = { jobId: 'sam-x\n', sampleRate: 48000, audioBase64: b64(tone(480)) };
+    expect((await postJson('/separate', body)).status).toBe(400);
   });
 
   test('client-side cancels for unknown jobs stay bounded', async () => {
@@ -187,6 +228,81 @@ describePy('F16 — loopback transport without CORS', () => {
     const out = await p.isolate({ audio: tone(4800), sampleRate: 48000, prompt: 'speech' });
     expect(out.target).toHaveLength(4800);
     expect(out.meta.transport).toBe('ipc');
+  });
+});
+
+describe('proxy target verification and resource caps (fake loopback services)', () => {
+  function fakeService(handler) {
+    return new Promise((resolve) => {
+      const seen = [];
+      const srv = http.createServer((req, res) => {
+        seen.push(`${req.method} ${req.url}`);
+        req.resume();
+        req.on('end', () => handler(req, res));
+      });
+      srv.listen(0, '127.0.0.1', () => resolve({ srv, seen, port: srv.address().port }));
+    });
+  }
+  const json = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+  const req = (jobId) => ({ jobId, audio: tone(4800), sampleRate: 48000 });
+
+  test('a different service on the port never receives PCM', async () => {
+    const { srv, seen, port: p } = await fakeService((_q, res) => json(res, 200, { ok: true }));
+    try {
+      const r = await samProxy.createSamProxy({ port: () => p }).separate(req('sam-other-1'));
+      expect(r).toMatchObject({ ok: false, error: 'not-sam-worker' });
+      expect(seen).toEqual(['GET /health']);
+    } finally { srv.close(); }
+  });
+
+  test('privileged or invalid ports are refused before any connection', async () => {
+    for (const bad of [0, 80, 443, 70000, 8765.5, NaN]) {
+      const r = await samProxy.createSamProxy({ port: () => bad }).separate(req('sam-port-1'));
+      expect(r).toMatchObject({ ok: false, error: 'invalid-worker-port' });
+    }
+    expect(samProxy.isValidWorkerPort(8765)).toBe(true);
+  });
+
+  test('an oversized worker response is cut off, not buffered', async () => {
+    const { srv, port: p } = await fakeService((q, res) => {
+      if (q.url === '/health') return json(res, 200, { service: 'sam-audio-worker' });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      const chunk = Buffer.alloc(1 << 20, 0x41);
+      let sent = 0;
+      const pump = () => {
+        while (sent < 64 && res.write(chunk)) sent++;
+        if (sent < 64) res.once('drain', pump); else res.end();
+      };
+      pump();
+    });
+    try {
+      const r = await samProxy.createSamProxy({ port: () => p }).separate(req('sam-big-1'));
+      expect(r).toMatchObject({ ok: false, error: 'worker-response-too-large' });
+    } finally { srv.close(); }
+  });
+
+  test('concurrent jobs are capped and a running jobId cannot start twice', async () => {
+    const hold = [];
+    const { srv, port: p } = await fakeService((q, res) => {
+      if (q.url === '/health') return json(res, 200, { service: 'sam-audio-worker' });
+      if (q.url === '/cancel') return json(res, 200, { ok: true });
+      hold.push(res);
+    });
+    try {
+      const proxy = samProxy.createSamProxy({ port: () => p });
+      const first = proxy.separate(req('sam-cc-1'));
+      expect(await proxy.separate(req('sam-cc-1'))).toMatchObject({ ok: false, status: 409 });
+      const second = proxy.separate(req('sam-cc-2'));
+      expect(samProxy.MAX_CONCURRENT_JOBS).toBe(2);
+      expect(await proxy.separate(req('sam-cc-3'))).toMatchObject({ ok: false, status: 429 });
+      // A cancel that lands before the request is sent still stops the job.
+      expect(await proxy.cancel('sam-cc-2')).toEqual({ ok: true, aborted: true });
+      expect(await second).toEqual({ ok: false, status: 499, error: 'cancelled' });
+      await new Promise((r) => setTimeout(r, 50));
+      hold.forEach((res) => json(res, 200, { sampleRate: 48000, mock: true }));
+      expect(await first).toMatchObject({ ok: true, jobId: 'sam-cc-1' });
+      expect(proxy.activeJobs()).toBe(0);
+    } finally { srv.close(); }
   });
 });
 

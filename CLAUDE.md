@@ -587,10 +587,14 @@ webPreferences: {
   resolve through the symlink-aware `resolveInsideReal`. Runtime proof:
   `xvfb-run -a pnpm test:electron-security` (`prod:verify --desktop`).
 - File I/O and model cache: main process with native dialogs (`vip:open-file`, `vip:save-file`, `vip:model-cache-path`).
-- Local SAM-Audio worker: the renderer never fetches `127.0.0.1` (CSP `connect-src` blocks it and
-  `services/sam-audio/server.py` deliberately answers no CORS and refuses any `Origin`). Separation and
-  cancellation go through `vip:sam-worker-separate` / `vip:sam-worker-cancel` → `electron/sam-proxy.cjs`,
-  which validates the request and talks to a fixed loopback host and fixed paths. Text prompts only.
+- Local SAM-Audio worker: the renderer never fetches `127.0.0.1`. `services/sam-audio/server.py`
+  answers no CORS and refuses any request carrying an `Origin`, so no page (web or `vip://app`) can
+  read it; on the web the CSP `connect-src` also blocks it, but the `vip://` handler sets **no CSP**,
+  so do not rely on one in Electron. Separation and cancellation go through
+  `vip:sam-worker-separate` / `vip:sam-worker-cancel` → `electron/sam-proxy.cjs`, which validates the
+  request, refuses ports below 1024, confirms `/health` reports `sam-audio-worker` before sending PCM,
+  caps concurrent jobs and response size, and talks to a fixed loopback host and fixed paths. Text
+  prompts only.
 - Stripe / payment keys: main process or server only — never exposed to renderer.
 - Packaging: `pnpm build:electron` → `electron-builder`; signing hooks may be configured, but verify the produced binary before claiming a signed artifact.
 

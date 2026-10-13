@@ -356,13 +356,29 @@ describe('F04 — edge-covering USM framing', () => {
 });
 
 describe('F01 — USMNode cache identity', () => {
-  test('a same-length take differing off the old 64-point probe gets a new key', () => {
+  test('a same-length take differing off the old 64-point probe gets a new key', async () => {
     const node = new USMNode();
     const a = new Float32Array(48000).map((_, i) => Math.sin(i / 10) * 0.4);
     const b = new Float32Array(a);
     b[12345] += 0.25; // not on the n/64 stride, not mid, not last
     const cfg = { mode: 'auto', numSources: 6, queries: [] };
-    expect(node._buildCacheKey(a, 48000, cfg)).not.toBe(node._buildCacheKey(b, 48000, cfg));
-    expect(node._buildCacheKey(a, 48000, cfg)).toBe(node._buildCacheKey(new Float32Array(a), 48000, cfg));
+    const keyA = await node._buildCacheKey(a, 48000, cfg);
+    expect(typeof keyA).toBe('string');
+    expect(keyA).not.toBe(await node._buildCacheKey(b, 48000, cfg));
+    expect(keyA).toBe(await node._buildCacheKey(new Float32Array(a), 48000, cfg));
+  });
+
+  test('ensureComputed hashes the input once per call, cache hit or miss', async () => {
+    const node = new USMNode({ preferOnnx: false });
+    const mix = new Float32Array(48000).map((_, i) => Math.sin(i / 7) * 0.3);
+    let hashes = 0;
+    const real = node._buildCacheKey.bind(node);
+    node._buildCacheKey = (...args) => { hashes++; return real(...args); };
+    const opts = { mode: 'auto', numSources: 2, nmfIterations: 4, seed: 1 };
+    await node.ensureComputed(mix, 48000, opts);
+    expect(hashes).toBe(1);
+    const again = await node.ensureComputed(mix, 48000, opts);
+    expect(again.cached).toBe(true);
+    expect(hashes).toBe(2);
   });
 });

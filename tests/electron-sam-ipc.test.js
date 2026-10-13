@@ -30,6 +30,36 @@ describe('Electron SAM worker IPC', () => {
     expect(read('electron/preload.cjs')).toMatch(/samWorkerSeparate/);
   });
 
+  test('the real preload forwards separate and cancel to their IPC channels', () => {
+    const vm = require('vm');
+    const invoked = [];
+    let exposed = null;
+    const electron = {
+      contextBridge: { exposeInMainWorld: (name, api) => { if (name === 'vipDesktop') exposed = api; } },
+      ipcRenderer: {
+        invoke: (channel, ...args) => { invoked.push([channel, ...args]); return Promise.resolve({ ok: true }); },
+        on: () => {},
+        removeListener: () => {},
+        send: () => {},
+      },
+    };
+    const sandbox = {
+      require: (id) => { if (id !== 'electron') throw new Error(`unexpected require ${id}`); return electron; },
+      process: { argv: [], platform: 'linux', versions: {} },
+      console,
+      module: { exports: {} },
+    };
+    vm.runInNewContext(read('electron/preload.cjs'), sandbox, { filename: 'preload.cjs' });
+    const { IPC } = require('../electron/ipc-channels.cjs');
+    const req = { jobId: 'sam-1', audio: new Float32Array(32), sampleRate: 48000 };
+    exposed.samWorkerSeparate(req);
+    exposed.samWorkerCancel('sam-1');
+    expect(invoked).toEqual([
+      [IPC.SAM_WORKER_SEPARATE, req],
+      [IPC.SAM_WORKER_CANCEL, 'sam-1'],
+    ]);
+  });
+
   test('preload exposes only invoke wrappers', () => {
     const src = read('electron/preload.cjs');
     expect(src).toMatch(/samWorkerStatus/);

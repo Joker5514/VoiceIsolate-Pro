@@ -200,12 +200,17 @@ describe('runPromptedIsolation', () => {
   });
 
   test('an abort terminates the worker and rejects with AbortError', async () => {
-    global.Worker.prototype.postMessage = function () { /* never answers */ };
+    let posted;
+    const workerBusy = new Promise((r) => { posted = r; });
+    global.Worker.prototype.postMessage = function () { posted(); /* never answers */ };
     const ac = new AbortController();
     const run = prompted.runPromptedIsolation({
       audio: new Float32Array(4096), sampleRate: 16000, prompt: 'speech', samMode: 'disabled', signal: ac.signal,
     });
-    await new Promise((r) => setTimeout(r, 10));
+    // Abort only once the worker exists and holds the job, however long
+    // provider selection takes.
+    await workerBusy;
+    expect(workers).toHaveLength(1);
     ac.abort();
     await expect(run).rejects.toMatchObject({ name: 'AbortError' });
     expect(workers[0].terminated).toBe(true);

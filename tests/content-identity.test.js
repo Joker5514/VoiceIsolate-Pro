@@ -91,12 +91,15 @@ describe('stemCacheKey identity (sk3)', () => {
   test('every sample position is covered (single-ulp edits)', () => {
     const base = tone(4_097);
     const k0 = key([base]);
-    for (const i of [0, 1, 2, 3, 4, 2048, 4095, 4096]) {
-      const e = new Float32Array(base);
-      const u = new Uint32Array(e.buffer);
+    const missed = [];
+    const e = new Float32Array(base);
+    const u = new Uint32Array(e.buffer);
+    for (let i = 0; i < u.length; i++) {
       u[i] ^= 1;
-      expect(key([e])).not.toBe(k0);
+      if (key([e]) === k0) missed.push(i);
+      u[i] ^= 1;
     }
+    expect(missed).toEqual([]);
   });
 
   test('model bytes and inference revision are part of the key', () => {
@@ -172,6 +175,24 @@ describe('contentFingerprint (file identity)', () => {
     const ac = new AbortController();
     ac.abort();
     await expect(cacheManifest.contentFingerprint(file(big), { signal: ac.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  test.each([
+    ['an empty file', 0],
+    ['a single-chunk file aborted during its only read', 1024],
+  ])('%s still honours an abort', async (_n, size) => {
+    const ac = new AbortController();
+    const blob = new File([new Uint8Array(size)], 'x.wav');
+    if (size === 0) ac.abort();
+    const realSlice = blob.slice.bind(blob);
+    blob.slice = (...a) => {
+      const part = realSlice(...a);
+      const read = part.arrayBuffer.bind(part);
+      part.arrayBuffer = async () => { const b = await read(); ac.abort(); return b; };
+      return part;
+    };
+    await expect(cacheManifest.contentFingerprint(blob, { signal: ac.signal }))
       .rejects.toMatchObject({ name: 'AbortError' });
   });
 });

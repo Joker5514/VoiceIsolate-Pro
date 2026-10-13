@@ -79,12 +79,17 @@ export async function contentFingerprint(blob, opts = {}) {
   if (!blob) return 'empty';
   const size = blob.size || 0;
   const hasher = new ContentHasher128();
-  for (let off = 0; off < size; off += FINGERPRINT_CHUNK_BYTES) {
+  const checkAbort = () => {
     if (opts.signal?.aborted) {
       throw Object.assign(new Error('Fingerprint cancelled'), { name: 'AbortError' });
     }
+  };
+  checkAbort();
+  for (let off = 0; off < size; off += FINGERPRINT_CHUNK_BYTES) {
     const end = Math.min(size, off + FINGERPRINT_CHUNK_BYTES);
-    hasher.update(new Uint8Array(await blob.slice(off, end).arrayBuffer()));
+    const bytes = await blob.slice(off, end).arrayBuffer();
+    checkAbort();
+    hasher.update(new Uint8Array(bytes));
   }
   return `c128_${hasher.digestHex()}_${size.toString(36)}`;
 }

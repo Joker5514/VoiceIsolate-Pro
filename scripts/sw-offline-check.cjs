@@ -149,12 +149,20 @@ async function main() {
     await (await caches.open('vip-models-v1')).put('/app/models/old.onnx', new Response('old model'));
     await (await caches.open('vip-app-3b315dc')).put('/app/app.js', new Response('old app'));
   });
+  // `ready` never settles when the all-or-nothing precache install fails, so
+  // the wait is bounded and a failed install is reported, not hung on.
   const reg = await page.evaluate(async () => {
     const r = await (await import('/app/sw-register.js')).registerSW();
-    await navigator.serviceWorker.ready;
-    return { scope: r?.scope || null, controlled: !!navigator.serviceWorker.controller };
+    const ready = await Promise.race([
+      navigator.serviceWorker.ready.then(() => true),
+      new Promise((res) => setTimeout(() => res(false), 60000)),
+    ]);
+    const w = r?.installing || r?.waiting || r?.active || null;
+    return { scope: r?.scope || null, ready, state: w?.state || null, controlled: !!navigator.serviceWorker.controller };
   });
   check(reg.scope === `${BASE}/`, 'registerSW() registers at scope /', reg);
+  check(reg.ready, 'the worker installs and activates within 60 s (precache succeeded)', reg);
+  if (!reg.ready) throw new Error(`service worker never became ready (state ${reg.state}); later checks need it`);
   const gen1 = manifest().cacheVersion;
   const keys1 = await cacheKeys(page);
   const legacyModel = await page.evaluate(() => caches.match('/app/models/old.onnx').then((r) => !!r));

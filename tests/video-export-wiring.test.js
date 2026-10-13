@@ -28,7 +28,10 @@ describe('Media decode video fallback', () => {
     // delivers zeros, so a 10 s 440 Hz WebM came back as silence. The element's
     // audio is re-routed into the graph; silentGain=0 keeps it inaudible.
     expect(mediaDecode).toMatch(/media\.muted = false;/);
-    expect(mediaDecode).not.toMatch(/media\.muted\s*=\s*true;\s*\n\s*try \{ media\.volume = 0/);
+    // Any zero volume on the capture element silences the capture too,
+    // whatever the mute state; only the downstream gain may be zero.
+    expect(mediaDecode).not.toMatch(/media\.volume\s*=\s*0(?![.\d])/);
+    expect(mediaDecode).toMatch(/media\.volume = 1;/);
     expect(mediaDecode).toContain('silentGain');
   });
 });

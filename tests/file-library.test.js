@@ -293,3 +293,54 @@ describe('FileLibrary identity (F01)', () => {
     expect(d2[100_000]).toBe(b[100_000]);
   }, 15000);
 });
+
+describe('storage migrations (review follow-ups)', () => {
+  test('a legacy fp_ row is adopted by content on re-import, not duplicated', async () => {
+    const bytes = new Uint8Array(3000).map((_, i) => (i * 7) & 255);
+    const m1 = await FileLibrary.importFile(makeFile(bytes, 'old.wav', 'audio/wav'), { mode: 'library' });
+    await FileLibrary.updateFileMeta(m1.id, { fingerprint: `fp_1a2b3c_${bytes.length.toString(36)}` });
+    const before = (await FileLibrary.listLibraryFiles()).length;
+    const m2 = await FileLibrary.importFile(makeFile(bytes, 'renamed.wav', 'audio/wav'), { mode: 'library' });
+    expect(m2.id).toBe(m1.id);
+    expect(m2.fingerprint).toMatch(/^c128_/);
+    expect((await FileLibrary.listLibraryFiles()).length).toBe(before);
+  }, 15000);
+
+  test('a legacy row with other bytes of the same size is not adopted', async () => {
+    const a = new Uint8Array(3001).map((_, i) => (i * 5) & 255);
+    const b = a.slice(); b[1500] ^= 1;
+    const m1 = await FileLibrary.importFile(makeFile(a, 'x.wav', 'audio/wav'), { mode: 'library' });
+    await FileLibrary.updateFileMeta(m1.id, { fingerprint: `fp_99_${a.length.toString(36)}` });
+    const m2 = await FileLibrary.importFile(makeFile(b, 'x.wav', 'audio/wav'), { mode: 'library' });
+    expect(m2.id).not.toBe(m1.id);
+  }, 15000);
+
+  test('saving stems drops the superseded revision for the same file, chain and variant', async () => {
+    const Derived = await import('../src/core/storage/DerivedCache.js');
+    const { openIdb, idbTransaction, idbPut, idbTxDone, idbGetAll } = await import('../src/core/storage/openIdb.js');
+    const { writeSourceBlob, readSourceBlob } = await import('../src/core/storage/BlobStore.js');
+    const db = await openIdb('vip-derived-cache', 1, () => {});
+    const put = async (meta) => {
+      const tx = idbTransaction(db, 'entries', 'readwrite');
+      await idbPut(tx.objectStore('entries'), meta);
+      await idbTxDone(tx);
+    };
+    const staleRef = await writeSourceBlob('derived-stale', new Blob([new Uint8Array(8)]));
+    const base = { kind: 'stems', fileId: 'f-rev', modelIds: ['bsrnn_vocals'], createdAt: 1 };
+    await put({ ...base, key: 'stems:f-rev:bsrnn_vocals@ir1-old', blobRef: staleRef });
+    await put({ ...base, key: 'stems:f-rev:bsrnn_vocals@ir1-old:engineer-x', processingRevision: 'x', blobRef: null });
+    await put({ ...base, key: 'stems:f-rev:other@ir1-old', modelIds: ['other'], blobRef: null });
+    const clean = [new Float32Array(64).fill(0.1)];
+    const meta = await Derived.saveStemsDurable('f-rev', ['bsrnn_vocals'], { clean, noise: clean, sampleRate: 48000 });
+    expect(meta.key).not.toBe('stems:f-rev:bsrnn_vocals@ir1-old');
+    const keys = (await idbGetAll(db.transaction('entries', 'readonly').objectStore('entries')))
+      .filter((e) => e.fileId === 'f-rev').map((e) => e.key).sort();
+    expect(keys).toEqual([
+      meta.key,
+      'stems:f-rev:bsrnn_vocals@ir1-old:engineer-x',
+      'stems:f-rev:other@ir1-old',
+    ].sort());
+    expect(await readSourceBlob(staleRef)).toBeNull();
+    expect(await Derived.loadStemsDurable('f-rev', ['bsrnn_vocals'])).toMatchObject({ sampleRate: 48000 });
+  }, 15000);
+});

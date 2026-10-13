@@ -81,36 +81,55 @@ def _apply_hub_compat() -> Dict[str, Any]:
 # Cancellation bookkeeping: job id -> monotonic time of the cancel. A cancel may
 # arrive before its /separate (client aborted early), so entries for unknown
 # jobs are kept, but only for CANCEL_TTL_S and at most MAX_CANCELLED entries.
+# A cancel for a running job never expires or gets evicted while that job runs.
 # A job's entry is dropped when that job finishes, so ids never poison later jobs.
+# A jobId may run only once at a time; a second /separate with it is refused.
 CANCEL_TTL_S = 600.0
 MAX_CANCELLED = 1024
-_JOB_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_JOB_ID_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 SUPPORTED_PROMPT_MODES = ("text",)
 _cancelled: Dict[str, float] = {}
+_active: set = set()
 _lock = threading.Lock()
 _model_load_lock = threading.Lock()
 # (model, processor, device, mock, load_error)
 _sam_bundle: Optional[Tuple[Any, Any, str, bool, Optional[str]]] = None
 
 
+def _valid_job_id(job: Any) -> bool:
+    return isinstance(job, str) and _JOB_ID_RE.fullmatch(job) is not None
+
+
 def _mark_cancelled(job: str) -> None:
     now = time.monotonic()
     with _lock:
-        for k in [k for k, t in _cancelled.items() if now - t > CANCEL_TTL_S]:
+        for k in [k for k, t in _cancelled.items() if k not in _active and now - t > CANCEL_TTL_S]:
             del _cancelled[k]
         _cancelled[job] = now
-        while len(_cancelled) > MAX_CANCELLED:
-            del _cancelled[next(iter(_cancelled))]
+        idle = [k for k in _cancelled if k not in _active]
+        while len(_cancelled) > MAX_CANCELLED and idle:
+            del _cancelled[idle.pop(0)]
 
 
 def _is_cancelled(job: str) -> bool:
     with _lock:
         t = _cancelled.get(job)
-        return t is not None and time.monotonic() - t <= CANCEL_TTL_S
+        if t is None:
+            return False
+        return job in _active or time.monotonic() - t <= CANCEL_TTL_S
+
+
+def _start_job(job: str) -> bool:
+    with _lock:
+        if job in _active:
+            return False
+        _active.add(job)
+        return True
 
 
 def _finish_job(job: str) -> None:
     with _lock:
+        _active.discard(job)
         _cancelled.pop(job, None)
 
 
@@ -443,7 +462,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/cancel":
             job = body.get("jobId")
-            if not isinstance(job, str) or not _JOB_ID_RE.match(job):
+            if not _valid_job_id(job):
                 self._send(400, {"error": "invalid-jobId"})
                 return
             _mark_cancelled(job)
@@ -461,8 +480,11 @@ class Handler(BaseHTTPRequestHandler):
         job = body.get("jobId")
         if job is None:
             job = f"srv-{uuid.uuid4()}"
-        if not isinstance(job, str) or not _JOB_ID_RE.match(job):
+        if not _valid_job_id(job):
             self._send(400, {"error": "invalid-jobId"})
+            return
+        if not _start_job(job):
+            self._send(409, {"error": "job-already-running"})
             return
         try:
             self._separate(job, body)

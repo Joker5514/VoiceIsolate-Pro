@@ -110,6 +110,7 @@ const vipDesktop = Object.freeze({
   /**
    * Separate mono PCM on the loopback worker via the main process.
    * @param {{ jobId: string, audio: Float32Array, sampleRate: number, prompt?: string,
+   *   predictSpans?: boolean, rerankingCandidates?: number,
    *   output?: 'target'|'residual'|'both', timeoutMs?: number }} req
    */
   samWorkerSeparate: (req) => ipcRenderer.invoke(IPC.SAM_WORKER_SEPARATE, req),

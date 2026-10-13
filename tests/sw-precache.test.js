@@ -12,8 +12,14 @@ const { computePrecache, stampServiceWorker } = require('../scripts/sw-precache.
 
 const ROOT = path.join(__dirname, '..');
 
+const created = [];
+afterAll(() => {
+  for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tree(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-sw-'));
+  created.push(dir);
   for (const [rel, body] of Object.entries(files)) {
     fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });
     fs.writeFileSync(path.join(dir, rel), body);
@@ -106,7 +112,7 @@ describe('F19 — stamping', () => {
 
   test('the worker is network-first, never caches models, and keeps the waiting lifecycle', () => {
     const sw = fs.readFileSync(path.join(ROOT, 'public/app/sw.js'), 'utf8');
-    expect(sw).toMatch(/networkFirst\(request, url\)/);
+    expect(sw).toMatch(/networkFirst\(request, url, event\)/);
     expect(sw).not.toMatch(/serveModelCacheFirst|serveAppShellCacheFirst/);
     expect(sw).toMatch(/\\\/app\\\/models\\\/\.\+\\\.onnx/);
     expect(sw).toMatch(/cache\.addAll\(/);

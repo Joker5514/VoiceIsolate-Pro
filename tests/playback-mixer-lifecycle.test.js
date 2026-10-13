@@ -93,27 +93,33 @@ describe('PlaybackMixer.dispose (F03)', () => {
 
   test('a worklet load that settles after dispose does not touch the graph', async () => {
     const ctx = stalledContext();
-    let finishLoad;
-    ctx.audioWorklet.addModule = jest.fn(() => new Promise((r) => { finishLoad = r; }));
+    const finishLoads = [];
+    ctx.audioWorklet.addModule = jest.fn(() => new Promise((r) => { finishLoads.push(r); }));
     const mixer = new PlaybackMixer({ context: ctx });
     await mixer.dispose();
     const connectsBefore = mixer.gateInput.connect.mock.calls.length;
-    finishLoad();
+    const deEsserBefore = mixer.deEsserInput.connect.mock.calls.length;
+    // Both module loads (gate and de-esser) settle after dispose.
+    expect(finishLoads).toHaveLength(2);
+    finishLoads.forEach((r) => r());
     await new Promise((r) => setTimeout(r, 20));
     expect(globalThis.AudioWorkletNode).not.toHaveBeenCalled();
     expect(mixer.gateInput.connect.mock.calls.length).toBe(connectsBefore);
+    expect(mixer.deEsserInput.connect.mock.calls.length).toBe(deEsserBefore);
     expect(mixer.gate).toBeNull();
+    expect(mixer.deEsser).toBeNull();
   });
 
   test('a worklet load that fails after dispose does not reconnect the bus', async () => {
     const ctx = stalledContext();
-    let failLoad;
-    ctx.audioWorklet.addModule = jest.fn(() => new Promise((_, reject) => { failLoad = reject; }));
+    const failLoads = [];
+    ctx.audioWorklet.addModule = jest.fn(() => new Promise((_, reject) => { failLoads.push(reject); }));
     const mixer = new PlaybackMixer({ context: ctx });
     await mixer.dispose();
     const gateConnects = mixer.gateInput.connect.mock.calls.length;
     const deEsserConnects = mixer.deEsserInput.connect.mock.calls.length;
-    failLoad(new Error('network'));
+    expect(failLoads).toHaveLength(2);
+    failLoads.forEach((reject) => reject(new Error('network')));
     await new Promise((r) => setTimeout(r, 50));
     expect(mixer.gateInput.connect.mock.calls.length).toBe(gateConnects);
     expect(mixer.deEsserInput.connect.mock.calls.length).toBe(deEsserConnects);
@@ -134,6 +140,24 @@ describe('latency and ceiling bookkeeping (F08/F09)', () => {
     mixer.setGateLookahead(20);
     expect(mixer.dryDelay.delayTime.value).toBeCloseTo((288 + 960) / 48000, 9);
     expect(mixer.latencyFrames()).toBe(288 * 2 + 960);
+  });
+
+  test('while playing, gate lookahead steps with the dry delay instead of gliding', () => {
+    const ctx = stalledContext();
+    delete ctx.audioWorklet;
+    const mixer = new PlaybackMixer({ context: ctx });
+    mixer._compressorLatencyFrames = 288;
+    const lookahead = mockParam(0);
+    const threshold = mockParam(0);
+    mixer.gate = mockNode({ parameters: new Map([['lookahead', lookahead], ['threshold', threshold]]) });
+    mixer._isPlaying = true;
+    mixer.setGateLookahead(10);
+    expect(lookahead.setTargetAtTime).not.toHaveBeenCalled();
+    expect(lookahead.value).toBe(10);
+    expect(mixer.dryDelay.delayTime.value).toBeCloseTo((288 + 480) / 48000, 9);
+    // Non-delay gate params still ramp.
+    mixer._setGateParam('threshold', -40);
+    expect(threshold.setTargetAtTime).toHaveBeenCalled();
   });
 
   test('ceiling curve is the identity to ±24 dBFS until a ceiling is set', () => {

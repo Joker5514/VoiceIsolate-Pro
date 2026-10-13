@@ -288,6 +288,10 @@ export function modelChainRevision(modelIds = []) {
       e.maskExponent ?? 1,
       e.fftSize ?? '',
       e.hopSize ?? '',
+      e.strategy || '',
+      e.sampleRate ?? '',
+      e.bins ?? '',
+      e.segmentSamples ?? '',
     ].join(':');
   });
   return `${INFERENCE_REVISION}-${hashString128(parts.join('|')).slice(0, 16)}`;

@@ -187,7 +187,39 @@ export async function saveStemsDurable(fileId, modelIds, result, processingRevis
   const tx = idbTransaction(db, META_STORE, 'readwrite');
   await idbPut(tx.objectStore(META_STORE), meta);
   await idbTxDone(tx);
+  await deleteSupersededStems(db, meta);
   return meta;
+}
+
+/**
+ * A model or inference revision change writes a new key for the same file,
+ * chain and Engineer variant; the old entry can never be read again, so drop
+ * its blob and row instead of leaving it to fill storage.
+ * @param {IDBDatabase} db
+ * @param {DerivedMeta} meta
+ */
+async function deleteSupersededStems(db, meta) {
+  try {
+    const chain = (meta.modelIds || []).join('→');
+    const all = await new Promise((resolve, reject) => {
+      const req = db.transaction(META_STORE, 'readonly').objectStore(META_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+    const stale = all.filter((e) => e.kind === 'stems'
+      && e.fileId === meta.fileId
+      && e.key !== meta.key
+      && (e.modelIds || []).join('→') === chain
+      && (e.processingRevision || '') === (meta.processingRevision || ''));
+    for (const e of stale) {
+      if (e.blobRef) await deleteSourceBlob(e.blobRef);
+      const w = idbTransaction(db, META_STORE, 'readwrite');
+      await idbDelete(w.objectStore(META_STORE), e.key);
+      await idbTxDone(w);
+    }
+  } catch (err) {
+    console.warn('[VIP][DerivedCache] superseded stem cleanup failed:', err?.message || err);
+  }
 }
 
 /**

@@ -5,13 +5,14 @@
  *
  * Not a project dependency. Run from a scratch directory:
  *   npm i firebase-tools@15 @firebase/rules-unit-testing@5 firebase@12
+ *   cp <repo>/scripts/firestore-rules-matrix.mjs .
  *   cp <repo>/firestore.rules firestore.fixed.rules
  *   git -C <repo> show 0b020cc:firestore.rules > firestore.original.rules
  *   printf '{"emulators":{"firestore":{"port":8089,"host":"127.0.0.1"},"ui":{"enabled":false}}}' > firebase.json
  *   npx firebase emulators:exec --only firestore --project demo-vip-rules "node firestore-rules-matrix.mjs"
  */
 import { readFileSync } from 'fs';
-import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
+import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const outcome = async (p) => { try { await p; return 'ALLOW'; } catch (e) { return /PERMISSION_DENIED|permission/i.test(String(e?.code || e?.message)) ? 'DENY' : `ERR:${e?.code || e?.message}`; } };
@@ -79,4 +80,5 @@ for (const k of Object.keys(expected)) {
   console.log(`${k} | ${expected[k]} | ${orig[k]}${orig[k] !== expected[k] ? ' (WRONG)' : ''} | ${fixed[k]}${ok ? '' : ' (WRONG)'}`);
 }
 console.log(bad ? `FIXED RULES: ${bad} mismatches` : 'FIXED RULES: matrix matches expectations');
-process.exit(bad ? 1 : 0);
+// exitCode, not exit(): stdout is a pipe under emulators:exec and must flush.
+process.exitCode = bad ? 1 : 0;
