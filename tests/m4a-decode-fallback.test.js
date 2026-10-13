@@ -166,3 +166,64 @@ describe('M4A decode fallback — landing.js upload UX', () => {
     expect(ingestion).not.toContain('onProcess()');
   });
 });
+
+describe('_decodeLooksTruncated judges the decode against container metadata (F06)', () => {
+  let md;
+  beforeAll(async () => { md = await import('../src/pipeline/media-decode.js'); });
+
+  // A metadata-only media element whose duration (or silence) the test controls.
+  function fakeDocument({ duration, fire = 'loadedmetadata' }) {
+    return {
+      createElement() {
+        const listeners = {};
+        const el = {
+          readyState: 0, duration: NaN, error: null,
+          addEventListener: (t, f) => { listeners[t] = f; },
+          removeEventListener: (t) => { delete listeners[t]; },
+          removeAttribute() {}, load() {},
+          set src(_v) {
+            if (!fire) return; // never loads metadata
+            setTimeout(() => { el.duration = duration; el.readyState = 1; listeners[fire]?.(); }, 0);
+          },
+        };
+        return el;
+      },
+    };
+  }
+  const blob = { type: 'video/mp4', size: 5e6 };
+  const buffer = (sec) => ({ duration: sec });
+  const realDoc = globalThis.document;
+  const realUrl = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+  beforeEach(() => { URL.createObjectURL = () => 'blob:x'; URL.revokeObjectURL = () => {}; });
+  afterEach(() => {
+    globalThis.document = realDoc;
+    URL.createObjectURL = realUrl.create; URL.revokeObjectURL = realUrl.revoke;
+    jest.useRealTimers();
+  });
+
+  test('a short high-bitrate clip that decoded in full is trusted', async () => {
+    globalThis.document = fakeDocument({ duration: 10 });
+    await expect(md._decodeLooksTruncated(blob, buffer(10))).resolves.toBe(false);
+  });
+
+  test('a decode much shorter than the container is truncated', async () => {
+    globalThis.document = fakeDocument({ duration: 10 });
+    await expect(md._decodeLooksTruncated(blob, buffer(1.19))).resolves.toBe(true);
+  });
+
+  test('a metadata probe that times out leaves the decode trusted, not failed', async () => {
+    jest.useFakeTimers();
+    globalThis.document = fakeDocument({ duration: 10, fire: null });
+    const pending = md._decodeLooksTruncated(blob, buffer(10));
+    await jest.advanceTimersByTimeAsync(120_000);
+    await expect(pending).resolves.toBe(false);
+  });
+
+  test('an abort during the probe still rejects', async () => {
+    globalThis.document = fakeDocument({ duration: 10, fire: null });
+    const ac = new AbortController();
+    const pending = md._decodeLooksTruncated(blob, buffer(10), ac.signal);
+    ac.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});

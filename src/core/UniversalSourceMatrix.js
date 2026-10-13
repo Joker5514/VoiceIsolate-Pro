@@ -46,15 +46,19 @@ export const USM_MAX_WORKING_BYTES = 768 * 1024 * 1024;
 export function estimateUsmWorkingBytes(length, config = {}) {
   const fftSize = config.fftSize || USM_FFT_SIZE;
   const hopSize = config.hopSize || USM_HOP_SIZE;
-  const bins = (fftSize >> 1) + 1;
+  const bins = Math.floor(fftSize / 2) + 1; // not `>> 1`: wraps at 2**31
   const frames = paddedFrameCount(length, fftSize, hopSize);
   const query = config.mode === 'query' && Array.isArray(config.queries) && config.queries.length;
+  // querySoftMasks renders at most USM_MAX_SOURCES queries (+ residual).
   const stems = query
-    ? config.queries.length + 1
+    ? Math.min(USM_MAX_SOURCES, config.queries.length) + 1
     : Math.max(2, Math.min(USM_MAX_SOURCES, config.numSources || USM_DEFAULT_SOURCES)) + 1;
-  // re, im, mag + NMF V and W·H (query mode needs fewer; count the larger).
+  // re, im, mag + NMF V and W·H (query mode needs fewer; count the larger),
+  // plus one mask per stem.
   const spectral = (5 + stems) * frames * bins;
-  return 4 * (spectral + stems * length);
+  // Each stem's PCM is retained; maskToPcm also holds one `norm` accumulator
+  // of the same length and two fftSize scratch rows while it renders.
+  return 4 * (spectral + (stems + 1) * length + 2 * fftSize);
 }
 
 /** @typedef {{ mode?: 'auto'|'query', numSources?: number, queries?: string[], sampleRate?: number, fftSize?: number, hopSize?: number, nmfIterations?: number, seed?: number }} USMConfig */

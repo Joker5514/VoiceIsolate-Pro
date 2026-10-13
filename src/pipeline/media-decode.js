@@ -347,10 +347,13 @@ async function decodeAudioBufferSafe(ctx, arrayBuffer, { timeoutMs, signal } = {
  * @param {AbortSignal|null} signal
  * @returns {Promise<boolean>}
  */
-async function _decodeLooksTruncated(blob, buffer, signal = null) {
+export async function _decodeLooksTruncated(blob, buffer, signal = null) {
   if (!buffer?.duration || buffer.duration <= 0) return true;
   const containerSec = await _probeMediaDuration(blob, signal).catch((err) => {
-    if (isTerminalOperationError(err)) throw err;
+    // Only a user abort ends the import. A metadata probe that times out
+    // (MEDIA_METADATA_TIMEOUT) just leaves the decode unverified, and the
+    // decode is already a valid buffer, so it is trusted.
+    if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') throw err;
     return null;
   });
   if (!Number.isFinite(containerSec) || containerSec <= 0) return false;
@@ -783,7 +786,10 @@ export function locateContentWindow(views, expected, prePlayFrames = 0, blockFra
     // Non-silent content spans more than the reported duration: keep all of it.
     return { start: first, length: last + 1 - first, shortBy: 0 };
   }
-  const opensWithSignal = Math.abs(first - prePlayFrames) <= 2 * blockFrames;
+  // prePlayFrames is uncertain by up to one block, so a first sample within
+  // one block of it is the media's own start. Beyond that the media opens with
+  // real digital silence, which must stay (two blocks dropped ~171 ms of it).
+  const opensWithSignal = Math.abs(first - prePlayFrames) <= blockFrames;
   const guess = opensWithSignal ? first : prePlayFrames;
   const start = Math.min(hi, Math.max(lo, guess));
   return { start, length: expected, shortBy: 0 };

@@ -149,6 +149,11 @@ export function frameCount(length, fftSize, hopSize) {
 export function paddedFrameCount(length, fftSize, hopSize) {
   if (!Number.isFinite(length) || length <= 0) return 0;
   frameCount(fftSize, fftSize, hopSize); // validates geometry
+  // Without overlap the periodic Hann zero at index 0 is never covered by a
+  // neighbouring frame, so every frame boundary would reconstruct as 0.
+  if (hopSize >= fftSize) {
+    throw new RangeError(`[VIP][stft-math] paddedFrameCount: hopSize ${hopSize} must be < fftSize ${fftSize}`);
+  }
   return Math.floor((length - 1 + fftSize - hopSize) / hopSize) + 1;
 }
 

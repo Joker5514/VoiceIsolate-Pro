@@ -78,6 +78,9 @@ export function verifyLicenseToken(token) {
     if (expected.length !== got.length || !crypto.timingSafeEqual(expected, got)) return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
     if (typeof payload.exp !== 'number' || Date.now() / 1000 > payload.exp) return null;
+    // Tokens minted before the 35-day lifetime (400 days) are refused even while
+    // unexpired, so a long-lived bearer credential cannot outlast the change.
+    if (typeof payload.iat !== 'number' || payload.exp - payload.iat > LICENSE_TOKEN_TTL_DAYS * 86400) return null;
     if (payload.source !== 'stripe' || typeof payload.sub !== 'string' || !payload.sub) return null;
     return payload;
   } catch {

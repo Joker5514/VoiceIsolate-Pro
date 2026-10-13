@@ -48,9 +48,30 @@ test('server start-up with a Blob token spawns no uploader', async () => {
 }, 15000);
 
 test('the uploader makes no network calls and writes nothing without --yes', () => {
+  const { spawnSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'vip-upl-'));
+  // Any network API the script could reach throws, and the attempt is recorded.
+  const trap = path.join(dir, 'trap.mjs');
+  fs.writeFileSync(trap, `
+    import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
+    const hit = (what) => { process.stderr.write('NETWORK:' + what + '\\n'); throw new Error('network blocked'); };
+    globalThis.fetch = () => hit('fetch');
+    for (const m of [http, https]) { m.request = () => hit('request'); m.get = () => hit('get'); }
+    net.connect = net.createConnection = () => hit('connect');
+  `);
+  const manifest = path.join(ROOT, 'public/app/models-manifest.json');
+  const before = fs.readFileSync(manifest);
+  try {
+    const r = spawnSync(process.execPath, ['--import', trap, path.join(ROOT, 'scripts/upload-to-vercel-blob.mjs')], {
+      cwd: ROOT, encoding: 'utf8', env: { ...process.env, BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_not_real' },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/dry run/);
+    expect(r.stderr).not.toMatch(/NETWORK:/);
+    expect(fs.readFileSync(manifest).equals(before)).toBe(true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
   const src = fs.readFileSync(path.join(ROOT, 'scripts/upload-to-vercel-blob.mjs'), 'utf8');
-  const confirmGate = src.indexOf('if (!CONFIRMED)');
-  expect(confirmGate).toBeGreaterThan(-1);
-  expect(src.indexOf("await import('@vercel/blob')")).toBeGreaterThan(confirmGate);
   expect(src).toMatch(/does not match ModelManifest pin/);
 });

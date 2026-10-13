@@ -118,6 +118,21 @@ describe('F13 — entitlement is authoritative, not the signed tier', () => {
     expect((await request(app).post('/api/license/claim').send({ sessionId: 'cs_test_unpaid_1' })).status).toBe(402);
   });
 
+  test('a same-second "active" update delivered after a deletion does not restore access', async () => {
+    const token = await subscribe('cus_tie', 'STUDIO');
+    const t = Math.floor(Date.now() / 1000) + 20_000;
+    await webhook('customer.subscription.deleted', { customer: 'cus_tie', id: 's' }, t);
+    await webhook('customer.subscription.updated', { customer: 'cus_tie', id: 's', status: 'active', items: { data: [{ price: { id: 'price_studio_m' } }] } }, t);
+    expect((await request(app).get('/api/license/status').set(auth(token))).body.active).toBe(false);
+  });
+
+  test('tokens minted with the old 400-day lifetime are refused while unexpired', async () => {
+    await subscribe('cus_legacy', 'STUDIO');
+    const legacy = entitlements.createLicenseToken({ customerId: 'cus_legacy', tier: 'STUDIO', ttlDays: 400 });
+    expect((await request(app).post('/api/license/validate').send({ token: legacy })).body.valid).toBe(false);
+    expect((await request(app).get('/api/sync/pull').set(auth(legacy))).status).toBe(401);
+  });
+
   test('an out-of-order (older) event does not overwrite a newer state', async () => {
     const token = await subscribe('cus_order', 'STUDIO');
     const now = Math.floor(Date.now() / 1000) + 10_000;
@@ -154,9 +169,20 @@ describe('F12 — durable, transactional, restart-safe persistence', () => {
     expect(pull.body.presets.map((p) => p.id)).toEqual(['p1']);
   });
 
+  test('the store file is owner-only', async () => {
+    await storeMod.getStore().transact((st) => { st.usage.push({ at: 1 }); });
+    const mode = fs.statSync(path.join(DATA_DIR, 'vip-backend.json')).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
   test('without a durable store (production, no VIP_DATA_DIR) paid and sync endpoints answer 503', async () => {
-    storeMod._setStoreForTests(null);
+    // Drive getStore()'s own environment decision, not a test override.
+    const saved = { dir: process.env.VIP_DATA_DIR, env: process.env.NODE_ENV };
+    delete process.env.VIP_DATA_DIR;
+    process.env.NODE_ENV = 'production';
+    storeMod._setStoreForTests(undefined);
     try {
+      expect(storeMod.getStore()).toBeNull();
       expect((await request(app).post('/api/license/validate').send({ token: 'x.y.z' })).status).toBe(503);
       expect((await request(app).get('/api/sync/pull').set(auth('x.y.z'))).status).toBe(503);
       expect((await request(app).post('/api/checkout').send({ tier: 'PRO' })).status).toBe(503);
@@ -164,6 +190,22 @@ describe('F12 — durable, transactional, restart-safe persistence', () => {
       expect(health.store).toMatchObject({ ready: false, kind: 'none' });
       expect(health.licenseDelivery).toBe('unavailable');
     } finally {
+      process.env.VIP_DATA_DIR = saved.dir;
+      process.env.NODE_ENV = saved.env;
+      storeMod._setStoreForTests(undefined);
+    }
+  });
+
+  test('/health stays up and reports the store when VIP_DATA_DIR cannot be created', async () => {
+    const saved = process.env.VIP_DATA_DIR;
+    process.env.VIP_DATA_DIR = path.join(DATA_DIR, 'vip-backend.json', 'nested'); // under a file
+    storeMod._setStoreForTests(undefined);
+    try {
+      const r = await request(app).get('/api/health');
+      expect(r.status).toBe(200);
+      expect(r.body.services.store).toMatchObject({ ready: false, kind: 'error' });
+    } finally {
+      process.env.VIP_DATA_DIR = saved;
       storeMod._setStoreForTests(undefined);
     }
   });
@@ -184,6 +226,12 @@ describe('F14 — NIM never fabricates results', () => {
     expect(r.status).toBe(501);
     expect(r.body).not.toHaveProperty('data');
     expect(r.body).not.toHaveProperty('success');
+    // Malformed and over-limit JSON would be 400/413 if a parser ran first.
+    const bad = await request(app).post('/api/nim/detect').set('content-type', 'application/json').send('{"video":');
+    expect(bad.status).toBe(501);
+    const big = await request(app).post('/api/nim/detect').set('content-type', 'application/json')
+      .send(JSON.stringify({ pad: 'x'.repeat(2 * 1024 * 1024) }));
+    expect(big.status).toBe(501);
   });
 });
 

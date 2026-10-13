@@ -50,8 +50,19 @@ test('a capture shorter than the media reports how short', () => {
 });
 
 test('stereo: the earliest/latest non-zero sample over all channels bounds the window', () => {
-  const l = capture(5000, tone(2000), 50000);
-  const r = capture(4000, tone(3000), 50000);
+  // L starts later and ends earlier; R spans the media. The window must start
+  // at R's first sample and still hold R's last one (the latest tail).
+  const l = capture(5000, tone(30000), 13000);
+  const r = capture(4000, tone(40000), 4000);
   const w = locateContentWindow([l, r], 40000, 4096);
-  expect(w.start).toBe(4000);
+  expect(w).toEqual({ start: 4000, length: 40000, shortBy: 0 });
+});
+
+test('100 ms of leading digital silence keeps the true start (two blocks used to drop it)', () => {
+  const body = new Float32Array(48000);
+  body.set(tone(48000 - 4800), 4800); // 4800 frames (100 ms) of exact silence first
+  const v = capture(4096, body, 9000);
+  const w = locateContentWindow([v], 48000, 4096, 4096);
+  expect(w.start).toBe(4096);
+  expect(w.length).toBe(48000);
 });

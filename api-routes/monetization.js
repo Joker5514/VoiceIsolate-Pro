@@ -258,6 +258,10 @@ function applyStripeEvent(state, event) {
     if (!customerId) return;
     const prev = state.licenses[customerId];
     if (prev && prev.lastEventAt && at < prev.lastEventAt) return; // stale, out of order
+    // event.created has one-second resolution, so a tie cannot order two
+    // events. A cancellation is never undone by a same-second event: an older
+    // "active" update delivered after the deletion must not restore access.
+    if (prev && at === prev.lastEventAt && prev.status === 'canceled' && patch.status !== 'canceled') return;
     state.licenses[customerId] = { ...(prev || { customerId }), ...patch, lastEventAt: at, updatedAt: Date.now() };
   };
   const obj = event.data?.object || {};

@@ -79,8 +79,16 @@ async function main() {
   for (const p of plan) {
     const existing = (await list({ prefix: p.filename, token: TOKEN })).blobs
       .find((b) => b.pathname === p.filename);
+    // Equal size is not equal content: a same-sized model update must not be
+    // skipped, so a size match is confirmed by hashing the published bytes.
+    let same = false;
     if (existing && existing.size === p.size && !FORCE) {
-      console.log(`skip ${p.filename} (already uploaded, ${p.size} bytes)`);
+      const res = await fetch(existing.url);
+      if (!res.ok) throw new Error(`${p.filename}: could not read the published blob (HTTP ${res.status}).`);
+      same = createHash('sha256').update(Buffer.from(await res.arrayBuffer())).digest('hex') === p.sha;
+    }
+    if (same) {
+      console.log(`skip ${p.filename} (already uploaded, sha256 matches)`);
     } else {
       console.log(`upload ${p.filename} → vercel blob …`);
       await put(p.filename, p.buffer, {
