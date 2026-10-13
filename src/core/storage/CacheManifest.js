@@ -12,9 +12,10 @@
  */
 'use strict';
 
-import { openIdb, idbGet, idbPut, idbGetAll, idbDelete, idbTxDone } from './openIdb.js';
+import { openIdb, idbGet, idbPut, idbGetAll, idbDelete, idbTxDone, idbTransaction } from './openIdb.js';
 import { deleteSourceBlob } from './BlobStore.js';
 import { deleteDerivedForFile } from './DerivedCache.js';
+import { ContentHasher128 } from '../content-hash.js';
 
 /** Bump when cache layouts or semantics change. */
 export const APP_CACHE_VERSION = 'vip-cache-v4-perf';
@@ -50,45 +51,47 @@ export async function getCacheMeta() {
 
 async function setCacheMeta(patch) {
   const db = await openManifest();
-  const tx = db.transaction(META_STORE, 'readwrite');
+  const tx = idbTransaction(db, META_STORE, 'readwrite');
   const store = tx.objectStore(META_STORE);
   const prev = (await idbGet(store, 'app')) || { key: 'app' };
   await idbPut(store, { ...prev, ...patch, key: 'app' });
   await idbTxDone(tx);
 }
 
+/** Bytes read and hashed per step of {@link contentFingerprint}. */
+const FINGERPRINT_CHUNK_BYTES = 4 * 1024 * 1024;
+
 /**
- * Stable content fingerprint for a File/Blob (fast sample hash, not full SHA of multi-GB).
+ * Content identity for a File/Blob: a 128-bit hash of every byte plus the
+ * size. The previous fingerprint sampled 4096 bytes of the first and last
+ * 64 KiB and mixed in the file name, so two takes with the same name and size
+ * that differed anywhere else shared one library row — and that row's blob and
+ * derived stems. Name and MIME type are deliberately excluded: identical bytes
+ * are the same audio.
+ *
+ * Reads 4 MiB at a time; each read is an async step, so the main thread is
+ * never held for more than one chunk's hash.
  * @param {Blob|File} blob
+ * @param {{ signal?: AbortSignal }} [opts]
  * @returns {Promise<string>}
  */
-export async function contentFingerprint(blob) {
+export async function contentFingerprint(blob, opts = {}) {
   if (!blob) return 'empty';
   const size = blob.size || 0;
-  const type = blob.type || '';
-  const name = /** @type {File} */ (blob).name || '';
-  const head = Math.min(65536, size);
-  const tail = Math.min(65536, Math.max(0, size - 65536));
-  const parts = [];
-  if (head > 0) parts.push(new Uint8Array(await blob.slice(0, head).arrayBuffer()));
-  if (tail > 0 && size > head) {
-    parts.push(new Uint8Array(await blob.slice(size - tail, size).arrayBuffer()));
-  }
-  let h = 2166136261 >>> 0;
-  const mix = (u8) => {
-    for (let i = 0; i < u8.length; i += Math.max(1, (u8.length / 4096) | 0)) {
-      h ^= u8[i];
-      h = Math.imul(h, 16777619) >>> 0;
+  const hasher = new ContentHasher128();
+  const checkAbort = () => {
+    if (opts.signal?.aborted) {
+      throw Object.assign(new Error('Fingerprint cancelled'), { name: 'AbortError' });
     }
   };
-  for (const p of parts) mix(p);
-  // Include size/name/type so same bytes different containers don't collide silently
-  const tag = `${size}|${type}|${name}`;
-  for (let i = 0; i < tag.length; i++) {
-    h ^= tag.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
+  checkAbort();
+  for (let off = 0; off < size; off += FINGERPRINT_CHUNK_BYTES) {
+    const end = Math.min(size, off + FINGERPRINT_CHUNK_BYTES);
+    const bytes = await blob.slice(off, end).arrayBuffer();
+    checkAbort();
+    hasher.update(new Uint8Array(bytes));
   }
-  return `fp_${h.toString(16)}_${size.toString(36)}`;
+  return `c128_${hasher.digestHex()}_${size.toString(36)}`;
 }
 
 /**

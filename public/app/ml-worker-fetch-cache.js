@@ -94,7 +94,15 @@ async function openModelDB() {
       }
     };
 
-    req.onsuccess  = (e) => { _db = e.target.result; resolve(_db); };
+    req.onsuccess  = (e) => {
+      const db = e.target.result;
+      _db = db;
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* ignore */ }
+        if (_db === db) _db = null;
+      };
+      resolve(db);
+    };
     req.onerror    = (e) => reject(new Error(`IDB open failed: ${e.target.error?.message}`));
     req.onblocked  = ()  => reject(new Error('IDB open blocked — close other tabs'));
   });

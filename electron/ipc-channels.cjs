@@ -21,6 +21,8 @@ const IPC = Object.freeze({
   SAM_WORKER_START: 'vip:sam-worker-start',
   SAM_WORKER_STOP: 'vip:sam-worker-stop',
   SAM_WORKER_CAPABILITIES: 'vip:sam-worker-capabilities',
+  SAM_WORKER_SEPARATE: 'vip:sam-worker-separate',
+  SAM_WORKER_CANCEL: 'vip:sam-worker-cancel',
 });
 
 module.exports = { IPC };

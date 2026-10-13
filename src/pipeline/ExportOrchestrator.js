@@ -2,7 +2,8 @@
  * VoiceIsolate Pro — Export Orchestrator (Layer 3: Pipeline)
  *
  * Orchestrates audio export from PlaybackMixer stems to downloadable files.
- * Supports multiple export formats (WAV, MP3) and stem selection options.
+ * Exports 16-bit WAV (the only format the encoder worker ships) with stem
+ * selection options.
  *
  * Architecture:
  * - Reads stems from PlaybackMixer (cleanBuffer, noiseBuffer)
@@ -12,9 +13,8 @@
  *
  * Export Options:
  * - Stem selection: 'clean', 'noise', 'both' (separate files)
- * - Format: 'wav', 'mp3'
+ * - Format: 'wav' (MP3 is not available: no encoder is bundled)
  * - Per-speaker export: applies speaker automation offline
- * - Bitrate (MP3 only): 128, 192, 256, 320 kbps
  *
  * Output contract: { blob: Blob, filename: string, format: string }
  */
@@ -29,8 +29,7 @@ const ENCODE_TIMEOUT_MS = 120000;
 /**
  * @typedef {object} ExportOptions
  * @property {'clean'|'noise'|'both'} [stems='clean'] - Which stems to export
- * @property {'wav'|'mp3'} [format='wav'] - Output format
- * @property {number} [bitrate=192] - MP3 bitrate in kbps (128, 192, 256, 320)
+ * @property {'wav'} [format='wav'] - Output format
  * @property {string} [filename='export'] - Base filename (extension added automatically)
  * @property {boolean} [applySpeakerAutomation=false] - Apply per-speaker volume/mute offline
  * @property {(progress: number, stage: string) => void} [onProgress] - Progress callback
@@ -40,7 +39,7 @@ const ENCODE_TIMEOUT_MS = 120000;
  * @typedef {object} ExportResult
  * @property {Blob} blob - Encoded audio blob
  * @property {string} filename - Suggested filename with extension
- * @property {string} format - Format used ('wav' or 'mp3')
+ * @property {string} format - Format used ('wav')
  * @property {number} duration - Duration in seconds
  * @property {number} sampleRate - Sample rate
  * @property {number} channels - Number of channels
@@ -217,7 +216,6 @@ export class ExportOrchestrator {
     const {
       stems = 'clean',
       format = 'wav',
-      bitrate = 192,
       filename = 'export',
       applySpeakerAutomation = false,
       onProgress = () => {},
@@ -232,11 +230,8 @@ export class ExportOrchestrator {
     if (!['clean', 'noise', 'both'].includes(stems)) {
       throw new TypeError('[VIP][ExportOrchestrator] Invalid stems option. Use "clean", "noise", or "both".');
     }
-    if (!['wav', 'mp3'].includes(format)) {
-      throw new TypeError('[VIP][ExportOrchestrator] Invalid format. Use "wav" or "mp3".');
-    }
-    if (![128, 192, 256, 320].includes(bitrate)) {
-      throw new TypeError('[VIP][ExportOrchestrator] Invalid bitrate. Use 128, 192, 256, or 320.');
+    if (format !== 'wav') {
+      throw new TypeError(`[VIP][ExportOrchestrator] Unsupported format "${format}": this build exports WAV only.`);
     }
 
     // Initialize worker if needed
@@ -247,26 +242,25 @@ export class ExportOrchestrator {
     // Export based on stem selection
     if (stems === 'both') {
       const [cleanResult, noiseResult] = await Promise.all([
-        this._exportStem('clean', format, bitrate, `${filename}-clean`, applySpeakerAutomation, (p, s) => onProgress(p * 0.5, s)),
-        this._exportStem('noise', format, bitrate, `${filename}-noise`, false, (p, s) => onProgress(0.5 + p * 0.5, s)),
+        this._exportStem('clean', format, `${filename}-clean`, applySpeakerAutomation, (p, s) => onProgress(p * 0.5, s)),
+        this._exportStem('noise', format, `${filename}-noise`, false, (p, s) => onProgress(0.5 + p * 0.5, s)),
       ]);
       return [cleanResult, noiseResult];
     }
-    return this._exportStem(stems, format, bitrate, filename, applySpeakerAutomation, onProgress);
+    return this._exportStem(stems, format, filename, applySpeakerAutomation, onProgress);
   }
 
   /**
    * Export a single stem.
    * @private
    * @param {'clean'|'noise'} stem
-   * @param {'wav'|'mp3'} format
-   * @param {number} bitrate
+   * @param {'wav'} format
    * @param {string} filename
    * @param {boolean} applySpeakerAutomation
    * @param {(progress: number, stage: string) => void} onProgress
    * @returns {Promise<ExportResult>}
    */
-  async _exportStem(stem, format, bitrate, filename, applySpeakerAutomation, onProgress) {
+  async _exportStem(stem, format, filename, applySpeakerAutomation, onProgress) {
     onProgress(0.1, 'reading');
 
     // Get the source buffer
@@ -312,7 +306,6 @@ export class ExportOrchestrator {
           channels,
           sampleRate,
           format,
-          bitrate,
         }, transferList);
       } catch (error) {
         const pending = this._pendingRequests.get(requestId);
@@ -326,10 +319,9 @@ export class ExportOrchestrator {
 
     onProgress(1, 'complete');
 
-    const extension = resultFormat === 'mp3' ? 'mp3' : 'wav';
     return {
       blob,
-      filename: `${filename}.${extension}`,
+      filename: `${filename}.wav`,
       format: resultFormat,
       duration,
       sampleRate,

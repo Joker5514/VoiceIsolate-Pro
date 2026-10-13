@@ -4,13 +4,13 @@
  */
 'use strict';
 
-import { AudioIsolationProvider } from './AudioIsolationProvider.js';
+import { AudioIsolationProvider, assertSupportedTargeting } from './AudioIsolationProvider.js';
 
 export class ExistingOnnxProvider extends AudioIsolationProvider {
   /**
    * @param {object} [opts]
    * @param {(req: object) => Promise<object>} [opts.separateFn] injectable stem separator
-   * @param {(pcm: Float32Array, sr: number, cfg: object) => object} [opts.usmFn] injectable USM
+   * @param {(pcm: Float32Array, sr: number, cfg: object) => object|Promise<object>} [opts.usmFn] injectable USM (sync or async)
    */
   constructor(opts = {}) {
     super();
@@ -45,13 +45,14 @@ export class ExistingOnnxProvider extends AudioIsolationProvider {
     if (processingMode === 'live') {
       throw new Error('[VIP][onnx-local] SAM/prompted isolation is not available in live mode');
     }
+    assertSupportedTargeting(request, this.id);
 
     const mono = toMono(request.audio);
     const sr = request.sampleRate || 48000;
     const prompt = String(request.prompt || 'speech').trim() || 'speech';
 
     if (typeof this._usmFn === 'function') {
-      const result = this._usmFn(mono, sr, {
+      const result = await this._usmFn(mono, sr, {
         mode: 'query',
         queries: [prompt],
         fftSize: 4096,

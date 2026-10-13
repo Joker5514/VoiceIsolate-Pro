@@ -159,33 +159,12 @@ describe('ExportControls', () => {
   });
 
   describe('UI interactions', () => {
-    it('should show MP3 options when MP3 format selected', () => {
+    it('offers WAV only — no MP3 option without a bundled encoder (F23)', () => {
       new ExportControls({ mixer: mockMixer, container });
-      
-      const formatSelect = container.querySelector('#vip-export-format');
-      const mp3Options = container.querySelector('.vip-export-mp3-options');
-      
-      expect(mp3Options.style.display).toBe('none');
-      
-      formatSelect.value = 'mp3';
-      formatSelect.dispatchEvent(new window.Event('change'));
-      
-      expect(mp3Options.style.display).toBe('block');
-    });
-
-    it('should hide MP3 options when WAV format selected', () => {
-      new ExportControls({ mixer: mockMixer, container });
-      
-      const formatSelect = container.querySelector('#vip-export-format');
-      const mp3Options = container.querySelector('.vip-export-mp3-options');
-      
-      formatSelect.value = 'mp3';
-      formatSelect.dispatchEvent(new window.Event('change'));
-      expect(mp3Options.style.display).toBe('block');
-      
-      formatSelect.value = 'wav';
-      formatSelect.dispatchEvent(new window.Event('change'));
-      expect(mp3Options.style.display).toBe('none');
+      const options = [...container.querySelectorAll('#vip-export-format option')].map((o) => o.value);
+      expect(options).toEqual(['wav']);
+      expect(container.querySelector('.vip-export-mp3-options')).toBeNull();
+      expect(container.querySelector('#vip-export-bitrate')).toBeNull();
     });
 
     it('should have default values', () => {
@@ -193,7 +172,6 @@ describe('ExportControls', () => {
       
       expect(container.querySelector('#vip-export-stems').value).toBe('clean');
       expect(container.querySelector('#vip-export-format').value).toBe('wav');
-      expect(container.querySelector('#vip-export-bitrate').value).toBe('192');
       expect(container.querySelector('#vip-export-filename').value).toBe('voiceisolate-export');
       expect(container.querySelector('#vip-export-automation').checked).toBe(false);
     });

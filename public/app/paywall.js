@@ -58,7 +58,6 @@ const Paywall = (() => {
       { label: 'ML Models (Demucs/BSRNN)', value: '', included: tierDef.features.mlModels },
       { label: 'Forensic Mode + SHA-256', value: '', included: tierDef.features.forensicMode },
       { label: 'Batch Processing', value: tierDef.limits.batchFiles > 0 ? `${tierDef.limits.batchFiles === -1 ? 'Unlimited' : tierDef.limits.batchFiles} files` : '', included: tierDef.features.batchProcessing },
-      { label: 'Export MP3 / FLAC', value: '', included: tierDef.features.exportMP3 },
       { label: 'Stem Export', value: '', included: tierDef.features.exportStem },
       { label: 'AI Auto-Tune', value: '', included: tierDef.features.aiAutoTune },
       { label: 'Voice Fingerprinting', value: '', included: tierDef.features.voiceFingerprint },

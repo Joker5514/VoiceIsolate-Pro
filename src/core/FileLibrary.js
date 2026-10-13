@@ -16,6 +16,7 @@ import {
   idbDelete,
   idbGetAll,
   idbTxDone,
+  idbTransaction,
 } from './storage/openIdb.js';
 import {
   writeSourceBlob,
@@ -93,25 +94,64 @@ function newId() {
  * @param {string} fingerprint
  * @returns {Promise<LibraryFileMeta|null>}
  */
-async function findByFingerprint(fingerprint) {
+async function findByFingerprint(fingerprint, opts = {}) {
   if (!fingerprint) return null;
-  const files = await listLibraryFiles();
-  return files.find((f) => f.fingerprint === fingerprint) || null;
+  // Removed rows are searched too: re-importing a removed take revives its
+  // row and blob instead of storing a second copy.
+  const files = await listAllRows();
+  const hit = files.find((f) => f.fingerprint === fingerprint);
+  if (hit) return hit;
+  // Rows written before full-content hashing carry a sampled `fp_` id that
+  // never equals a `c128_` one. Re-hash the stored bytes of same-size legacy
+  // rows so re-importing that file adopts its row instead of duplicating it.
+  const sizeTag = fingerprint.slice(fingerprint.lastIndexOf('_'));
+  for (const f of files) {
+    if (!f.blobRef || !f.fingerprint?.startsWith('fp_') || !f.fingerprint.endsWith(sizeTag)) continue;
+    let blob = null;
+    try {
+      blob = await readSourceBlob(f.blobRef);
+    } catch { /* missing blob: not a match */ }
+    if (blob && await contentFingerprint(blob, opts) === fingerprint) return f;
+  }
+  return null;
 }
 
 /**
- * Evict oldest tracks until count ≤ MAX_LIBRARY_TRACKS (excluding keepId).
+ * Every catalog row, including ones removed from the library list.
+ * @returns {Promise<LibraryFileMeta[]>}
+ */
+async function listAllRows() {
+  try {
+    const db = await openLibraryDb();
+    const tx = db.transaction(META_STORE, 'readonly');
+    return (await idbGetAll(tx.objectStore(META_STORE))).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Evict until at most MAX_LIBRARY_TRACKS rows hold stored audio. Removed rows
+ * still hold their blob, so they count and go first; then the oldest library
+ * rows. Project sources (rows with a projectId) and keepId are never evicted:
+ * deleting them would silently drop files from a project and its exports.
  * @param {string} [keepId]
  */
 export async function enforceTrackCap(keepId = null) {
-  let files = await listLibraryFiles();
-  // Oldest first for eviction
-  files = files.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
-  while (files.length > MAX_LIBRARY_TRACKS) {
-    const victim = files.find((f) => f.id !== keepId) || files[0];
-    if (!victim) break;
+  const rows = await listAllRows();
+  if (rows.length <= MAX_LIBRARY_TRACKS) return;
+  const victims = rows
+    .filter((f) => f.id !== keepId && !f.projectId)
+    .sort((a, b) => ((a.inLibrary === false ? 0 : 1) - (b.inLibrary === false ? 0 : 1))
+      || ((a.updatedAt || 0) - (b.updatedAt || 0)));
+  let count = rows.length;
+  for (const victim of victims) {
+    if (count <= MAX_LIBRARY_TRACKS) break;
     await deleteFilePermanently(victim.id);
-    files = files.filter((f) => f.id !== victim.id);
+    count--;
+  }
+  if (count > MAX_LIBRARY_TRACKS) {
+    console.warn(`[VIP][FileLibrary] ${count} stored tracks exceed the cap of ${MAX_LIBRARY_TRACKS}; the rest belong to projects`);
   }
 }
 
@@ -125,6 +165,7 @@ export async function enforceTrackCap(keepId = null) {
  * @param {string|null} [opts.projectId]
  * @param {string[]} [opts.tags]
  * @param {boolean} [opts.forceNew]  skip fingerprint upsert
+ * @param {AbortSignal} [opts.signal]  stops the content hash (AbortError)
  * @returns {Promise<LibraryFileMeta>}
  */
 export async function importFile(file, opts = {}) {
@@ -137,11 +178,14 @@ export async function importFile(file, opts = {}) {
   const mimeType = file.type || 'application/octet-stream';
   const size = file.size || 0;
 
+  // Without a content identity there is no safe de-duplication: a
+  // name/size stand-in merged different takes into one row (and one blob).
   let fingerprint = null;
   try {
-    fingerprint = await contentFingerprint(file);
-  } catch {
-    fingerprint = `sz_${size}_${originalFilename}`;
+    fingerprint = await contentFingerprint(file, { signal: opts.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    fingerprint = null;
   }
 
   // Temporary: no catalog, no blob write
@@ -180,7 +224,7 @@ export async function importFile(file, opts = {}) {
 
   // Canonical upsert by fingerprint
   if (!opts.forceNew && fingerprint) {
-    const existing = await findByFingerprint(fingerprint);
+    const existing = await findByFingerprint(fingerprint, { signal: opts.signal });
     if (existing) {
       const updated = {
         ...existing,
@@ -195,12 +239,18 @@ export async function importFile(file, opts = {}) {
         fingerprint,
         processingStatus: existing.processingStatus || 'imported',
       };
-      // Refresh blob only if missing
-      if (!updated.blobRef) {
+      // Same fingerprint means identical bytes, so the stored blob is this
+      // file. Rewrite it only when the row has none or its blob is gone
+      // (a removed row can outlive its blob).
+      let stored = null;
+      if (updated.blobRef) {
+        try { stored = await readSourceBlob(updated.blobRef); } catch { stored = null; }
+      }
+      if (!stored) {
         updated.blobRef = await writeSourceBlob(updated.id, file);
       }
       const db = await openLibraryDb();
-      const tx = db.transaction(META_STORE, 'readwrite');
+      const tx = idbTransaction(db, META_STORE, 'readwrite');
       await idbPut(tx.objectStore(META_STORE), updated);
       await idbTxDone(tx);
       await setSessionState({
@@ -240,7 +290,7 @@ export async function importFile(file, opts = {}) {
   meta.blobRef = await writeSourceBlob(id, file);
 
   const db = await openLibraryDb();
-  const tx = db.transaction(META_STORE, 'readwrite');
+  const tx = idbTransaction(db, META_STORE, 'readwrite');
   await idbPut(tx.objectStore(META_STORE), meta);
   await idbTxDone(tx);
 
@@ -321,7 +371,7 @@ export async function updateFileMeta(id, patch) {
     return e.meta;
   }
   const db = await openLibraryDb();
-  const tx = db.transaction(META_STORE, 'readwrite');
+  const tx = idbTransaction(db, META_STORE, 'readwrite');
   const store = tx.objectStore(META_STORE);
   const existing = await idbGet(store, id);
   if (!existing) return null;
@@ -341,7 +391,13 @@ export async function updateFileMeta(id, patch) {
  * @param {string} id
  */
 export async function removeFromLibrary(id) {
-  return updateFileMeta(id, { inLibrary: false, processingStatus: 'idle' });
+  const meta = await updateFileMeta(id, { inLibrary: false, processingStatus: 'idle' });
+  // A removed track must not come back as the active file on the next boot.
+  const session = await getSessionState();
+  if (session?.activeFileId === id) {
+    await setSessionState({ activeFileId: null, updatedAt: Date.now() });
+  }
+  return meta;
 }
 
 /**
@@ -363,7 +419,7 @@ export async function deleteFilePermanently(id) {
   }
   try {
     const db = await openLibraryDb();
-    const tx = db.transaction(META_STORE, 'readwrite');
+    const tx = idbTransaction(db, META_STORE, 'readwrite');
     await idbDelete(tx.objectStore(META_STORE), id);
     await idbTxDone(tx);
   } catch {
@@ -381,7 +437,7 @@ export async function deleteFilePermanently(id) {
 export async function setSessionState(state) {
   try {
     const db = await openLibraryDb();
-    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    const tx = idbTransaction(db, SESSION_STORE, 'readwrite');
     const prev = (await idbGet(tx.objectStore(SESSION_STORE), 'current')) || { key: 'current' };
     const next = { ...prev, ...state, key: 'current' };
     await idbPut(tx.objectStore(SESSION_STORE), next);
@@ -426,6 +482,7 @@ export async function restoreSessionBootstrap(opts = {}) {
   const activeId = session?.activeFileId;
   if (activeId) {
     activeMeta = await getFileMeta(activeId);
+    if (activeMeta?.inLibrary === false) activeMeta = null;
     if (!activeMeta && files[0]) activeMeta = files[0];
   } else if (files[0]) {
     activeMeta = files[0];

@@ -264,7 +264,7 @@ const BatchProcessor = (() => {
     // WAV encoding (always available)
     const wavBuffer = _encodeWAV(data, sampleRate);
     return Promise.resolve(new Blob([wavBuffer], { type: 'audio/wav' }));
-    // Note: MP3/FLAC encoding requires lamejs/libflac — loaded dynamically in Pro tier
+    // WAV is the only export format: no MP3/FLAC encoder is bundled.
   }
 
   function _encodeWAV(samples, sampleRate) {

@@ -7,8 +7,11 @@
 | Platform | Real SAM path | Fallback |
 |----------|---------------|----------|
 | **Desktop Electron** | **Yes** — Meta `sam_audio` via local Python worker (CUDA/CPU). Electron IPC starts worker. | Mock separator if package/weights missing (dev/CI) |
-| **Android** | **Yes when ONNX present** — place `public/app/models/sam_audio.onnx` (or asset) for on-device ORT WebView path; same shared renderer. | Classical USM query + BSRNN/RNNoise (always local) |
-| **Web/PWA** | Optional ONNX if same-origin model shipped; optional loopback worker on same machine | USM query priors |
+| **Android** | **No.** There is no on-device SAM-Audio loader, so a `sam_audio.onnx` file is never used (and is excluded from the APK). | Classical USM query + BSRNN/RNNoise (always local) |
+| **Web/PWA** | **No.** No ONNX loader; the page cannot reach a loopback worker (no CORS, Origin refused). | USM query priors |
+
+No shipping page calls the prompted-isolation provider stack today; the
+Desktop worker is reachable through `vipDesktop` IPC only.
 
 There is **no cloud SAM** (no fal/Replicate). Live/AudioWorklet never runs SAM.
 
@@ -24,12 +27,13 @@ python services/sam-audio/server.py --port 8765
 
 Set `SAM_AUDIO_REQUIRE_REAL=1` to refuse mock fallback.
 
-## Android — real SAM (ONNX)
+## Android / Web — no on-device SAM
 
-1. Export or obtain a licensed SAM-Audio ONNX.
-2. Place at `public/app/models/sam_audio.onnx` (synced into Capacitor `build/`).
-3. Rebuild Android. Prompted isolation probes the file; if present, ORT path is eligible.
-4. If absent, USM + BSRNN remain fully local.
+A SAM-Audio ONNX path would need a loader with a multi-input (audio + text
+prompt) tensor contract, a pinned SHA-256 in `ModelManifest.js`, and a
+provider that selects it. None exist yet. `getSamPlatformCapabilities()`
+reports a present file as `present-but-unsupported`, and Android packaging
+excludes `sam_audio.onnx`. USM + BSRNN remain fully local.
 
 ## Modes
 

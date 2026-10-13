@@ -223,7 +223,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/workers/MLWorker.js` | 2 | Fetch → verify SHA-256 → cache in IndexedDB → run offline ONNX inference (overlap-add) → emit stems. |
 | `src/workers/DiarizationWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `diarization.js` — keeps segmentation off the main thread. |
 | `src/workers/SpectralCleanupWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `SpectralCleanup.js` — runs the offline NR/dereverb passes off the main thread. |
-| `src/workers/AudioEncoderWorker.js` | 2 | Module worker that encodes stems to WAV or MP3 (lamejs) off the main thread; stateless, one request per job. |
+| `src/workers/AudioEncoderWorker.js` | 2 | Module worker that encodes stems to 16-bit WAV off the main thread (validated PCM, clipped-sample count); stateless, one request per job. No MP3 encoder is bundled. |
 | `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz; `pickAndIngestFile()` for Electron native open. |
 | `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. |
 | `src/pipeline/ProcessingOrchestrator.js` | 3 | Bridges `IsolationModeSelector` → `FileIngestion` → `MLWorker`; translates user-chosen mode into a model-chain array for `MLWorker`. |
@@ -587,6 +587,14 @@ webPreferences: {
   resolve through the symlink-aware `resolveInsideReal`. Runtime proof:
   `xvfb-run -a pnpm test:electron-security` (`prod:verify --desktop`).
 - File I/O and model cache: main process with native dialogs (`vip:open-file`, `vip:save-file`, `vip:model-cache-path`).
+- Local SAM-Audio worker: the renderer never fetches `127.0.0.1`. `services/sam-audio/server.py`
+  answers no CORS and refuses any request carrying an `Origin`, so no page (web or `vip://app`) can
+  read it; on the web the CSP `connect-src` also blocks it, but the `vip://` handler sets **no CSP**,
+  so do not rely on one in Electron. Separation and cancellation go through
+  `vip:sam-worker-separate` / `vip:sam-worker-cancel` → `electron/sam-proxy.cjs`, which validates the
+  request, refuses ports below 1024, confirms `/health` reports `sam-audio-worker` before sending PCM,
+  caps concurrent jobs and response size, and talks to a fixed loopback host and fixed paths. Text
+  prompts only.
 - Stripe / payment keys: main process or server only — never exposed to renderer.
 - Packaging: `pnpm build:electron` → `electron-builder`; signing hooks may be configured, but verify the produced binary before claiming a signed artifact.
 

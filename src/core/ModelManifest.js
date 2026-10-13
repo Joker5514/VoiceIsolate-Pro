@@ -36,6 +36,8 @@
  */
 'use strict';
 
+import { hashString128 } from './content-hash.js';
+
 export const MODEL_MANIFEST = Object.freeze({
   // ── Voice Activity Detection ──────────────────────────────────────────
   vad: Object.freeze({
@@ -173,11 +175,14 @@ export const MODEL_MANIFEST = Object.freeze({
     sha256: null,
     /** 4D complex-spectrogram BSRNN (pretrained crlandsc/bsrnn-vocals).
      * Offline-only: consumed by offline-processor.js. NOT loaded by the
-     * real-time worklet path. See scripts/export_bsrnn_onnx.py. */
+     * real-time worklet path. Geometry follows scripts/export_bsrnn_onnx.py
+     * (N_FFT 2048 → 1025 bins, hop 1024, 44.1 kHz), not the 4096-point
+     * contract of the shipped spectral-mask models. */
     strategy: 'complex-spectrogram',
-    fftSize: 4096,
+    fftSize: 2048,
     hopSize: 1024,
-    sampleRate: 48000,
+    bins: 1025,
+    sampleRate: 44100,
     io: Object.freeze({
       input: 'input',   // 4D complex spectrogram tensor
       output: 'output', // 4D complex spectrogram tensor
@@ -259,6 +264,41 @@ export const MODEL_MANIFEST = Object.freeze({
     }),
   }),
 });
+
+/**
+ * Bump when MLWorker's reconstruction changes the stems produced from
+ * unchanged model bytes (framing, padding, mask application). Stem caches key
+ * on it, so a release that changes inference never replays old stems.
+ */
+export const INFERENCE_REVISION = 'ir2-reflect-pad-ola';
+
+/**
+ * Identity of everything in a model chain that changes its stems: the ordered
+ * ids, each model's pinned sha256 (or size when unpinned), its inference
+ * calibration and {@link INFERENCE_REVISION}. Unknown ids are kept verbatim so
+ * a typo still yields a distinct, stable key.
+ * @param {string[]} modelIds
+ * @returns {string}
+ */
+export function modelChainRevision(modelIds = []) {
+  const parts = (modelIds || []).map((id) => {
+    const e = MODEL_MANIFEST[id];
+    if (!e) return `${id}:unknown`;
+    return [
+      id,
+      e.sha256 || `unpinned-${e.sizeBytes ?? 'na'}`,
+      e.inputNormalization || 'raw',
+      e.maskExponent ?? 1,
+      e.fftSize ?? '',
+      e.hopSize ?? '',
+      e.strategy || '',
+      e.sampleRate ?? '',
+      e.bins ?? '',
+      e.segmentSamples ?? '',
+    ].join(':');
+  });
+  return `${INFERENCE_REVISION}-${hashString128(parts.join('|')).slice(0, 16)}`;
+}
 
 /** Stable list of model ids. */
 export const MODEL_IDS = Object.freeze(Object.keys(MODEL_MANIFEST));

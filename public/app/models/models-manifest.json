@@ -121,11 +121,11 @@
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "delivery": "repo_committed",
-      "status": "committed",
+      "delivery": "optional",
+      "status": "not-shipped",
       "sha256": "",
       "source": "crlandsc/bsrnn",
-      "export_notes": "Offline-only, consumed by offline-processor.js."
+      "export_notes": "Not in the repository. Export with scripts/export_bsrnn_onnx.py (n_fft 2048, 1025 bins, 44.1 kHz) and pin a sha256 before use. Offline-only, consumed by offline-processor.js."
     }
   ],
   "worklets": [

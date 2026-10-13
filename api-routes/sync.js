@@ -5,99 +5,54 @@
  *   GET  /api/sync/pull  — Pull latest presets and noise profiles
  *   POST /api/sync/push  — Push pending changes
  *
- * Auth: Bearer token (license JWT)
- * Storage: In-memory for demo; replace with database in production
- *
- * Production: Use PostgreSQL/MySQL + S3/R2 for file storage
- * Install: npm install @aws-sdk/client-s3 (for file storage)
+ * Auth: Bearer license token + the customer's current entitlement record.
+ * Storage: the durable backend store (api-routes/store.js, VIP_DATA_DIR);
+ * every push applies in one transaction. Single instance only — see store.js.
  */
 
 import express from 'express';
-import crypto from 'crypto';
+import { getStore } from './store.js';
+import { licenseSecret, verifyLicenseToken, resolveEntitlement, bearer } from './entitlements.js';
 
 const router = express.Router();
 
-router.use(express.json({ limit: '1mb' }));
-
-// ─── In-Memory Store (replace with DB in production) ─────────────────────────
-const _store = new Map(); // userId → { presets, noiseProfiles, history, updatedAt }
-
-// ─── Auth Middleware ──────────────────────────────────────────────────────────
-// Production: env var required. Non-production: use a random per-process
-// secret so tokens never reuse a hardcoded value, and preview deploys still
-// boot. Tokens won't validate across restarts, which is the intended trade-off.
-const LICENSE_SECRET = (() => {
-  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('[sync] LICENSE_JWT_SECRET is required in production.');
-  }
-  const random = crypto.randomBytes(48).toString('base64url');
-  console.warn(
-    '[sync] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
-    'Sync tokens will not validate after restart.'
-  );
-  return random;
-})();
+// Fail fast at start-up in production without a signing secret.
+licenseSecret();
 
 /**
- * Validate and decode a license token, returning its payload when valid.
- *
- * Verifies the token is a three-part dot-separated string, checks its HMAC-SHA256
- * signature using the module's license secret, and ensures the payload's `exp`
- * timestamp has not passed.
- *
- * @param {string} token - License token in `header.payload.signature` form (Base64URL parts).
- * @returns {Object|null} The decoded payload object when the token is valid and not expired, `null` otherwise.
+ * Signature/expiry check shared with other routers (no entitlement decision).
+ * @param {string} token
+ * @returns {object|null}
  */
 function _validateToken(token) {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const expectedSig = crypto
-      .createHmac('sha256', LICENSE_SECRET)
-      .update(`${parts[0]}.${parts[1]}`)
-      .digest('base64url');
-    const expectedSigBuf = Buffer.from(expectedSig, 'base64url');
-    const providedSigBuf = Buffer.from(parts[2], 'base64url');
-    if (expectedSigBuf.length !== providedSigBuf.length || !crypto.timingSafeEqual(expectedSigBuf, providedSigBuf)) return null;
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    if (typeof payload.exp !== 'number' || Date.now() / 1000 > payload.exp) return null;
-    return payload;
-  } catch { return null; }
+  return verifyLicenseToken(token);
 }
 
 export { _validateToken };
 
 /**
- * Authenticate the request using a Bearer license JWT and enforce Studio/Enterprise tier for cloud sync.
- *
- * Validates the Authorization header contains a Bearer token and verifies the token payload and expiry; on success assigns the token payload to `req.user` and calls `next()`. If the header is missing or the token is invalid/expired, responds with 401 Unauthorized. If the token's `tier` is not `STUDIO` or `ENTERPRISE`, responds with 403 Forbidden and an explanatory error.
+ * Bearer license token + the customer's current entitlement record: cloud
+ * sync needs an active Studio/Enterprise subscription now, not a tier signed
+ * into a token months ago. 503 without a durable store.
  */
-function requireAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) {
+async function requireAuth(req, res, next) {
+  const store = getStore();
+  if (!store) return res.status(503).json({ error: 'Cloud sync is unavailable: persistent storage is not configured.' });
+  const token = bearer(req);
+  if (!token) {
     console.warn(`[AUTH FAIL] ip=${req.ip} path=${req.path} reason=missing_bearer`);
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const payload = _validateToken(auth.slice(7));
-  if (!payload) {
+  const ent = await resolveEntitlement(store, token);
+  if (!ent) {
     console.warn(`[AUTH FAIL] ip=${req.ip} path=${req.path} reason=invalid_token`);
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
-
-  // Check tier allows cloud sync
-  const tier = payload.tier?.toUpperCase();
-  if (!['STUDIO', 'ENTERPRISE'].includes(tier)) {
-    return res.status(403).json({ error: 'Cloud sync requires Studio or Enterprise tier' });
+  if (!ent.active || !['STUDIO', 'ENTERPRISE'].includes(ent.tier)) {
+    return res.status(403).json({ error: 'Cloud sync requires an active Studio or Enterprise subscription' });
   }
-
-  // Require a stable user identity for rate limiting and data storage
-  if (!payload.sub || typeof payload.sub !== 'string') {
-    console.warn(`[AUTH FAIL] ip=${req.ip} path=${req.path} reason=missing_sub`);
-    return res.status(401).json({ error: 'Invalid token: missing user identity' });
-  }
-
-  req.user = payload;
+  req.user = { ...ent.payload, sub: ent.customerId, tier: ent.tier };
+  req.store = store;
   next();
 }
 
@@ -299,9 +254,9 @@ function _sanitizeNoiseProfile(p) {
 }
 
 // ─── GET /api/sync/pull ───────────────────────────────────────────────────────
-router.get('/pull', requireAuth, requireRateLimit, (req, res) => {
+router.get('/pull', requireAuth, requireRateLimit, async (req, res) => {
   const userId = req.user.sub;
-  const data = _store.get(userId) || { presets: [], noiseProfiles: [], history: [] };
+  const data = (await req.store.read()).sync[userId] || { presets: [], noiseProfiles: [], history: [] };
 
   res.json({
     presets: data.presets || [],
@@ -312,7 +267,7 @@ router.get('/pull', requireAuth, requireRateLimit, (req, res) => {
 });
 
 // ─── POST /api/sync/push ──────────────────────────────────────────────────────
-router.post('/push', requireAuth, requireRateLimit, (req, res) => {
+router.post('/push', requireAuth, requireRateLimit, async (req, res) => {
   const contentType = req.headers['content-type'] || '';
   if (!contentType.includes('application/json')) {
     return res.status(415).json({ error: 'Content-Type must be application/json' });
@@ -324,70 +279,83 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
   if (!Array.isArray(changes)) return res.status(400).json({ error: 'changes must be an array' });
   if (changes.length > 100) return res.status(413).json({ error: 'Too many changes per sync request (max 100)' });
 
-  const data = _store.get(userId) || { presets: [], noiseProfiles: [], history: [] };
+  // Changes apply to a copy inside one store transaction; a quota failure
+  // throws and commits nothing (the old code mutated the stored arrays first,
+  // so a rejected push still persisted).
   const errors = [];
+  const quotaError = Object.assign(new Error('quota'), { quota: true });
+  let committed;
+  try {
+    committed = await req.store.transact((state) => {
+      const data = state.sync[userId] || { presets: [], noiseProfiles: [], history: [] };
 
-  for (const change of changes) {
-    switch (change.type) {
-      case 'preset:upsert': {
-        if (!_validatePreset(change.data)) { errors.push(`Invalid preset data for change`); break; }
-        const clean = _sanitizePreset(change.data);
-        const idx = data.presets.findIndex(p => p.id === clean.id);
-        if (idx >= 0) data.presets[idx] = clean;
-        else data.presets.push(clean);
-        break;
-      }
-      case 'preset:delete': {
-        if (!_validateId(change.id)) { errors.push(`Invalid preset ID`); break; }
-        data.presets = data.presets.filter(p => p.id !== change.id);
-        break;
-      }
-      case 'noiseProfile:upsert': {
-        if (!_validateNoiseProfile(change.data)) { errors.push(`Invalid noise profile data`); break; }
-        const clean = _sanitizeNoiseProfile(change.data);
-        const idx = data.noiseProfiles.findIndex(p => p.name === clean.name);
-        if (idx >= 0) data.noiseProfiles[idx] = clean;
-        else data.noiseProfiles.push(clean);
-        break;
-      }
-      case 'history:add': {
-        if (change.data && typeof change.data === 'object') {
-          if (_isDeep(change.data)) {
-            errors.push('history:add entry is too deep');
-          } else {
-            try {
-              // Cap each history entry to prevent injection of oversized objects
-              const entryStr = JSON.stringify(change.data);
-              if (Buffer.byteLength(entryStr) <= MAX_HISTORY_ENTRY_BYTES) {
-                data.history.push(change.data);
-                if (data.history.length > 100) data.history.shift();
+      for (const change of changes) {
+        switch (change.type) {
+          case 'preset:upsert': {
+            if (!_validatePreset(change.data)) { errors.push(`Invalid preset data for change`); break; }
+            const clean = _sanitizePreset(change.data);
+            const idx = data.presets.findIndex(p => p.id === clean.id);
+            if (idx >= 0) data.presets[idx] = clean;
+            else data.presets.push(clean);
+            break;
+          }
+          case 'preset:delete': {
+            if (!_validateId(change.id)) { errors.push(`Invalid preset ID`); break; }
+            data.presets = data.presets.filter(p => p.id !== change.id);
+            break;
+          }
+          case 'noiseProfile:upsert': {
+            if (!_validateNoiseProfile(change.data)) { errors.push(`Invalid noise profile data`); break; }
+            const clean = _sanitizeNoiseProfile(change.data);
+            const idx = data.noiseProfiles.findIndex(p => p.name === clean.name);
+            if (idx >= 0) data.noiseProfiles[idx] = clean;
+            else data.noiseProfiles.push(clean);
+            break;
+          }
+          case 'history:add': {
+            if (change.data && typeof change.data === 'object') {
+              if (_isDeep(change.data)) {
+                errors.push('history:add entry is too deep');
               } else {
-                errors.push('history:add entry exceeds maximum size (16 KB)');
+                try {
+                  // Cap each history entry to prevent injection of oversized objects
+                  const entryStr = JSON.stringify(change.data);
+                  if (Buffer.byteLength(entryStr) <= MAX_HISTORY_ENTRY_BYTES) {
+                    data.history.push(change.data);
+                    if (data.history.length > 100) data.history.shift();
+                  } else {
+                    errors.push('history:add entry exceeds maximum size (16 KB)');
+                  }
+                } catch {
+                  errors.push('history:add entry is invalid');
+                }
               }
-            } catch {
-              errors.push('history:add entry is invalid');
             }
+            break;
           }
         }
-        break;
       }
-    }
-  }
 
-  // Enforce per-user total storage quota before committing changes
-  const storageUsed = _getUserStorageBytes(data);
-  if (storageUsed > MAX_USER_STORAGE_BYTES) {
+      // Enforce per-user total storage quota before committing changes
+      const storageUsed = _getUserStorageBytes(data);
+      if (storageUsed > MAX_USER_STORAGE_BYTES) {
+        quotaError.storageUsed = storageUsed;
+        throw quotaError;
+      }
+      data.updatedAt = Date.now();
+      state.sync[userId] = data;
+      return data.updatedAt;
+    });
+  } catch (err) {
+    if (!err?.quota) throw err;
     return res.status(413).json({
       error: `Storage quota exceeded. Max ${MAX_USER_STORAGE_BYTES / (1024 * 1024)} MB per account.`,
-      storageUsedBytes: storageUsed,
+      storageUsedBytes: err.storageUsed,
       quotaBytes: MAX_USER_STORAGE_BYTES,
     });
   }
 
-  data.updatedAt = Date.now();
-  _store.set(userId, data);
-
-  res.json({ success: errors.length === 0, applied: changes.length - errors.length, errors, syncedAt: data.updatedAt });
+  res.json({ success: errors.length === 0, applied: changes.length - errors.length, errors, syncedAt: committed });
 });
 
 export default router;

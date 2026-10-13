@@ -25,9 +25,14 @@ export function framesToSegments(labeledFrames, hopSec, opts = {}) {
   /** @type {Segment[]} */
   const raw = [];
   let cur = null;
+  let prevT = -Infinity;
   for (const f of labeledFrames) {
     const conf = f.confidence != null ? f.confidence : 1;
-    if (!cur || cur.label !== f.label) {
+    // Callers filter frames to one label first, so a time jump means a gap:
+    // without this check every kept frame merged into one file-long segment.
+    const adjacent = f.t - prevT <= hopSec * 1.5;
+    prevT = f.t;
+    if (!cur || cur.label !== f.label || !adjacent) {
       if (cur) raw.push(cur);
       cur = {
         start: f.t,

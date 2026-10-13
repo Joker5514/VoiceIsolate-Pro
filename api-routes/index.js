@@ -21,6 +21,7 @@ import express from 'express';
 import monetizationRouter from './monetization.js';
 import syncRouter from './sync.js';
 import clientConfigHandler from './client-config.js';
+import { storeReadiness } from './store.js';
 
 const router = express.Router();
 
@@ -46,25 +47,48 @@ try {
 router.get('/client-config', clientConfigHandler);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
+// Liveness plus truthful readiness. "configured" means the variables are set;
+// nothing here contacts Stripe, so it never claims a provider is reachable.
+// Paid features need a signing secret, Stripe, and a durable store; no email
+// transport exists, so license delivery is by Stripe-verified claim only.
 router.get('/health', (req, res) => {
+  const store = storeReadiness();
+  const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+  const signing = process.env.LICENSE_JWT_SECRET ? 'configured' : 'ephemeral';
   res.json({
     status: 'ok',
     version: '25.0.2',
     timestamp: new Date().toISOString(),
     services: {
-      stripe: !!process.env.STRIPE_SECRET_KEY,
-      sync: !!process.env.DATABASE_URL,
-      license: !!process.env.LICENSE_JWT_SECRET,
+      stripe: { configured: stripeConfigured },
+      license: { signing, ready: signing === 'configured' && store.ready },
+      store,
+      licenseDelivery: stripeConfigured && store.durable && signing === 'configured' ? 'claim' : 'unavailable',
+      email: 'not-configured',
+      sync: { ready: signing === 'configured' && store.ready, multiInstanceSafe: store.multiInstanceSafe },
+      nim: 'not-available',
     },
   });
 });
 
-// ─── Stripe webhook needs the raw body for signature verification — mount
-//     express.raw() BEFORE express.json() so it wins for this one route.
-router.use('/webhook/stripe', express.raw({ type: 'application/json' }));
-
-// ─── JSON Body Parser (for all non-webhook routes) ────────────────────────────
-router.use(express.json());
+// ─── Request body budgets ─────────────────────────────────────────────────────
+// Each route family gets exactly one parser with an explicit limit, chosen
+// before any body is read. A global default parser used to run first, so the
+// sync router's 1 MB and NIM's 50 MB limits never applied (bodies over 100 KB
+// were rejected before reaching them).
+export const BODY_LIMITS = Object.freeze({
+  webhook: '512kb', // Stripe event payloads (raw, for signature verification)
+  sync: '1mb',      // presets / noise profiles; per-user quota enforced in sync.js
+  default: '100kb', // checkout, license, usage
+});
+router.use('/webhook/stripe', express.raw({ type: 'application/json', limit: BODY_LIMITS.webhook }));
+router.use('/sync', express.json({ limit: BODY_LIMITS.sync }));
+const defaultJson = express.json({ limit: BODY_LIMITS.default });
+router.use((req, res, next) => {
+  // /nim answers 501 without reading a body; the others have their own parser.
+  if (/^\/(webhook\/stripe|sync|nim)(\/|$)/.test(req.path)) return next();
+  return defaultJson(req, res, next);
+});
 
 // Attach limiters to the abuse-prone paths before the routers mount
 router.use('/checkout', checkoutLimiter);
@@ -98,6 +122,10 @@ router.use('/sync', syncRouter);
 router.use((err, req, res, _next) => {
   const status = Number.isInteger(err?.status) ? err.status : 500;
   const payload = { error: 'Internal server error' };
+  // Body-parser failures are the client's: say which, in the same JSON shape.
+  if (err?.type === 'entity.too.large') payload.error = 'Request body too large';
+  else if (err?.type === 'entity.parse.failed') payload.error = 'Malformed JSON body';
+  else if (status >= 400 && status < 500) payload.error = 'Bad request';
   if (process.env.NODE_ENV !== 'production' && err?.message) {
     payload.message = err.message;
   }

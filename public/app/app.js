@@ -3742,6 +3742,11 @@ class VoiceIsolatePro {
     this.outputBuffer = null;
     this.noiseBuffer = null;
 
+    // The durable stem cache is keyed by library id, so the previous file's id
+    // must never outlive it: a failed or timed-out persist would otherwise
+    // replay that file's stems for this one.
+    this._libraryFileId = options.libraryId || null;
+
     // Persist source to OPFS/IDB (library/project) unless opening an existing entry.
     // Cap wait time so a hung OPFS/IDB never blocks the upload UX.
     if (!skipPersist) {
@@ -3761,6 +3766,8 @@ class VoiceIsolatePro {
             setTimeout(() => reject(new Error('library persist timed out')), 10_000);
           }),
         ]);
+        // Another file was chosen while this one was hashed and stored.
+        if (fileSeq !== this._fileSeq) return;
         this._libraryFileId = meta.id;
         if (mode === 'temporary') {
           structuredLog('info', '[VIP] Quick import — not written to durable library');
@@ -3779,7 +3786,6 @@ class VoiceIsolatePro {
         this.showNotification('Could not save to library (session-only)', 'warn');
       }
     } else if (options.libraryId) {
-      this._libraryFileId = options.libraryId;
       await FileLibrary.setSessionState({
         activeFileId: options.libraryId,
         updatedAt: Date.now(),
@@ -4144,7 +4150,57 @@ class VoiceIsolatePro {
       // DSP fallback: playback loads procBuffer itself with a silent residual.
       stems = { clean, noise: null };
     }
-    return mixer.renderMix({ signal, startSec, endSec, stems });
+    const mixBuf = await mixer.renderMix({ signal, startSec, endSec, stems });
+    await this._validateMixSnapshot(mixBuf, signal);
+    return mixBuf;
+  }
+
+  /**
+   * Every export (WAV, video remux, Drive) writes this rendered snapshot, so
+   * it is checked once here: non-empty, finite, at the canonical rate. Samples
+   * beyond full scale are reported (the WAV encoder clamps them) rather than
+   * refused — Engineer exposes a limiter ceiling for that. Scans views in
+   * budgeted slices; no channel copy.
+   * @param {AudioBuffer} buf
+   * @param {AbortSignal|null} signal
+   */
+  async _validateMixSnapshot(buf, signal) {
+    if (!buf?.length || !buf.numberOfChannels) throw new Error('The rendered mix is empty. Process the file again.');
+    if (buf.sampleRate !== 48000) throw new Error(`The rendered mix is ${buf.sampleRate} Hz, expected 48000 Hz.`);
+    let nonFinite = 0;
+    let over = 0;
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const data = buf.getChannelData(ch);
+      await processInChunks({
+        total: data.length,
+        chunkSize: 1 << 18,
+        signal,
+        runChunk: (start, end) => {
+          for (let i = start; i < end; i++) {
+            const v = data[i];
+            if (!Number.isFinite(v)) nonFinite++;
+            else if (v > 1 || v < -1) over++;
+          }
+        },
+      });
+    }
+    if (nonFinite) throw new Error(`The rendered mix has ${nonFinite} invalid samples. Lower the mix levels and export again.`);
+    if (over) {
+      this.showNotification?.(
+        `${over} samples exceed full scale and will clip in the WAV. Lower Output, or set a Limiter ceiling.`,
+        'warn',
+      );
+    }
+  }
+
+  /** Export region in seconds: the transport crop when one is set, else the whole buffer. */
+  _exportRegion(fullDuration) {
+    const transport = this._getTransportMixer?.();
+    if (transport?.hasCrop?.()) {
+      const region = transport.getCropRegion();
+      return { cropIn: region.in, cropOut: region.out };
+    }
+    return { cropIn: 0, cropOut: fullDuration };
   }
 
   /**
@@ -4166,7 +4222,9 @@ class VoiceIsolatePro {
       );
       return;
     }
-    const mixBuf = await this._renderProcessedMix();
+    // Same crop and snapshot as the WAV download: Drive gets what the user hears.
+    const { cropIn, cropOut } = this._exportRegion(fullBuf.duration);
+    const mixBuf = await this._renderProcessedMix({ startSec: cropIn, endSec: cropOut });
     if (!mixBuf) {
       this.showNotification('Live-Mix is unavailable, so the export cannot match playback. Reload and try again.', 'error');
       return;
@@ -4212,14 +4270,7 @@ class VoiceIsolatePro {
       await this.ensureCtx();
       if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
 
-      let cropIn = 0;
-      let cropOut = fullBuf.duration;
-      const transport = this._getTransportMixer?.();
-      if (transport?.hasCrop?.()) {
-        const region = transport.getCropRegion();
-        cropIn = region.in;
-        cropOut = region.out;
-      }
+      const { cropIn, cropOut } = this._exportRegion(fullBuf.duration);
 
       const wantsVideo = this.isVideo && this._sourceFile && isVideoSource(this._sourceFile);
       if (typeof this.updateProcessingOverlay === 'function') {
@@ -4407,9 +4458,21 @@ class VoiceIsolatePro {
     if (!ok) return;
     try {
       this.showNotification?.('Clearing local data…', 'info');
+      // Reset the working set first: its own session write must land before
+      // the databases are dropped, not recreate them afterwards.
+      try { this._clearFile?.(); } catch { /* ignore */ }
       const { clearAllLocalData } = await import('/src/core/ClearLocalData.js');
       const result = await clearAllLocalData({ includeModels: true });
-      try { this._clearFile?.(); } catch { /* ignore */ }
+      if (!result.complete) {
+        // _clearFile rendered the list before the wipe; show what is left now
+        // (a dropped library database just reopens empty).
+        refreshLibraryList(this).catch(() => {});
+        this.showNotification?.(
+          `Some local data could not be cleared (${result.failures.join('; ')}). Close other VoiceIsolate tabs and try again.`,
+          'error',
+        );
+        return;
+      }
       this.showNotification?.(
         `Local data cleared (${result.filesRemoved} library file(s), ${result.localStorageKeys} keys). Reloading…`,
         'ok',
@@ -5071,6 +5134,14 @@ class VoiceIsolatePro {
    * @param {Float32Array} right
    * @param {{ onProgress?: (r: number) => void }} [opts]
    */
+  /**
+   * Rebuild L/R from the separated mid: L = clean + g·side, R = clean − g·side,
+   * with side = (L − R)/2 and g a 10 ms clean/mid energy envelope (≤ 1).
+   * The old per-sample ratio L·clean/mid zeroed every sample where the masked
+   * clean and the mixture differ in sign and clamped the rest, which cost up
+   * to 8 dB SI-SDR on a centred voice; this keeps the mono result exactly when
+   * L = R and only gates the side channel.
+   */
   async _expandMonoCleanToStereo(cleanMono, mid, left, right, opts = {}) {
     const n = cleanMono.length;
     const cleanL = new Float32Array(n);
@@ -5078,6 +5149,10 @@ class VoiceIsolatePro {
     const midOk = mid && mid.length >= n;
     const signal = this._processAbortSignal();
     const CHUNK = this._postMlChunkSamples();
+    const sr = Number(opts.sampleRate) > 0 ? Number(opts.sampleRate) : 48000;
+    const a = 1 - Math.exp(-1 / (0.010 * sr));
+    let eClean = 0;
+    let eMid = 0;
     await processInChunks({
       total: n,
       chunkSize: CHUNK,
@@ -5086,11 +5161,13 @@ class VoiceIsolatePro {
       runChunk: (start, end) => {
         for (let i = start; i < end; i++) {
           const m = midOk ? mid[i] : 0.5 * (left[i] + right[i]);
-          let g = Math.abs(m) > 1e-8 ? cleanMono[i] / m : 0;
-          if (g < 0) g = 0;
-          else if (g > 1.35) g = 1.35;
-          cleanL[i] = left[i] * g;
-          cleanR[i] = right[i] * g;
+          const c = cleanMono[i];
+          eClean += a * (c * c - eClean);
+          eMid += a * (m * m - eMid);
+          const g = eMid > 1e-12 ? Math.min(1, Math.sqrt(eClean / eMid)) : 0;
+          const side = 0.5 * (left[i] - right[i]) * g;
+          cleanL[i] = c + side;
+          cleanR[i] = c - side;
         }
       },
     });
@@ -5297,7 +5374,19 @@ class VoiceIsolatePro {
           DEFAULT_ML_CHAIN,
           processingRevision,
         );
-        if (durable?.clean?.length) {
+        // A pack whose length or rate differs from the decoded source was
+        // written for other audio (or by an older decoder); never play it.
+        const durableMatches = durable?.clean?.length
+          && durable.clean[0]?.length === buf.length
+          && (durable.sampleRate || buf.sampleRate) === buf.sampleRate;
+        if (durable?.clean?.length && !durableMatches) {
+          structuredLog('warn', '[VIP] durable stems ignored — shape does not match source', {
+            fileId: this._libraryFileId,
+            stemLength: durable.clean[0]?.length || 0,
+            sourceLength: buf.length,
+          });
+        }
+        if (durableMatches) {
           await this.ensureCtx();
           const stemMod = await this._loadStemSeparationModule();
           const toAudioBuffer = this._stemsToAudioBufferFn(stemMod);

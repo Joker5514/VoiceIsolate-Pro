@@ -31,6 +31,17 @@ export async function probeSamOnnxModel(opts = {}) {
 }
 
 /**
+ * A 4xx answer is a definite absence; a missing fetch or a failed probe is
+ * not, so it is reported as unknown rather than absent.
+ * @param {{ present: boolean, reason?: string }} onnx
+ */
+function onnxStatus(onnx) {
+  if (onnx.present) return 'present-but-unsupported';
+  if (!onnx.reason || /^http-4\d\d$/.test(onnx.reason)) return 'absent';
+  return 'unknown';
+}
+
+/**
  * Platform capability summary for UI / diagnostics.
  */
 export async function getSamPlatformCapabilities(opts = {}) {
@@ -55,17 +66,17 @@ export async function getSamPlatformCapabilities(opts = {}) {
 
   const onnx = await probeSamOnnxModel(opts);
 
+  // No code loads sam_audio.onnx: BrowserSamAudioProvider is unavailable,
+  // MLWorker has no 'sam-audio-onnx' strategy and the manifest entry has no
+  // pinned hash or prompt-input contract. A present file is reported, never
+  // claimed as a usable on-device SAM.
   return {
     desktopRealSam: isDesktop, // Desktop can run Meta SAM via local worker
-    androidOnnxSam: isAndroid && onnx.present,
-    webOnnxSam: !isDesktop && !isAndroid && onnx.present,
+    androidOnnxSam: false,
+    webOnnxSam: false,
     worker,
-    onnx,
-    // Honest: browser/WebView SAM only if optional ONNX present
+    onnx: { ...onnx, supported: false, status: onnxStatus(onnx) },
     browserNativeSam: false,
-    recommended:
-      isDesktop ? 'local-worker-real-or-mock'
-        : onnx.present ? 'sam-onnx-on-device'
-          : 'usm-query-onnx-fallback',
+    recommended: isDesktop ? 'local-worker-real-or-mock' : 'usm-query-onnx-fallback',
   };
 }

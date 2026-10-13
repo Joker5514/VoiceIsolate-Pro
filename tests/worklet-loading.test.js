@@ -38,9 +38,47 @@ describe('PlaybackMixer load path', () => {
     expect(mixer).toContain("addModule('/src/workers/DeEsserProcessor.js')");
   });
 
-  test('graph reconnects on load failure', () => {
-    expect(mixer).toContain('gateInput.connect(this.highpass)');
-    expect(mixer).toContain('deEsserInput.connect(this.limiter)');
+  test('a failed worklet load reconnects each bypass leg after the failure', async () => {
+    const { PlaybackMixer } = await import('../src/pipeline/PlaybackMixer.js');
+    const param = () => ({ value: 0, setTargetAtTime: jest.fn(), cancelScheduledValues: jest.fn() });
+    const node = (extra = {}) => ({ connect: jest.fn(), disconnect: jest.fn(), ...extra });
+    let fail;
+    const loads = new Promise((_, reject) => { fail = reject; });
+    loads.catch(() => {});
+    const ctx = {
+      sampleRate: 48000, currentTime: 0, state: 'running', destination: node(),
+      createGain: () => node({ gain: param() }),
+      createBiquadFilter: () => node({ type: '', frequency: param(), gain: param(), Q: param() }),
+      createAnalyser: () => node({ fftSize: 0 }),
+      createChannelSplitter: () => node(),
+      createChannelMerger: () => node(),
+      createDynamicsCompressor: () => node({ threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), reduction: 0 }),
+      createDelay: () => node({ delayTime: param() }),
+      createWaveShaper: () => node({ curve: null }),
+      createBufferSource: () => node({ start: jest.fn(), stop: jest.fn() }),
+      resume: jest.fn().mockResolvedValue(undefined),
+      close: jest.fn().mockResolvedValue(undefined),
+      audioWorklet: { addModule: jest.fn(() => loads) },
+    };
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const realNode = globalThis.AudioWorkletNode;
+    globalThis.AudioWorkletNode = jest.fn(() => node({ parameters: new Map(), port: { postMessage: jest.fn() } }));
+    try {
+      const m = new PlaybackMixer({ context: ctx });
+      const gateBefore = m.gateInput.connect.mock.calls.length;
+      const deEsserBefore = m.deEsserInput.connect.mock.calls.length;
+      fail(new Error('network'));
+      await m.workletsReady();
+      const gateAfter = m.gateInput.connect.mock.calls.slice(gateBefore).map((c) => c[0]);
+      const deEsserAfter = m.deEsserInput.connect.mock.calls.slice(deEsserBefore).map((c) => c[0]);
+      expect(gateAfter).toContain(m.highpass);
+      expect(deEsserAfter).toContain(m.outputTrim);
+      expect(m.getWorkletStatus()).toMatchObject({ gate: { state: 'failed' }, deEsser: { state: 'failed' } });
+      expect(globalThis.AudioWorkletNode).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+      globalThis.AudioWorkletNode = realNode;
+    }
   });
 });
 

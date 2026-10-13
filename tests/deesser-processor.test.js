@@ -97,7 +97,42 @@ describe('DeEsserProcessor', () => {
       expect(processor.sibilantEnvelope).toEqual([0, 0]);
       expect(processor.currentGain).toEqual([1, 1]);
       expect(processor.sampleRate).toBe(48000);
-      expect(processor.lastFrequency).toBe(6500);
+      // Unset until the first block builds the high-pass for the live frequency.
+      expect(processor.lastFrequency).toBeNaN();
+    });
+  });
+
+  describe('Default 6500 Hz band (regression: identity filter left in place)', () => {
+    const levelDb = (hz, amount) => {
+      const p = new DeEsserProcessor();
+      const n = 128;
+      let inE = 0;
+      let outE = 0;
+      for (let b = 0; b < 375; b++) { // 1 s at 48 kHz
+        const x = new Float32Array(n);
+        for (let i = 0; i < n; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * hz * (b * n + i)) / 48000);
+        const y = new Float32Array(n);
+        p.process([[x]], [[y]], { amount: [amount], frequency: [6500] });
+        if (b >= 188) for (let i = 0; i < n; i++) { inE += x[i] * x[i]; outE += y[i] * y[i]; }
+      }
+      return 10 * Math.log10(outE / inE);
+    };
+
+    it('leaves the vowel band untouched and reduces only the high band', () => {
+      // Engineer default deEssAmt 5 dB -> amount 5/24. Before the fix every band
+      // lost the same 2.8 dB (13.5 dB at amount 1): a full-band compressor.
+      expect(Math.abs(levelDb(200, 5 / 24))).toBeLessThan(0.1);
+      expect(Math.abs(levelDb(1000, 1))).toBeLessThan(0.1);
+      expect(levelDb(16000, 1)).toBeLessThan(-6);
+      expect(levelDb(12000, 1)).toBeLessThan(levelDb(1000, 1) - 3);
+    });
+
+    it('rebuilds the filter when the context sample rate differs from 48 kHz', () => {
+      global.sampleRate = 44100;
+      const x = new Float32Array(128).fill(0.1);
+      processor.process([[x]], [[new Float32Array(128)]], { amount: [0.5], frequency: [6500] });
+      expect(processor.lastSampleRate).toBe(44100);
+      expect(processor.filterCoeffs.b0).not.toBe(1);
     });
   });
 

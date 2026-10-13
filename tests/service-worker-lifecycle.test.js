@@ -56,7 +56,7 @@ describe('service-worker lifecycle', () => {
 
   test('does not force a waiting update over an active processing tab', () => {
     expect(swSource).not.toMatch(/skipWaiting\s*\(/);
-    expect(swSource).toMatch(/normal waiting lifecycle/);
+    expect(swSource).toMatch(/no skipWaiting/);
   });
 
   test('controllerchange clears its safety timer and listener', async () => {
@@ -97,6 +97,51 @@ describe('service-worker lifecycle', () => {
     expect(bootSource).not.toMatch(/addEventListener\?\.\('pagehide',[\s\S]{0,100}\{ once: true \}/);
     expect(bootSource).toContain("typeof app.ctx.state === 'string'");
     expect(bootSource).toMatch(/MAX_DRIVER_MS\s*=\s*10\s*\*\s*60\s*\*\s*1000/);
+  });
+
+  test('a network-first fetch keeps the worker alive until its runtime copy is stored', async () => {
+    const listeners = {};
+    const puts = [];
+    let releasePut;
+    const putGate = new Promise((r) => { releasePut = r; });
+    const cache = {
+      put: jest.fn(async (req) => { await putGate; puts.push(req); }),
+      match: jest.fn(async () => undefined),
+    };
+    const context = {
+      console,
+      URL,
+      Headers,
+      Response,
+      Request,
+      self: { location: { origin: 'https://vip.test' }, addEventListener: (t, f) => { listeners[t] = f; } },
+      caches: { open: jest.fn(async () => cache) },
+    };
+    // Node's Response reports type 'default'; the worker only stores same-origin 'basic'.
+    context.fetch = jest.fn(async () => {
+      const r = new Response('wasm-bytes', { status: 200 });
+      Object.defineProperty(r, 'type', { value: 'basic' });
+      r.clone = () => new Response('wasm-bytes', { status: 200 });
+      return r;
+    });
+    vm.runInNewContext(swSource, context, { filename: 'sw.js' });
+    const lifetimes = [];
+    let responded;
+    listeners.fetch({
+      request: { method: 'GET', url: 'https://vip.test/lib/ort-wasm.wasm', headers: new Headers(), mode: 'no-cors' },
+      respondWith: (p) => { responded = p; },
+      waitUntil: (p) => { lifetimes.push(p); },
+    });
+    const res = await responded;
+    expect(res.status).toBe(200);
+    expect(lifetimes).toHaveLength(1);
+    let settled = false;
+    lifetimes[0].then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    releasePut();
+    await lifetimes[0];
+    expect(puts).toHaveLength(1);
   });
 
   test('registration source uses one settle path for event and timeout', () => {

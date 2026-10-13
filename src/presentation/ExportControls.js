@@ -67,19 +67,6 @@ export class ExportControls {
             <span>Format:</span>
             <select id="vip-export-format" class="vip-export-select">
               <option value="wav">WAV (Uncompressed)</option>
-              <option value="mp3">MP3 (Compressed)</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="vip-export-section vip-export-mp3-options" style="display: none;">
-          <label class="vip-export-label">
-            <span>MP3 Bitrate:</span>
-            <select id="vip-export-bitrate" class="vip-export-select">
-              <option value="128">128 kbps</option>
-              <option value="192" selected>192 kbps</option>
-              <option value="256">256 kbps</option>
-              <option value="320">320 kbps</option>
             </select>
           </label>
         </div>
@@ -279,14 +266,7 @@ export class ExportControls {
    * @private
    */
   _attachListeners() {
-    const formatSelect = this.container.querySelector('#vip-export-format');
-    const mp3Options = this.container.querySelector('.vip-export-mp3-options');
     const exportButton = this.container.querySelector('#vip-export-button');
-
-    // Show/hide MP3 options based on format
-    formatSelect.addEventListener('change', () => {
-      mp3Options.style.display = formatSelect.value === 'mp3' ? 'block' : 'none';
-    });
 
     // Export button click
     exportButton.addEventListener('click', () => this._handleExport());
@@ -307,7 +287,6 @@ export class ExportControls {
 
     const stems = this.container.querySelector('#vip-export-stems').value;
     const format = this.container.querySelector('#vip-export-format').value;
-    const bitrate = parseInt(this.container.querySelector('#vip-export-bitrate').value, 10);
     const applySpeakerAutomation = this.container.querySelector('#vip-export-automation').checked;
     const filename = this.container.querySelector('#vip-export-filename').value.trim() || 'export';
 
@@ -320,7 +299,6 @@ export class ExportControls {
       const result = await this.orchestrator.export({
         stems,
         format,
-        bitrate,
         filename,
         applySpeakerAutomation,
         onProgress: (progress, stage) => this._updateProgress(progress, stage),
@@ -375,7 +353,6 @@ export class ExportControls {
         'applying-automation': 'Applying speaker automation...',
         'encoding': 'Encoding audio...',
         'encoding-wav': 'Encoding WAV...',
-        'encoding-mp3': 'Encoding MP3...',
         'complete': 'Complete!',
       };
       progressText.textContent = stageLabels[stage] || stage;

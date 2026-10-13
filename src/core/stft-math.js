@@ -135,6 +135,48 @@ export function frameCount(length, fftSize, hopSize) {
 }
 
 /**
+ * Frames for edge-covering ("padded") synthesis: the signal is extended by
+ * `fftSize − hopSize` samples on both sides so every input sample receives
+ * the full set of overlapping windows. Use with {@link paddedSample} for
+ * analysis and offset frame f by `f·hop − (fftSize − hopSize)`.
+ * {@link frameCount} (full frames only) stays the formula for analysis-only
+ * callers that must not see padded content.
+ * @param {number} length
+ * @param {number} fftSize
+ * @param {number} hopSize
+ * @returns {number}
+ */
+export function paddedFrameCount(length, fftSize, hopSize) {
+  if (!Number.isFinite(length) || length <= 0) return 0;
+  frameCount(fftSize, fftSize, hopSize); // validates geometry
+  // Without overlap the periodic Hann zero at index 0 is never covered by a
+  // neighbouring frame, so every frame boundary would reconstruct as 0.
+  if (hopSize >= fftSize) {
+    throw new RangeError(`[VIP][stft-math] paddedFrameCount: hopSize ${hopSize} must be < fftSize ${fftSize}`);
+  }
+  return Math.floor((length - 1 + fftSize - hopSize) / hopSize) + 1;
+}
+
+/**
+ * Sample of `x` at any index, extended outside [0, len) by odd (point)
+ * reflection about the nearest edge sample: x(−k) = 2·x(0) − x(k). Value and
+ * slope stay continuous, so padding adds no step for a mask to react to.
+ * @param {Float32Array} x
+ * @param {number} idx
+ * @returns {number}
+ */
+export function paddedSample(x, idx) {
+  const len = x.length;
+  if (idx >= 0 && idx < len) return x[idx];
+  if (len <= 1) return len ? x[0] : 0;
+  const period = 2 * (len - 1);
+  let m = idx % period;
+  if (m < 0) m += period;
+  const mirrored = x[m < len ? m : period - m];
+  return 2 * x[idx < 0 ? 0 : len - 1] - mirrored;
+}
+
+/**
  * Minimum PCM length that yields at least one full frame.
  * @param {number} fftSize
  * @returns {number}

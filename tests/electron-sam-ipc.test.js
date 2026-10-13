@@ -16,6 +16,48 @@ describe('Electron SAM worker IPC', () => {
     expect(src).toMatch(/SAM_WORKER_START/);
     expect(src).toMatch(/SAM_WORKER_STOP/);
     expect(src).toMatch(/SAM_WORKER_CAPABILITIES/);
+    expect(src).toMatch(/SAM_WORKER_SEPARATE/);
+    expect(src).toMatch(/SAM_WORKER_CANCEL/);
+  });
+
+  test('separation goes through the main-process loopback proxy (F16)', () => {
+    const main = read('electron/main.cjs');
+    expect(main).toMatch(/handleTrusted\(IPC\.SAM_WORKER_SEPARATE/);
+    expect(main).toMatch(/handleTrusted\(IPC\.SAM_WORKER_CANCEL/);
+    const proxy = read('electron/sam-proxy.cjs');
+    expect(proxy).toMatch(/host: '127\.0\.0\.1'/);
+    expect(proxy).not.toMatch(/Access-Control-Allow-Origin/);
+    expect(read('electron/preload.cjs')).toMatch(/samWorkerSeparate/);
+  });
+
+  test('the real preload forwards separate and cancel to their IPC channels', () => {
+    const vm = require('vm');
+    const invoked = [];
+    let exposed = null;
+    const electron = {
+      contextBridge: { exposeInMainWorld: (name, api) => { if (name === 'vipDesktop') exposed = api; } },
+      ipcRenderer: {
+        invoke: (channel, ...args) => { invoked.push([channel, ...args]); return Promise.resolve({ ok: true }); },
+        on: () => {},
+        removeListener: () => {},
+        send: () => {},
+      },
+    };
+    const sandbox = {
+      require: (id) => { if (id !== 'electron') throw new Error(`unexpected require ${id}`); return electron; },
+      process: { argv: [], platform: 'linux', versions: {} },
+      console,
+      module: { exports: {} },
+    };
+    vm.runInNewContext(read('electron/preload.cjs'), sandbox, { filename: 'preload.cjs' });
+    const { IPC } = require('../electron/ipc-channels.cjs');
+    const req = { jobId: 'sam-1', audio: new Float32Array(32), sampleRate: 48000 };
+    exposed.samWorkerSeparate(req);
+    exposed.samWorkerCancel('sam-1');
+    expect(invoked).toEqual([
+      [IPC.SAM_WORKER_SEPARATE, req],
+      [IPC.SAM_WORKER_CANCEL, 'sam-1'],
+    ]);
   });
 
   test('preload exposes only invoke wrappers', () => {

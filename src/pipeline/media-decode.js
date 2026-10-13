@@ -14,10 +14,12 @@ const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 10_000;
 const FAST_READ_BYTES = 64 * 1024 * 1024;
 /** Yield during streaming reads at most every N bytes. */
 const STREAM_YIELD_BYTES = 8 * 1024 * 1024;
-/** Target media-element capture rate (16× is widely supported). */
-const MAX_CAPTURE_PLAYBACK_RATE = 16;
-// ScriptProcessorNode block size — must be a power-of-two 256–16384.
-const SPN_BLOCK_SIZE = 8192;
+// ScriptProcessorNode block size — must be a power-of-two 256–16384. It is
+// also the granularity of the pre-roll estimate used only when the media
+// itself starts and ends in digital silence (~85 ms at 48 kHz).
+const SPN_BLOCK_SIZE = 4096;
+/** Metadata probe used to check a decodeAudioData result for truncation. */
+const METADATA_PROBE_TIMEOUT_MS = 15_000;
 let sharedPrimaryContext = null;
 let sharedRetryContext = null;
 let sharedContextCleanupHooked = false;
@@ -186,7 +188,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
         readTimeoutMs,
         signal,
       });
-      if (!_likelyTruncatedDecode(blob, fast)) return fast;
+      if (!(await _decodeLooksTruncated(blob, fast, signal))) return fast;
     } catch (error) {
       if (isTerminalOperationError(error)) throw error;
       /* fall through to media-element capture */
@@ -335,36 +337,51 @@ async function decodeAudioBufferSafe(ctx, arrayBuffer, { timeoutMs, signal } = {
 }
 
 /**
- * decodeAudioData on MP4/MOV often returns only the first ~15 s. Detect that
- * so we can fall back to full media-element capture.
- *
- * FIX: Previously this triggered on large WAV/AIFF files (sizeMB >= 8 &&
- * duration < 45) even though the decode was correct. Guard is now gated
- * exclusively on video containers — audio blobs never enter this branch.
+ * A decodeAudioData result is truncated when it is clearly shorter than the
+ * container's own duration (media-element metadata). The old size/duration
+ * heuristic flagged every short, high-bitrate video (≥1.5 MB under 18 s) —
+ * e.g. a 10 s phone clip — and sent a correct decode down the capture path.
+ * Without readable metadata the decode is trusted.
+ * @param {Blob} blob
+ * @param {AudioBuffer} buffer
+ * @param {AbortSignal|null} signal
+ * @returns {Promise<boolean>}
  */
-function _likelyTruncatedDecode(blob, buffer) {
+export async function _decodeLooksTruncated(blob, buffer, signal = null) {
   if (!buffer?.duration || buffer.duration <= 0) return true;
-  const sizeMB = (blob.size || 0) / (1024 * 1024);
-  const name = blob.name || '';
-  const isVideoContainer = /\.(mp4|m4v|mov|mkv|webm|avi|ogv|3gp|wmv)$/i.test(name)
-    || (blob.type || '').startsWith('video/');
-  // Only apply duration heuristic for actual video containers — audio
-  // blobs (WAV, AIFF, FLAC) can legitimately be large with short durations.
-  if (!isVideoContainer) return false;
-  if (sizeMB >= 1.5 && buffer.duration < 18) return true;
-  if (sizeMB >= 8 && buffer.duration < 45) return true;
-  return false;
+  const containerSec = await _probeMediaDuration(blob, signal).catch((err) => {
+    // Only a user abort ends the import. A metadata probe that times out
+    // (MEDIA_METADATA_TIMEOUT) just leaves the decode unverified, and the
+    // decode is already a valid buffer, so it is trusted.
+    if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') throw err;
+    return null;
+  });
+  if (!Number.isFinite(containerSec) || containerSec <= 0) return false;
+  const tolerance = Math.max(0.25, containerSec * 0.02);
+  return buffer.duration + tolerance < containerSec;
 }
 
-/** Apply the highest playback rate the element accepts (faster-than-realtime capture). */
-function _applyCapturePlaybackRate(media) {
+/** Container duration in seconds from a metadata-only media element. */
+async function _probeMediaDuration(blob, signal) {
+  const doc = globalThis.document;
+  if (!doc?.createElement) return null;
+  const kind = inferMediaKind(blob) === 'video' ? 'video' : 'audio';
+  const media = doc.createElement(kind);
+  media.preload = 'metadata';
+  media.muted = true;
+  const url = URL.createObjectURL(blob);
   try {
-    media.playbackRate = MAX_CAPTURE_PLAYBACK_RATE;
-    if (typeof media.preservesPitch === 'boolean') media.preservesPitch = false;
-    const applied = media.playbackRate;
-    return applied >= 1 ? applied : 1;
-  } catch {
-    return 1;
+    media.src = url;
+    await runBounded(() => _waitForMetadata(media, signal), {
+      timeoutMs: METADATA_PROBE_TIMEOUT_MS,
+      timeoutMessage: '[VIP][FileIngestion] metadata probe timeout',
+      timeoutCode: 'MEDIA_METADATA_TIMEOUT',
+      signal,
+    });
+    return Number.isFinite(media.duration) ? media.duration : null;
+  } finally {
+    try { media.removeAttribute('src'); media.load(); } catch { /* ignore */ }
+    URL.revokeObjectURL(url);
   }
 }
 
@@ -386,10 +403,7 @@ function createGrowingChannel() {
       len += count;
     },
     get length() { return len; },
-    copyInto(dest, outLen) {
-      const n = Math.min(len, outLen);
-      dest.set(buf.subarray(0, n));
-    },
+    view() { return buf.subarray(0, len); },
   };
 }
 
@@ -424,13 +438,20 @@ async function _decodeWithAudioData(blob, onProgress, externalCtx = null, option
 }
 
 // ---------------------------------------------------------------------------
-// Fallback — accelerated media-element capture via ScriptProcessorNode
+// Fallback — real-time media-element capture via ScriptProcessorNode
 //
-// FIX: media.muted was false and only volume=0 was set. On Chrome/Safari,
-// volume=0 without muted=true still triggers autoplay policy enforcement —
-// play() throws NotAllowedError when no prior user-gesture AudioContext
-// unlock has been recorded. Set muted=true for the capture element; the
-// ScriptProcessorNode captures PCM from the graph regardless of muted state.
+// The element plays at 1× and unmuted. Accelerated capture (16×, pitch not
+// preserved) returned 1/16 of the frames labelled 48 kHz with content
+// band-limited by the resampler, and muted=true made Chromium feed the graph
+// silence: a 10 s 440 Hz WebM came back as 1.19 s of zeros. The element's
+// output is re-routed into the graph and leaves through a zero-gain sink, so
+// unmuted capture is still inaudible. It runs in real time.
+//
+// The captured stream is [pre-roll zeros][content][post-roll zeros]; the
+// content window is placed from the media duration and the first/last
+// non-silent samples (exact when the media does not begin and end in digital
+// silence), and the capture is rejected when blocks were dropped or it is
+// shorter than the media.
 // ---------------------------------------------------------------------------
 async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null, signal = null) {
   const doc = globalThis.document;
@@ -445,11 +466,9 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
   const tag = kind === 'video' ? 'video' : 'audio';
   const media = doc.createElement(tag);
   media.preload = 'auto';
-  // FIX: Set muted=true so play() is not blocked by autoplay policy.
-  // The ScriptProcessorNode captures audio from the graph regardless of the
-  // muted attribute — muted only affects the speaker output, not the SPN tap.
-  media.muted = true;
-  try { media.volume = 0; } catch { /* ignore — belt-and-suspenders */ }
+  // Muted (or volume 0) silences the MediaElementAudioSourceNode in Chromium.
+  media.muted = false;
+  try { media.volume = 1; } catch { /* ignore */ }
   media.setAttribute('playsinline', '');
   media.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
   doc.body.appendChild(media);
@@ -477,7 +496,10 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       throw new Error('Media has no decodable audio duration.');
     }
 
-    const playbackRate = _applyCapturePlaybackRate(media);
+    try {
+      media.playbackRate = 1;
+      media.defaultPlaybackRate = 1;
+    } catch { /* ignore */ }
 
     // Read the actual channel count from the media element after metadata loads.
     // Falls back to 2 (stereo) when the browser doesn't expose the track count.
@@ -487,13 +509,26 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     );
     const channels = Array.from({ length: numChannels }, () => createGrowingChannel());
     let writeOffset = 0;
+    /** Frames captured before the element reported 'playing' (pre-roll estimate). */
+    let prePlayFrames = 0;
+    let playing = false;
+    /** Frames lost to late ScriptProcessor callbacks (gaps in playbackTime). */
+    let droppedFrames = 0;
+    let lastPlaybackTime = null;
     let captureDone = false;
     let captureSettled = false;
     let progressScheduled = false;
     let resolveCapture = null;
     let rejectCapture = null;
-    const flushTailMs = Math.ceil((SPN_BLOCK_SIZE / SAMPLE_RATE) * 1000) + 50;
-    const estimatedFrames = Math.max(1, Math.ceil(duration * SAMPLE_RATE));
+    // After 'ended', blocks still queued in the graph keep arriving: capture
+    // until two all-silent blocks have passed and the media's whole length is
+    // covered, bounded so a stuck graph cannot hold the import.
+    const POST_ROLL_SILENT_BLOCKS = 2;
+    const MAX_POST_ROLL_MS = 2000;
+    let ended = false;
+    let silentBlocksAfterEnd = 0;
+    let postRollTimer = null;
+    let estimatedFrames = Math.max(1, Math.ceil(duration * SAMPLE_RATE));
 
     const reportProgress = () => {
       if (progressScheduled) return;
@@ -519,10 +554,9 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       captureSettled = true;
       captureDone = true;
       if (timeoutHandle != null) clearTimeout(timeoutHandle);
+      if (postRollTimer != null) clearTimeout(postRollTimer);
       if (spn) spn.onaudioprocess = null;
-      setTimeout(() => {
-        resolveCapture?.();
-      }, flushTailMs);
+      resolveCapture?.();
     };
 
     const failCapture = (error) => {
@@ -530,6 +564,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       captureSettled = true;
       captureDone = true;
       if (timeoutHandle != null) clearTimeout(timeoutHandle);
+      if (postRollTimer != null) clearTimeout(postRollTimer);
       if (spn) spn.onaudioprocess = null;
       rejectCapture?.(error);
     };
@@ -557,7 +592,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       const realtimeMs = Math.ceil(duration * 1000);
       const captureTimeoutMs = Math.max(
         MEDIA_DECODE_MIN_TIMEOUT_MS,
-        Math.ceil((realtimeMs * 2) / playbackRate) + 60_000,
+        realtimeMs * 2 + 60_000,
       );
       timeoutHandle = setTimeout(() => {
         try { media.pause(); } catch { /* ignore */ }
@@ -570,6 +605,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
 
     ctx = reusableCtx || getSharedAudioContext(Ctx, 'primary', { sampleRate: SAMPLE_RATE });
     await resumeAudioContext(ctx, signal);
+    estimatedFrames = Math.max(1, Math.ceil(duration * ctx.sampleRate));
     source = ctx.createMediaElementSource(media);
     spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
     // Zero-gain sink: SPN must stay connected for onaudioprocess to fire, but
@@ -580,20 +616,42 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     spn.connect(silentGain);
     silentGain.connect(ctx.destination);
 
+    media.addEventListener('playing', () => { playing = true; }, { once: true });
     spn.onaudioprocess = (e) => {
       if (captureDone) return;
       const copyLen = SPN_BLOCK_SIZE;
+      const blockSec = copyLen / ctx.sampleRate;
+      if (lastPlaybackTime != null && Number.isFinite(e.playbackTime)) {
+        const gap = e.playbackTime - lastPlaybackTime - blockSec;
+        if (gap > blockSec * 0.5) droppedFrames += Math.round(gap * ctx.sampleRate);
+      }
+      lastPlaybackTime = e.playbackTime;
       for (let ch = 0; ch < numChannels; ch++) {
         channels[ch].append(e.inputBuffer.getChannelData(ch), copyLen);
       }
+      if (!playing) prePlayFrames += copyLen;
       writeOffset += copyLen;
+      if (ended) {
+        let silent = true;
+        for (let ch = 0; ch < numChannels && silent; ch++) {
+          const d = e.inputBuffer.getChannelData(ch);
+          for (let i = 0; i < d.length; i++) { if (d[i] !== 0) { silent = false; break; } }
+        }
+        silentBlocksAfterEnd = silent ? silentBlocksAfterEnd + 1 : 0;
+        const mediaSec = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : duration;
+        const covered = writeOffset >= prePlayFrames + Math.round(mediaSec * ctx.sampleRate);
+        if (silentBlocksAfterEnd >= POST_ROLL_SILENT_BLOCKS && covered) finishCapture();
+      }
       // ScriptProcessor callbacks already run as separate tasks and cannot be
       // made async safely. Coalesce UI progress above instead of queuing no-op
       // timers, which do not yield the callback that scheduled them.
       reportProgress();
     };
 
-    media.addEventListener('ended', finishCapture, { once: true });
+    media.addEventListener('ended', () => {
+      ended = true;
+      postRollTimer = setTimeout(finishCapture, MAX_POST_ROLL_MS);
+    }, { once: true });
     media.addEventListener('durationchange', () => {
       updateDuration(media.duration);
       resetCaptureTimeout();
@@ -634,24 +692,37 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     if (writeOffset <= 0) {
       throw new Error('Media element produced an empty audio buffer.');
     }
+    const sr = ctx.sampleRate;
+    if (droppedFrames > 0) {
+      throw new Error(
+        `[VIP][FileIngestion] Audio capture lost ${Math.round((droppedFrames / sr) * 1000)} ms while the page was busy. `
+        + 'Keep this tab in the foreground and import again.',
+      );
+    }
 
     const reportedDuration = Number.isFinite(media.duration) && media.duration > 0
       ? media.duration
       : duration;
-    const outFrames = Math.min(
-      writeOffset,
-      Math.max(1, Math.ceil(reportedDuration * SAMPLE_RATE)),
-    );
+    const expected = Math.max(1, Math.round(reportedDuration * sr));
+    const views = channels.map((c) => c.view());
+    const content = locateContentWindow(views, expected, prePlayFrames);
+    if (content.shortBy > SPN_BLOCK_SIZE) {
+      throw new Error(
+        `[VIP][FileIngestion] Audio capture ended ${(content.shortBy / sr).toFixed(2)} s before the media's `
+        + `${reportedDuration.toFixed(2)} s duration.`,
+      );
+    }
 
     onProgress(98);
 
+    // Labelled with the capturing context's real rate; ingestion resamples.
     const result = new AudioBuffer({
       numberOfChannels: numChannels,
-      length: outFrames,
-      sampleRate: SAMPLE_RATE,
+      length: Math.max(1, content.length),
+      sampleRate: sr,
     });
     for (let ch = 0; ch < numChannels; ch++) {
-      channels[ch].copyInto(result.getChannelData(ch), outFrames);
+      result.getChannelData(ch).set(views[ch].subarray(content.start, content.start + content.length));
     }
 
     try { onProgress(100); } catch { /* UI callback only */ }
@@ -672,6 +743,58 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Place the media's content inside a capture of [pre-roll][content][post-roll].
+ * Pre- and post-roll are exact zeros (the element is not playing), so the
+ * content starts at or before the first non-zero sample and ends at or after
+ * the last one: the start lies in [lastNonZero + 1 − expected, firstNonZero].
+ * When the first non-zero sample falls within a block of where playback was
+ * seen to start, the media opens with signal and that sample is the start
+ * (sample-exact). Otherwise the media opens in digital silence and the frames
+ * captured before 'playing' place it (block-granular).
+ * @param {Float32Array[]} views captured channels (equal length)
+ * @param {number} expected content frames from the media duration
+ * @param {number} prePlayFrames frames captured before 'playing'
+ * @param {number} [blockFrames] capture block size (estimate granularity)
+ * @returns {{ start: number, length: number, shortBy: number }}
+ */
+export function locateContentWindow(views, expected, prePlayFrames = 0, blockFrames = SPN_BLOCK_SIZE) {
+  const total = views[0]?.length || 0;
+  let first = -1;
+  let last = -1;
+  for (const v of views) {
+    for (let i = 0; i < v.length; i++) {
+      if (v[i] !== 0) { if (first < 0 || i < first) first = i; break; }
+    }
+    for (let i = v.length - 1; i >= 0; i--) {
+      if (v[i] !== 0) { if (i > last) last = i; break; }
+    }
+  }
+  if (total < expected) {
+    // Too short to hold the media: report how short, keep what was captured.
+    const start = first >= 0 ? Math.min(first, Math.max(0, prePlayFrames)) : 0;
+    return { start, length: total - start, shortBy: expected - (total - start) };
+  }
+  if (first < 0) {
+    const start = Math.min(Math.max(0, prePlayFrames), total - expected);
+    return { start, length: expected, shortBy: 0 };
+  }
+  const lo = Math.max(0, last + 1 - expected);
+  const hi = Math.min(first, total - expected);
+  if (lo > hi) {
+    // Non-silent content spans more than the reported duration: keep all of it.
+    return { start: first, length: last + 1 - first, shortBy: 0 };
+  }
+  // prePlayFrames is uncertain by up to one block, so a first sample within
+  // one block of it is the media's own start. Beyond that the media opens with
+  // real digital silence, which must stay (two blocks dropped ~171 ms of it).
+  const opensWithSignal = Math.abs(first - prePlayFrames) <= blockFrames;
+  const guess = opensWithSignal ? first : prePlayFrames;
+  const start = Math.min(hi, Math.max(lo, guess));
+  return { start, length: expected, shortBy: 0 };
+}
+
 function _waitForMetadata(media, signal = null) {
   return new Promise((resolve, reject) => {
     const HAVE_METADATA = globalThis.HTMLMediaElement?.HAVE_METADATA ?? 1;

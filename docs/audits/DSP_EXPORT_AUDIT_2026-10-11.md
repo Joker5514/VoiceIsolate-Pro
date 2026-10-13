@@ -54,6 +54,7 @@ framing defect. The baseline was not re-pinned.
   24 kHz above about 8.4 kHz. It is pinned by the quality gate. That removed
   content lands in the noise stem.
 - The fused path fades the first and last 8 ms of the clean stem by design.
+  (Removed later by F26 in `REPAIR_AUDIT_2026-10-12.md`.)
 - `ExportControls` / `ExportOrchestrator` offer MP3 through `lamejs`, which is
   not a dependency, so MP3 always fails there. No production entry point
   mounts these modules. The shipped exports are WAV and video remux.

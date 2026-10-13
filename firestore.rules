@@ -42,13 +42,20 @@ service cloud.firestore {
     }
 
     // ── Presets ───────────────────────────────────────────────────────────
+    // Update and delete are separate: a delete has no request.resource, so the
+    // shared rule (which validated request.resource) denied every owner delete,
+    // and it never pinned userId, so an owner could reassign a preset to
+    // another user's namespace.
     match /presets/{presetId} {
-      allow read:          if isAuthed() && resource.data.userId == request.auth.uid;
-      allow create:        if isAuthed()
-                           && request.resource.data.userId == request.auth.uid
-                           && presetSizeOk();
-      allow update, delete: if isAuthed() && resource.data.userId == request.auth.uid
-                            && presetSizeOk();
+      allow read:   if isAuthed() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthed()
+                    && request.resource.data.userId == request.auth.uid
+                    && presetSizeOk();
+      allow update: if isAuthed()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == resource.data.userId
+                    && presetSizeOk();
+      allow delete: if isAuthed() && resource.data.userId == request.auth.uid;
     }
 
     // ── Sessions ─────────────────────────────────────────────────────────

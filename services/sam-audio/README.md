@@ -65,7 +65,7 @@ Deterministic mock separator keeps integration tests green without GPU/HF.
 - **`sam_hub_compat.py`** — fixes hub 1.x vs sam_audio `proxies`/`resume_download` break (facebookresearch/sam-audio#89).
 - **No cloud SAM** — all audio stays on-device / loopback.
 - **No AudioWorklet SAM** — DSP worklets never load SAM.
-- **Browser** — does not claim real SAM without verified ONNX at `/app/models/sam_audio.onnx`.
+- **Browser** — no SAM: there is no ONNX loader, and the page cannot reach this worker.
 
 ## Security
 
@@ -73,16 +73,37 @@ Deterministic mock separator keeps integration tests green without GPU/HF.
 - Does not log audio or prompts.
 - HF tokens only in process env / Electron main — never frontend JS.
 - Web client refuses non-loopback worker base URLs.
+- No CORS. Requests with an `Origin` header, a non-loopback `Host`, or a POST
+  body that is not `application/json` are refused (403/415), so a web page
+  cannot drive the worker (cross-origin, preflight, or DNS rebinding).
+- Job ids must match `[A-Za-z0-9._:-]{1,128}` in full; clients use random
+  UUIDs. A jobId runs once at a time (a second `/separate` with a running id
+  answers 409). A cancel for a job that has not started is remembered for at
+  most 10 min / 1024 ids; a cancel for a running job is kept until that job
+  finishes, and every entry is cleared when its job finishes. Cancellation is
+  checked before and after inference; it cannot interrupt a running
+  `model.separate` call.
+- Text prompts only: `mode` other than `text`, or any `anchors`, answers 400
+  `unsupported-targeting` (span/visual prompting is not implemented).
+- One request body is at most 64 MiB. The worker itself accepts any body under
+  that (and at most 30 min of PCM). The Electron proxy additionally caps a job
+  at 12,582,144 samples (about 262 s at 48 kHz) so its base64 body always fits.
 
 ## Electron
 
 Main process starts/stops the worker via IPC (`vip:sam-worker-*`).  
+Separation and cancellation also go through the main process
+(`vip:sam-worker-separate` / `vip:sam-worker-cancel`, `electron/sam-proxy.cjs`):
+the worker has no CORS and refuses any `Origin` (the `vip://` handler sets no
+CSP, so that is the barrier). The proxy refuses ports below 1024, checks that
+`/health` reports `service: sam-audio-worker` before sending PCM, runs at most
+two jobs at once and caps the response size.  
 Desktop defaults: `SAM_AUDIO_PRODUCTION=1`, `ALLOW_MOCK=0`, `--preload`.
 
 ## Android / Browser
 
-- **Browser:** optional same-machine worker URL, else USM/ONNX; no silent “browser SAM” claim.
-- **Android:** optional on-device ORT when `sam_audio.onnx` is present; else USM/BSRNN. Real Desktop-class SAM is the Python worker on a private host (advanced).
+- **Browser:** no transport. The page CSP blocks loopback and the worker answers no CORS, so the provider reports `browser-transport-unavailable` and selection falls back to USM/ONNX; no silent “browser SAM” claim. Node tools can still call the worker directly.
+- **Android:** no on-device SAM (no loader; `sam_audio.onnx` is excluded from the APK). Prompted isolation uses USM/BSRNN.
 
 ## Package identity
 

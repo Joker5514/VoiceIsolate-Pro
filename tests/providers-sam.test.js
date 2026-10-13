@@ -165,6 +165,57 @@ describe('LocalSamAudioWorkerProvider mock fetch', () => {
 });
 
 describe('runPromptedIsolation', () => {
+  // Prompted USM runs in a dedicated worker (never the UI thread). Node has no
+  // Web Worker, so this shim runs the same separateUniversal asynchronously.
+  let workers;
+  beforeEach(() => {
+    workers = [];
+    global.Worker = class {
+      constructor(url, opts) {
+        this.url = String(url); this.opts = opts; this.terminated = false;
+        workers.push(this);
+      }
+      postMessage(msg) {
+        import('../src/core/UniversalSourceMatrix.js').then(({ separateUniversal }) => {
+          if (this.terminated) return;
+          const result = separateUniversal(msg.samples, msg.sampleRate, msg.config);
+          this.onmessage?.({ data: { type: 'result', requestId: msg.requestId, result } });
+        });
+      }
+      terminate() { this.terminated = true; }
+    };
+  });
+  afterEach(() => { delete global.Worker; });
+
+  test('runs the USM pass in a module worker it terminates afterwards', async () => {
+    const audio = new Float32Array(4096).fill(0.1);
+    const out = await prompted.runPromptedIsolation({
+      audio, sampleRate: 16000, prompt: 'speech', processingMode: 'creator', samMode: 'disabled',
+    });
+    expect(out.target.length).toBe(4096);
+    expect(workers).toHaveLength(1);
+    expect(workers[0].url).toMatch(/\/src\/workers\/USMWorker\.js$/);
+    expect(workers[0].opts).toMatchObject({ type: 'module' });
+    expect(workers[0].terminated).toBe(true);
+  });
+
+  test('an abort terminates the worker and rejects with AbortError', async () => {
+    let posted;
+    const workerBusy = new Promise((r) => { posted = r; });
+    global.Worker.prototype.postMessage = function () { posted(); /* never answers */ };
+    const ac = new AbortController();
+    const run = prompted.runPromptedIsolation({
+      audio: new Float32Array(4096), sampleRate: 16000, prompt: 'speech', samMode: 'disabled', signal: ac.signal,
+    });
+    // Abort only once the worker exists and holds the job, however long
+    // provider selection takes.
+    await workerBusy;
+    expect(workers).toHaveLength(1);
+    ac.abort();
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    expect(workers[0].terminated).toBe(true);
+  });
+
   test('uses USM path without network', async () => {
     const audio = new Float32Array(8192);
     for (let i = 0; i < audio.length; i++) {

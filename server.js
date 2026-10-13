@@ -15,22 +15,13 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import apiRouter from './api-routes/index.js';
 import { securityHeaders } from './server/securityHeaders.js';
-import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 
-// ── Auto-upload models to Vercel Blob on first load ─────────────────────
-if (process.env.BLOB_READ_WRITE_TOKEN && process.env.NODE_ENV !== 'test') {
-  console.log('[setup-blob] BLOB_READ_WRITE_TOKEN detected. Checking and uploading models to Vercel Blob...');
-  const child = spawn('node', [join(__dirname, 'scripts', 'upload-to-vercel-blob.mjs')], {
-    stdio: 'inherit',
-    env: process.env
-  });
-  child.on('close', (code) => {
-    console.log(`[setup-blob] upload process exited with code ${code}`);
-  });
-}
+// Model provisioning is never a side effect of starting the server: uploading
+// to Vercel Blob (network writes + a manifest rewrite) runs only through the
+// explicit `pnpm models:upload:blob -- --yes` command.
 
 const BLOB_MODEL_BASE = process.env.BLOB_BASE_URL
   || 'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com';

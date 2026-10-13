@@ -91,7 +91,15 @@ export function mountFileLibraryUI(app) {
       }
       try {
         exportBtn.disabled = true;
-        const blob = await exportProjectPack(projectId);
+        let blob;
+        try {
+          blob = await exportProjectPack(projectId);
+        } catch (err) {
+          if (err?.code !== 'MISSING_SOURCES') throw err;
+          const go = window.confirm(`${err.missing.length} source file(s) of this project are no longer on this device. Export the remaining files only?`);
+          if (!go) return;
+          blob = await exportProjectPack(projectId, { allowMissing: true });
+        }
         const proj = await ProjectStore.getProject(projectId);
         const safe = (proj?.name || 'project').replace(/[^\w.-]+/g, '_').slice(0, 48);
         downloadPackBlob(blob, `${safe}.vippack`);
@@ -178,8 +186,8 @@ export async function refreshLibraryList(app) {
     const title = document.createElement('button');
     title.type = 'button';
     title.className = 'file-lib-open';
-    const sizeMb = meta.size ? (meta.size / (1024 * 1024)).toFixed(1) : '?';
-    const dur = meta.duration != null ? `${meta.duration.toFixed(1)}s` : '—';
+    const sizeMb = Number.isFinite(meta.size) && meta.size > 0 ? (meta.size / (1024 * 1024)).toFixed(1) : '?';
+    const dur = Number.isFinite(meta.duration) ? `${meta.duration.toFixed(1)}s` : '—';
     title.innerHTML = `<span class="file-lib-name"></span><span class="file-lib-meta"></span>`;
     title.querySelector('.file-lib-name').textContent = meta.originalFilename || meta.id;
     title.querySelector('.file-lib-meta').textContent =

@@ -29,8 +29,11 @@ test('worker path handshakes before transferring the only copy of the audio', ()
 });
 
 test('dsp-worker is precached for offline use', () => {
-  const sw = fs.readFileSync(path.join(__dirname, '../public/app/sw.js'), 'utf8');
-  expect(sw).toContain("'/app/dsp-worker.js'");
+  const { computePrecache } = require('../scripts/sw-precache.cjs');
+  const { precacheUrls } = computePrecache({
+    root: path.join(__dirname, '../public'), srcDir: path.join(__dirname, '../src'),
+  });
+  expect(precacheUrls).toContain('/app/dsp-worker.js');
 });
 
 test('a worker error after the transfer fails Process with the stage named', () => {

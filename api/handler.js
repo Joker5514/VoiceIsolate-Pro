@@ -29,11 +29,8 @@ import apiRouter  from '../api-routes/index.js';
 const app = express();
 app.disable('x-powered-by');
 
-// Raw body for Stripe webhook signature verification (must come before json())
-app.use('/api/webhook/stripe', express.raw({ type: 'application/json' }));
-
-// JSON body parser for all other routes
-app.use(express.json());
+// Body parsing (raw for the Stripe webhook, per-route JSON limits) belongs
+// to the router: a parser here would run first and override those budgets.
 
 // Mount the main API router at /api — this strips the /api prefix, which lets
 // the sub-routers match their relative paths (/auth/login, /sync/pull, etc.)

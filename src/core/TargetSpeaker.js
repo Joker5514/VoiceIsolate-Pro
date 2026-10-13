@@ -192,7 +192,8 @@ export function buildTargetGainCurve(samples, sampleRate, targetEmbedding, opts 
 
 /**
  * Match enrolled embedding to diarization speaker clusters by mean voiceprint
- * of each cluster's talk time. Returns best speakerId or null.
+ * of each cluster's talk time. Returns best speakerId, or null when there is
+ * no match or fewer than two clusters to choose between.
  *
  * @param {Float32Array} samples mono
  * @param {number} sampleRate
@@ -218,6 +219,9 @@ export function matchEmbeddingToDiarization(samples, sampleRate, targetEmbedding
     for (let i = 0; i < emb.length; i++) row.sum[i] += emb[i];
     row.n += 1;
   }
+  // Fusion floors the matched cluster at 0.85. With one cluster every voice is
+  // "the target", so a second speaker was lifted from ~0.45 back to ~0.9.
+  if (byId.size < 2) return null;
   let best = null;
   let bestSim = -2;
   for (const [speakerId, row] of byId) {

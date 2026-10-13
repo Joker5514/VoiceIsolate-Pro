@@ -30,6 +30,32 @@
 'use strict';
 
 /**
+ * Prompt modes a provider actually honours. Span and visual targeting are in
+ * the request type for SAM-Audio, but no shipped backend implements them, so
+ * a request for one is refused instead of silently running a text prompt.
+ */
+export const SUPPORTED_PROMPT_MODES = Object.freeze(['text']);
+
+/**
+ * @param {IsolationRequest} request
+ * @param {string} providerId
+ * @throws {Error & { code: 'UNSUPPORTED_TARGETING' }}
+ */
+export function assertSupportedTargeting(request, providerId) {
+  const mode = request?.mode ?? 'text';
+  const anchors = request?.anchors;
+  let why = null;
+  if (!SUPPORTED_PROMPT_MODES.includes(mode)) why = `prompt mode "${mode}" is not supported`;
+  else if (Array.isArray(anchors) && anchors.length) why = 'span anchors are not supported';
+  if (why) {
+    throw Object.assign(new Error(`[VIP][provider:${providerId}] ${why}; only text prompts are implemented.`), {
+      name: 'UnsupportedTargetingError',
+      code: 'UNSUPPORTED_TARGETING',
+    });
+  }
+}
+
+/**
  * Base class — not constructible for production use without subclass.
  */
 export class AudioIsolationProvider {

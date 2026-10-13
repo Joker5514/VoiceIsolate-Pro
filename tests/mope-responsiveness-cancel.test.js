@@ -39,7 +39,7 @@ describe('MOPE responsiveness + cancel plumbing', () => {
   test('MLWorker uses request-scoped cancellation state', () => {
     expect(mlWorker).toMatch(/_cancelledRequests = new Set/);
     expect(mlWorker).toMatch(/class CancellationError/);
-    expect(mlWorker).toMatch(/finally\(\(\) => _cancelledRequests\.delete/);
+    expect(mlWorker).toMatch(/finally\(\(\) => \{\s*_cancelledRequests\.delete/);
   });
 
   test('PromptedIsolation passes signal into provider isolate', () => {

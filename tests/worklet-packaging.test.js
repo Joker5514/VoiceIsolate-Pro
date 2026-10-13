@@ -19,7 +19,7 @@ describe('AudioWorklet packaging (all platforms)', () => {
     expect(ids).toEqual(['vip-gate', 'vip-deesser', 'dsp-processor']);
   });
 
-  test('verify-worklets.js passes (source + manifest + APP_SHELL)', () => {
+  test('verify-worklets.js passes (source + manifest + precache)', () => {
     const result = verifyWorklets({ quiet: true });
     expect(result.errors).toEqual([]);
   });
@@ -58,19 +58,22 @@ describe('AudioWorklet packaging (all platforms)', () => {
     }
   });
 
-  test('public/app/sw.js APP_SHELL precaches all worklet URLs', () => {
-    const sw = fs.readFileSync(path.join(ROOT, 'public/app/sw.js'), 'utf8');
+  const precache = () => require('../scripts/sw-precache.cjs')
+    .computePrecache({ root: path.join(ROOT, 'public'), srcDir: path.join(ROOT, 'src') }).precacheUrls;
+
+  test('service-worker precache covers all worklet URLs', () => {
+    const urls = precache();
     for (const entry of registry.worklets) {
-      expect(sw).toContain(entry.url);
+      expect(urls).toContain(entry.url);
     }
   });
 
-  test('public/app/sw.js APP_SHELL precaches WhisperHunter and dsp-bootstrap', () => {
-    const sw = fs.readFileSync(path.join(ROOT, 'public/app/sw.js'), 'utf8');
-    expect(sw).toContain("'/app/whisper-hunter.js'");
-    expect(sw).toContain("'/app/dsp-bootstrap.js'");
-    expect(sw).not.toContain("'/app/batch-orchestrator.js'");
-    expect(sw).not.toContain("'/app/paywall.js'");
+  test('service-worker precache covers WhisperHunter and dsp-bootstrap, never models or wasm', () => {
+    const urls = precache();
+    expect(urls).toContain('/app/whisper-hunter.js');
+    expect(urls).toContain('/app/dsp-bootstrap.js');
+    expect(urls.some((u) => u.startsWith('/app/models/'))).toBe(false);
+    expect(urls.some((u) => u.endsWith('.wasm'))).toBe(false);
   });
 
   test('capacitor.config.json webDir is build (worklets flow through pnpm build)', () => {

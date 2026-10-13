@@ -75,7 +75,7 @@ Typical $M_{floor} = -30$ dB.
 | Dispatcher Worker     | Job Scheduler                              | State coordination, offline chunking, model warmup, job queuing |
 | Analysis Worker       | Environmental Estimator + Diarization      | Noise PSD, hum tracking, VAD (Silero), transient clicks, speaker fingerprinting |
 | Separation Worker     | ONNX Runtime (platform-specific)           | Heavy ML masks (specialist models or full HTDemucs) via WebGPU / NNAPI / ExecuTorch |
-| Encoder Worker        | AudioEncoderWorker                         | Off-main-thread WAV/MP3 export |
+| Encoder Worker        | AudioEncoderWorker                         | Off-main-thread WAV export (no MP3 encoder bundled) |
 
 ### Explicit Ring-Buffer Math (Added per Review)
 

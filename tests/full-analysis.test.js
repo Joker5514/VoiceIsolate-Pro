@@ -93,6 +93,43 @@ describe('FeatureExtractor', () => {
     expect(ext.humProfile).toHaveProperty('freq');
   });
 
+  const lcg = (seed) => () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) - 0.5;
+
+  test('a digitally silent intro does not make the noise floor 0 (SNR was +215 dB)', () => {
+    const sr = 16000;
+    const make = (lead) => {
+      const r = lcg(7);
+      const x = new Float32Array(sr * 20);
+      for (let i = 0; i < x.length; i++) {
+        const t = i / sr;
+        if (t < lead) continue;
+        let v = 0;
+        for (let h = 1; h <= 8; h++) v += Math.sin(2 * Math.PI * 140 * h * t) / h;
+        x[i] = (Math.floor(t) % 2 === 0 ? 0.1 * v : 0) + 0.05 * r();
+      }
+      return x;
+    };
+    const plain = extractFrameFeatures(make(0), sr).snrDb;
+    const withIntro = extractFrameFeatures(make(2.5), sr).snrDb;
+    expect(withIntro).toBeLessThan(40);
+    expect(Math.abs(withIntro - plain)).toBeLessThan(3);
+  });
+
+  test('the reverb estimate does not depend on the last 100 ms of the file', () => {
+    const sr = 16000;
+    const make = (loudTail) => {
+      const r = lcg(5);
+      const x = new Float32Array(sr * 10);
+      for (let i = 0; i < x.length; i++) x[i] = 0.6 * Math.exp(-((i / sr) % 0.5) / 0.08) * r();
+      if (loudTail) for (let i = x.length - 1600; i < x.length; i++) x[i] = 0.9 * r();
+      return x;
+    };
+    const quiet = extractFrameFeatures(make(false), sr).reverbEstimate;
+    const loud = extractFrameFeatures(make(true), sr).reverbEstimate;
+    expect(quiet).toBeGreaterThan(0.1); // decaying bursts register (HEAD: 0.238)
+    expect(Math.abs(loud - quiet)).toBeLessThan(0.02); // HEAD: loud tail gave 0
+  });
+
   test('downmixToMono averages channels', () => {
     const a = new Float32Array([1, 1]);
     const b = new Float32Array([0, 0]);
@@ -118,6 +155,19 @@ describe('SegmentMerger', () => {
     const segs = framesToSegments(labeled, 0.01, { minSec: 0.01, mergeGapSec: 0.05 });
     expect(segs.length).toBeGreaterThanOrEqual(1);
     expect(segs[0].label).toBe('speech');
+  });
+
+  test('frames filtered to one label split at time gaps (no file-long span)', () => {
+    const at = (t) => ({ t, label: 'speech', confidence: 1 });
+    const frames = [0, 0.1, 0.2, 5, 5.1, 5.2].map(at);
+    const segs = framesToSegments(frames, 0.1, { minSec: 0.1, mergeGapSec: 0.18 });
+    expect(segs.map((x) => [x.start, +x.end.toFixed(2)])).toEqual([[0, 0.3], [5, 5.3]]);
+    // A frame jump (0.17 s > 1.5 hops) starts a new raw segment; the 0.07 s
+    // gap between the two segments is within mergeGapSec, so mergeGaps joins them.
+    const near = framesToSegments([0, 0.1, 0.27, 0.37].map(at), 0.1, { minSec: 0.1, mergeGapSec: 0.18 });
+    expect(near.map((x) => [x.start, +x.end.toFixed(2)])).toEqual([[0, 0.47]]);
+    const far = framesToSegments([0, 0.1, 0.4, 0.5].map(at), 0.1, { minSec: 0.1, mergeGapSec: 0.18 });
+    expect(far).toHaveLength(2);
   });
 
   test('majoritySmooth reduces flicker', () => {
@@ -183,6 +233,27 @@ describe('FullAnalysis + Recommendation', () => {
     expect(analysis.duration).toBeCloseTo(0.8, 1);
     expect(analysis.visualLayers.length).toBeGreaterThan(5);
     expect(ENGINEER_PRESET_CATALOG).toContain(analysis.recommendedPreset);
+  });
+
+  test('speech and silence segments follow the audio, not one span each', () => {
+    // 14 s at 16 kHz: voice-like tone at 0-2 s and 10-12 s, digital silence elsewhere.
+    const sr = 16000;
+    const x = new Float32Array(14 * sr);
+    for (const [a, b] of [[0, 2], [10, 12]]) {
+      for (let i = a * sr; i < b * sr; i++) {
+        const t = i / sr;
+        x[i] = 0.3 * Math.sin(2 * Math.PI * 180 * t) + 0.15 * Math.sin(2 * Math.PI * 720 * t) + 0.08 * Math.sin(2 * Math.PI * 1500 * t);
+      }
+    }
+    const a = analyzeAudio([x], sr);
+    const covers = (segs, t) => segs.some((g) => g.start <= t && g.end >= t);
+    // Pure tones may classify as music or speech; either way the active class
+    // must have two regions and never span the 8 s of silence between them.
+    const active = [...a.speechSegments, ...a.musicSegments];
+    expect(covers(active, 1) && covers(active, 11)).toBe(true);
+    expect(covers(active, 6)).toBe(false);
+    expect(covers(a.silenceSegments, 6)).toBe(true);
+    expect(covers(a.silenceSegments, 11)).toBe(false);
   });
 
   test('recommendFromAnalysis hum bias', () => {

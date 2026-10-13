@@ -64,28 +64,40 @@ export function assertLocalModelAsset(urlOrPath, opts = {}) {
     if (origin && u.origin === origin) {
       return assertLocalModelAsset(u.pathname, opts);
     }
-    // localhost / 127.0.0.1 only for local desktop tooling
+    // localhost / 127.0.0.1 for local desktop tooling, same path allowlist.
     if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') {
-      return { ok: true, normalized: raw };
+      const local = assertLocalModelAsset(u.pathname, opts);
+      return local.ok ? { ok: true, normalized: `${u.origin}${local.normalized}` } : local;
     }
     return { ok: false, reason: 'cross-origin-forbidden' };
   }
 
-  // Relative / absolute path on same origin
-  const path = raw.startsWith('/') ? raw : `/${raw}`;
+  // Relative / absolute path on same origin. Decode first, then let the URL
+  // parser resolve dot segments (including %2e%2e), and compare the result:
+  // a literal '..' check missed encoded traversal, and a bare 'sam3' prefix
+  // admitted siblings such as /app/models/sam3evil/.
+  if (raw.includes('\\')) return { ok: false, reason: 'path-traversal' };
+  let decoded;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return { ok: false, reason: 'invalid-path' };
+  }
+  if (/(^|\/)\.\.(\/|$)/.test(decoded) || decoded.includes('\\')) {
+    return { ok: false, reason: 'path-traversal' };
+  }
+  // A network-path reference (`//host/...`) resolves to another origin.
+  const resolved = new URL(raw.startsWith('/') ? raw : `/${raw}`, 'http://local.invalid');
+  if (resolved.origin !== 'http://local.invalid') return { ok: false, reason: 'cross-origin-forbidden' };
+  const path = resolved.pathname;
   const lower = path.toLowerCase();
-  const allowed = ALLOWED_MODEL_PATH_PREFIXES.some((p) => {
-    const pref = p.startsWith('/') ? p : `/${p}`;
-    return lower === pref.replace(/\/$/, '')
-      || lower.startsWith(pref.endsWith('/') ? pref : `${pref}/`)
-      || lower.startsWith('/app/models/sam3');
-  });
+  // A file under an allowlisted directory, not the directory itself.
+  const allowed = ALLOWED_MODEL_PATH_PREFIXES
+    .filter((p) => p.endsWith('/'))
+    .map((p) => (p.startsWith('/') ? p : `/${p}`))
+    .some((p) => lower.startsWith(p) && lower.length > p.length);
   if (!allowed) {
     return { ok: false, reason: 'path-not-in-sam3-allowlist' };
-  }
-  // No path traversal
-  if (path.includes('..')) {
-    return { ok: false, reason: 'path-traversal' };
   }
   return { ok: true, normalized: path };
 }

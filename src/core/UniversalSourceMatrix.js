@@ -20,7 +20,7 @@
 
 import { SAMPLE_RATE } from './audio-config.js';
 import { FFT_SIZE_CREATOR } from './ring-buffer-constants.js';
-import { periodicHann, frameCount as stftFrameCount, STFT_PRESETS } from './stft-math.js';
+import { periodicHann, paddedFrameCount, paddedSample, STFT_PRESETS } from './stft-math.js';
 import { STFT_OWNERS } from './stft-budget.js';
 
 /** Default Creator-mode STFT (matches spectral-mask models: 4096 / 1024). */
@@ -28,6 +28,38 @@ export const USM_FFT_SIZE = STFT_PRESETS.usm.fftSize || FFT_SIZE_CREATOR;
 export const USM_HOP_SIZE = STFT_PRESETS.usm.hopSize;
 export const USM_MAX_SOURCES = 12;
 export const USM_DEFAULT_SOURCES = 6;
+
+/**
+ * Default ceiling on USM working memory. Every array scales with the whole
+ * spectrogram (frames × bins): STFT re/im/mag, NMF V and W·H, one mask per
+ * source plus the residual, and one PCM stem each — ~5.9 MB per second of
+ * 48 kHz audio at the default 6 sources, ~3.5 GB for 10 minutes. Beyond the
+ * budget separation refuses with a clear error instead of exhausting memory.
+ */
+export const USM_MAX_WORKING_BYTES = 768 * 1024 * 1024;
+
+/**
+ * Bytes {@link separateUniversal} allocates for an input of `length` samples.
+ * @param {number} length
+ * @param {USMConfig} [config]
+ */
+export function estimateUsmWorkingBytes(length, config = {}) {
+  const fftSize = config.fftSize || USM_FFT_SIZE;
+  const hopSize = config.hopSize || USM_HOP_SIZE;
+  const bins = Math.floor(fftSize / 2) + 1; // not `>> 1`: wraps at 2**31
+  const frames = paddedFrameCount(length, fftSize, hopSize);
+  const query = config.mode === 'query' && Array.isArray(config.queries) && config.queries.length;
+  // querySoftMasks renders at most USM_MAX_SOURCES queries (+ residual).
+  const stems = query
+    ? Math.min(USM_MAX_SOURCES, config.queries.length) + 1
+    : Math.max(2, Math.min(USM_MAX_SOURCES, config.numSources || USM_DEFAULT_SOURCES)) + 1;
+  // re, im, mag + NMF V and W·H (query mode needs fewer; count the larger),
+  // plus one mask per stem.
+  const spectral = (5 + stems) * frames * bins;
+  // Each stem's PCM is retained; maskToPcm also holds one `norm` accumulator
+  // of the same length and two fftSize scratch rows while it renders.
+  return 4 * (spectral + (stems + 1) * length + 2 * fftSize);
+}
 
 /** @typedef {{ mode?: 'auto'|'query', numSources?: number, queries?: string[], sampleRate?: number, fftSize?: number, hopSize?: number, nmfIterations?: number, seed?: number }} USMConfig */
 
@@ -95,8 +127,13 @@ function hann(n) {
 }
 
 /**
- * Forward STFT of mono PCM.
- * @returns {{ re: Float32Array, im: Float32Array, mag: Float32Array, frames: number, bins: number, fftSize: number, hopSize: number, win: Float32Array }}
+ * Forward STFT of mono PCM over edge-covering frames: the input is reflection-
+ * padded by fftSize − hopSize on both sides (stft-math paddedFrameCount), so
+ * {@link maskToPcm} reconstructs every input sample. Floor framing on the raw
+ * input dropped the tail: 5000 samples at 4096/1024 produced one frame and a
+ * unity mask returned the last 904 samples as silence (and sample 0, under
+ * the window's zero, as 0).
+ * @returns {{ re: Float32Array, im: Float32Array, mag: Float32Array, frames: number, bins: number, fftSize: number, hopSize: number, win: Float32Array, pad: number }}
  */
 export function computeStft(samples, fftSize = USM_FFT_SIZE, hopSize = USM_HOP_SIZE) {
   try {
@@ -107,8 +144,8 @@ export function computeStft(samples, fftSize = USM_FFT_SIZE, hopSize = USM_HOP_S
   const hop = hopSize;
   const bins = (N >> 1) + 1;
   const win = hann(N);
-  let frames = stftFrameCount(samples.length, N, hop);
-  if (frames === 0 && samples.length > 0) frames = 1;
+  const pad = N - hop;
+  const frames = paddedFrameCount(samples.length, N, hop);
   const re = new Float32Array(frames * bins);
   const im = new Float32Array(frames * bins);
   const mag = new Float32Array(frames * bins);
@@ -116,10 +153,9 @@ export function computeStft(samples, fftSize = USM_FFT_SIZE, hopSize = USM_HOP_S
   const fim = new Float32Array(N);
 
   for (let f = 0; f < frames; f++) {
-    const start = f * hop;
-    fre.fill(0); fim.fill(0);
-    const avail = Math.max(0, Math.min(N, samples.length - start));
-    for (let i = 0; i < avail; i++) fre[i] = samples[start + i] * win[i];
+    const start = f * hop - pad;
+    fim.fill(0);
+    for (let i = 0; i < N; i++) fre[i] = paddedSample(samples, start + i) * win[i];
     fftInPlace(fre, fim, false);
     const off = f * bins;
     for (let k = 0; k < bins; k++) {
@@ -128,7 +164,7 @@ export function computeStft(samples, fftSize = USM_FFT_SIZE, hopSize = USM_HOP_S
       mag[off + k] = Math.sqrt(fre[k] * fre[k] + fim[k] * fim[k]);
     }
   }
-  return { re, im, mag, frames, bins, fftSize: N, hopSize: hop, win };
+  return { re, im, mag, frames, bins, fftSize: N, hopSize: hop, win, pad };
 }
 
 /**
@@ -137,6 +173,7 @@ export function computeStft(samples, fftSize = USM_FFT_SIZE, hopSize = USM_HOP_S
  */
 export function maskToPcm(stft, mask, outLength) {
   const { re, im, frames, bins, fftSize: N, hopSize: hop, win } = stft;
+  const pad = stft.pad ?? 0;
   const out = new Float32Array(outLength);
   const norm = new Float32Array(outLength);
   const fre = new Float32Array(N);
@@ -154,9 +191,10 @@ export function maskToPcm(stft, mask, outLength) {
       fim[k] = -fim[N - k];
     }
     fftInPlace(fre, fim, true);
-    const start = f * hop;
-    const avail = Math.max(0, Math.min(N, outLength - start));
-    for (let i = 0; i < avail; i++) {
+    const start = f * hop - pad;
+    const lo = Math.max(0, -start);
+    const hi = Math.min(N, outLength - start);
+    for (let i = lo; i < hi; i++) {
       out[start + i] += fre[i] * win[i];
       norm[start + i] += win[i] * win[i];
     }
@@ -572,6 +610,17 @@ export function separateUniversal(samples, sampleRate = SAMPLE_RATE, config = {}
   const Kreq = Math.max(2, Math.min(USM_MAX_SOURCES, config.numSources || USM_DEFAULT_SOURCES));
   const iterations = Math.max(8, Math.min(80, config.nmfIterations || 32));
 
+  const maxBytes = config.maxWorkingBytes ?? USM_MAX_WORKING_BYTES;
+  const needBytes = estimateUsmWorkingBytes(pcm.length, { ...config, fftSize, hopSize });
+  if (needBytes > maxBytes) {
+    const perSecond = estimateUsmWorkingBytes(sr, { ...config, fftSize, hopSize });
+    const maxSec = Math.floor(maxBytes / Math.max(1, perSecond));
+    throw new RangeError(
+      `[VIP][USM] ${(pcm.length / sr).toFixed(0)} s needs ~${Math.ceil(needBytes / 1048576)} MB of working memory; `
+      + `source separation is limited to about ${maxSec} s at this setting.`,
+    );
+  }
+
   const stft = computeStft(pcm, fftSize, hopSize);
   const { mag, frames, bins } = stft;
 
@@ -697,6 +746,7 @@ export default {
   dbToGain,
   computeStft,
   maskToPcm,
+  estimateUsmWorkingBytes,
   querySpectralPrior,
   nmfSoftMasks,
   maskPartitionError,

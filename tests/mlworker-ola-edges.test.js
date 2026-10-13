@@ -16,7 +16,8 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 const SR = 48000;
-// The fused path applies fixed 8 ms edge fades; exclude them from identity checks.
+// The 8 ms edge windows are excluded from these identity checks; the full-edge
+// identity (fades removed) is pinned by tests/ml-worker-dsp.test.js.
 const FADE = Math.round(0.008 * SR);
 
 function loadWorker(userAgent) {

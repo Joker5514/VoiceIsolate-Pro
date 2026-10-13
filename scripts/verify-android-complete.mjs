@@ -43,6 +43,10 @@ const REQUIRED = [
 const FORBIDDEN = [
   'app/models/demucs_v4_fp32.onnx',
   'app/models/demucs_v4_quantized.onnx',
+  'app/models/sam_audio.onnx',
+  // Desktop-only SAM worker and FFmpeg must never reach the APK.
+  'sam-audio',
+  'ffmpeg-shared',
 ];
 
 const errors = [];

@@ -2,7 +2,7 @@
  * VoiceIsolate Pro — debug-audit.js
  * ==============================================
  * Full self-test & capability audit.
- * Call window.VIP_runAudit() from the console,
+ * Call `await window.VIP_runAudit()` from the console,
  * or it auto-runs in debug mode (window.VIP_DEBUG=true).
  *
  * Tests covered:
@@ -28,7 +28,7 @@
  *  20.  Misc:   window.VIP_PARAMS object present after slider change
  */
 
-(function VIP_AUDIT() {
+async function runVipAudit() {
   'use strict';
 
   const PASS  = '✅';
@@ -162,13 +162,10 @@
   }
 
   // ── 12. Preset application ────────────────────────────────────────────
+  // Presence only: applying a preset would overwrite the user's sliders and
+  // persist them, and the audit must never change the session.
   if (app && typeof app.applyPreset === 'function') {
-    try {
-      app.applyPreset('Voice Clarity');
-      log('pass', 12, 'applyPreset("Voice Clarity") executed without error');
-    } catch (e) {
-      log('fail', 12, 'applyPreset threw', e.message);
-    }
+    log('pass', 12, 'applyPreset is available (not applied: the audit leaves the session unchanged)');
   } else {
     log('warn', 12, 'VoiceIsolatePro instance not found — skipping preset test');
   }
@@ -214,16 +211,17 @@
   }
 
   // ── 17-18. Worker file reachability ───────────────────────────────────
-  const checkFile = (n, path, label) => {
-    fetch(path, { method: 'HEAD' })
-      .then(r => {
-        if (r.ok) log('pass', n, `${label} reachable (${r.status})`);
-        else      log('fail', n, `${label} returned ${r.status}`);
-      })
-      .catch(e => log('warn', n, `${label} fetch failed`, e.message));
-  };
-  checkFile(17, './ml-worker.js',    'ml-worker.js');
-  checkFile(18, './dsp-processor.js','dsp-processor.js');
+  const checkFile = (n, path, label) => fetch(path, { method: 'HEAD' })
+    .then(r => {
+      if (r.ok) log('pass', n, `${label} reachable (${r.status})`);
+      else      log('fail', n, `${label} returned ${r.status}`);
+    })
+    .catch(e => log('warn', n, `${label} fetch failed`, e.message));
+  // Awaited, so both rows are in the summary and the returned counts.
+  await Promise.all([
+    checkFile(17, './ml-worker.js',    'ml-worker.js'),
+    checkFile(18, './dsp-processor.js','dsp-processor.js'),
+  ]);
 
   // ── 19. slider-theme.css loaded ───────────────────────────────────────
   let themeLoaded = false;
@@ -272,16 +270,14 @@
   // Expose for programmatic use
   window.VIP_AUDIT_RESULTS = { results, passCount, failCount, warnCount };
   return window.VIP_AUDIT_RESULTS;
-})
+}
 
-// Expose callable version
-window.VIP_runAudit = function() {
-  // re-run synchronously and return results
-  return window.VIP_AUDIT_RESULTS || 'Run audit manually: paste debug-audit.js and call VIP_runAudit()';
-};
+// Each call re-runs the audit and resolves to its results (the old wrapper
+// was never invoked, so VIP_runAudit only ever returned a placeholder string).
+window.VIP_runAudit = runVipAudit;
 
 if (window.VIP_DEBUG) {
   document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => (window.VIP_runAudit && VIP_AUDIT()), 500);
+    setTimeout(runVipAudit, 500);
   });
 }

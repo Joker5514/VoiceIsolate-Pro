@@ -50,4 +50,20 @@ describe('TargetSpeaker local enrollment', () => {
     for (let i = 0; i < g.length; i++) if (g[i] > max) max = g[i];
     expect(max).toBeGreaterThan(0.5);
   });
+
+  test('diarization fusion needs two clusters; one cluster would lift every voice to 0.85', () => {
+    // 2 s of a 110 Hz voice, then 2 s of a 230 Hz voice.
+    const a = tone(sr, 2, 110, 0.25);
+    const b = tone(sr, 2, 230, 0.25);
+    const x = new Float32Array(a.length + b.length);
+    x.set(a); x.set(b, a.length);
+    const emb = TS.extractLocalVoiceprint(a, sr);
+    const one = [{ speakerId: 'S1', start: 0, end: 2 }, { speakerId: 'S1', start: 2, end: 4 }];
+    expect(TS.matchEmbeddingToDiarization(x, sr, emb, one)).toBeNull();
+    // The other cluster is listed first, so a "first cluster wins" bug would fail.
+    const two = [{ speakerId: 'S2', start: 2, end: 4 }, { speakerId: 'S1', start: 0, end: 2 }];
+    expect(TS.matchEmbeddingToDiarization(x, sr, emb, two)).toMatchObject({ speakerId: 'S1' });
+    const embB = TS.extractLocalVoiceprint(b, sr);
+    expect(TS.matchEmbeddingToDiarization(x, sr, embB, two)).toMatchObject({ speakerId: 'S2' });
+  });
 });

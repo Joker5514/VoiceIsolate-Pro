@@ -5,7 +5,7 @@
  */
 'use strict';
 
-import { openIdb, idbGet, idbPut, idbDelete, idbGetAll, idbTxDone } from './storage/openIdb.js';
+import { openIdb, idbGet, idbPut, idbDelete, idbGetAll, idbTxDone, idbTransaction } from './storage/openIdb.js';
 import { APP_CACHE_VERSION } from './storage/CacheManifest.js';
 
 const DB_NAME = 'vip-track-state';
@@ -59,7 +59,7 @@ export async function saveTrackState(fileId, patch) {
   if (!fileId) return null;
   try {
     const db = await open();
-    const tx = db.transaction(STORE, 'readwrite');
+    const tx = idbTransaction(db, STORE, 'readwrite');
     const store = tx.objectStore(STORE);
     const prev = (await idbGet(store, fileId)) || {
       fileId,
@@ -152,7 +152,7 @@ export async function deleteTrackState(fileId) {
   if (!fileId) return;
   try {
     const db = await open();
-    const tx = db.transaction(STORE, 'readwrite');
+    const tx = idbTransaction(db, STORE, 'readwrite');
     await idbDelete(tx.objectStore(STORE), fileId);
     await idbTxDone(tx);
   } catch { /* ignore */ }

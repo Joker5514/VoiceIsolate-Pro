@@ -32,6 +32,8 @@ const IPC = Object.freeze({
   SAM_WORKER_START: 'vip:sam-worker-start',
   SAM_WORKER_STOP: 'vip:sam-worker-stop',
   SAM_WORKER_CAPABILITIES: 'vip:sam-worker-capabilities',
+  SAM_WORKER_SEPARATE: 'vip:sam-worker-separate',
+  SAM_WORKER_CANCEL: 'vip:sam-worker-cancel',
 });
 
 // Passed by main via webPreferences.additionalArguments; see navigation-policy.cjs.
@@ -105,6 +107,15 @@ const vipDesktop = Object.freeze({
   samWorkerStart: (opts) => ipcRenderer.invoke(IPC.SAM_WORKER_START, opts || {}),
   samWorkerStop: () => ipcRenderer.invoke(IPC.SAM_WORKER_STOP),
   samWorkerCapabilities: () => ipcRenderer.invoke(IPC.SAM_WORKER_CAPABILITIES),
+  /**
+   * Separate mono PCM on the loopback worker via the main process.
+   * @param {{ jobId: string, audio: Float32Array, sampleRate: number, prompt?: string,
+   *   predictSpans?: boolean, rerankingCandidates?: number,
+   *   output?: 'target'|'residual'|'both', timeoutMs?: number }} req
+   */
+  samWorkerSeparate: (req) => ipcRenderer.invoke(IPC.SAM_WORKER_SEPARATE, req),
+  /** @param {string} jobId */
+  samWorkerCancel: (jobId) => ipcRenderer.invoke(IPC.SAM_WORKER_CANCEL, jobId),
 });
 
 contextBridge.exposeInMainWorld('vipDesktop', vipDesktop);

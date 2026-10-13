@@ -24,7 +24,8 @@ import {
   USM_MAX_SOURCES,
 } from '../core/UniversalSourceMatrix.js';
 import { SAMPLE_RATE } from '../core/audio-config.js';
-import { copyChannelsToAudioBuffer } from './ui-yield.js';
+import { hashPcmChannelsAsync } from '../core/content-hash.js';
+import { copyChannelsToAudioBuffer, createYieldBudget } from './ui-yield.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 
 /**
@@ -300,6 +301,11 @@ export class USMNode {
       ? channelData
       : [channelData];
     const mono = downmixChannels(channels);
+    const key = await this._buildCacheKey(mono, sampleRate || SAMPLE_RATE, cfg);
+    return this._processMono(mono, sampleRate, cfg, config.timeoutMs, key);
+  }
+
+  async _processMono(mono, sampleRate, cfg, timeoutMs, key) {
     this._mixtureMono = mono;
     this._sampleRate = sampleRate || SAMPLE_RATE;
 
@@ -319,7 +325,7 @@ export class USMNode {
           this._sampleRate,
           cfg,
           (p, label) => this.onProgress(p, label),
-          config.timeoutMs || 120000,
+          timeoutMs || 120000,
         );
       } catch (err) {
         console.warn('[VIP][USMNode] worker failed, main-thread fallback:', err?.message || err);
@@ -341,7 +347,7 @@ export class USMNode {
       method: s.method,
       mask: s.mask,
     }));
-    this._cacheKey = this._buildCacheKey(mono, this._sampleRate, cfg);
+    this._cacheKey = key;
 
     this.onProgress(1, 'complete');
     return {
@@ -367,7 +373,7 @@ export class USMNode {
       ? channelData
       : [channelData];
     const mono = downmixChannels(channels);
-    const key = this._buildCacheKey(mono, sampleRate || SAMPLE_RATE, cfg);
+    const key = await this._buildCacheKey(mono, sampleRate || SAMPLE_RATE, cfg);
     if (this.sources?.length && this._cacheKey === key) {
       return {
         sources: this.sources,
@@ -377,17 +383,15 @@ export class USMNode {
         cached: true,
       };
     }
-    return this.process(mono, sampleRate, config);
+    return this._processMono(mono, sampleRate, cfg, config.timeoutMs, key);
   }
 
-  _buildCacheKey(mono, sampleRate, cfg) {
+  async _buildCacheKey(mono, sampleRate, cfg) {
+    // Every sample is hashed so a different take of the same length never
+    // reuses stale stems; the pass yields on the UI time budget.
     const n = mono?.length || 0;
-    const mid = n ? mono[n >> 1] : 0;
-    const end = n ? mono[n - 1] : 0;
-    let sum = 0;
-    const step = Math.max(1, Math.floor(n / 64));
-    for (let i = 0; i < n; i += step) sum += Math.abs(mono[i]);
-    return `${sampleRate}|${n}|${sum.toFixed(4)}|${mid}|${end}|${cfg.mode}|${cfg.numSources}|${(cfg.queries || []).join(',')}`;
+    const digest = n ? await hashPcmChannelsAsync([mono], createYieldBudget()) : '0';
+    return `${sampleRate}|${n}|${digest}|${cfg.mode}|${cfg.numSources}|${(cfg.queries || []).join(',')}`;
   }
 
   /**

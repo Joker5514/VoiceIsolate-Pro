@@ -11,8 +11,9 @@ No audio data leaves the device. WebGPU execution provider is preferred; WASM is
 |------|---------|------|--------|
 | `silero_vad.onnx` | Voice Activity Detection (gate) | ~2.2 MB | ✅ Committed |
 | `demucs_v4_quantized.onnx` | Hybrid Demucs v4 source separation | ~83-149 MB | **Optional — not shipped**. Engineer Process uses BSRNN. |
-| `bsrnn_vocals.onnx` | Band-Split RNN vocals extraction | ~45 MB | ⚠️ Manual download required |
-| `rnnoise_suppressor.onnx` | Broadband noise suppression | ~180 KB | ⚠️ Manual download required |
+| `bsrnn_vocals.onnx` | Band-split vocal mask (custom, 600 steps on synthetic mixtures) | ~3.9 MB | ✅ Committed, hash-pinned |
+| `rnnoise_suppressor.onnx` | Noise-suppression mask (custom BiGRU, 600 steps on synthetic mixtures; not Mozilla RNNoise) | ~2.0 MB | ✅ Committed, hash-pinned |
+| `bsrnn_vocals_complex.onnx` | 4D complex BSRNN (offline processor) | — | ⬜ Not in the repository |
 | `universal-separator.onnx` | Optional AudioSep-class query universal separator | — | ⬜ Optional (not shipped). Classical USM NMF + text priors run without it. |
 
 ### Universal Source Matrix (USM)
@@ -38,22 +39,17 @@ git add public/app/models/*.onnx
 git commit -m "feat: add ONNX model binaries via LFS"
 ```
 
-### Option B — Manual placement (local dev / Vercel deploy)
-```bash
-# 1. Export Demucs v4 to ONNX
-pip install torch torchaudio demucs
-python scripts/export_demucs_onnx.py --output public/app/models/demucs_v4_quantized.onnx
+### Option B — Regenerate locally
+The shipped spectral models (`bsrnn_vocals.onnx`, `rnnoise_suppressor.onnx`) are
+trained and exported by `scripts/export_onnx_models.py`, which writes both files
+into the current directory: run `python ../../../scripts/export_onnx_models.py`
+from `public/app/models/`. Re-pin their sha256 in `src/core/ModelManifest.js` and
+run `pnpm models:validate` and `pnpm test:quality` after any change.
 
-# 2. Export BSRNN
-pip install torch
-python scripts/export_bsrnn_onnx.py --output public/app/models/bsrnn_vocals.onnx
-
-# 3. Export RNNoise
-python scripts/export_rnnoise_onnx.py --output public/app/models/rnnoise_suppressor.onnx
-
-# 4. Remove placeholder files
-rm public/app/models/*.placeholder
-```
+`scripts/export_bsrnn_onnx.py` exports the separate 4D complex BSRNN
+(`bsrnn_vocals_complex.onnx`, n_fft 2048, 44.1 kHz), not `bsrnn_vocals.onnx`.
+`scripts/export_demucs_onnx.py` documents the Demucs export, which is optional
+and unshipped.
 
 ### Option C — Pre-exported downloads
 See `models-manifest.json` for `source` URLs of each upstream model.

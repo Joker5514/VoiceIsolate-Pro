@@ -99,12 +99,12 @@ describe('ExportOrchestrator', () => {
 
     it('should validate format option', async () => {
       const orchestrator = new ExportOrchestrator(mockMixer);
-      await expect(orchestrator.export({ format: 'invalid' })).rejects.toThrow('Invalid format');
+      await expect(orchestrator.export({ format: 'invalid' })).rejects.toThrow('Unsupported format');
     });
 
-    it('should validate bitrate option', async () => {
+    it('refuses MP3: no encoder is bundled in this build (F23)', async () => {
       const orchestrator = new ExportOrchestrator(mockMixer);
-      await expect(orchestrator.export({ format: 'mp3', bitrate: 999 })).rejects.toThrow('Invalid bitrate');
+      await expect(orchestrator.export({ format: 'mp3' })).rejects.toThrow('exports WAV only');
     });
 
     it('should initialize worker on first export', async () => {
@@ -219,34 +219,10 @@ describe('ExportOrchestrator', () => {
       expect(results[1].filename).toBe('test-noise.wav');
     });
 
-    it('should support MP3 format with bitrate', async () => {
+    it('never sends an MP3 request to the encoder worker (F23)', async () => {
       const orchestrator = new ExportOrchestrator(mockMixer);
-      
-      const exportPromise = orchestrator.export({
-        stems: 'clean',
-        format: 'mp3',
-        bitrate: 320,
-        filename: 'test',
-      });
-      
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      const call = mockWorker.postMessage.mock.calls[0];
-      expect(call[0].format).toBe('mp3');
-      expect(call[0].bitrate).toBe(320);
-      
-      mockWorker.onmessage({
-        data: {
-          type: 'result',
-          requestId: call[0].requestId,
-          blob: new Blob(['mp3-data'], { type: 'audio/mpeg' }),
-          format: 'mp3',
-        },
-      });
-      
-      const result = await exportPromise;
-      expect(result.filename).toBe('test.mp3');
-      expect(result.format).toBe('mp3');
+      await expect(orchestrator.export({ stems: 'clean', format: 'mp3', filename: 'test' })).rejects.toThrow();
+      expect(mockWorker.postMessage.mock.calls.some(([m]) => m?.format === 'mp3')).toBe(false);
     });
 
     it('should call progress callback', async () => {

@@ -67,11 +67,12 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - **Edge loss in the fused ML STFT** - frames now start `N - hop` before the
   file and run past its end (reflect-padded), so the first and last ~40 ms of
-  the clean stem keep full window coverage (only the intentional 8 ms edge
-  fades remain) and the 50%-hop path no longer
+  the clean stem keep full window coverage and the 50%-hop path no longer
   modulates at the hop rate. `SpectralCleanup.js` had the same framing and
   also silenced up to `hop - 1` tail samples. See
-  `docs/audits/DSP_EXPORT_AUDIT_2026-10-11.md`.
+  `docs/audits/DSP_EXPORT_AUDIT_2026-10-11.md`. The fixed 8 ms edge fades
+  were removed afterwards (F26 in `docs/audits/REPAIR_AUDIT_2026-10-12.md`),
+  so a unit mask reconstructs the whole input, edge samples included.
 - **Engineer WAV export freeze** - encoding reads each channel once, runs in
   time-budgeted chunks, honours the export job's Cancel, rounds to the nearest
   16-bit code and refuses exports past the 4 GB RIFF limit.

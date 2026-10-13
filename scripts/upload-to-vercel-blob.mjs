@@ -1,112 +1,124 @@
 #!/usr/bin/env node
 // scripts/upload-to-vercel-blob.mjs
-// Uploads ONNX models in models/ to Vercel Blob storage and rewrites the
-// `vercel-blob` source entries in public/app/models-manifest.json.
+// Uploads ONNX models in public/app/models/ to Vercel Blob storage and points
+// the `vercel-blob` source entries in public/app/models-manifest.json at the
+// `/app/models/<filename>` proxy path (vercel.json maps that to the blob CDN;
+// the raw CDN URL is never stored, so blob stores can be swapped).
 //
-// NOTE: per the redundant-CDN design, manifest source[0].url stays as the
-// `/app/models/<filename>` proxy path (the rewrite in vercel.json maps that
-// to the actual blob CDN host). We do NOT store the raw blob CDN URL in the
-// manifest — the proxy lets us swap blob stores without rebuilding clients.
+// Explicit provisioning only — never run from server start-up:
+//   node scripts/upload-to-vercel-blob.mjs            # plan: no token, no network, no writes
+//   BLOB_READ_WRITE_TOKEN=… node scripts/upload-to-vercel-blob.mjs --yes
+//   … --yes --force                                   # re-upload blobs that already exist
 //
-// Required env var:
-//   BLOB_READ_WRITE_TOKEN  – Vercel Blob read/write token
-//
-// Usage:
-//   BLOB_READ_WRITE_TOKEN=vercel_blob_rw_... node scripts/upload-to-vercel-blob.mjs
-import { put } from '@vercel/blob';
+// Idempotent: a file whose blob already exists with the same size is skipped,
+// and the manifest is rewritten only when an entry actually changes. Every
+// file with a pinned sha256 in src/core/ModelManifest.js must match it before
+// it is uploaded.
+import { createHash } from 'crypto';
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MODELS_DIR = join(__dirname, '..', 'public', 'app', 'models');
-const MANIFEST_PATH = join(__dirname, '..', 'public', 'app', 'models-manifest.json');
+const ROOT = join(__dirname, '..');
+const MODELS_DIR = join(ROOT, 'public', 'app', 'models');
+const MANIFEST_PATH = join(ROOT, 'public', 'app', 'models-manifest.json');
 
-const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
-if (!TOKEN) {
-  console.error('ERROR: BLOB_READ_WRITE_TOKEN env var is not set.');
-  console.error('Usage: BLOB_READ_WRITE_TOKEN=vercel_blob_rw_... node scripts/upload-to-vercel-blob.mjs');
-  process.exit(1);
-}
-
-function loadManifest() {
-  if (!existsSync(MANIFEST_PATH)) {
-    throw new Error(`Manifest not found at ${MANIFEST_PATH}`);
-  }
-  return JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
-}
-
-function saveManifest(manifest) {
-  writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n');
-  console.log(`\nManifest updated: ${MANIFEST_PATH}`);
-}
+const args = new Set(process.argv.slice(2));
+const CONFIRMED = args.has('--yes');
+const FORCE = args.has('--force');
 
 function listOnnxFiles() {
-  if (!existsSync(MODELS_DIR)) {
-    console.error(`ERROR: models/ directory not found at ${MODELS_DIR}`);
-    process.exit(1);
-  }
+  if (!existsSync(MODELS_DIR)) throw new Error(`models directory not found at ${MODELS_DIR}`);
   return readdirSync(MODELS_DIR)
-    .filter(name => name.endsWith('.onnx'))
-    .filter(name => statSync(join(MODELS_DIR, name)).isFile());
+    .filter((name) => name.endsWith('.onnx'))
+    .filter((name) => statSync(join(MODELS_DIR, name)).isFile());
+}
+
+async function pinnedHashes() {
+  const { MODEL_MANIFEST } = await import(pathToFileURL(join(ROOT, 'src/core/ModelManifest.js')).href);
+  const byFile = {};
+  for (const entry of Object.values(MODEL_MANIFEST)) {
+    if (entry?.url && entry.sha256) byFile[entry.url.split('/').pop()] = entry.sha256;
+  }
+  return byFile;
 }
 
 async function main() {
-  const manifest = loadManifest();
-  if (!manifest.models) {
-    throw new Error('Manifest has no `models` map (expected schemaVersion 2)');
-  }
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
+  if (!manifest.models) throw new Error('Manifest has no `models` map (expected schemaVersion 2)');
+  const before = JSON.stringify(manifest);
+  const filenameToKey = {};
+  for (const [key, entry] of Object.entries(manifest.models)) filenameToKey[entry.filename] = key;
 
-  const onnxFiles = listOnnxFiles();
-  if (onnxFiles.length === 0) {
-    console.warn('WARN: no .onnx files found in models/, nothing to upload.');
+  const files = listOnnxFiles();
+  if (!files.length) {
+    console.warn('WARN: no .onnx files found, nothing to upload.');
     return;
   }
-
-  // Build filename → modelKey reverse lookup from manifest
-  const filenameToKey = {};
-  for (const [key, entry] of Object.entries(manifest.models)) {
-    filenameToKey[entry.filename] = key;
+  const pins = await pinnedHashes();
+  const plan = [];
+  for (const filename of files) {
+    const buffer = readFileSync(join(MODELS_DIR, filename));
+    const sha = createHash('sha256').update(buffer).digest('hex');
+    if (pins[filename] && pins[filename] !== sha) {
+      throw new Error(`${filename}: sha256 ${sha} does not match ModelManifest pin ${pins[filename]}; refusing to publish.`);
+    }
+    plan.push({ filename, buffer, sha, size: buffer.length, pinned: Boolean(pins[filename]) });
   }
 
-  for (const filename of onnxFiles) {
-    const filePath = join(MODELS_DIR, filename);
-    console.log(`Uploading ${filename} → vercel blob ...`);
-    const buffer = readFileSync(filePath);
-    const { url: blobUrl } = await put(filename, buffer, {
-      access: 'public',
-      contentType: 'application/octet-stream',
-      addRandomSuffix: false,
-      token: TOKEN,
-    });
-    console.log(`  raw blob URL: ${blobUrl}`);
+  if (!CONFIRMED) {
+    console.log('Plan (dry run — pass --yes to upload; no network calls were made):');
+    for (const p of plan) console.log(`  ${p.filename}  ${p.size} bytes  sha256 ${p.sha}${p.pinned ? ' (pinned)' : ''}`);
+    return;
+  }
+  const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!TOKEN) throw new Error('BLOB_READ_WRITE_TOKEN is not set.');
+  const { put, list } = await import('@vercel/blob');
 
-    const modelKey = filenameToKey[filename];
-    if (!modelKey) {
-      console.warn(`  (no manifest entry for ${filename}, skipping manifest update)`);
-      continue;
+  for (const p of plan) {
+    const existing = (await list({ prefix: p.filename, token: TOKEN })).blobs
+      .find((b) => b.pathname === p.filename);
+    // Equal size is not equal content: a same-sized model update must not be
+    // skipped, so a size match is confirmed by hashing the published bytes.
+    let same = false;
+    if (existing && existing.size === p.size && !FORCE) {
+      const res = await fetch(existing.url);
+      if (!res.ok) throw new Error(`${p.filename}: could not read the published blob (HTTP ${res.status}).`);
+      same = createHash('sha256').update(Buffer.from(await res.arrayBuffer())).digest('hex') === p.sha;
     }
-    // Per design: manifest stays as the proxy path so vercel.json rewrite handles it.
-    const proxyUrl = `/app/models/${filename}`;
-    const sources = manifest.models[modelKey].sources || [];
-    const blobSource = sources.find(s => s.provider === 'vercel-blob');
-    if (blobSource) {
-      blobSource.url = proxyUrl;
+    if (same) {
+      console.log(`skip ${p.filename} (already uploaded, sha256 matches)`);
     } else {
+      console.log(`upload ${p.filename} → vercel blob …`);
+      await put(p.filename, p.buffer, {
+        access: 'public',
+        contentType: 'application/octet-stream',
+        addRandomSuffix: false,
+        token: TOKEN,
+      });
+    }
+    const modelKey = filenameToKey[p.filename];
+    if (!modelKey) continue;
+    const proxyUrl = `/app/models/${p.filename}`;
+    const sources = manifest.models[modelKey].sources || [];
+    const blobSource = sources.find((s) => s.provider === 'vercel-blob');
+    if (blobSource) blobSource.url = proxyUrl;
+    else {
       sources.unshift({ provider: 'vercel-blob', url: proxyUrl });
       manifest.models[modelKey].sources = sources;
     }
   }
 
-  saveManifest(manifest);
-  console.log('\nNext steps:');
-  console.log('  1. Update vercel.json rewrite destination with your blob store hostname');
-  console.log('     (the /app/models/:model proxy maps to https://<store>.public.blob.vercel-storage.com/models/:model)');
-  console.log('  2. Commit public/app/models-manifest.json');
-  console.log('  3. Push to deploy');
+  if (JSON.stringify(manifest) !== before) {
+    writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+    console.log(`Manifest updated: ${MANIFEST_PATH} — review and commit it.`);
+  } else {
+    console.log('Manifest unchanged.');
+  }
 }
 
-main().catch(err => {
-  console.error('Upload failed:', err);
+main().catch((err) => {
+  console.error('Upload failed:', err?.message || err);
   process.exit(1);
 });

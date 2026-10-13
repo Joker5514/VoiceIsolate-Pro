@@ -168,6 +168,8 @@ let ingested = null;
 /** @type {File|Blob|null} original upload retained for video remux export */
 let sourceFile = null;
 let requestSeq = 0;
+/** Aborts the in-flight speaker detection when its request goes stale. */
+let speakerDetectAbort = null;
 /** True while a stems result is being installed (cooperative copies). */
 let stemsInstalling = false;
 let ingestSeq = 0;
@@ -393,6 +395,7 @@ function cancelLandingJob() {
   quickClean.setState('cancelling', 'Stopping safely… Your source file is unchanged.');
   cancelCurrent('user');
   requestSeq += 1;
+  speakerDetectAbort?.abort();
   ingestSeq += 1;
   if (worker && processingInFlight) { worker.terminate(); worker = null; quickClean.setBackend('probing'); }
   clearProcessWatch();
@@ -849,8 +852,13 @@ async function detectSpeakers(clean, sampleRate) {
   ui.speakerStatus.textContent = 'Detecting speakers…';
   speakerControls.clear();
   const seq = requestSeq;
+  // A stale run used to keep its DiarizationWorker (and a full-length copy of
+  // the old stem) alive until the 60 s timeout; only its result was dropped.
+  speakerDetectAbort?.abort();
+  const ctl = new AbortController();
+  speakerDetectAbort = ctl;
   try {
-    const { segments, speakers, method } = await detectSpeakersPipeline(clean, sampleRate);
+    const { segments, speakers, method } = await detectSpeakersPipeline(clean, sampleRate, { signal: ctl.signal });
     if (seq !== requestSeq) return;
     mixer.loadSpeakerSegments(segments);
     const count = speakerControls.render(speakers);
@@ -859,7 +867,7 @@ async function detectSpeakers(clean, sampleRate) {
       ? 'No distinct speakers detected.'
       : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`;
   } catch (err) {
-    if (seq !== requestSeq) return;
+    if (seq !== requestSeq || ctl.signal.aborted) return;
     console.error('[VIP][landing] diarization failed:', err);
     mixer.loadSpeakerSegments([]);
     ui.speakerStatus.textContent = `Speaker detection unavailable: ${err.message}`;
@@ -1116,6 +1124,7 @@ async function ingestFrom(file) {
   }
   const seq = ++ingestSeq;
   requestSeq += 1;
+  speakerDetectAbort?.abort();
   ingestInFlight = true;
   // The previous file's import analysis must not keep running or publish.
   if (autoAnalysisAbort) {
@@ -1364,6 +1373,7 @@ async function onProcess() {
     quickClean.setState('processing', currentJobLabel);
     setProcStage('separate', 0, currentJobLabel);
     const id = ++requestSeq;
+    speakerDetectAbort?.abort();
     // Full-length copies run in budgeted slices (0.3 s per copy at 15 min).
     const yieldBudget = createYieldBudget();
     // The full-content hash yields too: in one task it was 303 ms for 5 min
@@ -1403,6 +1413,7 @@ async function onProcess() {
       // on slow WASM devices with a misleading message (audit AUD-006).
       if (Date.now() - lastProcessProgress < PROCESS_STALL_MS) return;
       requestSeq += 1;
+      speakerDetectAbort?.abort();
       worker?.terminate();
       worker = null;
       failProcessing(new Error('The worker stopped responding. Retry Process.'));
@@ -1833,6 +1844,13 @@ function wireClearLocalData() {
     try {
       const { clearAllLocalData } = await import('/src/core/ClearLocalData.js');
       const result = await clearAllLocalData({ includeModels: true });
+      if (!result.complete) {
+        btn.disabled = false;
+        const msg = `Some local data could not be cleared (${result.failures.join('; ')}). Close other VoiceIsolate tabs and try again.`;
+        if (statusEl) statusEl.textContent = msg;
+        setStatus(msg, 'error');
+        return;
+      }
       if (statusEl) {
         statusEl.textContent = `Cleared ${result.filesRemoved} file(s), ${result.localStorageKeys} keys. Reloading…`;
       }

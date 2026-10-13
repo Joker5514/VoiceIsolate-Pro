@@ -1,230 +1,137 @@
 /**
  * VoiceIsolate Pro — Audio Encoder Worker (Layer 2: Workers)
  *
- * Web Worker that encodes audio data to WAV or MP3 format.
- * Runs encoding off the main thread to keep the UI responsive.
+ * Web Worker that encodes PCM to 16-bit WAV off the main thread.
  *
- * Supported Formats:
- * - WAV: PCM 16-bit (standard uncompressed format)
- * - MP3: MPEG-1 Layer 3 using lamejs (pure JS encoder)
+ * WAV is the only format. MP3 was advertised through an undeclared, unbundled
+ * `lamejs` import (with a CDN fallback hint, which CLAUDE.md forbids); no
+ * shipped page could reach it and the import could only fail. A request for
+ * any other format is rejected.
  *
  * Message Protocol:
- * - 'encode': { requestId, channels, sampleRate, format, bitrate }
- *   → 'result': { requestId, blob, format }
+ * - 'encode': { requestId, channels: Float32Array[], sampleRate, format: 'wav' }
+ *   → 'result': { requestId, blob, format, clippedSamples }
  *   → 'error': { requestId, error }
  *   → 'progress': { requestId, progress, stage }
  *
- * Architecture:
- * - Module worker (ES6 imports allowed)
- * - Stateless: each encode request is independent
- * - Transfers Float32Array buffers for zero-copy efficiency
- * - Returns Blob ready for download
+ * Input contract (rejected otherwise, never silently patched):
+ * - 1–8 channels, each a Float32Array, all the same non-zero length
+ * - every sample finite (NaN/±Infinity used to become silent zeros)
+ * - integer sample rate in [8000, 384000] Hz
+ * - the RIFF/data sizes fit their 32-bit fields
+ * Clipping policy: samples beyond ±1 are clamped to full scale and counted in
+ * `clippedSamples`, so callers can tell a clamped export from a clean one.
  */
 'use strict';
 
-/**
- * Encode Float32 samples to WAV format (PCM 16-bit).
- * @param {Float32Array[]} channels - Audio channel data
- * @param {number} sampleRate - Sample rate in Hz
- * @returns {Blob}
- */
-function encodeWAV(channels, sampleRate) {
-  const numChannels = channels.length;
-  const length = channels[0].length;
-  const bytesPerSample = 2; // 16-bit PCM
-  const blockAlign = numChannels * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = length * blockAlign;
-  const bufferSize = 44 + dataSize; // WAV header is 44 bytes
+export const WAV_LIMITS = Object.freeze({
+  maxChannels: 8,
+  minSampleRate: 8000,
+  maxSampleRate: 384000,
+  // RIFF chunk size (data + 36) must fit a uint32.
+  maxDataBytes: 0xFFFFFFFF - 36,
+});
 
-  const buffer = new ArrayBuffer(bufferSize);
+/**
+ * Validate PCM for WAV encoding; throws a TypeError/RangeError naming the fault.
+ * @param {unknown} channels
+ * @param {unknown} sampleRate
+ * @returns {{ numChannels: number, length: number }}
+ */
+export function validatePcm(channels, sampleRate) {
+  if (!Array.isArray(channels) || channels.length === 0 || channels.length > WAV_LIMITS.maxChannels) {
+    throw new TypeError(`Invalid channels: expected 1–${WAV_LIMITS.maxChannels} Float32Array channels.`);
+  }
+  if (!channels.every((ch) => ch instanceof Float32Array)) {
+    throw new TypeError('Invalid channels: every channel must be a Float32Array.');
+  }
+  const length = channels[0].length;
+  if (length === 0) throw new RangeError('Invalid channels: audio is empty.');
+  if (!channels.every((ch) => ch.length === length)) {
+    throw new RangeError(`Invalid channels: lengths differ (${channels.map((c) => c.length).join(', ')}).`);
+  }
+  if (!Number.isInteger(sampleRate) || sampleRate < WAV_LIMITS.minSampleRate || sampleRate > WAV_LIMITS.maxSampleRate) {
+    throw new RangeError(`Invalid sample rate ${sampleRate}: expected an integer from ${WAV_LIMITS.minSampleRate} to ${WAV_LIMITS.maxSampleRate} Hz.`);
+  }
+  const dataBytes = length * channels.length * 2;
+  if (dataBytes > WAV_LIMITS.maxDataBytes) {
+    throw new RangeError('Audio is too long for a WAV file (4 GiB limit).');
+  }
+  let nonFinite = 0;
+  for (const ch of channels) {
+    for (let i = 0; i < ch.length; i++) if (!Number.isFinite(ch[i])) nonFinite++;
+  }
+  if (nonFinite) throw new RangeError(`Audio contains ${nonFinite} non-finite samples.`);
+  return { numChannels: channels.length, length };
+}
+
+/**
+ * Encode validated Float32 PCM to a 16-bit WAV.
+ * @param {Float32Array[]} channels
+ * @param {number} sampleRate
+ * @returns {{ blob: Blob, clippedSamples: number }}
+ */
+export function encodeWAV(channels, sampleRate) {
+  const { numChannels, length } = validatePcm(channels, sampleRate);
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const dataSize = length * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
 
-  // WAV header (RIFF)
   writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true); // File size - 8
+  view.setUint32(4, 36 + dataSize, true);
   writeString(view, 8, 'WAVE');
-
-  // fmt chunk
   writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true); // fmt chunk size
-  view.setUint16(20, 1, true); // PCM format
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
   view.setUint16(22, numChannels, true);
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
   view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true); // bits per sample
-
-  // data chunk
+  view.setUint16(34, 16, true);
   writeString(view, 36, 'data');
   view.setUint32(40, dataSize, true);
 
-  // Interleave channels and convert Float32 → Int16
+  let clippedSamples = 0;
   let offset = 44;
   for (let i = 0; i < length; i++) {
     for (let ch = 0; ch < numChannels; ch++) {
-      const sample = Math.max(-1, Math.min(1, channels[ch][i] || 0)); // Clamp; NaN → 0
+      let sample = channels[ch][i];
+      if (sample > 1) { sample = 1; clippedSamples++; } else if (sample < -1) { sample = -1; clippedSamples++; }
       // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
-      const int16 = Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
-      view.setInt16(offset, int16, true);
+      view.setInt16(offset, Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF), true);
       offset += 2;
     }
   }
-
-  return new Blob([buffer], { type: 'audio/wav' });
+  return { blob: new Blob([buffer], { type: 'audio/wav' }), clippedSamples };
 }
 
-/**
- * Write ASCII string to DataView.
- * @param {DataView} view
- * @param {number} offset
- * @param {string} string
- */
 function writeString(view, offset, string) {
-  for (let i = 0; i < string.length; i++) {
-    view.setUint8(offset + i, string.charCodeAt(i));
-  }
-}
-
-/**
- * Encode Float32 samples to MP3 format using lamejs.
- * @param {Float32Array[]} channels - Audio channel data
- * @param {number} sampleRate - Sample rate in Hz
- * @param {number} bitrate - Bitrate in kbps (128, 192, 256, 320)
- * @param {(progress: number) => void} onProgress - Progress callback
- * @returns {Promise<Blob>}
- */
-async function encodeMP3(channels, sampleRate, bitrate, onProgress) {
-  // Dynamically import lamejs (it's a UMD module, but we'll use it as ES6)
-  // Note: lamejs must be installed via npm and bundled, or loaded from CDN
-  // For now, we'll use a dynamic import that works with the installed package
-  let lamejs;
-  try {
-    // Try to import from node_modules (works in bundled environments)
-    lamejs = await import('lamejs');
-  } catch {
-    // Fallback: try global (if loaded via script tag)
-    if (typeof self.lamejs !== 'undefined') {
-      lamejs = self.lamejs;
-    } else {
-      throw new Error('[VIP][AudioEncoderWorker] lamejs library not available. Install via: pnpm install lamejs');
-    }
-  }
-
-  const numChannels = channels.length;
-  const length = channels[0].length;
-  
-  // lamejs expects Int16 samples
-  const int16Channels = channels.map(ch => floatTo16BitPCM(ch));
-
-  // Create MP3 encoder
-  const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, bitrate);
-  const mp3Data = [];
-
-  // Encode in chunks (lamejs processes 1152 samples at a time for MPEG-1)
-  const samplesPerFrame = 1152;
-  const totalFrames = Math.ceil(length / samplesPerFrame);
-
-  for (let i = 0; i < length; i += samplesPerFrame) {
-    const frameNum = Math.floor(i / samplesPerFrame);
-    const remaining = length - i;
-    const frameSize = Math.min(samplesPerFrame, remaining);
-
-    // Extract frame from each channel
-    const leftFrame = int16Channels[0].subarray(i, i + frameSize);
-    const rightFrame = numChannels > 1 ? int16Channels[1].subarray(i, i + frameSize) : leftFrame;
-
-    // Encode frame
-    const mp3buf = mp3encoder.encodeBuffer(leftFrame, rightFrame);
-    if (mp3buf.length > 0) {
-      mp3Data.push(mp3buf);
-    }
-
-    // Report progress every 10 frames
-    if (frameNum % 10 === 0) {
-      onProgress(frameNum / totalFrames);
-    }
-  }
-
-  // Flush encoder
-  const mp3buf = mp3encoder.flush();
-  if (mp3buf.length > 0) {
-    mp3Data.push(mp3buf);
-  }
-
-  onProgress(1);
-
-  // Combine all MP3 chunks into a single Blob
-  return new Blob(mp3Data, { type: 'audio/mpeg' });
-}
-
-/**
- * Convert Float32Array to Int16Array (PCM conversion).
- * @param {Float32Array} float32Array
- * @returns {Int16Array}
- */
-function floatTo16BitPCM(float32Array) {
-  const int16Array = new Int16Array(float32Array.length);
-  for (let i = 0; i < float32Array.length; i++) {
-    const sample = Math.max(-1, Math.min(1, float32Array[i] || 0)); // Clamp; NaN → 0
-    int16Array[i] = Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
-  }
-  return int16Array;
+  for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker Message Handler
 // ─────────────────────────────────────────────────────────────────────────────
 
-self.onmessage = async (e) => {
-  const { type, requestId, channels, sampleRate, format, bitrate } = e.data;
-
-  if (type === 'encode') {
+if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typeof window === 'undefined') {
+  self.onmessage = (e) => {
+    const { type, requestId, channels, sampleRate, format } = e.data || {};
+    if (type !== 'encode') return;
     try {
-      // Validate inputs
-      if (!Array.isArray(channels) || channels.length === 0) {
-        throw new TypeError('Invalid channels array.');
+      if (format !== 'wav') {
+        throw new TypeError(`Unsupported format "${format}": this build encodes WAV only.`);
       }
-      if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
-        throw new TypeError('Invalid sample rate.');
-      }
-      if (!['wav', 'mp3'].includes(format)) {
-        throw new TypeError('Invalid format. Use "wav" or "mp3".');
-      }
-
-      let blob;
-      if (format === 'wav') {
-        self.postMessage({ type: 'progress', requestId, progress: 0.5, stage: 'encoding-wav' });
-        blob = encodeWAV(channels, sampleRate);
-        self.postMessage({ type: 'progress', requestId, progress: 1, stage: 'complete' });
-      } else if (format === 'mp3') {
-        self.postMessage({ type: 'progress', requestId, progress: 0, stage: 'encoding-mp3' });
-        blob = await encodeMP3(channels, sampleRate, bitrate || 192, (progress) => {
-          self.postMessage({ type: 'progress', requestId, progress, stage: 'encoding-mp3' });
-        });
-      }
-
-      // Send result back to main thread
-      self.postMessage({
-        type: 'result',
-        requestId,
-        blob,
-        format,
-      });
+      self.postMessage({ type: 'progress', requestId, progress: 0.5, stage: 'encoding-wav' });
+      const { blob, clippedSamples } = encodeWAV(channels, sampleRate);
+      self.postMessage({ type: 'progress', requestId, progress: 1, stage: 'complete' });
+      self.postMessage({ type: 'result', requestId, blob, format: 'wav', clippedSamples });
     } catch (error) {
       console.error('[VIP][AudioEncoderWorker] Encoding error:', error);
-      self.postMessage({
-        type: 'error',
-        requestId,
-        error: error.message || 'Encoding failed.',
-      });
+      self.postMessage({ type: 'error', requestId, error: error?.message || 'Encoding failed.' });
     }
-  }
-};
+  };
 
-// Signal that worker is ready
-self.postMessage({ type: 'ready' });
-
-console.log('[VIP][AudioEncoderWorker] Worker initialized and ready.');
-
-// Made with Bob
+  self.postMessage({ type: 'ready' });
+}

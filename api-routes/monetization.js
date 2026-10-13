@@ -4,10 +4,16 @@
  * Endpoints:
  *   POST /api/checkout          — Create Stripe Checkout session
  *   POST /api/webhook/stripe    — Handle Stripe webhooks (subscription events)
+ *   POST /api/license/claim     — Deliver a license for a paid Checkout session
+ *   POST /api/license/refresh   — Renew a token while the subscription is active
  *   POST /api/license/validate  — Validate a license token
  *   POST /api/license/activate  — Activate license after payment
  *   GET  /api/license/status    — Get current license status for a user
  *   POST /api/usage/record      — Record API usage (for API tier billing)
+ *
+ * Access is decided by the customer's current entitlement record in the
+ * durable store (api-routes/store.js, VIP_DATA_DIR), kept current by Stripe
+ * webhooks; tokens are short-lived identity credentials (entitlements.js).
  *
  * Environment variables required:
  *   STRIPE_SECRET_KEY           — Stripe secret key (sk_live_... or sk_test_...)
@@ -18,75 +24,52 @@
  *   STRIPE_PRICE_STUDIO_MONTHLY — Stripe price ID for Studio monthly
  *   STRIPE_PRICE_STUDIO_ANNUAL  — Stripe price ID for Studio annual
  *
- * Install: npm install stripe jsonwebtoken
+ *   VIP_DATA_DIR                — Persistent directory for the license store
  */
 
 import express from 'express';
-import crypto from 'crypto';
+import { getStore } from './store.js';
+import {
+  licenseSecret,
+  createLicenseToken,
+  verifyLicenseToken,
+  resolveEntitlement,
+  bearer,
+} from './entitlements.js';
 
 const router = express.Router();
 
+// Fail fast at start-up in production without a signing secret.
+licenseSecret();
 
-// ─── Simulated Database ───────────────────────────────────────────────────────
-const _licensesStore = new Map();
-const _usageStore = [];
-const db = {
-  licenses: {
-    upsert: async (data) => {
-      const existing = _licensesStore.get(data.customerId) || {};
-      _licensesStore.set(data.customerId, { ...existing, ...data });
-      return _licensesStore.get(data.customerId);
-    },
-    get: async (customerId) => {
-      return _licensesStore.get(customerId) || null;
-    }
-  },
-  usage: {
-    record: async (data) => {
-      const entry = { ...data, recordedAt: Math.floor(Date.now() / 1000) };
-      _usageStore.push(entry);
-      return entry;
-    },
-    list: async (email) => {
-      return email ? _usageStore.filter(e => e.email === email) : [..._usageStore];
-    }
+// ─── Persistence gate ────────────────────────────────────────────────────────
+// Licenses, the webhook ledger, the delivery outbox and usage live in the
+// durable store (api-routes/store.js). Without one (production without
+// VIP_DATA_DIR) these endpoints refuse instead of keeping paid state in RAM.
+function requireStore(req, res, next) {
+  const store = getStore();
+  if (!store) {
+    return res.status(503).json({ error: 'Licensing is unavailable: persistent storage is not configured.' });
   }
-};
-
-// ─── Simulated Email ──────────────────────────────────────────────────────────
-async function sendEmail(to, subject, token) {
-  console.log(`[Email] Sending to ${to}...`);
-  console.log(`[Email] Subject: ${subject}`);
-  // Token intentionally omitted from logs — contains full license grant
-  return true;
+  req.store = store;
+  next();
 }
 
 // ─── Lazy-load Stripe (only when keys are available) ─────────────────────────
 // Uses dynamic ESM import so the module doesn't crash when stripe is absent.
+let _stripeOverride = null;
 async function getStripe() {
+  if (_stripeOverride) return _stripeOverride;
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
   const { default: Stripe } = await import('stripe');
   return new Stripe(key, { apiVersion: '2023-10-16' });
 }
 
-
-// ─── License Token Utilities ──────────────────────────────────────────────────
-// Production: env var is required. Non-production: use a random per-process
-// secret so tokens never reuse a hardcoded value, and so preview deploys
-// without env vars still boot.
-const LICENSE_SECRET = (() => {
-  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('[monetization] LICENSE_JWT_SECRET is required in production.');
-  }
-  const random = crypto.randomBytes(48).toString('base64url');
-  console.warn(
-    '[monetization] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
-    'License tokens will not validate after restart. Set LICENSE_JWT_SECRET for stability.'
-  );
-  return random;
-})();
+/** Tests only: a stand-in Stripe client (never set in production code paths). */
+export function _setStripeForTests(stripe) {
+  _stripeOverride = stripe;
+}
 
 // Validate that a user-supplied redirect URL is safe. Accepts same-origin
 // relative paths (starting with "/") or absolute URLs whose origin matches
@@ -122,71 +105,6 @@ function normalizeCheckoutEmail(candidate) {
   return email;
 }
 
-// Simple in-memory idempotency cache for Stripe webhook event IDs. For
-// serverless or multi-instance production deployments, swap for Redis.
-const _processedWebhookEvents = new Map(); // eventId → expiresAt ms
-const WEBHOOK_DEDUP_TTL_MS = 24 * 60 * 60 * 1000; // 24h
-
-function hasProcessedEvent(eventId) {
-  if (!eventId) return false;
-  const exp = _processedWebhookEvents.get(eventId);
-  if (!exp) return false;
-  if (exp < Date.now()) { _processedWebhookEvents.delete(eventId); return false; }
-  return true;
-}
-
-function markEventProcessed(eventId) {
-  if (!eventId) return;
-  _processedWebhookEvents.set(eventId, Date.now() + WEBHOOK_DEDUP_TTL_MS);
-  // Periodic eviction to bound memory
-  if (_processedWebhookEvents.size > 10000) {
-    const now = Date.now();
-    for (const [id, exp] of _processedWebhookEvents) {
-      if (exp < now) _processedWebhookEvents.delete(id);
-    }
-  }
-}
-
-function createLicenseToken(userId, email, tier, daysValid = 365) {
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({
-    sub: userId,
-    email,
-    tier: tier.toLowerCase(),
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + (daysValid * 86400),
-    source: 'stripe',
-    jti: crypto.randomBytes(8).toString('hex'),
-  })).toString('base64url');
-  const sig = crypto
-    .createHmac('sha256', LICENSE_SECRET)
-    .update(`${header}.${payload}`)
-    .digest('base64url');
-  return `${header}.${payload}.${sig}`;
-}
-
-function validateLicenseToken(token) {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const expectedSig = crypto
-      .createHmac('sha256', LICENSE_SECRET)
-      .update(`${parts[0]}.${parts[1]}`)
-      .digest('base64url');
-    const expected = Buffer.from(expectedSig, 'base64url');
-    const got = Buffer.from(parts[2], 'base64url');
-    if (expected.length !== got.length) return null;
-    if (!crypto.timingSafeEqual(expected, got)) return null;
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    if (typeof payload.exp !== 'number' || Date.now() / 1000 > payload.exp) return null;
-    // Only accept tokens issued by the Stripe/license flow, not auth tokens
-    if (payload.source !== 'stripe') return null;
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
 // ─── Simple in-memory rate limiter ────────────────────────────────────────────
 function makeRateLimiter(maxReqs, windowMs) {
   const _map = new Map(); // ip → { count, windowStart }
@@ -213,6 +131,7 @@ function makeRateLimiter(maxReqs, windowMs) {
 }
 
 const activateLimiter    = makeRateLimiter(5,  60_000); // 5 activations per minute per IP
+const claimLimiter       = makeRateLimiter(10, 60_000); // 10 claims/refreshes per minute per IP
 const usageRecordLimiter = makeRateLimiter(30, 60_000); // 30 usage records per minute per IP
 const validateLimiter    = makeRateLimiter(20, 60_000); // 20 validations per minute per IP
 const statusLimiter      = makeRateLimiter(20, 60_000); // 20 status checks per minute per IP
@@ -239,7 +158,7 @@ const PRICE_IDS = {
 // still works without Bearer auth and may use request-body email if provided.
 // success/cancel URLs must be same-origin; anything else is silently dropped
 // in favour of the safe default.
-router.post('/checkout', async (req, res) => {
+router.post('/checkout', requireStore, async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     let payload = null;
@@ -247,7 +166,7 @@ router.post('/checkout', async (req, res) => {
       if (!authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Authentication required' });
       }
-      payload = validateLicenseToken(authHeader.slice(7));
+      payload = verifyLicenseToken(authHeader.slice(7));
       if (!payload || !payload.email) {
         return res.status(401).json({ error: 'Invalid or expired token' });
       }
@@ -300,7 +219,12 @@ router.post('/checkout', async (req, res) => {
 });
 
 // ─── POST /api/webhook/stripe ─────────────────────────────────────────────────
-router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+// Each event is applied in one store transaction together with its ledger
+// entry: a crash before the commit leaves nothing applied and Stripe's retry
+// reprocesses it; a committed event is acknowledged as a duplicate on retry,
+// across restarts. Events older than the record's last applied event are
+// ledgered but not applied (Stripe does not guarantee delivery order).
+router.post('/webhook/stripe', requireStore, async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -313,128 +237,156 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
     return res.status(400).json({ error: 'Invalid signature' });
   }
 
-  // Idempotency: Stripe retries on any non-2xx or network timeout. Short-
-  // circuit duplicate deliveries so we don't issue licenses or send emails
-  // multiple times for the same event.
-  if (hasProcessedEvent(event.id)) {
-    return res.json({ received: true, duplicate: true });
-  }
-
   try {
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        const tier = session.metadata?.tier || 'PRO';
-        const email = session.customer_email;
-        const customerId = session.customer;
-        const subscriptionId = session.subscription;
-
-        // Generate license token
-        const token = createLicenseToken(customerId, email, tier, 400);
-        console.log(`[Webhook] New subscription: ${email} → ${tier} (${subscriptionId})`);
-
-        await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
-        await sendEmail(email, 'Your VoiceIsolate Pro License', token);
-        break;
-      }
-
-      case 'customer.subscription.updated': {
-        const sub = event.data.object;
-        const priceId = sub.items?.data[0]?.price?.id;
-        const tier = PRICE_TO_TIER[priceId] || 'PRO';
-        const customerId = sub.customer;
-        console.log(`[Webhook] Subscription updated: ${customerId} → ${tier}`);
-        await db.licenses.upsert({ customerId, tier });
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object;
-        console.log(`[Webhook] Subscription cancelled: ${sub.customer}`);
-        await db.licenses.upsert({ customerId: sub.customer, tier: 'FREE' });
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        console.log(`[Webhook] Payment failed: ${invoice.customer_email}`);
-        // TODO: Send dunning email
-        break;
-      }
-    }
-
-    markEventProcessed(event.id);
-    res.json({ received: true });
+    const outcome = await req.store.transact((state) => {
+      if (state.processedEvents[event.id]) return 'duplicate';
+      applyStripeEvent(state, event);
+      state.processedEvents[event.id] = Date.now();
+      return 'applied';
+    });
+    res.json(outcome === 'duplicate' ? { received: true, duplicate: true } : { received: true });
   } catch (err) {
     console.error('[Webhook Processing Error]', err.message);
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
+/** Apply one verified Stripe event to the store draft (no I/O). */
+function applyStripeEvent(state, event) {
+  const at = Number(event.created) || Math.floor(Date.now() / 1000);
+  const upsert = (customerId, patch) => {
+    if (!customerId) return;
+    const prev = state.licenses[customerId];
+    if (prev && prev.lastEventAt && at < prev.lastEventAt) return; // stale, out of order
+    // event.created has one-second resolution, so a tie cannot order two
+    // events. A cancellation is never undone by a same-second event: an older
+    // "active" update delivered after the deletion must not restore access.
+    if (prev && at === prev.lastEventAt && prev.status === 'canceled' && patch.status !== 'canceled') return;
+    state.licenses[customerId] = { ...(prev || { customerId }), ...patch, lastEventAt: at, updatedAt: Date.now() };
+  };
+  const obj = event.data?.object || {};
+  switch (event.type) {
+    case 'checkout.session.completed': {
+      const email = obj.customer_details?.email || obj.customer_email || '';
+      upsert(obj.customer, {
+        email,
+        tier: (obj.metadata?.tier || 'PRO').toUpperCase(),
+        status: 'active',
+        subscriptionId: obj.subscription || null,
+      });
+      // Delivery is by Stripe-verified claim (POST /license/claim). The outbox
+      // records the issuance for a mail transport; no transport is configured,
+      // so nothing claims an email was sent.
+      state.outbox.push({ type: 'license-issued', customerId: obj.customer, email, at, status: 'pending' });
+      console.log(`[Webhook] New subscription: ${obj.customer} → ${obj.metadata?.tier || 'PRO'}`);
+      break;
+    }
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated': {
+      const priceId = obj.items?.data?.[0]?.price?.id;
+      const tier = PRICE_TO_TIER[priceId] || state.licenses[obj.customer]?.tier || 'PRO';
+      upsert(obj.customer, { tier, status: obj.status || 'active', subscriptionId: obj.id || null });
+      console.log(`[Webhook] Subscription ${obj.status}: ${obj.customer} → ${tier}`);
+      break;
+    }
+    case 'customer.subscription.deleted':
+      upsert(obj.customer, { tier: 'FREE', status: 'canceled' });
+      console.log(`[Webhook] Subscription cancelled: ${obj.customer}`);
+      break;
+    case 'invoice.payment_failed':
+      if (state.licenses[obj.customer]) upsert(obj.customer, { status: 'past_due' });
+      console.log(`[Webhook] Payment failed: ${obj.customer}`);
+      break;
+    case 'invoice.paid':
+    case 'invoice.payment_succeeded':
+      if (state.licenses[obj.customer]?.status === 'past_due') upsert(obj.customer, { status: 'active' });
+      break;
+    default:
+      break;
+  }
+}
+
+// ─── POST /api/license/claim ──────────────────────────────────────────────────
+// License delivery: the checkout success URL carries the session id. Stripe is
+// asked whether that session completed and was paid; the token is minted from
+// the webhook-maintained record, so an unpaid or unknown session gets nothing.
+router.post('/license/claim', claimLimiter, requireStore, async (req, res) => {
+  const sessionId = req.body?.sessionId;
+  if (typeof sessionId !== 'string' || !/^cs_[A-Za-z0-9_]{6,255}$/.test(sessionId)) {
+    return res.status(400).json({ error: 'sessionId required' });
+  }
+  try {
+    const stripe = await getStripe();
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const paid = session?.status === 'complete'
+      && ['paid', 'no_payment_required'].includes(session.payment_status);
+    if (!paid || !session.customer) return res.status(402).json({ error: 'Checkout is not complete.' });
+    const rec = (await req.store.read()).licenses[session.customer];
+    if (!rec) return res.status(409).json({ error: 'Payment received; the license is still being provisioned. Retry shortly.' });
+    if (!['active', 'trialing'].includes(rec.status)) return res.status(403).json({ error: 'Subscription is not active.' });
+    const token = createLicenseToken({ customerId: rec.customerId, email: rec.email, tier: rec.tier });
+    res.json({ token, tier: rec.tier, expiresAt: verifyLicenseToken(token).exp * 1000 });
+  } catch (err) {
+    console.error('[License Claim Error]', err.message);
+    res.status(502).json({ error: 'Could not verify the checkout session.' });
+  }
+});
+
+// ─── POST /api/license/refresh ────────────────────────────────────────────────
+router.post('/license/refresh', claimLimiter, requireStore, async (req, res) => {
+  const ent = await resolveEntitlement(req.store, bearer(req));
+  if (!ent) return res.status(401).json({ error: 'Invalid or expired token' });
+  if (!ent.active) return res.status(403).json({ error: 'Subscription is not active.', tier: ent.tier });
+  const token = createLicenseToken({ customerId: ent.customerId, email: ent.email, tier: ent.tier });
+  res.json({ token, tier: ent.tier, expiresAt: verifyLicenseToken(token).exp * 1000 });
+});
+
 // ─── POST /api/license/validate ───────────────────────────────────────────────
-router.post('/license/validate', validateLimiter, (req, res) => {
-  const { token } = req.body;
+// Valid means the signature checks out AND the customer's current record
+// entitles them; the tier reported is the record's, not the token's.
+router.post('/license/validate', validateLimiter, requireStore, async (req, res) => {
+  const { token } = req.body || {};
   if (!token) return res.status(400).json({ valid: false, error: 'Token required' });
-
-  const payload = validateLicenseToken(token);
-  if (!payload) return res.json({ valid: false, error: 'Invalid or expired token' });
-
+  const ent = await resolveEntitlement(req.store, token);
+  if (!ent) return res.json({ valid: false, error: 'Invalid or expired token' });
+  if (!ent.active) return res.json({ valid: false, tier: 'FREE', error: 'Subscription is not active' });
   res.json({
     valid: true,
-    tier: payload.tier.toUpperCase(),
-    email: payload.email,
-    expiresAt: payload.exp * 1000,
-    source: payload.source,
+    tier: ent.tier,
+    email: ent.email,
+    expiresAt: ent.payload.exp * 1000,
+    source: ent.payload.source,
   });
 });
 
 // ─── POST /api/license/activate ───────────────────────────────────────────────
-router.post('/license/activate', activateLimiter, (req, res) => {
-  const { token, email } = req.body;
+router.post('/license/activate', activateLimiter, requireStore, async (req, res) => {
+  const { token } = req.body || {};
   if (!token) return res.status(400).json({ success: false, error: 'Token required' });
-
-  const payload = validateLicenseToken(token);
-  if (!payload) return res.status(400).json({ success: false, error: 'Invalid or expired license' });
-
-  res.json({
-    success: true,
-    tier: payload.tier.toUpperCase(),
-    email: email || payload.email,
-    expiresAt: payload.exp * 1000,
-  });
+  const ent = await resolveEntitlement(req.store, token);
+  if (!ent) return res.status(400).json({ success: false, error: 'Invalid or expired license' });
+  if (!ent.active) return res.status(403).json({ success: false, error: 'Subscription is not active' });
+  res.json({ success: true, tier: ent.tier, email: ent.email, expiresAt: ent.payload.exp * 1000 });
 });
 
 // ─── GET /api/license/status ──────────────────────────────────────────────────
-router.get('/license/status', statusLimiter, (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.json({ tier: 'FREE', active: false });
-  }
-  const token = authHeader.slice(7);
-  const payload = validateLicenseToken(token);
-  if (!payload) return res.json({ tier: 'FREE', active: false });
-
+router.get('/license/status', statusLimiter, requireStore, async (req, res) => {
+  const ent = await resolveEntitlement(req.store, bearer(req));
+  if (!ent || !ent.active) return res.json({ tier: 'FREE', active: false });
   res.json({
-    tier: payload.tier.toUpperCase(),
+    tier: ent.tier,
     active: true,
-    email: payload.email,
-    expiresAt: payload.exp * 1000,
-    daysRemaining: Math.ceil((payload.exp - Date.now() / 1000) / 86400),
+    email: ent.email,
+    expiresAt: ent.payload.exp * 1000,
+    daysRemaining: Math.ceil((ent.payload.exp - Date.now() / 1000) / 86400),
   });
 });
 
 // ─── POST /api/usage/record ───────────────────────────────────────────────────
-router.post('/usage/record', usageRecordLimiter, async (req, res) => {
-  const { event: usageEvent, units = 1 } = req.body;
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const token = authHeader.slice(7);
-  const payload = validateLicenseToken(token);
-  if (!payload) return res.status(401).json({ error: 'Invalid token' });
+router.post('/usage/record', usageRecordLimiter, requireStore, async (req, res) => {
+  const { event: usageEvent, units = 1 } = req.body || {};
+  const ent = await resolveEntitlement(req.store, bearer(req));
+  if (!ent || !ent.active) return res.status(401).json({ error: 'Invalid token' });
 
   if (typeof usageEvent !== 'string' || usageEvent.length === 0 || usageEvent.length > 128 ||
       !/^[a-zA-Z0-9._:-]{1,128}$/.test(usageEvent)) {
@@ -445,8 +397,9 @@ router.post('/usage/record', usageRecordLimiter, async (req, res) => {
     return res.status(400).json({ error: 'units must be a positive integer (max 100000)' });
   }
 
-  const entry = await db.usage.record({ email: payload.email, event: usageEvent, units: safeUnits });
-  console.log(`[Usage] ${entry.email} — ${entry.event} × ${entry.units}`);
+  await req.store.transact((state) => {
+    state.usage.push({ customerId: ent.customerId, event: usageEvent, units: safeUnits, recordedAt: Math.floor(Date.now() / 1000) });
+  });
   res.json({ recorded: true, event: usageEvent, units: safeUnits });
 });
 

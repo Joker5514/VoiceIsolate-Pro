@@ -35,3 +35,10 @@ if (fs.existsSync(DEST)) {
 }
 fs.cpSync(path.join(ROOT, 'src'), DEST, { recursive: true });
 console.log('[vercel-build] Copied src/ → public/src/');
+
+// outputDirectory is public/, so the committed (unstamped) worker would ship
+// with a fixed generation; stamp it from the served tree like build.mjs does.
+const { computePrecache, stampServiceWorker } = require('./sw-precache.cjs');
+const sw = computePrecache({ root: path.join(ROOT, 'public') });
+stampServiceWorker(path.join(ROOT, 'public', 'app', 'sw.js'), sw);
+console.log(`[vercel-build] Stamped public/app/sw.js (${sw.cacheVersion}, ${sw.precacheUrls.length} precached)`);

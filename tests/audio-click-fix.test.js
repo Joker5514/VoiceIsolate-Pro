@@ -120,11 +120,12 @@ describe('Pipeline wiring (source guards)', () => {
     expect(chain).toMatch(/this\.removeClicks\(data, p\.clickSensitivity/);
   });
 
-  test('MLWorker uses colaSafeHop and OLA floor', () => {
+  test('MLWorker uses colaSafeHop and padded (edge-covering) OLA', () => {
     const ml = fs.readFileSync(path.join(__dirname, '../src/workers/MLWorker.js'), 'utf8');
     expect(ml).toMatch(/function colaSafeHop/);
     expect(ml).toMatch(/return colaSafeHop\(/);
-    expect(ml).toMatch(/floorNorm/);
+    expect(ml).toMatch(/const pad = N - hop/);
+    expect(ml).toMatch(/function mirrorIndex/);
     expect(ml).toMatch(/maskSmooth/);
   });
 

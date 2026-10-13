@@ -37,7 +37,12 @@ describe('audit 2026-10-06 truthfulness', () => {
     const exportBody = app.slice(app.indexOf('async _downloadProcessed()'), app.indexOf('await downloadWav(buf, \'processed-\''));
     expect(exportBody).toContain('this._renderProcessedMix(');
     const drive = app.slice(app.indexOf('async _saveProcessedToGoogleDrive()'), app.indexOf('async _downloadProcessed()'));
-    expect(drive).toContain('this._renderProcessedMix()');
+    // Drive exports the same cropped, validated snapshot as the WAV download.
+    expect(drive).toContain('this._exportRegion(fullBuf.duration)');
+    expect(drive).toContain('this._renderProcessedMix({ startSec: cropIn, endSec: cropOut })');
+    expect(exportBody).toContain('this._exportRegion(fullBuf.duration)');
+    const render = app.slice(app.indexOf('async _renderProcessedMix('), app.indexOf('async _saveProcessedToGoogleDrive()'));
+    expect(render).toContain('await this._validateMixSnapshot(mixBuf, signal)');
     expect(read('public/app/lib/analysis-workspace.js')).toContain('app._renderProcessedMix?.()');
   });
 });
