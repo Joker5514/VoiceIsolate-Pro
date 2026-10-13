@@ -18,9 +18,9 @@ environment does not have), **NOT VERIFIED** (no runtime evidence obtainable her
   storage, SAM/SAM3, native/CI and test realism. 16 FIXED and 3 PARTIAL with
   regressions, 1 BLOCKED, 1 owner decision, 28 reported with evidence (§6).
   UI handler and native/CI coverage is partial (§5).
-- 60 automated review threads on PR #846: 56 fixed, 4 answered with evidence
-  and no code change; 2 of those (purchase flow, reconciliation) are product
-  questions left open for the owner (§7).
+- First review round, 60 threads on PR #846: 56 fixed; 4 closed without a
+  code change (2 answered with evidence, 2 product questions left open for
+  the owner). Second round, 21 threads: see §7.
 - Jest 222 suites / 3788 tests pass (baseline 208 / 3603).
   `pnpm lint` 0 errors over every shipped first-party group. SI-SDR gate PASS.
 - Not production-ready as a release claim: see release blockers.
@@ -199,7 +199,7 @@ pnpm, pre-installed Chromium). Final-state runs are at the head listed in §8.
 | `node scripts/runtime-contracts-browser-check.cjs --fixtures …` | PASS 28/28 (Chromium): F03/F05/F06/F07/F08/F09/F20/F24 |
 | `node scripts/sw-offline-check.cjs` | PASS 17/17 (Chromium) |
 | `pnpm test:live / landing / engineer / calibration / quick-clean / privacy-runtime / shell-qa` | PASS (Chromium) |
-| `xvfb-run -a pnpm prod:verify --desktop` | PROD_VERIFY_RESULT |
+| `xvfb-run -a pnpm prod:verify --desktop` | PASS at `c63274c`: every static, browser and desktop step passed (shell-qa 388.9 s). `--network` NOT RUN. Android and Electron package steps NOT VERIFIED. Round-2 review fixes were re-checked with Jest, lint, validate and the live/landing/engineer/calibration smokes, not a full rerun |
 | `pnpm test:electron-security` (dev + packaged `electron-builder --dir`) | PASS |
 | Firestore rules matrix (`npx firebase emulators:exec …`, scratch dir) | PASS 22/22 fixed rules; original rules wrong on 2 cases |
 | `pnpm provenance:validate:strict` | FAIL (expected, unaltered): web `unknown`, Android/Windows `stale` |
@@ -299,14 +299,34 @@ upstream exports, hash-pinned.
 
 ## 7. Review threads (PR #846)
 
-60 cubic-dev-ai threads. Fixed: 56 (commits 1d2e9f9, af3f4b7, 6627b7e,
-f03b430, c63274c). Answered without a code change, with evidence: MLWorker
-short-clip reflection (bounded by design; a parity test now pins it to
-`stft-math`) and the USM worker timeout (input bounded at ~128 s; ~25×
-headroom). Two earlier follow-ups (reverb onset rule, Landing ONNX diarizer
-cancel) were answered with measurements. Open for the owner: the checkout
-success-page wiring and Stripe reconciliation (product decisions; purchase
-flow dormant).
+**First round, 60 cubic-dev-ai threads.** Fixed: 56 (commits 1d2e9f9,
+af3f4b7, 6627b7e, f03b430, c63274c). Closed without a code change: 4. Two were
+answered with evidence: the MLWorker short-clip reflection is bounded by
+design (a parity test now pins it to `stft-math`), and the USM worker timeout
+has ~25× headroom because input is bounded at ~128 s. Two are product
+decisions left open for the owner: the checkout success-page wiring and Stripe
+reconciliation (purchase flow dormant). Two earlier follow-ups (reverb onset
+rule, Landing ONNX diarizer cancel) were answered with measurements.
+
+**Second round, 21 threads** (review of the storage/SAM/report commits). All
+21 changed code, tests or docs:
+
+- Clear Local Data now also counts OPFS entries, Web Storage keys and Cache
+  API entries that survive.
+- A failed OPFS overwrite keeps the previous file.
+- Pack rollback hands reused rows back to the project that still links them,
+  and covers rows that failed after commit.
+- Reviving a row whose blob is gone stores the audio again.
+- Model-cache `versionchange` handlers close their own connection.
+- The SAM3 policy refuses `//host` paths.
+- The build drops a staged `sam_audio.onnx`, and probe failures report
+  `unknown`.
+- The debug audit awaits its worker checks and no longer applies a preset.
+- Engineer refreshes its list after an incomplete clear.
+- Test harness and documentation fixes.
+
+The read-only `navigator` P1 did not reproduce: these suites passed under
+Jest's Node environment. The helper was hardened anyway.
 
 ## 8. Git state
 
@@ -315,4 +335,4 @@ flow dormant).
 - Branch `ccr-58149caf-j14xcr`, draft PR #846. All changes on it are this
   repair's, except `cebcfb0` and `5ffeaa2`, which the owner applied from
   review suggestions; both are superseded by equivalent text in `6627b7e`.
-- `git diff --stat 0b020cc..HEAD`: DIFF_STAT.
+- `git diff --stat 0b020cc..HEAD`: 133 files changed, 7548 insertions(+), 1998 deletions(-).

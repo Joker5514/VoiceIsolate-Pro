@@ -43,6 +43,12 @@ export async function opfsWrite(relativePath, data) {
   if (!(data instanceof Blob || data instanceof ArrayBuffer || ArrayBuffer.isView(data))) {
     throw new TypeError('[VIP][OPFS] unsupported write payload');
   }
+  let existed = true;
+  try {
+    await getFileHandle(relativePath, false);
+  } catch {
+    existed = false;
+  }
   const handle = await getFileHandle(relativePath, true);
   let writable = null;
   try {
@@ -50,9 +56,10 @@ export async function opfsWrite(relativePath, data) {
     await writable.write(data);
     await writable.close();
   } catch (err) {
-    // Leave no empty or partial file behind for a failed write.
+    // abort() discards the swap file, so an existing file keeps its old
+    // contents; only an entry this attempt created is removed.
     try { await writable?.abort?.(); } catch { /* ignore */ }
-    await opfsDelete(relativePath);
+    if (!existed) await opfsDelete(relativePath);
     throw err;
   }
 }

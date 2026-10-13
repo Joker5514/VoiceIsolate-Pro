@@ -52,7 +52,9 @@ function main() {
   }
 
   // No loader consumes sam_audio.onnx (the manifest entry has no pinned hash
-  // and no prompt-input contract), so it is not staged for any package.
+  // and no prompt-input contract), so it is not staged for any package; drop
+  // the copy build.mjs made from public/.
+  fs.rmSync(path.join(BUILD, 'app', 'models', 'sam_audio.onnx'), { force: true });
   if (fs.existsSync(path.join(ROOT, 'public', 'app', 'models', 'sam_audio.onnx'))) {
     console.warn('[ensure-sam] public/app/models/sam_audio.onnx present but unused: no SAM-Audio ONNX loader exists');
   }

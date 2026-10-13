@@ -258,6 +258,8 @@ export async function importProjectPack(input) {
         projectId: proj.projectId,
         tags: f.tags,
       });
+      // Committed: from here on a failure must roll this row back too.
+      fileIds.push(meta.id);
       await FileLibrary.updateFileMeta(meta.id, {
         duration: f.duration,
         sampleRate: f.sampleRate,
@@ -265,14 +267,18 @@ export async function importProjectPack(input) {
         projectId: proj.projectId,
       });
       await ProjectStore.linkSourceFile(proj.projectId, meta.id);
-      fileIds.push(meta.id);
     }
   } catch (err) {
-    // No half-imported project: drop it. Rows already imported stay as plain
-    // library files (unlinked, so the track cap may evict them again).
+    // No half-imported project: drop it. importFile may have reused a row
+    // that another project links (same bytes) and moved its projectId here,
+    // so hand each row back to a project that still links it; rows nobody
+    // links become plain library files the track cap may evict again.
     try { await ProjectStore.deleteProject(proj.projectId); } catch { /* ignore */ }
+    let projects = [];
+    try { projects = await ProjectStore.listProjects(); } catch { /* ignore */ }
     for (const id of fileIds) {
-      try { await FileLibrary.updateFileMeta(id, { projectId: null }); } catch { /* ignore */ }
+      const owner = projects.find((p) => (p.sourceFileIds || []).includes(id))?.projectId || null;
+      try { await FileLibrary.updateFileMeta(id, { projectId: owner }); } catch { /* ignore */ }
     }
     throw err;
   }

@@ -205,15 +205,18 @@ function openDb() {
       }
     };
     req.onsuccess = () => {
-      _idb = req.result;
+      const db = req.result;
+      _idb = db;
       // Release the cache for Clear Local Data or another tab's upgrade; the
       // next read reopens it (a deleted cache is just a miss).
-      _idb.onversionchange = () => {
-        try { _idb?.close(); } catch { /* ignore */ }
-        _idb = null;
-        _idbPromise = null;
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* ignore */ }
+        if (_idb === db) {
+          _idb = null;
+          _idbPromise = null;
+        }
       };
-      resolve(_idb);
+      resolve(db);
     };
     req.onerror = () => { _idbPromise = null; reject(req.error); };
   });

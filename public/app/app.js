@@ -4432,6 +4432,9 @@ class VoiceIsolatePro {
       const { clearAllLocalData } = await import('/src/core/ClearLocalData.js');
       const result = await clearAllLocalData({ includeModels: true });
       if (!result.complete) {
+        // _clearFile rendered the list before the wipe; show what is left now
+        // (a dropped library database just reopens empty).
+        refreshLibraryList(this).catch(() => {});
         this.showNotification?.(
           `Some local data could not be cleared (${result.failures.join('; ')}). Close other VoiceIsolate tabs and try again.`,
           'error',

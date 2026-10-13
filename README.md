@@ -127,7 +127,8 @@ The shipping local stack is model-manifest driven and uses ONNX Runtime Web with
 
 Both spectral models are custom networks trained for 600 steps on synthetic
 mixtures (see `public/app/models/models-manifest.json`); they are single-frame
-and weak, and the quality gate (`pnpm test:quality`) is the measure of what they do.
+and weak. `pnpm test:quality` only guards against regressions on synthetic
+fixtures; it does not measure quality on real recordings.
 
 Large optional model families may be excluded from standard native packages because of memory/size constraints. See [`docs/guides/MODEL_DELIVERY.md`](docs/guides/MODEL_DELIVERY.md) for the actual delivery contract.
 

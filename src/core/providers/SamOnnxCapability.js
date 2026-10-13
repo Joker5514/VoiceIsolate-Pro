@@ -31,6 +31,17 @@ export async function probeSamOnnxModel(opts = {}) {
 }
 
 /**
+ * A 4xx answer is a definite absence; a missing fetch or a failed probe is
+ * not, so it is reported as unknown rather than absent.
+ * @param {{ present: boolean, reason?: string }} onnx
+ */
+function onnxStatus(onnx) {
+  if (onnx.present) return 'present-but-unsupported';
+  if (!onnx.reason || /^http-4\d\d$/.test(onnx.reason)) return 'absent';
+  return 'unknown';
+}
+
+/**
  * Platform capability summary for UI / diagnostics.
  */
 export async function getSamPlatformCapabilities(opts = {}) {
@@ -64,7 +75,7 @@ export async function getSamPlatformCapabilities(opts = {}) {
     androidOnnxSam: false,
     webOnnxSam: false,
     worker,
-    onnx: { ...onnx, supported: false, status: onnx.present ? 'present-but-unsupported' : 'absent' },
+    onnx: { ...onnx, supported: false, status: onnxStatus(onnx) },
     browserNativeSam: false,
     recommended: isDesktop ? 'local-worker-real-or-mock' : 'usm-query-onnx-fallback',
   };

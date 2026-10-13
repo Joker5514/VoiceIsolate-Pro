@@ -41,9 +41,10 @@ git commit -m "feat: add ONNX model binaries via LFS"
 
 ### Option B — Regenerate locally
 The shipped spectral models (`bsrnn_vocals.onnx`, `rnnoise_suppressor.onnx`) are
-trained and exported by `scripts/export_onnx_models.py`. Re-pin their sha256 in
-`src/core/ModelManifest.js` and run `pnpm models:validate` and `pnpm test:quality`
-after any change.
+trained and exported by `scripts/export_onnx_models.py`, which writes both files
+into the current directory: run `python ../../../scripts/export_onnx_models.py`
+from `public/app/models/`. Re-pin their sha256 in `src/core/ModelManifest.js` and
+run `pnpm models:validate` and `pnpm test:quality` after any change.
 
 `scripts/export_bsrnn_onnx.py` exports the separate 4D complex BSRNN
 (`bsrnn_vocals_complex.onnx`, n_fft 2048, 44.1 kHz), not `bsrnn_vocals.onnx`.

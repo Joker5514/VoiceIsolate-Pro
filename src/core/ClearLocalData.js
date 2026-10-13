@@ -77,33 +77,50 @@ export async function clearOpfsTree() {
       return { ok: true }; // no OPFS — treat as cleared
     }
     const root = await navigator.storage.getDirectory();
+    const errors = [];
     // Known VIP roots under OPFS; BlobStore keeps sources and stem packs in
     // library/, including blobs of rows removed from the library list.
     const dirs = ['library', 'vip', 'vip-blobs', 'vip-stems', 'vip-models', 'voiceisolate'];
     for (const name of dirs) {
       try {
         await root.removeEntry(name, { recursive: true });
-      } catch {
-        // missing is fine
+      } catch (err) {
+        if (err?.name !== 'NotFoundError') errors.push(`${name}: ${err?.message || err}`);
       }
     }
     // Also wipe flat keys with vip- prefix if supported
-    try {
-      // eslint-disable-next-line no-restricted-syntax
+    if (typeof root.entries === 'function') {
       for await (const [key, handle] of root.entries()) {
         if (/^vip/i.test(key) || /voiceisolate/i.test(key)) {
           try {
             await root.removeEntry(key, { recursive: handle.kind === 'directory' });
-          } catch { /* ignore */ }
+          } catch (err) {
+            errors.push(`${key}: ${err?.message || err}`);
+          }
         }
       }
-    } catch {
-      // entries() may be unsupported
     }
-    return { ok: true };
+    return errors.length ? { ok: false, error: errors.join('; ') } : { ok: true };
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
   }
+}
+
+function isVipKey(k) {
+  return VIP_LS_PREFIXES.some((p) => k.startsWith(p) || k.toLowerCase().includes('vip'));
+}
+
+/** @param {Storage|null} store @returns {number} VIP keys still present */
+function countVipKeys(store) {
+  if (!store) return 0;
+  let n = 0;
+  try {
+    for (let i = 0; i < store.length; i++) {
+      const k = store.key(i);
+      if (k && isVipKey(k)) n++;
+    }
+  } catch { /* storage unavailable */ }
+  return n;
 }
 
 /**
@@ -121,7 +138,7 @@ export function clearVipLocalStorage(store) {
   }
   let n = 0;
   for (const k of keys) {
-    if (VIP_LS_PREFIXES.some((p) => k.startsWith(p) || k.toLowerCase().includes('vip'))) {
+    if (isVipKey(k)) {
       try {
         ls.removeItem(k);
         n++;
@@ -190,22 +207,33 @@ export async function clearAllLocalData(opts = {}) {
   const sessionStorageKeys = clearVipSessionStorage();
 
   // 5. Optional caches API
+  const cacheFailures = [];
   try {
     if (typeof caches !== 'undefined' && caches.keys) {
-      const keys = await caches.keys();
-      for (const k of keys) {
-        if (/vip|voiceisolate|workbox/i.test(k)) {
-          try { await caches.delete(k); } catch { /* ignore */ }
+      const cacheKeyRe = /vip|voiceisolate|workbox/i;
+      for (const k of await caches.keys()) {
+        if (cacheKeyRe.test(k)) {
+          try { await caches.delete(k); } catch (err) { cacheFailures.push(`cache ${k}: ${err?.message || err}`); }
         }
       }
+      const left = (await caches.keys()).filter((k) => cacheKeyRe.test(k));
+      if (left.length && !cacheFailures.length) cacheFailures.push(`caches remain: ${left.join(', ')}`);
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    cacheFailures.push(`Cache API: ${err?.message || err}`);
+  }
 
   // A blocked or failed delete leaves data behind; callers must not report
-  // success unless everything went.
+  // success unless everything went. Web Storage is re-read rather than
+  // trusting removeItem, which can throw per key.
+  const lsLeft = countVipKeys(typeof localStorage !== 'undefined' ? localStorage : null);
+  const ssLeft = countVipKeys(typeof sessionStorage !== 'undefined' ? sessionStorage : null);
   const failures = [
     ...idb.filter((r) => !r.ok).map((r) => `${r.name}: ${r.error || 'failed'}`),
     ...(opfs.ok ? [] : [`OPFS: ${opfs.error || 'failed'}`]),
+    ...(lsLeft ? [`localStorage: ${lsLeft} key(s) remain`] : []),
+    ...(ssLeft ? [`sessionStorage: ${ssLeft} key(s) remain`] : []),
+    ...cacheFailures,
   ];
   return {
     filesRemoved,

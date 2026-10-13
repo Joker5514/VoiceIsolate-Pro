@@ -101,6 +101,18 @@ describe('S5 — OPFS is used only when it can write, and a failed write falls b
     const ok = await BlobStore.writeSourceBlob('fine-1', new Blob([new Uint8Array([9])]));
     expect(ok.backend).toBe('opfs');
   });
+
+  test('a failed overwrite keeps the existing file', async () => {
+    await Opfs.opfsWrite('library/keep-1.bin', new Blob([new Uint8Array([7, 7])]));
+    failWrites = /^keep-1\.bin$/;
+    try {
+      await expect(Opfs.opfsWrite('library/keep-1.bin', new Blob([new Uint8Array([1])]))).rejects.toThrow('quota');
+    } finally {
+      failWrites = null;
+    }
+    const kept = new Uint8Array(await (await Opfs.opfsReadBlob('library/keep-1.bin')).arrayBuffer());
+    expect([...kept]).toEqual([7, 7]);
+  });
 });
 
 describe('S2 — Remove from library', () => {
@@ -146,16 +158,62 @@ describe('S4 — the track cap never evicts project sources and evicts removed r
     expect(partial.manifest.files).toHaveLength(1);
   });
 
-  test('removed rows are evicted before listed library rows', async () => {
+  test('removed rows are evicted before listed rows, then the oldest listed row', async () => {
+    // Isolate the fixture: earlier cases left project rows that are never evicted.
+    for (const f of await FileLibrary.listLibraryFiles()) await FileLibrary.deleteFilePermanently(f.id);
     const removed = await FileLibrary.importFile(wav(50), { mode: 'library' });
     await FileLibrary.removeFromLibrary(removed.id);
-    const listed = await FileLibrary.importFile(wav(51), { mode: 'library' });
-    for (let i = 0; i < 6; i++) await FileLibrary.importFile(wav(60 + i), { mode: 'library' });
+    const listed = [];
+    for (let i = 0; i < 5; i++) listed.push(await FileLibrary.importFile(wav(60 + i), { mode: 'library' }));
+    // Six stored rows exceed the cap of five: the removed row goes first.
     expect(await FileLibrary.getFileMeta(removed.id)).toBeNull();
-    // Project sources from the tests above are untouched by the cap.
-    const projectRows = (await FileLibrary.listLibraryFiles()).filter((f) => f.projectId);
-    expect(projectRows.length).toBeGreaterThanOrEqual(7);
-    expect(listed).toBeTruthy();
+    for (const m of listed) expect(await FileLibrary.getFileMeta(m.id)).not.toBeNull();
+    const extra = await FileLibrary.importFile(wav(70), { mode: 'library' });
+    expect(await FileLibrary.getFileMeta(listed[0].id)).toBeNull();
+    for (const m of [...listed.slice(1), extra]) expect(await FileLibrary.getFileMeta(m.id)).not.toBeNull();
+  });
+});
+
+describe('pack rollback and blob revival', () => {
+  test('a failed pack import hands a reused source back to the project that links it', async () => {
+    const { openIdb } = await import('../src/core/storage/openIdb.js');
+    const projA = await ProjectStore.createProject({ name: 'A' });
+    const shared = await FileLibrary.importFile(wav(120), { mode: 'project', projectId: projA.projectId });
+    await ProjectStore.linkSourceFile(projA.projectId, shared.id);
+    const entries = [
+      { name: 'sources/s/a.wav', data: new Uint8Array(await wav(120).arrayBuffer()) },
+      { name: 'sources/n/b.wav', data: new Uint8Array(await wav(121).arrayBuffer()) },
+    ];
+    const pack = ProjectPack.buildPackBlob({
+      format: 'vippack', version: 1, project: { name: 'B' },
+      files: entries.map((e) => ({ path: e.name, mimeType: 'audio/wav' })),
+    }, entries);
+    // The second source cannot be stored anywhere: OPFS and IndexedDB fail.
+    const blobDb = await openIdb('vip-blob-store', 1, () => {});
+    const realTx = blobDb.transaction.bind(blobDb);
+    failWrites = /.*/;
+    blobDb.transaction = () => { throw new Error('quota'); };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(ProjectPack.importProjectPack(pack)).rejects.toThrow('quota');
+    } finally {
+      failWrites = null;
+      blobDb.transaction = realTx;
+      warn.mockRestore();
+    }
+    expect((await ProjectStore.listProjects()).map((p) => p.name)).not.toContain('B');
+    expect((await FileLibrary.getFileMeta(shared.id)).projectId).toBe(projA.projectId);
+  });
+
+  test('reviving a removed row whose blob is gone stores the audio again', async () => {
+    const bytes = wav(130);
+    const m = await FileLibrary.importFile(bytes, { mode: 'library' });
+    await FileLibrary.removeFromLibrary(m.id);
+    await BlobStore.deleteSourceBlob(m.blobRef);
+    const again = await FileLibrary.importFile(wav(130), { mode: 'library' });
+    expect(again.id).toBe(m.id);
+    const opened = await FileLibrary.openSourceFile(m.id);
+    expect(new Uint8Array(await opened.file.arrayBuffer())).toEqual(new Uint8Array(await bytes.arrayBuffer()));
   });
 });
 
@@ -210,5 +268,34 @@ describe('S1 — Clear Local Data', () => {
     expect(opfsRoot.map.has('library')).toBe(false);
     expect(result.complete).toBe(false);
     expect(result.failures).toEqual([expect.stringMatching(/^vip-projects: blocked/)]);
+  });
+
+  test('Web Storage and Cache API leftovers also make the clear incomplete', async () => {
+    globalThis.indexedDB.deleteDatabase = () => {
+      const req = {};
+      setTimeout(() => req.onsuccess?.(), 0);
+      return req;
+    };
+    const stuck = new Map([['vip-tier', 'studio'], ['other', 'x']]);
+    globalThis.localStorage = {
+      get length() { return stuck.size; },
+      key: (i) => [...stuck.keys()][i] ?? null,
+      removeItem: (k) => { if (k === 'vip-tier') throw new Error('denied'); stuck.delete(k); },
+    };
+    globalThis.caches = {
+      keys: async () => ['vip-app-1'],
+      delete: async () => { throw new Error('busy'); },
+    };
+    try {
+      const result = await Clear.clearAllLocalData({ includeModels: true });
+      expect(result.complete).toBe(false);
+      expect(result.failures).toEqual(expect.arrayContaining([
+        'localStorage: 1 key(s) remain',
+        expect.stringMatching(/^cache vip-app-1: busy/),
+      ]));
+    } finally {
+      delete globalThis.localStorage;
+      delete globalThis.caches;
+    }
   });
 });

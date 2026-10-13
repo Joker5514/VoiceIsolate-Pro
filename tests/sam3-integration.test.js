@@ -55,7 +55,9 @@ describe('SAM3 local-only policy', () => {
     '/app/models/sam3',
     '/app/models/sam3/',
     '/app/models/sam3/%zz',
-  ])('rejects encoded traversal and sibling paths: %s', (p) => {
+    '//example.com/app/models/sam3/model.onnx',
+    '///example.com/app/models/sam3/model.onnx',
+  ])('rejects encoded traversal, sibling and network paths: %s', (p) => {
     expect(sam3.assertLocalModelAsset(p).ok).toBe(false);
   });
 

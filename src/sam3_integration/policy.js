@@ -86,7 +86,10 @@ export function assertLocalModelAsset(urlOrPath, opts = {}) {
   if (/(^|\/)\.\.(\/|$)/.test(decoded) || decoded.includes('\\')) {
     return { ok: false, reason: 'path-traversal' };
   }
-  const path = new URL(raw.startsWith('/') ? raw : `/${raw}`, 'http://local.invalid').pathname;
+  // A network-path reference (`//host/...`) resolves to another origin.
+  const resolved = new URL(raw.startsWith('/') ? raw : `/${raw}`, 'http://local.invalid');
+  if (resolved.origin !== 'http://local.invalid') return { ok: false, reason: 'cross-origin-forbidden' };
+  const path = resolved.pathname;
   const lower = path.toLowerCase();
   // A file under an allowlisted directory, not the directory itself.
   const allowed = ALLOWED_MODEL_PATH_PREFIXES

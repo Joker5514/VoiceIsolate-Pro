@@ -35,13 +35,16 @@ function openDb() {
       upgradeModelIdb(req.result, ev.oldVersion || 0);
     };
     req.onsuccess = () => {
-      _idb = req.result;
-      _idb.onversionchange = () => {
-        try { _idb?.close(); } catch { /* ignore */ }
-        _idb = null;
-        _idbPromise = null;
+      const db = req.result;
+      _idb = db;
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* ignore */ }
+        if (_idb === db) {
+          _idb = null;
+          _idbPromise = null;
+        }
       };
-      resolve(_idb);
+      resolve(db);
     };
     req.onerror = () => { _idbPromise = null; reject(req.error); };
   });

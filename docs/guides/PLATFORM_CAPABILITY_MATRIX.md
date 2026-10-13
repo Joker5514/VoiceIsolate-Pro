@@ -9,7 +9,7 @@
 | Prompted Isolation (USM query) | ✅ offline | ✅ offline | ✅ offline |
 | Real SAM-Audio (Meta PyTorch worker) | ❌ page cannot reach it | ❌ | ⚪ IPC + CUDA/CPU; no shipping UI calls it yet |
 | SAM-Audio ONNX on-device | ❌ no loader | ❌ no loader (excluded from APK) | ❌ no loader |
-| Local SAM-Audio worker (loopback) | ⚪ user-run | ⚪ advanced (ADB reverse) | ✅ IPC spawn |
+| Local SAM-Audio worker (loopback) | ❌ page cannot reach it (no CORS, Origin refused) | ❌ same | ✅ IPC spawn + main-process proxy |
 | **SAM 3 vision sidecar** (`src/sam3_integration`) | ✅ bundled (flag OFF) | ✅ in WebView build (flag OFF) | ✅ in app + extraResources (flag OFF) |
 | SAM 3 real browser weights | ⚪ if `/app/models/sam3/*` | ⚪ if assets present | ⚪ if assets present |
 | Cloud/fal/Replicate audio or vision inference | ❌ forbidden | ❌ forbidden | ❌ forbidden |

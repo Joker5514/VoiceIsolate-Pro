@@ -240,8 +240,13 @@ export async function importFile(file, opts = {}) {
         processingStatus: existing.processingStatus || 'imported',
       };
       // Same fingerprint means identical bytes, so the stored blob is this
-      // file. Rewrite it only when the row has none.
-      if (!updated.blobRef) {
+      // file. Rewrite it only when the row has none or its blob is gone
+      // (a removed row can outlive its blob).
+      let stored = null;
+      if (updated.blobRef) {
+        try { stored = await readSourceBlob(updated.blobRef); } catch { stored = null; }
+      }
+      if (!stored) {
         updated.blobRef = await writeSourceBlob(updated.id, file);
       }
       const db = await openLibraryDb();

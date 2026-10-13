@@ -84,6 +84,13 @@ describe('vip-sam-runtime package in program', () => {
 
   test('ensure-sam-in-build stages package into build/', () => {
     const { spawnSync } = require('child_process');
+    // Seed what older builds staged, so the test proves they are removed.
+    for (const stale of ['build/sam-audio', 'build/ffmpeg-shared']) {
+      fs.mkdirSync(path.join(ROOT, stale), { recursive: true });
+      fs.writeFileSync(path.join(ROOT, stale, 'stale.txt'), 'stale');
+    }
+    fs.mkdirSync(path.join(ROOT, 'build/app/models'), { recursive: true });
+    fs.writeFileSync(path.join(ROOT, 'build/app/models/sam_audio.onnx'), 'stale');
     const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ensure-sam-in-build.mjs')], {
       encoding: 'utf8',
       cwd: ROOT,
@@ -94,6 +101,7 @@ describe('vip-sam-runtime package in program', () => {
     // never through build/ (the Capacitor webDir and app.asar).
     expect(fs.existsSync(path.join(ROOT, 'build/sam-audio'))).toBe(false);
     expect(fs.existsSync(path.join(ROOT, 'build/ffmpeg-shared'))).toBe(false);
+    expect(fs.existsSync(path.join(ROOT, 'build/app/models/sam_audio.onnx'))).toBe(false);
     expect(fs.existsSync(path.join(ROOT, 'build/packages/vip-sam-runtime/package.json'))).toBe(true);
     // SAM 3 vision on all three surfaces via build/
     expect(fs.existsSync(path.join(ROOT, 'build/app/models/sam3-runtime.marker.json'))).toBe(true);

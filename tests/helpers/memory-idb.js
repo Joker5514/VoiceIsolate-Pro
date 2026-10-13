@@ -23,35 +23,44 @@ function installMemoryIdb() {
       this.result = val;
       // Defer so callers can attach onsuccess after open()/get()/put().
       queueMicrotask(() => {
-        queueMicrotask(() => this.onsuccess?.({ target: this }));
+        queueMicrotask(() => {
+          this.onsuccess?.({ target: this });
+          this._onSettle?.();
+        });
       });
     }
   }
 
   class MemStore {
-    constructor(data) {
+    constructor(data, tx = null) {
       this._data = data;
+      this._tx = tx;
+    }
+    _req() {
+      const req = new MemReq();
+      this._tx?._track(req);
+      return req;
     }
     get(key) {
-      const req = new MemReq();
+      const req = this._req();
       req._ok(this._data.get(key));
       return req;
     }
     put(value, key) {
-      const req = new MemReq();
+      const req = this._req();
       const k = key !== undefined ? key : value?.id ?? value?.key ?? value?.projectId;
       this._data.set(k, value);
       req._ok(k);
       return req;
     }
     delete(key) {
-      const req = new MemReq();
+      const req = this._req();
       this._data.delete(key);
       req._ok(undefined);
       return req;
     }
     getAll() {
-      const req = new MemReq();
+      const req = this._req();
       req._ok([...this._data.values()]);
       return req;
     }
@@ -68,14 +77,30 @@ function installMemoryIdb() {
       this.onerror = null;
       this.onabort = null;
       this.error = null;
-      // Double microtask: openIdb/idbTxDone assign handlers after transaction().
-      queueMicrotask(() => {
-        queueMicrotask(() => this.oncomplete?.());
-      });
+      this._pending = 0;
+      this._done = false;
+      this._scheduleComplete();
+    }
+    // Like a real transaction: commit only once no request is outstanding and
+    // control has returned to the event loop (success callbacks may still
+    // issue requests), so `complete` never precedes a request's `success`.
+    _scheduleComplete() {
+      setTimeout(() => {
+        if (this._done || this._pending > 0) return;
+        this._done = true;
+        this.oncomplete?.({ target: this });
+      }, 0);
+    }
+    _track(req) {
+      this._pending++;
+      req._onSettle = () => {
+        this._pending--;
+        if (this._pending === 0) this._scheduleComplete();
+      };
     }
     objectStore(name) {
       if (!this.db._stores.has(name)) this.db._stores.set(name, new Map());
-      return new MemStore(this.db._stores.get(name));
+      return new MemStore(this.db._stores.get(name), this);
     }
   }
 
@@ -128,7 +153,12 @@ function installMemoryIdb() {
     },
   };
 
-  globalThis.navigator = { storage: undefined };
+  // Node >= 21 defines a read-only navigator getter; replace it explicitly.
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    writable: true,
+    value: { storage: undefined },
+  });
 }
 
 
