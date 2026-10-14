@@ -13,7 +13,11 @@ pnpm sam:setup
 hf auth login
 # or: set HF_TOKEN / HUGGING_FACE_HUB_TOKEN
 
-# 3) Production worker (real model required; mock blocked)
+# 3) Pin the weights (exact HF commit + SHA-256 of every file, checked
+#    against the Hub's own metadata). Production refuses unpinned weights.
+pnpm sam:pin
+
+# 4) Production worker (real model required; mock blocked)
 pnpm sam:worker -- --production --preload
 # or:
 set SAM_AUDIO_PRODUCTION=1
@@ -57,6 +61,7 @@ Deterministic mock separator keeps integration tests green without GPU/HF.
 | `SAM_AUDIO_REQUIRE_REAL` | off | same as production fail-closed |
 | `VIP_FFMPEG_SHARED_BIN` | auto | shared FFmpeg DLLs (Windows) |
 | `HF_TOKEN` | — | gated Meta weights |
+| `SAM_AUDIO_ALLOW_UNPINNED` | off | load real weights without a pin (unverified, logged) |
 
 ## Architecture notes
 

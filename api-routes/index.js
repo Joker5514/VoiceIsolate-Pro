@@ -21,7 +21,8 @@ import express from 'express';
 import monetizationRouter from './monetization.js';
 import syncRouter from './sync.js';
 import clientConfigHandler from './client-config.js';
-import { storeReadiness } from './store.js';
+import { getStore, storeReadiness } from './store.js';
+import { drainOutbox, getMailTransport, mailTransportStatus } from './mailer.js';
 
 const router = express.Router();
 
@@ -49,8 +50,8 @@ router.get('/client-config', clientConfigHandler);
 // ─── Health Check ─────────────────────────────────────────────────────────────
 // Liveness plus truthful readiness. "configured" means the variables are set;
 // nothing here contacts Stripe, so it never claims a provider is reachable.
-// Paid features need a signing secret, Stripe, and a durable store; no email
-// transport exists, so license delivery is by Stripe-verified claim only.
+// Paid features need a signing secret, Stripe, and a durable store. Email only
+// confirms the purchase; license delivery is by Stripe-verified claim.
 router.get('/health', (req, res) => {
   const store = storeReadiness();
   const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
@@ -64,7 +65,7 @@ router.get('/health', (req, res) => {
       license: { signing, ready: signing === 'configured' && store.ready },
       store,
       licenseDelivery: stripeConfigured && store.durable && signing === 'configured' ? 'claim' : 'unavailable',
-      email: 'not-configured',
+      email: mailTransportStatus(),
       sync: { ready: signing === 'configured' && store.ready, multiInstanceSafe: store.multiInstanceSafe },
       nim: 'not-available',
     },
@@ -142,3 +143,23 @@ router.use((err, req, res, _next) => {
 });
 
 export default router;
+
+/**
+ * Retry pending/failed-transient outbox mail on an interval (server.js calls
+ * this once at start). No-op without a transport or a store. Unref'd so it
+ * never holds the process open.
+ */
+export function startOutboxDrain(intervalMs = 60_000) {
+  if (!getMailTransport()) return null;
+  const timer = setInterval(() => {
+    try {
+      const store = getStore();
+      if (store) drainOutbox(store, getMailTransport()).catch((err) => console.error('[VIP] [mail] drain failed:', err?.message || err));
+    } catch (err) {
+      // e.g. VIP_DATA_DIR cannot be created: log and retry next tick, never crash.
+      console.error('[VIP] [mail] drain failed:', err?.message || err);
+    }
+  }, intervalMs);
+  timer.unref?.();
+  return timer;
+}
