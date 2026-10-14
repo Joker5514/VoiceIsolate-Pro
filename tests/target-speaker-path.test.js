@@ -97,7 +97,7 @@ describe('TargetSpeaker local voiceprint', () => {
     const ui = fs.readFileSync(path.join(__dirname, '../src/presentation/TargetSpeakerUI.js'), 'utf8');
     expect(ui).toMatch(/mel-band|local voiceprint/i);
     expect(ui).toMatch(/ECAPA speaker model '\s*\+\s*'when it is installed/);
-    expect(ui).toMatch(/ECAPA model not installed; using the basic voiceprint/);
+    expect(ui).toMatch(/ECAPA unavailable: .*using the basic voiceprint/);
     expect(ui).toMatch(/How to enroll|step-by-step|Focus on one voice/i);
   });
 });

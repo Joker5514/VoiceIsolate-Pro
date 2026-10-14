@@ -26,13 +26,17 @@ function ecapaEntry() {
   return {
     url: /url: '([^']+)'/.exec(block)[1],
     sha256: /sha256: '([0-9a-f]{64})'/.exec(block)[1],
-    io: { input: 'feats', output: 'embs' },
-    embeddingDims: 192,
+    io: {
+      input: /input: '([^']+)'/.exec(block)[1],
+      output: /output: '([^']+)'/.exec(block)[1],
+    },
+    embeddingDims: Number(/embeddingDims: (\d+)/.exec(block)[1]),
   };
 }
 
 function createSpeakerWorker(ort) {
   const posted = [];
+  const fetched = [];
   const sandbox = {
     console, crypto: crypto.webcrypto, Math, Promise, Error, Object, Array, Map, Set, JSON, Number, String, Boolean,
     Float32Array, Float64Array, Uint8Array, Uint16Array, Int16Array, ArrayBuffer,
@@ -40,6 +44,7 @@ function createSpeakerWorker(ort) {
     ort,
     postMessage: (m) => posted.push(m),
     async fetch(url) {
+      fetched.push(String(url));
       const file = path.join(ROOT, 'public', String(url).replace(/^\//, ''));
       if (!fs.existsSync(file)) return { ok: false, status: 404 };
       const buf = fs.readFileSync(file);
@@ -61,7 +66,7 @@ function createSpeakerWorker(ort) {
     await sandbox.onmessage({ data });
     return posted.slice(before);
   };
-  return { send, posted };
+  return { send, posted, fetched };
 }
 
 module.exports = { createSpeakerWorker, realOrt, ecapaEntry, ROOT };
