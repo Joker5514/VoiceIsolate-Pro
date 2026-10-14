@@ -21,6 +21,9 @@ It is copied and precached with the worker assets on Web, Android, and Desktop.
 `src/workers/MainsHumFilter.js` follows the same rule: MLWorker imports it to
 notch stationary 50/60 Hz hum out of each input channel once per Process,
 before the model chain. It has no control and is not an AudioWorklet.
+`src/workers/DeepFilterNet.js` is the same kind of helper: MLWorker imports it
+to run the DeepFilterNet3 composite model (feature extraction, deep filter and
+its own 960-point STFT/iSTFT) once per Process when that model is selected.
 
 ## Delivery path
 
@@ -29,6 +32,7 @@ src/workers/GateProcessor.js
 src/workers/DeEsserProcessor.js          ──► pnpm build ──► build/src/workers/*.js
 src/workers/EngineerSpectralControls.js  ──►              ──► build/src/workers/*.js
 src/workers/MainsHumFilter.js            ──►              ──► build/src/workers/*.js
+src/workers/DeepFilterNet.js             ──►              ──► build/src/workers/*.js
 public/app/dsp-processor.js              ──►              ──► build/app/dsp-processor.js
                                                     │
                     ┌───────────────────────────────┼───────────────────────────────┐

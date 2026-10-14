@@ -223,6 +223,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/workers/MLWorker.js` | 2 | Fetch → verify SHA-256 → cache in IndexedDB → run offline ONNX inference (overlap-add) → emit stems. |
 | `src/workers/DiarizationWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `diarization.js` — keeps segmentation off the main thread. |
 | `src/workers/SpectralCleanupWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `SpectralCleanup.js` — runs the offline NR/dereverb passes off the main thread. |
+| `src/workers/DeepFilterNet.js` | 2 | Classic-worker helper MLWorker imports for the `deepfilternet` strategy: DeepFilterNet3 features, ERB mask, deep filter, own 960-point STFT/iSTFT. |
 | `src/workers/AudioEncoderWorker.js` | 2 | Module worker that encodes stems to 16-bit WAV off the main thread (validated PCM, clipped-sample count); stateless, one request per job. No MP3 encoder is bundled. |
 | `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz; `pickAndIngestFile()` for Electron native open. |
 | `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. |
@@ -345,16 +346,23 @@ explicit architecture change.
 | BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned. Optional second stage.** |
 | Silero VAD (`silero_vad.onnx`) | Voice activity detection | ONNX, fp32 | ~2.2 MB | **Committed, hash-pinned** |
 | Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~2.3 MB | **Committed, hash-pinned** |
+| DeepFilterNet3 (`dfn3_enc` / `dfn3_erb_dec` / `dfn3_df_dec.onnx`, composite `deepfilternet3`) | Speech enhancement (ERB mask + deep filter) | ONNX, fp32 | ~8.6 MB (3 files) | **Committed, hash-pinned, upstream pretrained (MIT OR Apache-2.0). Opt-in Landing "Enhance Speech".** |
 | Demucs HT / v4 (`demucs_v4_quantized.onnx`) | Vocal-ratio waveform mask | ONNX, int8 | ~149 MB | **Optional / unshipped** in the default git tree |
 | Diarization ONNX bundle | Speaker embedding + clustering | ONNX, fp32 | ~3 files | **Optional Blob-hosted, hash-pinned when present** |
 
 **Default isolation chain:** `['bsrnn_vocals']` (`src/core/ml-defaults.js`).
 **Optional maximum chain:** `['bsrnn_vocals', 'rnnoise']` (user-selected maximum isolation).
+**Optional speech enhancement:** `['deepfilternet3']` (Landing outcome `enhance_speech`).
+`deepfilternet3` is a composite manifest entry (`composite: true`, `parts`) with no file of
+its own; the integrity validator checks its three part files. MLWorker's `deepfilternet`
+strategy runs `src/workers/DeepFilterNet.js` (libDF 0.5.6 port, pinned by
+`tests/deepfilternet.test.js`): its own 960-point STFT/iSTFT, a separate branch that does
+not claim the fused single-STFT invariant, in 10 s chunks with 3 s of re-run context.
 Demucs is optional and unshipped; do not document it as the default. Spectral-mask
 models (`bsrnn_vocals`, `rnnoise`) share one inference contract: `float32 [batch, 2049]`
 STFT magnitudes in → sigmoid mask out (fft 4096, hop 1024, Hann, 48 kHz). VAD models
-gate silence before diarization. Larger upgrades (DeepFilterNet INT8, MDX-Net INT8)
-are planned and must follow the same manifest + integrity flow.
+gate silence before diarization. Further upgrades (MDX-Net) must follow the same
+manifest + integrity flow.
 
 Shipped-model bytes are verified by `scripts/validate-model-integrity.mjs`
 (`pnpm models:validate`) against `ModelManifest.js`. Do not add a second manifest.
@@ -376,7 +384,11 @@ every listed pair at SI-SDR delta >= 0 dB and only grows. MLWorker first runs
 Process before the model chain (no slider; its detection FFTs are not a model
 STFT/iSTFT pass). Both shipped networks are single-frame and weak: the
 default chain still lowers SI-SDR on some noisy inputs. Do not describe them
-as more capable than the gate shows.
+as more capable than the gate shows. DeepFilterNet3 is the reverse case: on
+recorded speech it beats both chains by 5-9 dB SI-SDR, but it scores far below
+them on the gate's synthetic talker and suppresses synthetic whispers (it treats
+that synthesis as noise). Its gate metrics are pinned as regressions only; do
+not make it the default from gate numbers, and do not claim whisper safety.
 
 **Dual worker note:** `src/workers/MLWorker.js` is the canonical offline worker
 (Landing + `StemSeparation.js`). `public/app/ml-worker.js` is the legacy Engineer

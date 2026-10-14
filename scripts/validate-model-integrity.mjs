@@ -27,9 +27,15 @@ export function isExplicitlyOptional(entry) {
   return false;
 }
 
+/** A composite entry (e.g. deepfilternet3) owns no file; its parts are entries. */
+export function isCompositeModel(entry) {
+  return Boolean(entry && typeof entry === 'object' && entry.composite === true && entry.parts);
+}
+
 export function isRequiredShippedModel(entry) {
   if (!entry || typeof entry !== 'object') return false;
   if (isExplicitlyOptional(entry)) return false;
+  if (isCompositeModel(entry)) return false;
   return true;
 }
 
@@ -102,6 +108,16 @@ export function validateModelIntegrity(options = {}) {
 
   for (const id of Object.keys(manifest)) {
     const entry = manifest[id];
+    if (isCompositeModel(entry)) {
+      for (const partId of Object.values(entry.parts)) {
+        const part = manifest[partId];
+        if (!part) errors.push(`composite model ${id} names missing part ${partId}`);
+        else if (!isRequiredShippedModel(part) && !isExplicitlyOptional(entry)) {
+          errors.push(`shipped composite model ${id} part ${partId} is not a shipped file`);
+        }
+      }
+      continue;
+    }
     if (isRequiredShippedModel(entry)) continue;
     if (isExplicitlyOptional(entry)) {
       notices.push(`skip optional/unshipped model ${id}`);

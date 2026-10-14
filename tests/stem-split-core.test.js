@@ -101,6 +101,7 @@ describe('ModelManifest (Layer 1)', () => {
 
   test('model URLs are same-origin paths (never CDN)', () => {
     for (const id of manifest.MODEL_IDS) {
+      if (manifest.MODEL_MANIFEST[id].composite) continue; // no file; its parts are checked
       const { url } = manifest.MODEL_MANIFEST[id];
       expect(url.startsWith('/')).toBe(true);
       expect(url).not.toMatch(/^https?:/);
@@ -109,12 +110,20 @@ describe('ModelManifest (Layer 1)', () => {
 
   test('every shipped model has a pinned 64-char lowercase hex sha256', () => {
     for (const id of manifest.MODEL_IDS) {
+      if (manifest.MODEL_MANIFEST[id].composite) continue;
       const { sha256 } = manifest.MODEL_MANIFEST[id];
       // Skip models that don't have committed binaries yet (sha256 === null)
       if (sha256 !== null) {
         expect(sha256).toMatch(/^[0-9a-f]{64}$/);
       }
     }
+  });
+
+  test('a composite entry is valid only while every part is', () => {
+    const dfn = manifest.MODEL_MANIFEST.deepfilternet3;
+    expect(manifest.isValidEntry(dfn)).toBe(true);
+    expect(manifest.isValidEntry({ ...dfn, parts: { enc: 'missing_part' } })).toBe(false);
+    expect(manifest.isValidEntry({ ...dfn, parts: {} })).toBe(false);
   });
 
   test('getModel throws a descriptive error on unknown ids', () => {
@@ -136,6 +145,7 @@ describe('ModelManifest (Layer 1)', () => {
       const entry = manifest.MODEL_MANIFEST[id];
       // Skip blob-hosted, optional, or uncommitted models (not always in public/app/models/)
       if (
+        entry.composite ||
         entry.sha256 === null ||
         entry.sizeBytes === null ||
         entry.delivery === 'vercel_blob' ||

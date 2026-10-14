@@ -18,7 +18,7 @@ test('all enabled outcomes resolve to shipped files with matching hashes and imm
   const ui = new QuickCleanUI(dom.window.document);
   expect([...ui.select.options].every((option) => option.disabled)).toBe(true);
   ui.setBackend('wasm');
-  expect(ui.select.options).toHaveLength(3);
+  expect(ui.select.options).toHaveLength(4);
   for (const option of ui.select.options) {
     expect(option.disabled).toBe(false);
     ui.select.value = option.value;
@@ -26,12 +26,17 @@ test('all enabled outcomes resolve to shipped files with matching hashes and imm
     expect(plan.sampleRate).toBe(48000);
     expect(Object.isFrozen(plan)).toBe(true);
     expect(Object.isFrozen(plan.modelIds)).toBe(true);
-    for (const id of plan.modelIds) {
+    const files = plan.modelIds.flatMap((id) => (MODEL_MANIFEST[id].parts
+      ? Object.values(MODEL_MANIFEST[id].parts) : [id]));
+    let total = 0;
+    for (const id of files) {
       const entry = MODEL_MANIFEST[id];
+      total += entry.sizeBytes;
       const bytes = fs.readFileSync(path.join(__dirname, '../public', entry.url));
       expect(bytes.length).toBe(entry.sizeBytes);
       expect(createHash('sha256').update(bytes).digest('hex')).toBe(entry.sha256);
     }
+    expect(plan.downloadBytes).toBe(total);
   }
   const ids = [...dom.window.document.querySelectorAll('[id]')].map((element) => element.id);
   expect(new Set(ids).size).toBe(ids.length);
@@ -47,6 +52,13 @@ test.each([{ shipped: false }, { optional: true }, { sha256: null }, { strategy:
   const { MODEL_MANIFEST } = await import('../src/core/ModelManifest.js');
   const manifest = { ...MODEL_MANIFEST, bsrnn_vocals: { ...MODEL_MANIFEST.bsrnn_vocals, ...overrides } };
   expect(() => plans.resolveQuickCleanPlan('bsrnn_vocals', { manifest })).toThrow(/shipped/);
+});
+
+test.each([{ shipped: false }, { sha256: null }, { sizeBytes: 0 }])('rejects Enhance Speech when a DeepFilterNet3 part is %j', async (overrides) => {
+  const { MODEL_MANIFEST } = await import('../src/core/ModelManifest.js');
+  expect(plans.resolveQuickCleanPlan('enhance_speech').downloadBytes).toBe(1954042 + 3292397 + 3340803);
+  const manifest = { ...MODEL_MANIFEST, dfn3_erb_dec: { ...MODEL_MANIFEST.dfn3_erb_dec, ...overrides } };
+  expect(() => plans.resolveQuickCleanPlan('enhance_speech', { manifest })).toThrow(/shipped/);
 });
 
 test('unknown backend disables every choice; offline and unknown quota are explicit', async () => {

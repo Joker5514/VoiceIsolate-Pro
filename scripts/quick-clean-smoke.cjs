@@ -110,8 +110,8 @@ async function startServer() {
     await page.waitForFunction(() => !document.querySelector('#modelSelect').disabled);
     check('Landing loads with local runtime and security headers', await page.locator('#quickCleanPreflight').innerText());
     const options = await page.locator('#modelSelect option').evaluateAll((items) => items.map((item) => ({ value: item.value, text: item.textContent, disabled: item.disabled })));
-    assert.equal(options.length, 3); assert(options.every((option) => !option.disabled));
-    check('Only three shipped outcomes enabled', options);
+    assert.equal(options.length, 4); assert(options.every((option) => !option.disabled));
+    check('Only the four shipped outcomes enabled', options);
     const duplicates = await page.locator('[id]').evaluateAll((items) => { const ids = items.map((item) => item.id); return ids.filter((id, index) => ids.indexOf(id) !== index); });
     assert.deepEqual(duplicates, []);
     check('No duplicate DOM IDs', duplicates);
@@ -199,6 +199,15 @@ async function startServer() {
     await page.waitForFunction(() => ['processed', 'error'].includes(document.querySelector('#uploadPanel').dataset.state), null, { timeout: 180000 });
     assert.equal(await page.locator('#uploadPanel').getAttribute('data-state'), 'processed', await page.locator('#quickCleanStatus').innerText());
     check('Retry completes maximum-isolation chain', true);
+    // DeepFilterNet3 is a composite entry (three part sessions, its own STFT).
+    await page.selectOption('#modelSelect', 'enhance_speech');
+    await page.waitForFunction(() => !document.querySelector('#processBtn').disabled);
+    await page.locator('#processBtn').click();
+    await page.waitForFunction(() => ['processed', 'error'].includes(document.querySelector('#uploadPanel').dataset.state), null, { timeout: 180000 });
+    assert.equal(await page.locator('#uploadPanel').getAttribute('data-state'), 'processed', await page.locator('#quickCleanStatus').innerText());
+    const enhance = await page.evaluate(() => window.__quickCleanMessages.filter((msg) => msg.type === 'process').at(-1));
+    assert.deepEqual(enhance.modelIds, ['deepfilternet3']);
+    check('Enhance Speech (DeepFilterNet3) completes in the browser', enhance);
     await page.screenshot({ path: path.join(output, 'landing-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });

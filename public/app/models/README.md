@@ -13,6 +13,7 @@ No audio data leaves the device. WebGPU execution provider is preferred; WASM is
 | `demucs_v4_quantized.onnx` | Hybrid Demucs v4 source separation | ~83-149 MB | **Optional — not shipped**. Engineer Process uses BSRNN. |
 | `bsrnn_vocals.onnx` | Band-split vocal mask (custom, 600 steps on synthetic mixtures) | ~3.9 MB | ✅ Committed, hash-pinned |
 | `rnnoise_suppressor.onnx` | Noise-suppression mask (custom BiGRU, 600 steps on synthetic mixtures; not Mozilla RNNoise) | ~2.0 MB | ✅ Committed, hash-pinned |
+| `dfn3_enc.onnx`, `dfn3_erb_dec.onnx`, `dfn3_df_dec.onnx` | DeepFilterNet3 speech enhancement (Schröter et al.), the three graphs of upstream `models/DeepFilterNet3_onnx.tar.gz`. Selected as composite `deepfilternet3` (Landing **Enhance Speech**). License: MIT OR Apache-2.0; notice in `LICENSE-DeepFilterNet.txt`. | ~8.6 MB total | ✅ Committed, hash-pinned |
 | `bsrnn_vocals_complex.onnx` | 4D complex BSRNN (offline processor) | — | ⬜ Not in the repository |
 | `universal-separator.onnx` | Optional AudioSep-class query universal separator | — | ⬜ Optional (not shipped). Classical USM NMF + text priors run without it. |
 

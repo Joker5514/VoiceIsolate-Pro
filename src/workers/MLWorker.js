@@ -50,6 +50,9 @@ importScripts('/src/workers/EngineerSpectralControls.js');
 // Classic-worker helper: offline mains-hum notch run on each channel once per
 // Process before the model chain (src/workers/MainsHumFilter.js).
 importScripts('/src/workers/MainsHumFilter.js');
+// Classic-worker helper: DeepFilterNet3 feature extraction, deep filter and
+// its own 960-point STFT/iSTFT (src/workers/DeepFilterNet.js).
+importScripts('/src/workers/DeepFilterNet.js');
 
 // Canonical schema (keep in sync with ModelIdbSchema.js + ml-worker-fetch-cache.js)
 const IDB_NAME = 'vip-model-cache';
@@ -297,7 +300,8 @@ function actualBackendsFor(chain) {
   let backend = null;
   let mixed = false;
   for (const id of ids) {
-    const used = sessionBackend(id);
+    // A composite (DeepFilterNet3) reports the backend of its encoder session.
+    const used = sessionBackend(MANIFEST[id]?.parts?.enc || id);
     map[id] = used;
     if (backend == null) backend = used;
     else if (used !== backend) mixed = true;
@@ -634,7 +638,8 @@ async function warmupModels(modelIds) {
   await Promise.all(ids.map(async (id) => {
     const entry = MANIFEST[id];
     try {
-      await getSession(entry, entry.id, { quiet: true });
+      const parts = entry.parts ? Object.values(entry.parts).map((p) => MANIFEST[p]) : [entry];
+      for (const part of parts) await getSession(part, part.id, { quiet: true });
     } catch (err) {
       console.warn(`[VIP][MLWorker] Warmup failed for '${id}':`, err);
     }
@@ -1141,6 +1146,44 @@ function resampleLinear(samples, fromSr, toSr) {
   return out;
 }
 
+/** Load (or reuse) every part session of a composite entry, keyed by part id. */
+async function getCompositeSessions(entry, requestId) {
+  const sessions = Object.create(null);
+  for (const [part, partId] of Object.entries(entry.parts)) {
+    const partEntry = MANIFEST[partId];
+    if (!partEntry) throw new Error(`[VIP][MLWorker] '${entry.id}' part '${partId}' missing from manifest.`);
+    sessions[part] = await getSessionForRequest(partEntry, requestId);
+    checkCancelled(requestId);
+  }
+  return sessions;
+}
+
+/**
+ * DeepFilterNet3 strategy — speech enhancement with its own 960-point
+ * STFT/iSTFT (src/workers/DeepFilterNet.js). Runs once per Process, in
+ * chunks, yielding to the cancellation point between chunks.
+ */
+async function runDeepFilterNetEntry(entry, sessions, samples, onProgress, requestId) {
+  if (typeof self.runDeepFilterNet !== 'function') {
+    throw new Error('[VIP][MLWorker] DeepFilterNet helper not loaded.');
+  }
+  const run = async (part, feeds) => {
+    const tensors = {};
+    for (const [name, f] of Object.entries(feeds)) tensors[name] = new ort.Tensor('float32', f.data, f.dims);
+    const result = await queuedSessionRun(entry.parts[part], sessions[part], tensors, requestId);
+    const out = {};
+    for (const [name, t] of Object.entries(result)) {
+      out[name] = t.data;
+      out[`${name}__dims`] = t.dims;
+    }
+    return out;
+  };
+  return self.runDeepFilterNet(samples, run, {
+    onProgress,
+    yieldFn: () => cancellationPoint(requestId),
+  });
+}
+
 /**
  * Waveform strategy — Demucs vocal-ratio mask [1,1,T] applied to input PCM.
  * Processes fixed-length segments (default 344520 @ 44.1 kHz ≈ 7.8 s).
@@ -1441,13 +1484,17 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     if (!MANIFEST[id]) {
       throw new Error(`[VIP][MLWorker] Unknown model '${id}'. Did 'init' run?`);
     }
+    if (MANIFEST[id].strategy === 'deepfilternet-part') {
+      throw new Error(`[VIP][MLWorker] '${id}' is part of a composite model; select its composite entry instead.`);
+    }
   }
 
   // Spectral masks are trained on fixed bin frequencies; another rate would
   // shift every bin and mask the wrong band without any error. Hosts resample
   // to 48 kHz first (FileIngestion.resampleToCanonical).
   for (const entry of chain.map((id) => MANIFEST[id])) {
-    if (entry.strategy === 'spectral-mask' && entry.sampleRate && sampleRate !== entry.sampleRate) {
+    const fixedRate = entry.strategy === 'spectral-mask' || entry.strategy === 'deepfilternet';
+    if (fixedRate && entry.sampleRate && sampleRate !== entry.sampleRate) {
       throw new Error(`[VIP][MLWorker] '${entry.id}' expects ${entry.sampleRate} Hz input, got ${sampleRate} Hz. Resample before Process.`);
     }
   }
@@ -1527,7 +1574,9 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
           modelId: id,
           branch: entry.strategy === 'waveform' ? 'waveform-only' : entry.strategy,
         });
-        const session = await getSessionForRequest(entry, requestId);
+        const session = entry.strategy === 'deepfilternet'
+          ? await getCompositeSessions(entry, requestId)
+          : await getSessionForRequest(entry, requestId);
         checkCancelled(requestId);
         const channelProgress = new Float32Array(current.length);
         const next = await Promise.all(current.map(async (samples, ch) => {
@@ -1542,6 +1591,9 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
           }
           if (entry.strategy === 'waveform') {
             return runWaveformMask(entry, session, samples, sampleRate, progress, requestId);
+          }
+          if (entry.strategy === 'deepfilternet') {
+            return runDeepFilterNetEntry(entry, session, samples, progress, requestId);
           }
           throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
         }));
