@@ -1,0 +1,83 @@
+# Release runbook (owner actions)
+
+These steps need account access or signing keys, so no automated contributor
+can do them. Code-side readiness is tracked in [PLATFORM_SYNC.md](PLATFORM_SYNC.md).
+
+## 1. Unblock GitHub Actions
+
+Every job on every branch fails within about 2 s with no runner assigned
+(`runner_id: 0`, no steps run). The repository is public, so GitHub-hosted
+`ubuntu-latest` runners are free; minutes, matrix size and workflow edits are
+not the cause. This is an account-level hold, usually a failed payment or a
+spending-limit lock. Fix it under **GitHub → Settings → Billing and plans**
+(clear the failed payment or the lock), then re-run any workflow.
+
+A self-hosted runner is not recommended here: on a public repository it runs
+code from fork pull requests on your machine.
+
+`pnpm prod:verify` is the gate either way; until CI runs, run it locally:
+`xvfb-run -a pnpm prod:verify --network --desktop`.
+
+## 2. Android release signing
+
+The release workflow (`.github/workflows/release-build.yml`, job
+`bundle-release`) already builds a signed AAB. It needs four repository
+secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 release-keystore.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | key alias |
+| `ANDROID_KEY_PASSWORD` | key password |
+
+Create a keystore once and keep it backed up offline; losing it means you can
+never update the app under the same signature:
+
+```bash
+keytool -genkeypair -v -keystore release-keystore.jks -alias voiceisolate \
+  -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Local signed build: export `ANDROID_KEYSTORE_PATH`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`
+(`android/app/build.gradle` reads them), then `pnpm android:release` (APK)
+or `pnpm android:bundle` (AAB).
+
+An unsigned release APK is not an option: Android refuses to install it. Until
+a keystore exists the published asset stays the debug APK. Backup and device
+transfer are now disabled in the manifest (`allowBackup="false"` plus
+`data_extraction_rules.xml`), but the debug build is still debuggable.
+
+When the release APK replaces the debug one, rename the asset in
+`vercel.json` redirects, `scripts/validate-download-links.mjs`,
+`docs/DOWNLOADS.md` and this folder in the same change.
+
+## 3. Cut a correctly versioned release
+
+The current `latest` release is tagged `v25.0.3` but carries
+`VoiceIsolate-Pro-25.0.2-win-x64.exe` and a debug APK, so
+`pnpm downloads:validate` fails against it. Cut a new version rather than
+editing that release:
+
+```bash
+# 1. set "version": "25.1.0" in package.json (the source of truth)
+pnpm mobile:sync-version            # Android/iOS/Capacitor/PWA
+pnpm version:check
+# update the versioned download names in vercel.json and docs/DOWNLOADS.md
+xvfb-run -a pnpm prod:verify --desktop
+git tag v25.1.0 && git push origin v25.1.0   # triggers release-build.yml
+pnpm build:electron                          # NSIS on Windows, or Linux with wine + wine32
+```
+
+Upload the AAB/APK and `VoiceIsolate-Pro-25.1.0-win-x64.exe` to the `v25.1.0`
+release. Then regenerate `docs/releases/release-provenance.json` from the
+produced artifacts and run:
+
+```bash
+pnpm provenance:validate:strict
+pnpm downloads:validate
+```
+
+Push the version bump only together with the published release: CI's network
+tier checks that the latest release matches `package.json`.

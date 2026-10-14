@@ -2,7 +2,7 @@
 // Registers the root /sw.js shim with scope '/'; it importScripts() the
 // canonical /app/sw.js. Registering /app/sw.js itself at scope '/' needs a
 // Service-Worker-Allowed header no host sends, so it always threw SecurityError.
-// No shipping page calls registerSW() yet (see the header of /app/sw.js).
+// Landing and Engineer load /app/sw-boot.js, which calls registerSWAfterLoad().
 // Initializes the same-origin model loader (window.ModelCDNLoader).
 // All canonical model URLs must remain local /app/models/*.onnx paths.
 
@@ -13,24 +13,20 @@
  */
 export async function registerSW() {
   if (!('serviceWorker' in navigator)) return null;
+  // Web only: Electron's vip:// scheme has no service-worker privilege and
+  // already loads every file from the app bundle.
+  if (!/^https?:$/.test(globalThis.location?.protocol || '')) return null;
   try {
     // Capacitor / complete offline Android package: Service Workers frequently
     // break local asset loads (COEP isolation + WebView asset loader). Prefer
-    // direct asset fetch so the sideload APK boots reliably.
+    // direct asset fetch so the sideload APK boots reliably. The APK always
+    // runs inside Capacitor (bridge + VoiceIsolatePro/<ver> Android UA); a
+    // fetch probe for /vip-android.json logged a 404 on every web page load.
     const isNative = Boolean(
       globalThis.Capacitor?.isNativePlatform?.()
       || /VoiceIsolatePro\/[\d.]+\s*Android/i.test(navigator.userAgent || ''),
     );
-    let isAndroidPackage = false;
-    if (!isNative) {
-      try {
-        const res = await fetch('/vip-android.json', { cache: 'no-store' });
-        isAndroidPackage = res.ok;
-      } catch {
-        isAndroidPackage = false;
-      }
-    }
-    if (isNative || isAndroidPackage) {
+    if (isNative) {
       try {
         const regs = await navigator.serviceWorker.getRegistrations();
         await Promise.all(regs.map((r) => r.unregister()));
@@ -63,6 +59,16 @@ export async function registerSW() {
     console.warn('[sw-register] SW registration failed:', err.message);
     return null;
   }
+}
+
+/**
+ * Register after the page's `load` event so the precache never competes with
+ * first paint or boot work. Fire-and-forget: failures only log.
+ */
+export function registerSWAfterLoad() {
+  const run = () => { registerSW(); };
+  if (document.readyState === 'complete') setTimeout(run, 0);
+  else window.addEventListener('load', run, { once: true });
 }
 
 export async function initModelLoader({
