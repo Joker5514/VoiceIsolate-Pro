@@ -72,7 +72,11 @@ if (init.type !== 'ready') {
   console.error(`[speaker-eval] ECAPA unavailable: ${init.reason} (run pnpm models:fetch-ecapa)`);
   process.exit(1);
 }
-const call = async (msg) => (await worker.send(msg)).find((m) => m.type === 'result' || m.type === 'error');
+const call = async (msg) => {
+  const result = (await worker.send(msg)).find((m) => m.type === 'result' || m.type === 'error');
+  if (!result || result.type === 'error') throw new Error(result?.message || 'speaker worker returned no result');
+  return result;
+};
 
 const enrollE = {};
 const enrollM = {};
