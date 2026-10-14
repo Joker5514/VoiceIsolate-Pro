@@ -18,6 +18,8 @@ describe('vip-sam-runtime package in program', () => {
       'services/sam-audio/server.py',
       'services/sam-audio/torchcodec_bootstrap.py',
       'services/sam-audio/sam_hub_compat.py',
+      'services/sam-audio/weights_integrity.py',
+      'services/sam-audio/weights.lock.json',
       'services/sam-audio/requirements.txt',
       'scripts/install-sam-runtime.mjs',
       'scripts/sam-production-setup.mjs',
