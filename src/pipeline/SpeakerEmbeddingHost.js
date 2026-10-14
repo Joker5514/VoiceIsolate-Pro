@@ -29,7 +29,10 @@ export function createSpeakerEmbeddingHost(opts = {}) {
 
   function fail(reason) {
     unavailableReason = reason;
-    for (const p of pending.values()) p.reject(new Error(reason));
+    for (const [requestId, p] of pending) {
+      clearTimeout(p.timer);
+      p.reject(new Error(reason));
+    }
     pending.clear();
   }
 
