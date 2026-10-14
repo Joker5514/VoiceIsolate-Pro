@@ -223,10 +223,12 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/workers/MLWorker.js` | 2 | Fetch → verify SHA-256 → cache in IndexedDB → run offline ONNX inference (overlap-add) → emit stems. |
 | `src/workers/DiarizationWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `diarization.js` — keeps segmentation off the main thread. |
 | `src/workers/SpectralCleanupWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `SpectralCleanup.js` — runs the offline NR/dereverb passes off the main thread. |
+| `src/workers/SpeakerEmbeddingWorker.js` | 2 | Classic worker (ORT's vendored build is classic): optional ECAPA-TDNN speaker embeddings for target-speaker enrollment/isolation. Refuses the model unless it matches the `ecapa_tdnn` SHA-256 pin; Kaldi fbank front end in `SpeakerFeatures.js`. |
 | `src/workers/AudioEncoderWorker.js` | 2 | Module worker that encodes stems to 16-bit WAV off the main thread (validated PCM, clipped-sample count); stateless, one request per job. No MP3 encoder is bundled. |
 | `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz; `pickAndIngestFile()` for Electron native open. |
 | `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. |
 | `src/pipeline/ProcessingOrchestrator.js` | 3 | Bridges `IsolationModeSelector` → `FileIngestion` → `MLWorker`; translates user-chosen mode into a model-chain array for `MLWorker`. |
+| `src/pipeline/SpeakerEmbeddingHost.js` | 3 | Spawns `SpeakerEmbeddingWorker` with the manifest entry; `ready()` resolves false (never throws) when the model is absent or fails its pin, so callers fall back to the mel voiceprint. |
 | `src/pipeline/ExportOrchestrator.js` | 3 | Coordinates stem export: collects channels from `PlaybackMixer`, dispatches to `AudioEncoderWorker`, returns a downloadable `Blob`. |
 | `src/pipeline/EngineerModeBridge.js` | 3 | Thin adapter so the legacy `public/app/` Engineer Mode UI can delegate ingestion/playback to the new pipeline without a full migration. |
 | `src/presentation/SliderUI.js` | 4 | Slider event listeners, `requestAnimationFrame`-coalesced updates into `PlaybackMixer`. |
@@ -347,6 +349,7 @@ explicit architecture change.
 | Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~2.3 MB | **Committed, hash-pinned** |
 | Demucs HT / v4 (`demucs_v4_quantized.onnx`) | Vocal-ratio waveform mask | ONNX, int8 | ~149 MB | **Optional / unshipped** in the default git tree |
 | Diarization ONNX bundle | Speaker embedding + clustering | ONNX, fp32 | ~3 files | **Optional Blob-hosted, hash-pinned when present** |
+| ECAPA-TDNN (`ecapa_tdnn.onnx`, WeSpeaker voxceleb ECAPA512) | Target-speaker embedding (192-D) | ONNX, fp32 | ~25 MB | **Optional, hash-pinned, not bundled** (`pnpm models:fetch-ecapa`; Apache-2.0) |
 
 **Default isolation chain:** `['bsrnn_vocals']` (`src/core/ml-defaults.js`).
 **Optional maximum chain:** `['bsrnn_vocals', 'rnnoise']` (user-selected maximum isolation).
@@ -513,24 +516,32 @@ Workflow edits go in both `.github/workflows/` and `docs/ci-patches/`
 
 ---
 
-## 7. Target-Speaker Enrollment (current: local mel voiceprint)
+## 7. Target-Speaker Enrollment (ECAPA optional, mel voiceprint fallback)
 
-Per blueprint v2.1 §III — session-scoped speaker focus. **Shipping today uses an
-on-device mel-band voiceprint**, not ECAPA-TDNN. ECAPA remains a planned upgrade
-when a pinned `ecapa_tdnn` ONNX entry lands in `ModelManifest`.
+Per blueprint v2.1 §III — session-scoped speaker focus. When the optional
+`ecapa_tdnn` model is installed (`pnpm models:fetch-ecapa`, SHA-256 pinned in
+`ModelManifest`, git-ignored, ~25 MB) enrollment and isolation use ECAPA-TDNN
+embeddings scored in `SpeakerEmbeddingWorker`; otherwise, or on any ECAPA
+failure, they fall back to the on-device mel voiceprint. Guide:
+[docs/guides/TARGET_SPEAKER.md](docs/guides/TARGET_SPEAKER.md).
 
-| Parameter | Shipping value | Blueprint target |
+| Parameter | ECAPA path (optional) | Mel fallback (always available) |
 |---|---|---|
-| Minimum enrollment | **≥ 0.4 s** speech energy (UI typically 1–3 s) | 3 s clean speech, SNR > 10 dB |
-| Embedding model | **24-D mel voiceprint** (`TargetSpeaker.extractLocalVoiceprint`) | ECAPA-TDNN 192-D |
-| Similarity | Cosine; default threshold **0.42** (soft width 0.12) | default cosine 0.75 |
-| Soft gain | Per-sample gain curve, **15 ms** smooth + rate limit (anti-click) | soft mask in STFT domain |
-| Diarization fusion | Optional: match enrollment → cluster id, attenuate non-target segments | full multi-speaker union mask |
-| Persistence | Session / in-memory embedding in UI | optional saved voice profile |
+| Minimum enrollment | **≥ 0.4 s** speech energy (UI typically 1–3 s) | same |
+| Embedding | **ECAPA-TDNN 192-D** (WeSpeaker voxceleb ECAPA512, Kaldi fbank 80) | 24-D mel voiceprint (`TargetSpeaker.extractLocalVoiceprint`) |
+| Windows | 1.5 s, 0.5 s hop | 0.2 s, 0.05 s hop |
+| Similarity | Cosine; threshold **0.35** (soft width 0.08), `ECAPA_SIMILARITY` | Cosine; threshold **0.42** (soft width 0.12) |
+| Measured (LibriSpeech test-clean, 10 speakers) | EER 1.9 %; at 0.35 target missed on 2.2 %, others passed on 1.6 % of windows | EER 37 % on speech windows; at 0.42 others passed on 71 % |
+| Soft gain | Per-sample gain curve, **15 ms** smooth + rate limit (anti-click) | same |
+| Diarization fusion | Cluster mean ECAPA embeddings → best match ≥ 0.35 | Cluster mean voiceprints → best match ≥ 0.25 |
+| Persistence | Session / in-memory embedding in UI | same |
 
-Enrollment UI: Engineer `TargetSpeakerUI` (start/end seconds → Enroll → Isolate).
-Diarization clusters from Landing/Engineer can be fused when segments exist.
-**Do not claim ECAPA or “full target mask fusion inside ML STFT” until those land.**
+The blueprint's cosine 0.75 is **not** used: at 1.5 s windows it rejected 95 %
+of target windows (it suits full-utterance verification, not windowed
+isolation). Re-measure with `node scripts/quality/speaker-eval.mjs <dir>`
+before changing `ECAPA_SIMILARITY`. The mel fallback separates speakers poorly;
+do not describe it as speaker verification. **Do not claim "full target mask
+fusion inside ML STFT"**: isolation is a time-domain gain on the clean stem.
 
 ---
 

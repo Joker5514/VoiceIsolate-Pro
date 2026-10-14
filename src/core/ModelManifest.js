@@ -198,25 +198,36 @@ export const MODEL_MANIFEST = Object.freeze({
   }),
 
   // ── Speaker embedding (optional ECAPA) ────────────────────────────────
-  // When a pinned ECAPA-TDNN ONNX is placed here, TargetSpeaker can switch
-  // from local mel voiceprint to neural embeddings. Until then, enrollment
-  // uses src/core/TargetSpeaker.js (melBands) — still fully local.
+  // WeSpeaker voxceleb ECAPA-TDNN (C=512, 192-D, Apache-2.0), pinned to the
+  // Hub commit below; the sha256 equals the Hub's own LFS digest. Not bundled
+  // (25 MB): `pnpm models:fetch-ecapa` downloads and verifies it. When it is
+  // absent or fails its pin, target-speaker enrollment uses the local mel
+  // voiceprint (src/core/TargetSpeaker.js) instead.
   ecapa_tdnn: Object.freeze({
     id: 'ecapa_tdnn',
     name: 'ECAPA-TDNN Speaker Embedding (optional)',
     task: 'speaker-embedding',
     url: '/app/models/ecapa_tdnn.onnx',
-    sizeBytes: null,
+    sizeBytes: 24861931,
     quantization: 'fp32',
     delivery: 'optional',
     optional: true,
     shipped: false,
-    sha256: null,
+    sha256: 'f901ae3571912bad4e11e157744cb8b7d77a0b46923b83c410bdbb6c77d69736',
+    license: 'Apache-2.0',
+    source: Object.freeze({
+      repo: 'Wespeaker/wespeaker-voxceleb-ecapa-tdnn512',
+      revision: '89426e111abc9ffcc40279baf808e087693c6e9b',
+      file: 'voxceleb_ECAPA512.onnx',
+    }),
     strategy: 'speaker-embedding',
     sampleRate: 16000,
+    // Kaldi fbank: 80 mel bins, 25/10 ms, povey window, CMN per window.
+    features: 'kaldi-fbank-80-cmn',
+    embeddingDims: 192,
     io: Object.freeze({
-      input: 'input',
-      output: 'embedding',
+      input: 'feats',       // [batch, frames, 80] Float32
+      output: 'embs',       // [batch, 192] Float32
     }),
   }),
 

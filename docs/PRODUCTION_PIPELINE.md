@@ -15,7 +15,7 @@
 4. **Waveform-only branch** (`strategy: 'waveform'`, e.g. optional Demucs):  
    - Separate path; **does not** claim single-STFT invariants.  
 5. **Live-Mix** — `PlaybackMixer` AudioParams only (no re-ML).  
-6. **Target speaker** (optional) — shared UI `src/presentation/TargetSpeakerUI.js` on **Landing + Engineer** (and Capacitor/Electron shells after `sync:src` / build). Local mel voiceprint enrollment + soft gain (no re-STFT). Diarization clusters fused when present. ECAPA-TDNN is **not** required for the shipping path.  
+6. **Target speaker** (optional) — shared UI `src/presentation/TargetSpeakerUI.js` on **Landing + Engineer** (and Capacitor/Electron shells after `sync:src` / build). ECAPA-TDNN embeddings when the optional, hash-pinned model is installed (`pnpm models:fetch-ecapa`), otherwise the local mel voiceprint; soft gain on the clean stem (no re-STFT). Diarization clusters fused when present. See `docs/guides/TARGET_SPEAKER.md`.  
 7. **Clear Local Data** — `src/core/ClearLocalData.js` (library, OPFS/IDB, stems, model cache, VIP localStorage).  
 8. **Engineer Console** — `public/app/engineer-console.js` + `.css`: 3-column studio rack (session · stage · control rack), DSP Integrity + Output Safety cards, Voice Matrix, Process → auto `runFullAnalysis`. Layout-only; all control IDs preserved. Ships on Web + Android + Desktop from the same `public/app/` tree.
 
