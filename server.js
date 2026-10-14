@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import apiRouter from './api-routes/index.js';
+import apiRouter, { startOutboxDrain } from './api-routes/index.js';
 import { securityHeaders } from './server/securityHeaders.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -113,5 +113,6 @@ if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`VoiceIsolate Pro Dev Server running on port ${PORT}`);
   });
+  startOutboxDrain();
 }
 export { app };

@@ -323,7 +323,10 @@ explicit architecture change.
   `X-Frame-Options: DENY`, `Permissions-Policy: microphone=()`.
 - Server secrets actually read by code: `LICENSE_JWT_SECRET` (license + sync JWT
   signing, HMAC-SHA256) and the Stripe pair `STRIPE_SECRET_KEY` /
-  `STRIPE_WEBHOOK_SECRET` (see `.env.example`). Stripe webhook idempotency is
+  `STRIPE_WEBHOOK_SECRET` (see `.env.example`), plus the optional
+  `RESEND_API_KEY` (with the sender address `EMAIL_FROM`; both are needed) for purchase-confirmation email (`api-routes/mailer.js`,
+  server only; it drains the store outbox with the outbox row id as Resend's
+  Idempotency-Key). Stripe webhook idempotency is
   keyed off the Stripe `event.id`, not a separate secret. **Never** commit
   values; never invent fallback secrets that ship to production.
 - There is **no** auth API in this repo anymore. `api-routes/auth.js`, the
