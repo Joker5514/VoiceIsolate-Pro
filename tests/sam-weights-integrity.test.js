@@ -44,7 +44,7 @@ except WeightsIntegrityError as e:
 
 describePy('SAM weights.lock.json integrity', () => {
   let snap;
-  const files = { 'config.json': Buffer.from('{"a":1}'), 'model.safetensors': crypto.randomBytes(4096) };
+  const files = { 'config.json': Buffer.from('{"a":1}'), 'checkpoint.pt': crypto.randomBytes(4096) };
   const pins = () => Object.fromEntries(Object.entries(files).map(([n, b]) => [n, sha(b)]));
   const lockWith = (entry) => ({ schema: 1, models: { 'facebook/sam-audio-small': entry } });
 
@@ -69,14 +69,22 @@ describePy('SAM weights.lock.json integrity', () => {
     expect(r.src).toBe(snap);
     expect(r.report).toMatchObject({ pinned: true, verified: true, revision: REV, files: 2 });
     expect(r.calls[0]).toMatchObject({ repo_id: 'facebook/sam-audio-small', revision: REV });
-    expect(r.calls[0].allow_patterns.sort()).toEqual(['config.json', 'model.safetensors']);
+    expect(r.calls[0].allow_patterns.sort()).toEqual(['checkpoint.pt', 'config.json']);
   });
 
   test('a changed weight file is refused', () => {
-    fs.writeFileSync(path.join(snap, 'model.safetensors'), crypto.randomBytes(4096));
+    fs.writeFileSync(path.join(snap, 'checkpoint.pt'), crypto.randomBytes(4096));
     const r = resolve({ lock: lockWith({ revision: REV, files: pins() }), snapDir: snap });
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/model\.safetensors sha256 .* does not match pin/);
+    expect(r.error).toMatch(/checkpoint\.pt sha256 .* does not match pin/);
+  });
+
+  test('an unpinned file in the snapshot (warm cache) is refused', () => {
+    fs.writeFileSync(path.join(snap, 'model.safetensors'), crypto.randomBytes(64));
+    fs.writeFileSync(path.join(snap, '.gitattributes'), '*.pt filter=lfs');
+    const r = resolve({ lock: lockWith({ revision: REV, files: pins() }), snapDir: snap });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/unpinned file in snapshot: model\.safetensors/);
   });
 
   test('a missing pinned file is refused', () => {
@@ -100,8 +108,9 @@ describePy('SAM weights.lock.json integrity', () => {
     for (const entry of [
       { revision: 'main', files: pins() },
       { revision: REV, files: {} },
-      { revision: REV, files: { 'model.safetensors': 'abc' } },
-      { revision: REV, files: { '../evil.bin': 'a'.repeat(64) } },
+      { revision: REV, files: { ...pins(), 'checkpoint.pt': 'abc' } },
+      { revision: REV, files: { 'config.json': 'a'.repeat(64) } },
+      { revision: REV, files: { ...pins(), '../evil.bin': 'a'.repeat(64) } },
     ]) {
       const r = resolve({ lock: lockWith(entry), snapDir: snap });
       expect(r.ok).toBe(false);

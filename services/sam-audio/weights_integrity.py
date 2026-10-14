@@ -30,6 +30,8 @@ from typing import Any, Dict, Optional
 
 LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weights.lock.json")
 _HEX40 = set("0123456789abcdef")
+# Files the worker's loader reads (sam_hub_compat: config.json + checkpoint.pt).
+REQUIRED_FILES = ("config.json", "checkpoint.pt")
 
 
 class WeightsIntegrityError(RuntimeError):
@@ -74,6 +76,9 @@ def pin_for(model_id: str, lock: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         raise WeightsIntegrityError(f"{model_id}: pin needs a 40-hex commit revision")
     if not isinstance(files, dict) or not files:
         raise WeightsIntegrityError(f"{model_id}: pin lists no files")
+    missing = [f for f in REQUIRED_FILES if f not in files]
+    if missing:
+        raise WeightsIntegrityError(f"{model_id}: pin must list {', '.join(missing)}")
     for name, digest in files.items():
         d = str(digest)
         if os.path.isabs(name) or ".." in name.replace("\\", "/").split("/"):
@@ -84,7 +89,16 @@ def pin_for(model_id: str, lock: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def verify_snapshot(model_id: str, local_dir: str, entry: Dict[str, Any]) -> Dict[str, Any]:
-    """Hash every pinned file under local_dir; raise on a missing or changed file."""
+    """
+    Hash every pinned file under local_dir; raise on a missing or changed file,
+    or on any unpinned (non-hidden) file a warm cache could slip to the loader.
+    """
+    for root, dirs, names in os.walk(local_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for n in names:
+            rel = os.path.relpath(os.path.join(root, n), local_dir).replace(os.sep, "/")
+            if not n.startswith(".") and rel not in entry["files"]:
+                raise WeightsIntegrityError(f"{model_id}: unpinned file in snapshot: {rel}")
     for name, expected in entry["files"].items():
         path = os.path.join(local_dir, name)
         if not os.path.isfile(path):

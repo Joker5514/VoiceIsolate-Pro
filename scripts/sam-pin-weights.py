@@ -7,7 +7,7 @@ Pin SAM-Audio weights into services/sam-audio/weights.lock.json.
 
 Needs Meta's gated access on Hugging Face (HF_TOKEN or `hf auth login`).
 
-Every file is downloaded at one fixed commit and checked against the Hub's own
+Every non-hidden file is downloaded at one fixed commit and checked against the Hub's own
 metadata before it is pinned: LFS files against the Hub's sha256, small files
 against their git blob id. A file that does not match is never written to the
 lock. The worker then refuses any later bytes that differ from the pin.
@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SAM_DIR = os.path.join(HERE, "..", "services", "sam-audio")
 sys.path.insert(0, SAM_DIR)
 
-from weights_integrity import LOCK_PATH, git_blob_sha1, load_lock, sha256_file  # noqa: E402
+from weights_integrity import LOCK_PATH, REQUIRED_FILES, git_blob_sha1, load_lock, sha256_file  # noqa: E402
 
 
 def main() -> int:
@@ -66,11 +66,19 @@ def main() -> int:
         files[s.rfilename] = digest
         print(f"[sam-pin] {s.rfilename} {digest}")
 
+    missing = [f for f in REQUIRED_FILES if f not in files]
+    if missing:
+        print(f"[sam-pin] REFUSED: {args.model}@{commit} has no {', '.join(missing)}", file=sys.stderr)
+        return 1
+
     lock = load_lock(args.lock)
     lock["models"][args.model] = {"revision": commit, "files": dict(sorted(files.items()))}
-    with open(args.lock, "w", encoding="utf-8") as f:
+    # Write beside the lock and rename, so an interrupted write never leaves it unparsable.
+    tmp = f"{args.lock}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(lock, f, indent=2)
         f.write("\n")
+    os.replace(tmp, args.lock)
     print(f"[sam-pin] pinned {args.model}@{commit} ({len(files)} files) -> {os.path.relpath(args.lock)}")
     return 0
 

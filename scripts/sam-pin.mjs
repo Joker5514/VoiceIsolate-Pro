@@ -19,4 +19,5 @@ if (!python && fs.existsSync(venvPy)) python = venvPy;
 if (!python) python = process.platform === 'win32' ? 'python' : 'python3';
 
 const r = spawnSync(python, [path.join(ROOT, 'scripts', 'sam-pin-weights.py'), ...process.argv.slice(2)], { stdio: 'inherit' });
+if (r.error) console.error(`[sam-pin] could not run ${python}: ${r.error.message}`);
 process.exit(r.status ?? 1);
