@@ -17,8 +17,8 @@ router on a real port and drives:
 6. `customer.subscription.deleted` revokes it; refresh returns 403.
 
 By default the SDK talks to a local fake Stripe API over HTTP via
-`STRIPE_API_BASE`. No keys and no network are needed. `STRIPE_API_BASE` throws
-when `NODE_ENV=production`.
+`STRIPE_API_BASE`. No keys and no network are needed. `STRIPE_API_BASE` is
+refused unless `NODE_ENV` is `development` or `test` and the host is loopback.
 
 ## Live Stripe test mode
 
@@ -30,9 +30,15 @@ pnpm test:monetization:e2e
 ```
 
 This creates a real test-mode Checkout session and checks that an unpaid
-session cannot be claimed. `sk_live_` keys are refused. To exercise the paid
-path against Stripe, complete the session with a test card and forward events
-with `stripe listen --forward-to localhost:3000/api/webhook/stripe`.
+session cannot be claimed. `sk_live_` keys and `STRIPE_API_BASE` are refused.
+
+The smoke binds its API to a random port and exits after that check, so it
+cannot receive Stripe's webhooks. To exercise the paid path against Stripe,
+start a separate API server with a persistent `VIP_DATA_DIR` and the same test
+keys (`pnpm dev`, port 3000), forward events to it with
+`stripe listen --forward-to localhost:3000/api/webhook/stripe` (use the printed
+`whsec_` as `STRIPE_WEBHOOK_SECRET`), and complete a Checkout session with a
+test card.
 
 ## Not done here (needs a product decision)
 

@@ -36,6 +36,10 @@ if (live) {
     console.error('[monetization-e2e] STRIPE_E2E_LIVE needs an sk_test_ key; live keys are refused.');
     process.exit(1);
   }
+  if (process.env.STRIPE_API_BASE) {
+    console.error('[monetization-e2e] STRIPE_E2E_LIVE talks to Stripe itself; unset STRIPE_API_BASE.');
+    process.exit(1);
+  }
   if (!process.env.STRIPE_PRICE_PRO_MONTHLY) {
     console.error('[monetization-e2e] STRIPE_E2E_LIVE needs STRIPE_PRICE_PRO_MONTHLY (a test-mode price).');
     process.exit(1);

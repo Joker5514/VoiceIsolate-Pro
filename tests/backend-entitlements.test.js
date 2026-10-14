@@ -276,9 +276,19 @@ describe('STRIPE_API_BASE (e2e smoke override)', () => {
     expect(monetization.stripeApiBase()).toEqual({ host: '127.0.0.1', port: 12111, protocol: 'http' });
   });
 
-  test('is refused in production', () => {
-    process.env.NODE_ENV = 'production';
+  test('is refused outside an explicit development/test NODE_ENV', () => {
     process.env.STRIPE_API_BASE = 'http://127.0.0.1:12111';
-    expect(() => monetization.stripeApiBase()).toThrow(/not allowed in production/);
+    for (const env of ['production', 'staging', 'Production', '']) {
+      process.env.NODE_ENV = env;
+      expect(() => monetization.stripeApiBase()).toThrow(/only allowed when NODE_ENV/);
+    }
+    delete process.env.NODE_ENV;
+    expect(() => monetization.stripeApiBase()).toThrow(/only allowed when NODE_ENV/);
+  });
+
+  test('is refused for a non-loopback host', () => {
+    process.env.NODE_ENV = 'test';
+    process.env.STRIPE_API_BASE = 'https://stripe.attacker.example';
+    expect(() => monetization.stripeApiBase()).toThrow(/loopback/);
   });
 });
