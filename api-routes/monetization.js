@@ -31,6 +31,7 @@
 
 import express from 'express';
 import { getStore } from './store.js';
+import { drainOutbox, getMailTransport } from './mailer.js';
 import {
   licenseSecret,
   createLicenseToken,
@@ -271,6 +272,11 @@ router.post('/webhook/stripe', requireStore, async (req, res) => {
       return 'applied';
     });
     res.json(outcome === 'duplicate' ? { received: true, duplicate: true } : { received: true });
+    // Mail after the commit and after Stripe has its 200; a send failure is
+    // retried from the outbox, never surfaced as a webhook failure.
+    if (outcome === 'applied') {
+      drainOutbox(req.store, getMailTransport()).catch((err) => console.error('[VIP] [mail] drain failed:', err?.message || err));
+    }
   } catch (err) {
     console.error('[Webhook Processing Error]', err.message);
     res.status(500).json({ error: 'Webhook processing failed' });
@@ -301,9 +307,17 @@ function applyStripeEvent(state, event) {
         subscriptionId: obj.subscription || null,
       });
       // Delivery is by Stripe-verified claim (POST /license/claim). The outbox
-      // records the issuance for a mail transport; no transport is configured,
-      // so nothing claims an email was sent.
-      state.outbox.push({ type: 'license-issued', customerId: obj.customer, email, at, status: 'pending' });
+      // row is a confirmation email, sent by api-routes/mailer.js when
+      // RESEND_API_KEY/EMAIL_FROM are set; the event id is its idempotency key.
+      state.outbox.push({
+        id: `license-issued:${event.id}`,
+        type: 'license-issued',
+        customerId: obj.customer,
+        email,
+        tier: (obj.metadata?.tier || 'PRO').toUpperCase(),
+        at,
+        status: 'pending',
+      });
       console.log(`[Webhook] New subscription: ${obj.customer} → ${obj.metadata?.tier || 'PRO'}`);
       break;
     }

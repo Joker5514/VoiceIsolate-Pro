@@ -14,9 +14,15 @@ import {
   buildTargetGainCurve,
   applyGainToChannels,
   matchEmbeddingToDiarization,
+  matchClusterEmbeddings,
+  similarityWindows,
+  gainCurveFromSimilarities,
+  sliceSeconds,
+  ECAPA_SIMILARITY,
   MIN_ENROLL_SEC,
   MAX_ENROLL_SEC,
 } from '../core/TargetSpeaker.js';
+import { createSpeakerEmbeddingHost } from '../pipeline/SpeakerEmbeddingHost.js';
 
 const STYLE_ID = 'vip-target-speaker-styles';
 
@@ -29,6 +35,9 @@ const STYLE_ID = 'vip-target-speaker-styles';
  * @param {() => Array<{speakerId:string,start:number,end:number}>|null} [opts.getDiarizationSegments]
  * @param {() => number|null} [opts.getDurationSec] optional full clip duration for helpers
  * @param {() => number|null} [opts.getPlayheadSec] optional playhead for “use current time”
+ * @param {ReturnType<typeof createSpeakerEmbeddingHost>|null} [opts.speakerEmbedding]
+ *   optional ECAPA host; defaults to one created on first enroll when Workers exist.
+ *   When the model is absent or fails its pin, the mel voiceprint is used.
  */
 export function mountTargetSpeakerUI(opts) {
   const {
@@ -40,6 +49,13 @@ export function mountTargetSpeakerUI(opts) {
     getDurationSec,
     getPlayheadSec,
   } = opts;
+  let speakerHost = opts.speakerEmbedding;
+  const ecapaHost = () => {
+    if (speakerHost === undefined) {
+      speakerHost = typeof Worker === 'function' ? createSpeakerEmbeddingHost() : null;
+    }
+    return speakerHost;
+  };
   if (!container) throw new TypeError('[VIP][TargetSpeakerUI] container required');
 
   ensureStyles();
@@ -167,8 +183,8 @@ export function mountTargetSpeakerUI(opts) {
   const privacy = el(
     'p',
     'vip-ts-privacy hint',
-    'Privacy: voiceprint stays in this browser session only (mel-band local embedding). '
-    + 'ECAPA-TDNN ONNX is not required for this workflow.',
+    'Privacy: the voiceprint stays in this browser session only. It uses the ECAPA speaker model '
+    + 'when it is installed on this device, otherwise a basic mel-band voiceprint. Nothing is uploaded.',
   );
 
   form.append(regionHead, fields, durationReadout, quick, actions, status, privacy);
@@ -176,6 +192,8 @@ export function mountTargetSpeakerUI(opts) {
 
   /** @type {Float32Array|null} */
   let embedding = null;
+  /** ECAPA embedding when the optional model is installed; mel `embedding` stays the fallback. */
+  let ecapaEmbedding = null;
   /** @type {{ startSec: number, endSec: number, speechRatio?: number, dims?: number }|null} */
   let enrollMeta = null;
 
@@ -239,7 +257,7 @@ export function mountTargetSpeakerUI(opts) {
     status.textContent = `End set to min(file length, ${MAX_ENROLL_SEC} s). Prefer a short clean speech slice.`;
   });
 
-  enrollBtn.addEventListener('click', () => {
+  enrollBtn.addEventListener('click', async () => {
     const audio = getAudio();
     if (!audio?.channelData?.[0]) {
       notify('Load and process audio first', 'warn');
@@ -260,6 +278,7 @@ export function mountTargetSpeakerUI(opts) {
     const result = enrollFromRange(mono, sr, range);
     if (!result.ok) {
       embedding = null;
+      ecapaEmbedding = null;
       enrollMeta = null;
       applyBtn.disabled = true;
       clearBtn.disabled = true;
@@ -270,21 +289,86 @@ export function mountTargetSpeakerUI(opts) {
       return;
     }
     embedding = result.embedding;
+    ecapaEmbedding = null;
+    let method = 'local-mel-voiceprint';
+    let dims = result.meta.dims;
+    let fallbackNote = '';
+    const host = ecapaHost();
+    if (host) {
+      enrollBtn.disabled = true;
+      status.textContent = 'Computing speaker embedding (local)…';
+      try {
+        if (await host.ready()) {
+          ecapaEmbedding = await host.embed(sliceSeconds(mono, sr, range), sr);
+          method = 'ecapa-tdnn';
+          dims = ecapaEmbedding.length;
+        } else {
+          fallbackNote = ' (ECAPA model not installed; using the basic voiceprint)';
+        }
+      } catch (err) {
+        console.warn('[VIP][TargetSpeakerUI] ECAPA enrollment failed, using mel voiceprint:', err);
+        fallbackNote = ' (ECAPA failed; using the basic voiceprint)';
+      } finally {
+        enrollBtn.disabled = false;
+      }
+    }
     enrollMeta = {
       startSec: range.startSec,
       endSec: range.endSec,
       speechRatio: result.meta.speechRatio,
-      dims: result.meta.dims,
+      dims,
+      method,
     };
     applyBtn.disabled = false;
     clearBtn.disabled = false;
     status.classList.remove('vip-ts-status--error');
     status.classList.add('vip-ts-status--ok');
+    const kind = method === 'ecapa-tdnn' ? `${dims}-D ECAPA speaker embedding` : `${dims}-D local voiceprint`;
     status.textContent = `Enrolled ${range.startSec.toFixed(2)}–${range.endSec.toFixed(2)} s · `
-      + `${result.meta.dims}-D local voiceprint · speech ~${(result.meta.speechRatio * 100).toFixed(0)}%. `
+      + `${kind}${fallbackNote} · speech ~${(result.meta.speechRatio * 100).toFixed(0)}%. `
       + 'Next: click Isolate target speaker.';
     notify('Target speaker enrolled (local only)', 'ok');
   });
+
+  /** ECAPA gain curve, or null to fall back to the mel voiceprint. */
+  async function ecapaGain(mono, sr, segs, clusterCount) {
+    const host = ecapaHost();
+    if (!ecapaEmbedding || !host) return null;
+    try {
+      const windows = similarityWindows(
+        mono.length, sr, ECAPA_SIMILARITY.windowSec, ECAPA_SIMILARITY.hopSec,
+        { coverTail: true, allowShort: true },
+      );
+      const sims = await host.scoreWindows(mono, sr, ecapaEmbedding, windows, (done, total) => {
+        status.textContent = `Scoring speaker windows (local)… ${Math.round((100 * done) / total)}%`;
+      });
+      let targetSpeakerId = null;
+      let matchNote = '';
+      if (clusterCount === 1) {
+        matchNote = ' · diarization found one speaker (speaker-embedding gain only)';
+      } else if (clusterCount > 1) {
+        const match = matchClusterEmbeddings(await host.clusterEmbeddings(mono, sr, segs), ecapaEmbedding);
+        if (match && match.similarity >= ECAPA_SIMILARITY.threshold) {
+          targetSpeakerId = match.speakerId;
+          matchNote = ` · matched diarization speaker “${match.speakerId}” (sim ${match.similarity.toFixed(2)})`;
+        } else {
+          matchNote = ' · no strong diarization match (speaker-embedding gain only)';
+        }
+      }
+      const gain = gainCurveFromSimilarities(mono.length, sr, windows, sims, {
+        threshold: ECAPA_SIMILARITY.threshold,
+        softWidth: ECAPA_SIMILARITY.softWidth,
+        diarizationSegments: segs || undefined,
+        targetSpeakerId: targetSpeakerId || undefined,
+        smoothMs: 15,
+      });
+      return { gain, matchNote: `${matchNote} · ECAPA` };
+    } catch (err) {
+      console.warn('[VIP][TargetSpeakerUI] ECAPA isolation failed, using mel voiceprint:', err);
+      notify('Speaker model failed; using the basic voiceprint', 'warn');
+      return null;
+    }
+  }
 
   applyBtn.addEventListener('click', async () => {
     const audio = getAudio();
@@ -302,10 +386,13 @@ export function mountTargetSpeakerUI(opts) {
       const segs = typeof getDiarizationSegments === 'function'
         ? (getDiarizationSegments() || null)
         : null;
+      const clusters = new Set((segs || []).map((x) => x?.speakerId).filter((x) => x != null));
+      const viaEcapa = await ecapaGain(mono, sr, segs, clusters.size);
       let targetSpeakerId = null;
       let matchNote = '';
-      const clusters = new Set((segs || []).map((x) => x?.speakerId).filter((x) => x != null));
-      if (clusters.size === 1) {
+      if (viaEcapa) {
+        matchNote = viaEcapa.matchNote;
+      } else if (clusters.size === 1) {
         matchNote = ' · diarization found one speaker (voiceprint-only gain)';
       } else if (clusters.size > 1) {
         const match = matchEmbeddingToDiarization(mono, sr, embedding, segs);
@@ -316,7 +403,7 @@ export function mountTargetSpeakerUI(opts) {
           matchNote = ' · no strong diarization match (voiceprint-only gain)';
         }
       }
-      const gain = buildTargetGainCurve(mono, sr, embedding, {
+      const gain = viaEcapa ? viaEcapa.gain : buildTargetGainCurve(mono, sr, embedding, {
         diarizationSegments: segs || undefined,
         targetSpeakerId: targetSpeakerId || undefined,
         smoothMs: 15,
@@ -337,6 +424,7 @@ export function mountTargetSpeakerUI(opts) {
 
   clearBtn.addEventListener('click', () => {
     embedding = null;
+    ecapaEmbedding = null;
     enrollMeta = null;
     applyBtn.disabled = true;
     clearBtn.disabled = true;
@@ -350,6 +438,7 @@ export function mountTargetSpeakerUI(opts) {
     getEnrollMeta: () => enrollMeta,
     clear() {
       embedding = null;
+      ecapaEmbedding = null;
       enrollMeta = null;
       applyBtn.disabled = true;
       clearBtn.disabled = true;

@@ -48,6 +48,10 @@ from torchcodec_bootstrap import bootstrap_torchcodec  # noqa: E402
 _TORCHCODEC_STATUS = bootstrap_torchcodec()
 _HUB_COMPAT_STATUS: Dict[str, Any] = {"ok": False, "patched": False}
 
+from weights_integrity import WeightsIntegrityError, resolve_weights  # noqa: E402
+
+_WEIGHTS_STATUS: Dict[str, Any] = {"pinned": False, "verified": False}
+
 HOST = os.environ.get("SAM_AUDIO_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SAM_AUDIO_PORT", "8765"))
 MODEL_ID = os.environ.get("SAM_AUDIO_MODEL", "facebook/sam-audio-small")
@@ -61,6 +65,9 @@ _ALLOW_MOCK = os.environ.get(
 _REQUIRE_REAL = os.environ.get("SAM_AUDIO_REQUIRE_REAL", "").lower() in ("1", "true", "yes") or (
     os.environ.get("SAM_AUDIO_PRODUCTION", "").lower() in ("1", "true", "yes")
 )
+# Real-weight mode refuses weights without a pin in weights.lock.json; this is
+# the explicit, logged escape hatch (unverified weights).
+_ALLOW_UNPINNED = os.environ.get("SAM_AUDIO_ALLOW_UNPINNED", "").lower() in ("1", "true", "yes")
 
 
 def _apply_hub_compat() -> Dict[str, Any]:
@@ -156,7 +163,7 @@ def _resolve_device() -> str:
 
 def _try_load_sam() -> Tuple[Any, Any, str, bool, Optional[str]]:
     """Returns (model, processor, device, mock, error). Thread-safe lazy load."""
-    global _sam_bundle
+    global _sam_bundle, _WEIGHTS_STATUS
     if _sam_bundle is not None:
         return _sam_bundle
     with _model_load_lock:
@@ -176,13 +183,30 @@ def _try_load_sam() -> Tuple[Any, Any, str, bool, Optional[str]]:
             fp_kwargs: Dict[str, Any] = {}
             if token:
                 fp_kwargs["token"] = token
-            model = SAMAudio.from_pretrained(MODEL_ID, **fp_kwargs)
-            processor = SAMAudioProcessor.from_pretrained(MODEL_ID)
+            # Pinned weights: exact revision + per-file SHA-256, refused on mismatch.
+            source, _WEIGHTS_STATUS = resolve_weights(
+                MODEL_ID, token=token, require_pin=_REQUIRE_REAL and not _ALLOW_UNPINNED
+            )
+            if not _WEIGHTS_STATUS.get("verified"):
+                _log(f"WARNING: {MODEL_ID} weights are not pinned; integrity NOT verified")
+            model = SAMAudio.from_pretrained(source, **fp_kwargs)
+            processor = SAMAudioProcessor.from_pretrained(source)
             model = model.eval()
             if device == "cuda":
                 model = model.cuda()
             _sam_bundle = (model, processor, device, False, None)
             _log(f"REAL sam_audio loaded on {device} model={MODEL_ID}")
+            return _sam_bundle
+        except WeightsIntegrityError as exc:
+            # Never load weights that failed their pin (dev may still use the mock).
+            err = f"weights-integrity: {exc}"
+            _WEIGHTS_STATUS = {
+                "pinned": not str(exc).startswith("weights-unpinned"),
+                "verified": False,
+                "error": str(exc)[:300],
+            }
+            _log(f"REFUSED: {err}")
+            _sam_bundle = (None, None, device, True, err)
             return _sam_bundle
         except Exception as exc:
             err = f"{type(exc).__name__}: {exc}"
@@ -236,6 +260,7 @@ def _readiness() -> Dict[str, Any]:
         "device": device,
         "torchcodec": _TORCHCODEC_STATUS,
         "hubCompat": _HUB_COMPAT_STATUS,
+        "weights": _WEIGHTS_STATUS,
         "loadError": load_err,
         "allowMock": _mock_allowed(),
         "requireReal": _REQUIRE_REAL,

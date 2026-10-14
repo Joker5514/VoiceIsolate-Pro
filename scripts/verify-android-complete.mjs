@@ -40,6 +40,8 @@ const REQUIRED = [
   'src/workers/EngineerSpectralControls.js',
   'src/workers/MainsHumFilter.js',
   'src/workers/DeepFilterNet.js',
+  'src/workers/SpeakerEmbeddingWorker.js',
+  'src/workers/SpeakerFeatures.js',
   'src/workers/GateProcessor.js',
   'src/workers/DeEsserProcessor.js',
   'src/presentation/DspSlider.js',
