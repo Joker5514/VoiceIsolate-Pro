@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: allowBackup="false" still permits device-to-device transfer.
+     Exclude every domain from both cloud backup and device transfer: cached
+     models, stem caches and imported audio stay on this device only. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="device_root" />
+        <exclude domain="file" />
+        <exclude domain="device_file" />
+        <exclude domain="database" />
+        <exclude domain="device_database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="device_sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="device_root" />
+        <exclude domain="file" />
+        <exclude domain="device_file" />
+        <exclude domain="database" />
+        <exclude domain="device_database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="device_sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

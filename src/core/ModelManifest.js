@@ -95,9 +95,17 @@ export const MODEL_MANIFEST = Object.freeze({
      * maskExponent — the sigmoid mask is applied as mask^p. p = 0.5 halves the
      *   mask's attenuation in dB; on held-out recorded speech it raised SI-SDR
      *   in every tested condition, at the cost of less noise-only suppression.
+     * chainMaskExponent — exponent when this head follows another head in a
+     *   fused chain (Maximum Isolation: bsrnn_vocals → rnnoise). The product
+     *   bsrnn^0.5 · rnnoise^0.5 cut fricatives ~31 dB and speech level 6–10 dB
+     *   on the quality fixtures; rnnoise^0.15 raised SI-SDR, speech level and
+     *   fricative level on every speech fixture (fricatives ≈ -12 dB) while
+     *   noise-only suppression fell from 17.7 to 9.8 dB. Higher exponents
+     *   (0.65) lowered every speech metric.
      */
     inputNormalization: 'frame-max',
     maskExponent: 0.5,
+    chainMaskExponent: 0.15,
     io: Object.freeze({
       input: 'input',                // [batch, 2049] Float32 magnitudes
       output: 'output',              // [batch, 2049] Float32 mask (sigmoid)
@@ -270,7 +278,7 @@ export const MODEL_MANIFEST = Object.freeze({
  * unchanged model bytes (framing, padding, mask application). Stem caches key
  * on it, so a release that changes inference never replays old stems.
  */
-export const INFERENCE_REVISION = 'ir2-reflect-pad-ola';
+export const INFERENCE_REVISION = 'ir3-mains-hum-notch';
 
 /**
  * Identity of everything in a model chain that changes its stems: the ordered
@@ -289,6 +297,7 @@ export function modelChainRevision(modelIds = []) {
       e.sha256 || `unpinned-${e.sizeBytes ?? 'na'}`,
       e.inputNormalization || 'raw',
       e.maskExponent ?? 1,
+      e.chainMaskExponent ?? '',
       e.fftSize ?? '',
       e.hopSize ?? '',
       e.strategy || '',

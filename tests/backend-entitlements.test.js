@@ -296,3 +296,38 @@ describe('license-issued email (Resend transport, mocked fetch)', () => {
     expect(health.body.services.email).toBe('configured');
   });
 });
+
+describe('STRIPE_API_BASE (e2e smoke override)', () => {
+  const saved = { base: process.env.STRIPE_API_BASE, env: process.env.NODE_ENV };
+  afterEach(() => {
+    if (saved.base === undefined) delete process.env.STRIPE_API_BASE; else process.env.STRIPE_API_BASE = saved.base;
+    process.env.NODE_ENV = saved.env;
+  });
+
+  test('unset leaves the SDK on api.stripe.com', () => {
+    delete process.env.STRIPE_API_BASE;
+    expect(monetization.stripeApiBase()).toEqual({});
+  });
+
+  test('maps a local base URL to SDK host options outside production', () => {
+    process.env.NODE_ENV = 'test';
+    process.env.STRIPE_API_BASE = 'http://127.0.0.1:12111';
+    expect(monetization.stripeApiBase()).toEqual({ host: '127.0.0.1', port: 12111, protocol: 'http' });
+  });
+
+  test('is refused outside an explicit development/test NODE_ENV', () => {
+    process.env.STRIPE_API_BASE = 'http://127.0.0.1:12111';
+    for (const env of ['production', 'staging', 'Production', '']) {
+      process.env.NODE_ENV = env;
+      expect(() => monetization.stripeApiBase()).toThrow(/only allowed when NODE_ENV/);
+    }
+    delete process.env.NODE_ENV;
+    expect(() => monetization.stripeApiBase()).toThrow(/only allowed when NODE_ENV/);
+  });
+
+  test('is refused for a non-loopback host', () => {
+    process.env.NODE_ENV = 'test';
+    process.env.STRIPE_API_BASE = 'https://stripe.attacker.example';
+    expect(() => monetization.stripeApiBase()).toThrow(/loopback/);
+  });
+});

@@ -16,7 +16,7 @@ describe('service-worker lifecycle', () => {
     jest.useRealTimers();
   });
 
-  function createRegistrationHarness() {
+  function createRegistrationHarness({ protocol = 'https:' } = {}) {
     let controllerChange = null;
     const serviceWorker = {
       controller: null,
@@ -36,6 +36,7 @@ describe('service-worker lifecycle', () => {
       setTimeout,
       clearTimeout,
       window: {},
+      location: { protocol },
       globalThis: null,
     };
     context.globalThis = context;
@@ -53,6 +54,22 @@ describe('service-worker lifecycle', () => {
   async function flushRegistrationSetup() {
     for (let i = 0; i < 6; i++) await Promise.resolve();
   }
+
+  test('never registers outside http(s) (Electron vip://)', async () => {
+    const { registerSW, serviceWorker } = createRegistrationHarness({ protocol: 'vip:' });
+    await expect(registerSW()).resolves.toBeNull();
+    expect(serviceWorker.register).not.toHaveBeenCalled();
+  });
+
+  test('Landing and Engineer register the worker after load', () => {
+    const landing = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+    const engineer = fs.readFileSync(path.join(ROOT, 'public', 'app', 'index.html'), 'utf8');
+    expect(landing).toContain('<script type="module" src="/app/sw-boot.js"></script>');
+    expect(engineer).toContain('<script type="module" src="./sw-boot.js"></script>');
+    const boot = fs.readFileSync(path.join(ROOT, 'public', 'app', 'sw-boot.js'), 'utf8');
+    expect(boot).toMatch(/^registerSWAfterLoad\(\);$/m);
+    expect(registerSource).toMatch(/addEventListener\('load', run, \{ once: true \}\)/);
+  });
 
   test('does not force a waiting update over an active processing tab', () => {
     expect(swSource).not.toMatch(/skipWaiting\s*\(/);

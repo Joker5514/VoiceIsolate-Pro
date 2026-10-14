@@ -25,6 +25,8 @@
  *   STRIPE_PRICE_STUDIO_ANNUAL  — Stripe price ID for Studio annual
  *
  *   VIP_DATA_DIR                — Persistent directory for the license store
+ *   STRIPE_API_BASE             — Dev/test only: loopback fake Stripe API for the
+ *                                 e2e smoke (refused unless NODE_ENV=development|test)
  */
 
 import express from 'express';
@@ -64,7 +66,31 @@ async function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
   const { default: Stripe } = await import('stripe');
-  return new Stripe(key, { apiVersion: '2023-10-16' });
+  return new Stripe(key, { apiVersion: '2023-10-16', ...stripeApiBase() });
+}
+
+/**
+ * STRIPE_API_BASE points the real SDK at a local fake Stripe API for the
+ * end-to-end smoke (scripts/monetization-e2e.mjs). Allowed only for a loopback
+ * host under NODE_ENV development/test, so a misconfigured deploy can never send
+ * payment calls anywhere but Stripe.
+ */
+export function stripeApiBase() {
+  const base = process.env.STRIPE_API_BASE;
+  if (!base) return {};
+  // Fail closed: only an explicit dev/test environment, only a loopback host.
+  if (!['development', 'test'].includes(process.env.NODE_ENV)) {
+    throw new Error('STRIPE_API_BASE is only allowed when NODE_ENV is development or test');
+  }
+  const u = new URL(base);
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) {
+    throw new Error('STRIPE_API_BASE must point at a loopback host');
+  }
+  return {
+    host: u.hostname,
+    port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80),
+    protocol: u.protocol.replace(':', ''),
+  };
 }
 
 /** Tests only: a stand-in Stripe client (never set in production code paths). */

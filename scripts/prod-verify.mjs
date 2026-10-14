@@ -58,6 +58,7 @@ const STEPS = [
   // lint/test go through package.json so their file lists and flags have one source.
   ['lint', 'static', 'lint', pnpm('lint')],
   ['test', 'static', 'unit / contract / integration tests', pnpm('test')],
+  ['monetization-e2e', 'static', 'monetization', pnpm('test:monetization:e2e')],
   ['dsp-isolation', 'static', 'DSP', node('scripts/check-dsp-isolation.js')],
   ['audio-quality', 'static', 'audio quality', pnpm('test:quality')],
   ['privacy-static', 'static', 'privacy', node('scripts/check-privacy-invariants.js')],
