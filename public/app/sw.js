@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // sw.js — VoiceIsolate Pro App Service Worker
 //
-// REGISTRATION: no shipping page registers this worker today (registerSW() in
-// sw-register.js has no caller), so the web app has no offline launch. It is
-// kept correct for any client that registered it earlier and for enablement.
+// REGISTRATION: Landing and Engineer register /sw.js (which imports this file)
+// through /app/sw-boot.js → registerSWAfterLoad(), on http(s) only. Android
+// packages unregister it; Electron's vip:// scheme never registers it.
 //
 // Responsibilities:
 //   1. Offline launch of both surfaces: install precaches PRECACHE_URLS, the

@@ -33,6 +33,18 @@ describe('Production routing safety', () => {
     expect(apiRewrite).toBeUndefined();
   });
 
+  test('SPA catch-all leaves /api/* and /health to 404 instead of serving the homepage', () => {
+    const rule = (vercel.rewrites || []).find((r) => r.destination === '/index.html');
+    expect(rule).toBeDefined();
+    const re = new RegExp(`^${rule.source}$`);
+    for (const p of ['/api', '/api/', '/api/checkout', '/api/health', '/health', '/health/']) {
+      expect({ p, rewritten: re.test(p) }).toEqual({ p, rewritten: false });
+    }
+    for (const p of ['/', '/pricing', '/apiary', '/healthy']) {
+      expect({ p, rewritten: re.test(p) }).toEqual({ p, rewritten: true });
+    }
+  });
+
   test('COOP/COEP isolation headers remain configured', () => {
     const all = JSON.stringify(vercel.headers || []);
     expect(all).toContain('Cross-Origin-Opener-Policy');

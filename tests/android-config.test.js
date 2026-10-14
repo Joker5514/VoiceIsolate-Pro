@@ -244,8 +244,19 @@ describe('AndroidManifest.xml — structure and security', () => {
     expect(manifest).toContain('@xml/file_paths');
   });
 
-  test('allowBackup is enabled', () => {
-    expect(manifest).toContain('android:allowBackup="true"');
+  test('backup and device transfer are disabled (release blocker)', () => {
+    expect(manifest).toContain('android:allowBackup="false"');
+    expect(manifest).toContain('android:fullBackupContent="false"');
+    expect(manifest).toContain('android:dataExtractionRules="@xml/data_extraction_rules"');
+    const rules = fs.readFileSync(
+      path.join(__dirname, '../android/app/src/main/res/xml/data_extraction_rules.xml'), 'utf8');
+    for (const section of ['cloud-backup', 'device-transfer']) {
+      const body = rules.split(`<${section}>`)[1].split(`</${section}>`)[0];
+      for (const domain of ['root', 'device_root', 'file', 'device_file', 'database',
+        'device_database', 'sharedpref', 'device_sharedpref', 'external']) {
+        expect(body).toContain(`<exclude domain="${domain}" />`);
+      }
+    }
   });
 
   test('icon references ic_launcher mipmap', () => {
