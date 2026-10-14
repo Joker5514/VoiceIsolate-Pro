@@ -58,26 +58,41 @@ When the release APK replaces the debug one, rename the asset in
 The current `latest` release is tagged `v25.0.3` but carries
 `VoiceIsolate-Pro-25.0.2-win-x64.exe` and a debug APK, so
 `pnpm downloads:validate` fails against it. Cut a new version rather than
-editing that release:
+editing that release.
 
-```bash
-# 1. set "version": "25.1.0" in package.json (the source of truth)
-pnpm mobile:sync-version            # Android/iOS/Capacitor/PWA
-pnpm version:check
-# update the versioned download names in vercel.json and docs/DOWNLOADS.md
-xvfb-run -a pnpm prod:verify --desktop
-git tag v25.1.0 && git push origin v25.1.0   # triggers release-build.yml
-pnpm build:electron                          # NSIS on Windows, or Linux with wine + wine32
-```
+Order matters. CI's network tier (`prod:verify --network`, which
+`release-build.yml` also runs as its gate) checks that the **published**
+`latest` release matches `package.json`. So the release must exist, with its
+assets, before the version bump reaches `main` or a tag is pushed; otherwise
+both the PR gate and the release workflow's gate fail.
 
-Upload the AAB/APK and `VoiceIsolate-Pro-25.1.0-win-x64.exe` to the `v25.1.0`
-release. Then regenerate `docs/releases/release-provenance.json` from the
-produced artifacts and run:
+1. On a branch, bump the version everywhere `pnpm version:check` reads it:
+   - `package.json` `"version": "25.1.0"`, then `pnpm mobile:sync-version`
+     (Android, iOS, Capacitor user agents, PWA manifest);
+   - `api-routes/index.js` (`version: '25.1.0'`);
+   - `public/download/index.html` (`v25.1.0` and
+     `VoiceIsolate-Pro-25.1.0-win-x64.exe`);
+   - versioned download names in `vercel.json` and `docs/DOWNLOADS.md`.
+
+   Then `pnpm version:check` and `xvfb-run -a pnpm prod:verify --desktop`
+   (no `--network` yet: the release does not exist).
+2. Build the artifacts from that commit: `pnpm android:bundle` (or
+   `pnpm android:release` for an APK) with the signing variables from §2, and
+   `pnpm build:electron` (Windows, or Linux with `wine` + `wine32`).
+3. Publish GitHub release `v25.1.0` at that commit with the AAB/APK and
+   `VoiceIsolate-Pro-25.1.0-win-x64.exe` attached, marked latest.
+4. Merge the bump. `pnpm downloads:validate` now passes, so CI's network tier
+   does too. A tag push now also passes `release-build.yml`'s gate; the
+   workflow cannot build a release that does not exist yet, because its gate
+   validates the published one.
+5. Record provenance in `docs/releases/release-provenance.json` from the
+   artifacts actually published: SHA-256, source SHA and build time for
+   Android and Windows, and for Web the Vercel production deployment of the
+   same SHA (`verification.method: "vercel-deployment"` with the deployment
+   id/URL as evidence; strict mode refuses a Web record inferred from git
+   HEAD). Then:
 
 ```bash
 pnpm provenance:validate:strict
 pnpm downloads:validate
 ```
-
-Push the version bump only together with the published release: CI's network
-tier checks that the latest release matches `package.json`.

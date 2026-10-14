@@ -252,7 +252,8 @@ describe('AndroidManifest.xml — structure and security', () => {
       path.join(__dirname, '../android/app/src/main/res/xml/data_extraction_rules.xml'), 'utf8');
     for (const section of ['cloud-backup', 'device-transfer']) {
       const body = rules.split(`<${section}>`)[1].split(`</${section}>`)[0];
-      for (const domain of ['root', 'file', 'database', 'sharedpref', 'external']) {
+      for (const domain of ['root', 'device_root', 'file', 'device_file', 'database',
+        'device_database', 'sharedpref', 'device_sharedpref', 'external']) {
         expect(body).toContain(`<exclude domain="${domain}" />`);
       }
     }

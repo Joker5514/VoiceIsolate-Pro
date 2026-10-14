@@ -5,16 +5,24 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />
+        <exclude domain="device_root" />
         <exclude domain="file" />
+        <exclude domain="device_file" />
         <exclude domain="database" />
+        <exclude domain="device_database" />
         <exclude domain="sharedpref" />
+        <exclude domain="device_sharedpref" />
         <exclude domain="external" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" />
+        <exclude domain="device_root" />
         <exclude domain="file" />
+        <exclude domain="device_file" />
         <exclude domain="database" />
+        <exclude domain="device_database" />
         <exclude domain="sharedpref" />
+        <exclude domain="device_sharedpref" />
         <exclude domain="external" />
     </device-transfer>
 </data-extraction-rules>
