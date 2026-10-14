@@ -92,6 +92,59 @@ babble at 5 dB: -0.7 dB). Both networks were trained from scratch on
 synthetic frames and see one 85 ms frame at a time. A better model is the
 only fix for that; see `docs/archive/REIMAGINE-multi-frame-models.md`.
 
+## Mains hum, Maximum chain and improvement tier (2026-10-14)
+
+Measured with the gate harness (synthetic fixtures) and on four LibriSpeech
+utterances from `Narsil/asr_dummy` (mixed locally, not committed). Mean SI-SDR
+delta on recorded speech, old -> new:
+
+| Condition | Default chain | Maximum chain |
+|---|---|---|
+| clean (absolute SI-SDR) | 13.81 -> 13.77 | 10.75 -> 13.75 |
+| white 5 dB | 2.06 -> 2.05 | 4.11 -> 4.52 |
+| HVAC 5 dB | 2.75 -> 2.75 | 2.28 -> 3.10 |
+| music 5 dB | 0.17 -> 0.18 | -0.52 -> 0.12 |
+| 60 Hz hum 10 dB | 1.77 -> 2.38 | -0.49 -> 2.36 |
+| 50 Hz hum 10 dB | 1.73 -> 3.08 | -0.45 -> 2.99 |
+
+The default-chain clean drop (16.69 -> 16.54 dB on one utterance) is real
+100.02 Hz mains buzz in that recording, steady to 0.02 Hz across the file;
+the reference contains it, so removing it costs SI-SDR against that reference.
+
+- **Mains hum notch** (`src/workers/MainsHumFilter.js`, run by MLWorker once
+  per Process before the model chain). Detects a stationary 50/60 Hz series
+  (fundamental may be missing) from long-window spectra, then applies a
+  zero-phase notch per detected harmonic up to Nyquist: Q 30 at the
+  fundamental and the same ~2 Hz bandwidth at every harmonic, each centred on
+  its measured frequency. A per-harmonic Q of 30 would overlap into a comb
+  above ~1.8 kHz. The noise stem is still the residual against the original
+  input, so the removed hum is audible there. A sustained tone exactly on a
+  mains harmonic is indistinguishable from hum and is notched too.
+- **Maximum chain exponent.** `rnnoise.chainMaskExponent: 0.15` applies when
+  rnnoise follows BSRNN in the fused chain; BSRNN keeps `maskExponent: 0.5`
+  and the single-model defaults are unchanged. The old product
+  `bsrnn^0.5 * rnnoise^0.5` cut fricatives by about 31 dB and speech level by
+  6-10 dB on the fixtures (the "maximum de-essing" seen in audits). Swept
+  rnnoise at 0.5, 0.25, 0.15 and 0.1; 0.15 improved SI-SDR, speech level and
+  fricative level on every fixture (fricatives about -12 dB). An exponent of
+  0.65 lowered every speech metric. Tradeoff: noise-only suppression on the
+  Maximum chain falls from 17.7 to 9.8 dB (default chain: 5.0 dB).
+- **Improvement tier.** Scenarios tagged `improvementExpected` (white 5 dB,
+  HVAC 5 dB, hum 10 dB, whisper in white 10 dB) list every scenario/profile
+  pair that measures SI-SDR delta >= 0 in `improvementRequired`; those must
+  stay >= 0 dB with no tolerance, and `--update` refuses to drop one. Tagged
+  pairs still below 0 dB print as `improvement gap` on every run. On the
+  synthetic fixtures the default and Engineer chains are still below 0 dB on
+  white, HVAC and hum: the model alone scores only 6.4 dB SI-SDR on clean
+  synthetic speech, below the 8.3 dB of the hum fixture's input, so no
+  pre-filter can make that delta positive.
+
+Measured and not shipped: a tonality-aware over-subtraction factor in the
+Engineer noise reduction (stronger on flat noise floors, weaker on harmonic
+ones) moved every Engineer metric by about 0.1 dB, and weakening subtraction
+on music lowered music SI-SDR (-1.79 -> -2.03 dB). `SpectralCleanup.js` is
+not on any production path, so changes there would not reach users.
+
 ## Re-running the recorded-speech check locally
 
 Download a few LibriSpeech FLAC files (for example from the Hugging Face

@@ -10,7 +10,13 @@
  *      out, no output above full scale;
  *   2. regressions: every pinned metric in quality-baseline.json (SI-SDR,
  *      speech level, noise reduction) must not drop by more than its
- *      toleranceDb.
+ *      toleranceDb;
+ *   3. improvement tier: on fixtures tagged improvementExpected, every
+ *      scenario/profile pair listed in the baseline's improvementRequired
+ *      must keep an SI-SDR delta >= 0 dB (no tolerance). --update lists every
+ *      tagged pair that measures >= 0 and refuses to drop a listed pair that
+ *      no longer does, so the list only grows. Tagged pairs still below 0 dB
+ *      are printed as open gaps on every run.
  *
  *   node scripts/quality/quality-gate.cjs            # check
  *   node scripts/quality/quality-gate.cjs --update   # re-pin after an intended change
@@ -35,6 +41,7 @@ async function measureAll() {
   const profiles = await loadProfiles();
   const metrics = {};
   const failures = [];
+  const improvementKeys = [];
   for (const sc of scenarios(SECS).filter((s) => GATE_SCENARIOS.includes(s.id))) {
     const fx = sc.build();
     for (const p of profiles) {
@@ -55,6 +62,7 @@ async function measureAll() {
       }
       if (fx.ref) {
         // Noisy scenarios pin the improvement; clean ones pin preservation.
+        if (sc.improvementExpected) improvementKeys.push(`${key}/si-sdr-delta`);
         metrics[`${key}/si-sdr${sc.kind === 'preservation' ? '' : '-delta'}`] = sc.kind === 'preservation'
           ? M.siSdr(clean, fx.ref)
           : M.siSdr(clean, fx.ref) - M.siSdr(fx.input, fx.ref);
@@ -72,14 +80,21 @@ async function measureAll() {
       }
     }
   }
-  return { metrics, failures };
+  return { metrics, failures, improvementKeys };
 }
 
 async function main() {
   const update = process.argv.includes('--update');
-  const { metrics, failures } = await measureAll();
+  const { metrics, failures, improvementKeys } = await measureAll();
   const rounded = Object.fromEntries(Object.entries(metrics).map(([k, v]) => [k, Math.round(v * 100) / 100]));
-  const base = update ? null : JSON.parse(fs.readFileSync(BASELINE, 'utf8'));
+  const previous = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, 'utf8')) : null;
+  const base = update ? null : previous;
+  const required = new Set(previous?.improvementRequired || []);
+  for (const k of required) {
+    if (!improvementKeys.includes(k)) failures.push(`${k}: listed in improvementRequired but not a tagged improvement metric`);
+    else if (rounded[k] < 0) failures.push(`${k}: ${rounded[k]} dB < 0 dB (improvement tier)`);
+  }
+  const gaps = improvementKeys.filter((k) => !required.has(k) && rounded[k] < 0);
   const toleranceValue = Number(base?.toleranceDb);
   // A non-finite tolerance (e.g. 1e999 → Infinity) would disable every check.
   const tolerance = Number.isFinite(toleranceValue) && toleranceValue > 0 ? toleranceValue : DEFAULT_TOLERANCE_DB;
@@ -95,6 +110,8 @@ async function main() {
     fs.writeFileSync(BASELINE, `${JSON.stringify({
       note: 'dB; pinned by scripts/quality/quality-gate.cjs --update. Lower is a regression beyond the tolerance.',
       toleranceDb: DEFAULT_TOLERANCE_DB,
+      improvementNote: 'SI-SDR delta must stay >= 0 dB for these pairs; the list only grows.',
+      improvementRequired: improvementKeys.filter((k) => rounded[k] >= 0),
       metrics: rounded,
     }, null, 2)}\n`);
     console.log(`[quality] baseline written: ${Object.keys(rounded).length} metrics`);
@@ -110,6 +127,7 @@ async function main() {
     }
   }
   for (const [k, v] of Object.entries(rounded)) console.log(`  ${k.padEnd(42)} ${v.toFixed(2)} dB`);
+  for (const k of gaps) console.log(`  improvement gap (not yet >= 0 dB): ${k} ${rounded[k].toFixed(2)} dB`);
   if (failures.length) {
     console.error(`[quality] FAIL\n  ${failures.join('\n  ')}`);
     process.exit(1);

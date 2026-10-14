@@ -8,6 +8,9 @@
  * @class DeEsserProcessor
  * @extends AudioWorkletProcessor
  */
+/** Deepest per-sample gain on the sibilant band: -12 dB. */
+const MAX_REDUCTION_GAIN = 10 ** (-12 / 20);
+
 class DeEsserProcessor extends AudioWorkletProcessor {
   /**
    * Define the parameters exposed to the audio graph
@@ -236,8 +239,9 @@ class DeEsserProcessor extends AudioWorkletProcessor {
           // Convert back to linear
           targetGain = 10 ** (-gainReductionDb / 20);
           
-          // Clamp gain reduction
-          targetGain = Math.max(0.1, Math.min(1, targetGain));
+          // Cap the sibilant-band cut at -12 dB: deeper cuts dull the voice
+          // and lisp it rather than tame harshness.
+          targetGain = Math.max(MAX_REDUCTION_GAIN, Math.min(1, targetGain));
         }
 
         // Smooth gain changes

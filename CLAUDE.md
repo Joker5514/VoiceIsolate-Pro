@@ -362,14 +362,18 @@ Shipped-model bytes are verified by `scripts/validate-model-integrity.mjs`
 **Inference calibration and the quality gate.** Each spectral entry carries
 `inputNormalization: 'frame-max'` (the training contract in
 `scripts/export_onnx_models.py`: magnitudes divided by the per-frame peak) and
-`maskExponent: 0.5` (mask applied as `mask^0.5`). Both are applied inside the
-one fused STFT pass and were chosen by measured SI-SDR on recorded speech,
+`maskExponent: 0.5` (mask applied as `mask^0.5`); `rnnoise` also carries
+`chainMaskExponent: 0.15`, used only when it follows BSRNN in the Maximum chain.
+All are applied inside the one fused STFT pass and were chosen by measured SI-SDR on recorded speech,
 including held-out audio (`docs/guides/AUDIO_QUALITY.md`). Do not "restore"
 raw-magnitude input or `mask^1` without new measurements. `pnpm test:quality`
 (`prod:verify` step `audio-quality`) runs the real `MLWorker.js` with the
 shipped models over deterministic fixtures and fails on any pinned metric
 dropping more than 0.5 dB; re-pin only with `node scripts/quality/quality-gate.cjs --update` and a
-reviewed baseline diff. Both shipped networks are single-frame and weak: the
+reviewed baseline diff. Its improvement tier (`improvementRequired`) holds
+every listed pair at SI-SDR delta >= 0 dB and only grows. MLWorker first runs
+`src/workers/MainsHumFilter.js`, an offline 50/60 Hz notch, once per Process
+before the model chain (no slider, no extra STFT). Both shipped networks are single-frame and weak: the
 default chain still lowers SI-SDR on some noisy inputs. Do not describe them
 as more capable than the gate shows.
 

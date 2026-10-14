@@ -72,6 +72,7 @@ const REQUIRED_PATHS = [
   'src/workers/DeEsserProcessor.js',
   'src/workers/MLWorker.js',
   'src/workers/EngineerSpectralControls.js',
+  'src/workers/MainsHumFilter.js',
   'src/presentation/DspSlider.js',
   'lib/ort.min.js',
   'lib/react-mini.js',
