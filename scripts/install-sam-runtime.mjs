@@ -38,6 +38,8 @@ function run(cmd, args, opts = {}) {
 function ensureLayout() {
   const need = [
     'services/sam-audio/server.py',
+    'services/sam-audio/weights_integrity.py',
+    'services/sam-audio/weights.lock.json',
     'services/sam-audio/requirements.txt',
     'packages/vip-sam-runtime/package.json',
     'packages/vip-sam-runtime/manifest.json',
