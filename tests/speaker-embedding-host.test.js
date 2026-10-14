@@ -74,6 +74,41 @@ describe('createSpeakerEmbeddingHost', () => {
     await expect(host.embed(new Float32Array(100), 16000)).rejects.toThrow(/segment too short/);
   });
 
+  test('an init timeout terminates the worker so a late load cannot keep its memory', async () => {
+    jest.useFakeTimers();
+    try {
+      const worker = fakeWorker(() => {}); // never answers init
+      const host = hostMod.createSpeakerEmbeddingHost({ createWorker: () => worker });
+      const ready = host.ready();
+      jest.advanceTimersByTime(30_000);
+      expect(await ready).toBe(false);
+      expect(host.unavailableReason).toMatch(/timed out/);
+      expect(worker.terminated).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a worker error clears pending request timers', async () => {
+    let w;
+    const worker = fakeWorker((m, post) => {
+      if (m.type === 'init') return post({ type: 'ready' });
+      setTimeout(() => w.onerror({ message: 'crashed' }), 0);
+    });
+    w = worker;
+    jest.useFakeTimers();
+    try {
+      const host = hostMod.createSpeakerEmbeddingHost({ createWorker: () => worker });
+      const done = expect(host.embed(new Float32Array(16000), 16000)).rejects.toThrow(/crashed/);
+      for (let i = 0; i < 5; i++) await jest.advanceTimersByTimeAsync(1);
+      await done;
+      // Only the request timeout could remain; the failure must have cleared it.
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('dispose terminates the worker and later calls fall back', async () => {
     const worker = fakeWorker((m, post) => post({ type: 'ready' }));
     const host = hostMod.createSpeakerEmbeddingHost({ createWorker: () => worker });

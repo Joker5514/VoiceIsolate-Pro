@@ -94,7 +94,7 @@ export function mountTargetSpeakerUI(opts) {
     {
       n: '3',
       t: 'Enroll',
-      d: 'Creates a local voiceprint from that region (mel-band embedding — not cloud AI).',
+      d: 'Creates a local voiceprint from that region: an ECAPA-TDNN speaker embedding when that model is installed, otherwise a mel-band voiceprint. Nothing leaves the device.',
     },
     {
       n: '4',
@@ -194,6 +194,8 @@ export function mountTargetSpeakerUI(opts) {
   let embedding = null;
   /** ECAPA embedding when the optional model is installed; mel `embedding` stays the fallback. */
   let ecapaEmbedding = null;
+  /** Bumped by every enroll and clear; a stale async enrollment is discarded. */
+  let enrollToken = 0;
   /** @type {{ startSec: number, endSec: number, speechRatio?: number, dims?: number }|null} */
   let enrollMeta = null;
 
@@ -288,28 +290,37 @@ export function mountTargetSpeakerUI(opts) {
       notify(result.reason, 'error');
       return;
     }
+    const token = ++enrollToken;
     embedding = result.embedding;
     ecapaEmbedding = null;
     let method = 'local-mel-voiceprint';
     let dims = result.meta.dims;
     let fallbackNote = '';
     const host = ecapaHost();
-    if (host) {
+    if (!host) {
+      fallbackNote = ' (speaker-embedding worker unavailable; using the basic voiceprint)';
+    } else {
       enrollBtn.disabled = true;
       status.textContent = 'Computing speaker embedding (local)…';
+      let ecapa = null;
       try {
         if (await host.ready()) {
-          ecapaEmbedding = await host.embed(sliceSeconds(mono, sr, range), sr);
-          method = 'ecapa-tdnn';
-          dims = ecapaEmbedding.length;
+          ecapa = await host.embed(sliceSeconds(mono, sr, range), sr);
         } else {
-          fallbackNote = ' (ECAPA model not installed; using the basic voiceprint)';
+          fallbackNote = ` (ECAPA unavailable: ${host.unavailableReason || 'unknown'}; using the basic voiceprint)`;
         }
       } catch (err) {
         console.warn('[VIP][TargetSpeakerUI] ECAPA enrollment failed, using mel voiceprint:', err);
-        fallbackNote = ' (ECAPA failed; using the basic voiceprint)';
+        fallbackNote = ` (ECAPA failed: ${err?.message || err}; using the basic voiceprint)`;
       } finally {
         enrollBtn.disabled = false;
+      }
+      // Cleared (or re-enrolled) while the embedding was computing: drop it.
+      if (token !== enrollToken) return;
+      if (ecapa) {
+        ecapaEmbedding = ecapa;
+        method = 'ecapa-tdnn';
+        dims = ecapa.length;
       }
     }
     enrollMeta = {
@@ -330,7 +341,7 @@ export function mountTargetSpeakerUI(opts) {
     notify('Target speaker enrolled (local only)', 'ok');
   });
 
-  /** ECAPA gain curve, or null to fall back to the mel voiceprint. */
+  /** ECAPA gain curve; null (no ECAPA enrollment) or { error } fall back to the mel voiceprint. */
   async function ecapaGain(mono, sr, segs, clusterCount) {
     const host = ecapaHost();
     if (!ecapaEmbedding || !host) return null;
@@ -366,7 +377,7 @@ export function mountTargetSpeakerUI(opts) {
     } catch (err) {
       console.warn('[VIP][TargetSpeakerUI] ECAPA isolation failed, using mel voiceprint:', err);
       notify('Speaker model failed; using the basic voiceprint', 'warn');
-      return null;
+      return { error: err?.message || String(err) };
     }
   }
 
@@ -387,20 +398,21 @@ export function mountTargetSpeakerUI(opts) {
         ? (getDiarizationSegments() || null)
         : null;
       const clusters = new Set((segs || []).map((x) => x?.speakerId).filter((x) => x != null));
-      const viaEcapa = await ecapaGain(mono, sr, segs, clusters.size);
+      const ecapa = await ecapaGain(mono, sr, segs, clusters.size);
+      const viaEcapa = ecapa?.gain ? ecapa : null;
       let targetSpeakerId = null;
-      let matchNote = '';
+      let matchNote = ecapa?.error ? ` · ECAPA failed (${ecapa.error}); basic voiceprint used` : '';
       if (viaEcapa) {
         matchNote = viaEcapa.matchNote;
       } else if (clusters.size === 1) {
-        matchNote = ' · diarization found one speaker (voiceprint-only gain)';
+        matchNote += ' · diarization found one speaker (voiceprint-only gain)';
       } else if (clusters.size > 1) {
         const match = matchEmbeddingToDiarization(mono, sr, embedding, segs);
         if (match && match.similarity >= 0.25) {
           targetSpeakerId = match.speakerId;
-          matchNote = ` · matched diarization speaker “${match.speakerId}” (sim ${match.similarity.toFixed(2)})`;
+          matchNote += ` · matched diarization speaker “${match.speakerId}” (sim ${match.similarity.toFixed(2)})`;
         } else {
-          matchNote = ' · no strong diarization match (voiceprint-only gain)';
+          matchNote += ' · no strong diarization match (voiceprint-only gain)';
         }
       }
       const gain = viaEcapa ? viaEcapa.gain : buildTargetGainCurve(mono, sr, embedding, {
@@ -423,6 +435,7 @@ export function mountTargetSpeakerUI(opts) {
   });
 
   clearBtn.addEventListener('click', () => {
+    enrollToken += 1;
     embedding = null;
     ecapaEmbedding = null;
     enrollMeta = null;
@@ -437,6 +450,7 @@ export function mountTargetSpeakerUI(opts) {
     getEmbedding: () => embedding,
     getEnrollMeta: () => enrollMeta,
     clear() {
+      enrollToken += 1;
       embedding = null;
       ecapaEmbedding = null;
       enrollMeta = null;

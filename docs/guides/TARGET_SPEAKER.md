@@ -14,8 +14,12 @@ after Process, on an explicit click, entirely on the device.
 | Windows | 1.5 s, 0.5 s hop | 0.2 s, 0.05 s hop |
 | Threshold | 0.35 cosine, soft width 0.08 | 0.42 cosine, soft width 0.12 |
 
-The UI tries ECAPA first. If the model is missing, fails its SHA-256 pin, or the
-worker errors, it says so in the status line and uses the mel voiceprint.
+The UI tries ECAPA first and falls back to the mel voiceprint. On enrollment
+the status line names the reason: the worker is unavailable, ECAPA is
+unavailable (model missing, SHA-256 mismatch, init timeout, with the worker's
+reason), or ECAPA failed (with the error). If ECAPA fails during isolation, a
+warning notification appears and the final status line keeps
+"ECAPA failed (reason); basic voiceprint used".
 
 ## Measurements
 
@@ -37,7 +41,10 @@ Speed: about 45 ms of single-thread WASM per 1.5 s window under Node, so a
 10-minute file (1,200 windows) takes about a minute single-threaded. The
 browser uses SIMD and, when cross-origin isolated, threads; progress is shown.
 
-Reproduce (needs the model installed):
+Reproduce the two 1.5 s rows (needs the model installed). The script embeds
+each window once and compares it with every enrollment. The 0.2 s mel row and
+the full-utterance ECAPA figure came from separate local runs of the same data
+and are not reproduced by this command.
 
 ```bash
 pnpm models:fetch-ecapa
