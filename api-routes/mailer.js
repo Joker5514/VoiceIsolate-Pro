@@ -20,6 +20,12 @@ const RESEND_URL = 'https://api.resend.com/emails';
 export const MAX_ATTEMPTS = 5;
 /** A row left in "sending" this long (crashed process) is retried. */
 const SENDING_LEASE_MS = 10 * 60 * 1000;
+/**
+ * Resend keeps an Idempotency-Key for 24 h. Past that a re-send of a row left in
+ * "sending" (outcome unknown) could mail the buyer twice, so it is failed instead.
+ * A "retry" row got an error response, so re-sending it is safe.
+ */
+export const IDEMPOTENCY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const BATCH = 20;
 
 /** @returns {{ send: (msg: object, key: string) => Promise<string> } | null} */
@@ -90,9 +96,14 @@ export async function drainOutbox(store, transport, { now = Date.now } = {}) {
     const rows = [];
     state.outbox.forEach((row, i) => {
       if (rows.length >= BATCH || !due(row, t)) return;
+      if (row.status === 'sending' && t - (row.firstAttemptAt || row.leasedAt || t) > IDEMPOTENCY_WINDOW_MS) {
+        Object.assign(row, { status: 'failed', lastError: 'outcome unknown past the idempotency window; not re-sent' });
+        return;
+      }
       row.id ||= `license-issued:${row.customerId}:${row.at}:${i}`;
       row.status = 'sending';
       row.leasedAt = t;
+      row.firstAttemptAt ||= t;
       rows.push({ ...row });
     });
     return rows;

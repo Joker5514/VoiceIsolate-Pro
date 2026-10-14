@@ -146,3 +146,26 @@ describe('drainOutbox()', () => {
     expect(fetchImpl.calls).toHaveLength(0);
   });
 });
+
+describe('outbox safety', () => {
+  test('a row whose outcome is unknown past the idempotency window is failed, not re-sent', async () => {
+    configure();
+    const fetchImpl = fakeFetch([{ status: 200 }]);
+    const t = 100 * 60 * 60 * 1000;
+    const store = await storeWith([row(9, { status: 'sending', leasedAt: t - 24 * 60 * 60 * 1000, firstAttemptAt: t - 24 * 60 * 60 * 1000 })]);
+    await mailer.drainOutbox(store, mailer.getMailTransport({ fetchImpl }), { now: () => t });
+    expect(fetchImpl.calls).toHaveLength(0);
+    expect((await store.read()).outbox[0]).toMatchObject({ status: 'failed', lastError: expect.stringMatching(/idempotency window/) });
+  });
+
+  test('the outbox cap drops sent/failed history, never unsent mail', async () => {
+    const store = storeMod.createStore({ kind: 'memory' });
+    await store.transact((s) => {
+      for (let i = 0; i < 10; i += 1) s.outbox.push(row(`p${i}`));
+      for (let i = 0; i < 10_000; i += 1) s.outbox.push(row(`s${i}`, { status: 'sent' }));
+    });
+    const { outbox } = await store.read();
+    expect(outbox).toHaveLength(10_000);
+    expect(outbox.filter((r) => r.status === 'pending')).toHaveLength(10);
+  });
+});

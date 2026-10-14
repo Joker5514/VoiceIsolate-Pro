@@ -324,7 +324,7 @@ explicit architecture change.
 - Server secrets actually read by code: `LICENSE_JWT_SECRET` (license + sync JWT
   signing, HMAC-SHA256) and the Stripe pair `STRIPE_SECRET_KEY` /
   `STRIPE_WEBHOOK_SECRET` (see `.env.example`), plus the optional
-  `RESEND_API_KEY` for purchase-confirmation email (`api-routes/mailer.js`,
+  `RESEND_API_KEY` (with the sender address `EMAIL_FROM`; both are needed) for purchase-confirmation email (`api-routes/mailer.js`,
   server only; it drains the store outbox with the outbox row id as Resend's
   Idempotency-Key). Stripe webhook idempotency is
   keyed off the Stripe `event.id`, not a separate secret. **Never** commit

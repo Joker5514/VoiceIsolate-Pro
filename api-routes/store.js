@@ -40,7 +40,14 @@ function prune(state, now) {
     if (now - at > EVENT_TTL_MS) delete state.processedEvents[id];
   }
   if (state.usage.length > MAX_USAGE_ROWS) state.usage.splice(0, state.usage.length - MAX_USAGE_ROWS);
-  if (state.outbox.length > MAX_OUTBOX_ROWS) state.outbox.splice(0, state.outbox.length - MAX_OUTBOX_ROWS);
+  // Only terminal history (sent/failed) is dropped; unsent mail is never pruned.
+  let excess = state.outbox.length - MAX_OUTBOX_ROWS;
+  if (excess > 0) {
+    state.outbox = state.outbox.filter((row) => {
+      if (excess > 0 && (row.status === 'sent' || row.status === 'failed')) { excess -= 1; return false; }
+      return true;
+    });
+  }
 }
 
 /**

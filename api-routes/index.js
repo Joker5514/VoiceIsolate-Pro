@@ -152,8 +152,13 @@ export default router;
 export function startOutboxDrain(intervalMs = 60_000) {
   if (!getMailTransport()) return null;
   const timer = setInterval(() => {
-    const store = getStore();
-    if (store) drainOutbox(store, getMailTransport()).catch((err) => console.error('[VIP] [mail] drain failed:', err?.message || err));
+    try {
+      const store = getStore();
+      if (store) drainOutbox(store, getMailTransport()).catch((err) => console.error('[VIP] [mail] drain failed:', err?.message || err));
+    } catch (err) {
+      // e.g. VIP_DATA_DIR cannot be created: log and retry next tick, never crash.
+      console.error('[VIP] [mail] drain failed:', err?.message || err);
+    }
   }, intervalMs);
   timer.unref?.();
   return timer;
