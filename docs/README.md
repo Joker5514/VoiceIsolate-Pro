@@ -49,6 +49,7 @@ This index separates **current implementation/release truth** from historical au
 | [`guides/GOOGLE_DRIVE.md`](guides/GOOGLE_DRIVE.md) | Optional user-initiated Drive file I/O |
 | [`guides/REVENUECAT_ISOLATION.md`](guides/REVENUECAT_ISOLATION.md) | Billing boundary; never part of DSP |
 | [`guides/SAM_AUDIO.md`](guides/SAM_AUDIO.md) | Optional SAM-Audio integration status |
+| [`guides/TARGET_SPEAKER.md`](guides/TARGET_SPEAKER.md) | Target-speaker enrollment: optional ECAPA, mel fallback, measurements |
 | [`guides/SAM_SETUP.md`](guides/SAM_SETUP.md) | SAM-Audio real weights: gated access, `pnpm sam:pin`, integrity pins |
 | [`guides/PLATFORM_CAPABILITY_MATRIX.md`](guides/PLATFORM_CAPABILITY_MATRIX.md) | Web / Android / Desktop capability matrix |
 | [`SAM3_TECHNICAL_DOCUMENTATION.md`](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM 3 vision/video sidecar status; not core voice isolation |

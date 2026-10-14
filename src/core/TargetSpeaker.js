@@ -3,9 +3,11 @@
  *
  * Fully on-device. No network. Uses:
  *   • Energy + SoftVad-style speech checks for enrollment validity
- *   • Mel-band loudness-invariant voiceprint (diarization.melBands) as the
- *     **shipping** local embedding (ECAPA-TDNN ONNX is not yet in the
- *     manifest — do not claim ECAPA until weights + extractEmbeddingAsync land)
+ *   • Mel-band loudness-invariant voiceprint (diarization.melBands): always
+ *     available, but weak at telling speakers apart (EER ~19 %)
+ *   • Optional ECAPA-TDNN (WeSpeaker voxceleb_ECAPA512, hash-pinned in
+ *     ModelManifest, not bundled): scored in SpeakerEmbeddingWorker; this
+ *     module supplies the shared window/gain/match logic
  *
  * Optional: diarization cluster ids can be fused into the gain curve so
  * non-target speaker segments are attenuated more aggressively.
@@ -132,38 +134,64 @@ export function cosineSimilarity(a, b) {
 }
 
 /**
- * Build a soft time-domain gain curve [0,1] by comparing short windows to the
- * enrolled voiceprint. Used to attenuate non-target speech on the clean stem.
- *
- * @param {Float32Array} samples full mono mix or clean stem
- * @param {number} sampleRate
- * @param {Float32Array} targetEmbedding
- * @param {{ threshold?: number, softWidth?: number }} [opts]
- * @returns {Float32Array} per-sample gain
+ * ECAPA-TDNN window scoring, measured on LibriSpeech test-clean (10 speakers,
+ * 3 s enrollment, 1.5 s windows): EER 1.9 % at cosine 0.34; at 0.35 the
+ * target is missed on 2.2 % of windows and other talkers pass on 1.6 %.
+ * The blueprint's 0.75 rejected 95 % of target windows. Mel voiceprint on
+ * the same data: EER 19 %, and its 0.42 default passes 96 % of other talkers.
  */
-export function buildTargetGainCurve(samples, sampleRate, targetEmbedding, opts = {}) {
+export const ECAPA_SIMILARITY = Object.freeze({
+  threshold: 0.35,
+  softWidth: 0.08,
+  windowSec: 1.5,
+  hopSec: 0.5,
+});
+
+/**
+ * Analysis windows [start, end) in samples.
+ * @param {{ coverTail?: boolean, allowShort?: boolean }} [opts]
+ *   coverTail adds a last window ending at `length` when hops leave a tail;
+ *   allowShort returns one window over the whole signal when none fits.
+ * @returns {Array<[number, number]>}
+ */
+export function similarityWindows(length, sampleRate, winSec, hopSec, opts = {}) {
+  const win = Math.max(64, Math.floor(sampleRate * winSec));
+  const hop = Math.max(32, Math.floor(sampleRate * hopSec));
+  const out = [];
+  let i = 0;
+  for (; i + win <= length; i += hop) out.push([i, i + win]);
+  if (!out.length) return opts.allowShort && length > 0 ? [[0, length]] : out;
+  if (opts.coverTail && out[out.length - 1][1] < length) out.push([length - win, length]);
+  return out;
+}
+
+/**
+ * Soft per-sample gain [floor, 1] from window similarities to the target,
+ * with optional diarization fusion and click-free smoothing.
+ * @param {number} length samples
+ * @param {number} sampleRate
+ * @param {Array<[number, number]>} windows
+ * @param {ArrayLike<number>} sims cosine similarity per window
+ * @param {{ threshold?: number, softWidth?: number, diarizationSegments?: Array, targetSpeakerId?: string|number, smoothMs?: number, maxStepPerMs?: number }} [opts]
+ * @returns {Float32Array}
+ */
+export function gainCurveFromSimilarities(length, sampleRate, windows, sims, opts = {}) {
   const thr = opts.threshold ?? DEFAULT_SIM_THRESHOLD;
   const soft = opts.softWidth ?? 0.12;
-  const win = Math.max(64, Math.floor(sampleRate * 0.2));
-  const hop = Math.max(32, Math.floor(sampleRate * 0.05));
-  const gain = new Float32Array(samples.length);
+  const gain = new Float32Array(length);
   gain.fill(0.12); // floor for non-target
-  for (let i = 0; i + win <= samples.length; i += hop) {
-    const frame = samples.subarray(i, i + win);
-    const emb = extractLocalVoiceprint(frame, sampleRate);
-    const sim = cosineSimilarity(emb, targetEmbedding);
-    // Map similarity → gain
+  windows.forEach(([a, b], w) => {
+    const sim = sims[w];
     let g = 0.12;
     if (sim >= thr + soft) g = 1;
     else if (sim > thr - soft) {
       const t = (sim - (thr - soft)) / (2 * soft);
       g = 0.12 + t * 0.88;
     }
-    for (let j = 0; j < win; j++) {
-      const idx = i + j;
+    for (let idx = a; idx < b; idx++) {
       if (g > gain[idx]) gain[idx] = g;
     }
-  }
+  });
 
   // Optional diarization fusion: when segments + targetSpeakerId provided,
   // boost target cluster windows and attenuate other speakers more firmly.
@@ -173,7 +201,7 @@ export function buildTargetGainCurve(samples, sampleRate, targetEmbedding, opts 
     for (const seg of segs) {
       if (!seg || !Number.isFinite(seg.start) || !Number.isFinite(seg.end)) continue;
       const a = Math.max(0, Math.floor(seg.start * sampleRate));
-      const b = Math.min(samples.length, Math.ceil(seg.end * sampleRate));
+      const b = Math.min(length, Math.ceil(seg.end * sampleRate));
       const isTarget = String(seg.speakerId) === String(targetId);
       const floor = isTarget ? 0.85 : 0.08;
       for (let i = a; i < b; i++) {
@@ -188,6 +216,47 @@ export function buildTargetGainCurve(samples, sampleRate, targetEmbedding, opts 
     smoothMs: opts.smoothMs ?? 15,
     maxStepPerMs: opts.maxStepPerMs ?? 0.06,
   });
+}
+
+/**
+ * Build a soft time-domain gain curve [0,1] by comparing short windows to the
+ * enrolled mel voiceprint. Used to attenuate non-target speech on the clean stem.
+ * (The ECAPA path scores its windows in SpeakerEmbeddingWorker and calls
+ * gainCurveFromSimilarities directly.)
+ *
+ * @param {Float32Array} samples full mono mix or clean stem
+ * @param {number} sampleRate
+ * @param {Float32Array} targetEmbedding
+ * @param {{ threshold?: number, softWidth?: number }} [opts]
+ * @returns {Float32Array} per-sample gain
+ */
+export function buildTargetGainCurve(samples, sampleRate, targetEmbedding, opts = {}) {
+  const windows = similarityWindows(samples.length, sampleRate, 0.2, 0.05);
+  const sims = windows.map(([a, b]) => cosineSimilarity(
+    extractLocalVoiceprint(samples.subarray(a, b), sampleRate), targetEmbedding,
+  ));
+  return gainCurveFromSimilarities(samples.length, sampleRate, windows, sims, opts);
+}
+
+/**
+ * Best-matching diarization cluster for a target embedding. Needs at least
+ * two clusters (with one, every voice would be "the target").
+ * @param {Array<{ speakerId: string, embedding: ArrayLike<number> }>} clusters mean embedding per speaker
+ * @param {ArrayLike<number>} targetEmbedding
+ * @returns {{ speakerId: string, similarity: number }|null}
+ */
+export function matchClusterEmbeddings(clusters, targetEmbedding) {
+  if (!Array.isArray(clusters) || clusters.length < 2 || !targetEmbedding) return null;
+  let best = null;
+  let bestSim = -2;
+  for (const { speakerId, embedding } of clusters) {
+    const sim = cosineSimilarity(embedding, targetEmbedding);
+    if (sim > bestSim) {
+      bestSim = sim;
+      best = speakerId;
+    }
+  }
+  return best ? { speakerId: best, similarity: bestSim } : null;
 }
 
 /**
@@ -221,20 +290,14 @@ export function matchEmbeddingToDiarization(samples, sampleRate, targetEmbedding
   }
   // Fusion floors the matched cluster at 0.85. With one cluster every voice is
   // "the target", so a second speaker was lifted from ~0.45 back to ~0.9.
-  if (byId.size < 2) return null;
-  let best = null;
-  let bestSim = -2;
+  const clusters = [];
   for (const [speakerId, row] of byId) {
     if (!row.n) continue;
     const mean = new Float32Array(row.sum.length);
     for (let i = 0; i < mean.length; i++) mean[i] = row.sum[i] / row.n;
-    const sim = cosineSimilarity(mean, targetEmbedding);
-    if (sim > bestSim) {
-      bestSim = sim;
-      best = speakerId;
-    }
+    clusters.push({ speakerId, embedding: mean });
   }
-  return best ? { speakerId: best, similarity: bestSim } : null;
+  return matchClusterEmbeddings(clusters, targetEmbedding);
 }
 
 /**
@@ -277,6 +340,10 @@ export function enrollFromRange(samples, sampleRate, range) {
 }
 
 export default {
+  ECAPA_SIMILARITY,
+  similarityWindows,
+  gainCurveFromSimilarities,
+  matchClusterEmbeddings,
   validateEnrollmentSegment,
   extractLocalVoiceprint,
   cosineSimilarity,
