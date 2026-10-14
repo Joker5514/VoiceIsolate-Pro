@@ -47,6 +47,9 @@ importScripts('/lib/ort.min.js');
 // the existing fused STFT/iSTFT. Do not convert this worker to ESM; ORT uses
 // importScripts in this production path.
 importScripts('/src/workers/EngineerSpectralControls.js');
+// Classic-worker helper: offline mains-hum notch run on each channel once per
+// Process before the model chain (src/workers/MainsHumFilter.js).
+importScripts('/src/workers/MainsHumFilter.js');
 
 // Canonical schema (keep in sync with ModelIdbSchema.js + ml-worker-fetch-cache.js)
 const IDB_NAME = 'vip-model-cache';
@@ -914,7 +917,12 @@ async function runFusedSpectralMaskChain(
     }
   }
   const normalizeInput = heads.some((h) => h.entry.inputNormalization === 'frame-max');
-  const maskExponents = heads.map((h) => {
+  // A head that follows another in a fused chain may carry its own chain
+  // calibration (ModelManifest chainMaskExponent): masks multiply, so the
+  // single-model exponent over-attenuates when stacked.
+  const maskExponents = heads.map((h, i) => {
+    const chained = Number(h.entry.chainMaskExponent);
+    if (i > 0 && Number.isFinite(chained) && chained > 0) return chained;
     const p = Number(h.entry.maskExponent);
     return Number.isFinite(p) && p > 0 ? p : 1;
   });
@@ -1456,6 +1464,22 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   };
 
   const entries = chain.map((id) => MANIFEST[id]);
+  // Stationary 50/60 Hz hum passes through the mask networks almost intact,
+  // so notch it out before inference. The noise stem below stays the residual
+  // against the untouched input, so the removed hum is audible there.
+  let humRemoved = null;
+  let modelInput = channelData;
+  if (typeof self.removeMainsHum === 'function') {
+    modelInput = [];
+    for (const samples of channelData) {
+      // Detection and filtering run per channel; the filter yields to the
+      // cancellation point between chunks so a long file stays cancellable.
+      const r = await self.removeMainsHum(samples, sampleRate, () => cancellationPoint(requestId));
+      if (r.hum) humRemoved = r.hum;
+      modelInput.push(r.samples);
+    }
+    checkCancelled(requestId);
+  }
   const engineerConfigAccepted = typeof self.sanitizeEngineerProcessingConfig === 'function'
     && Boolean(self.sanitizeEngineerProcessingConfig(processingConfig));
   const requestedProcessingRevision = engineerConfigAccepted && typeof processingConfig?.revision === 'string'
@@ -1480,7 +1504,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       // Channels run concurrently; report their mean so the last channel's
       // offset (e.g. 50%+ on stereo) is not shown before any real work.
       const channelProgress = new Float32Array(channelData.length);
-      clean = await Promise.all(channelData.map((samples, ch) => {
+      clean = await Promise.all(modelInput.map((samples, ch) => {
         const progress = (p) => {
           channelProgress[ch] = p;
           let sum = 0;
@@ -1494,7 +1518,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       pipelineMode = 'serial-mixed';
       const totalSteps = chain.length * channelData.length;
       let stepBase = 0;
-      let current = channelData;
+      let current = modelInput;
       for (let ci = 0; ci < chain.length; ci++) {
         checkCancelled(requestId);
         const id = chain[ci];
@@ -1547,6 +1571,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       passthrough: false,
       pipelineMode,
       modelChain: chain,
+      humRemoved,
       stftCounts: stft,
       appliedProcessingConfigRevision: entries.some((entry) => entry.strategy === 'spectral-mask')
         ? requestedProcessingRevision

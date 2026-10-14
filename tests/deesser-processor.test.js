@@ -127,6 +127,19 @@ describe('DeEsserProcessor', () => {
       expect(levelDb(12000, 1)).toBeLessThan(levelDb(1000, 1) - 3);
     });
 
+    it('caps the sibilant-band cut at -12 dB at full amount on a full-scale tone', () => {
+      const p = new DeEsserProcessor();
+      const x = new Float32Array(128);
+      for (let b = 0; b < 750; b++) {
+        for (let i = 0; i < 128; i++) x[i] = Math.sin((2 * Math.PI * 16000 * (b * 128 + i)) / 48000);
+        p.process([[x]], [[new Float32Array(128)]], { amount: [1], frequency: [6500] });
+      }
+      // Envelope ~0.8 is ~18 dB over the 0.1 threshold; the cap must hold it at -12 dB.
+      expect(20 * Math.log10(p.currentGain[0])).toBeGreaterThanOrEqual(-12.01);
+      expect(20 * Math.log10(p.currentGain[0])).toBeLessThan(-11);
+      expect(levelDb(16000, 1)).toBeGreaterThan(-13);
+    });
+
     it('rebuilds the filter when the context sample rate differs from 48 kHz', () => {
       global.sampleRate = 44100;
       const x = new Float32Array(128).fill(0.1);

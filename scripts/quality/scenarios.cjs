@@ -10,7 +10,12 @@ function scenarios(seconds = 6) {
   const n = Math.round(seconds * S.SR);
   const voice = () => S.talker({ seconds, seed: 11, f0: 125 });
   const list = [];
-  const add = (id, label, build, kind = 'separation') => list.push({ id, label, kind, build });
+  // improvementExpected: noisy fixtures where processing must not lower
+  // SI-SDR (quality-gate improvement tier; stationary noise at SNR <= 10 dB).
+  const add = (id, label, build, kind = 'separation', { improvementExpected = false } = {}) => list.push({
+    id, label, kind, build, improvementExpected,
+  });
+  const improve = { improvementExpected: true };
 
   add('clean-speech', 'Clean speech (no noise)', () => {
     const v = voice();
@@ -20,17 +25,17 @@ function scenarios(seconds = 6) {
     const v = voice();
     const m = S.mixAtSnr(v.signal, S.whiteNoise(n, 101), 5, v.active);
     return { input: m.mix, ref: v.signal, active: v.active, fricative: v.fricative };
-  });
+  }, 'separation', improve);
   add('hvac-5db', 'Fan/HVAC rumble + hiss, 5 dB SNR', () => {
     const v = voice();
     const m = S.mixAtSnr(v.signal, S.hvac(n, 102), 5, v.active);
     return { input: m.mix, ref: v.signal, active: v.active, fricative: v.fricative };
-  });
+  }, 'separation', improve);
   add('hum-10db', '60 Hz hum + 4 harmonics, 10 dB SNR', () => {
     const v = voice();
     const m = S.mixAtSnr(v.signal, S.hum(n, 60), 10, v.active);
     return { input: m.mix, ref: v.signal, active: v.active, fricative: v.fricative };
-  });
+  }, 'separation', improve);
   add('music-0db', 'Instrumental bed (sawtooth triads), 0 dB SNR', () => {
     const v = voice();
     const m = S.mixAtSnr(v.signal, S.music(n, 103), 0, v.active);
@@ -61,7 +66,7 @@ function scenarios(seconds = 6) {
     const w = S.talker({ seconds, seed: 41, whisper: true });
     const m = S.mixAtSnr(w.signal, S.whiteNoise(n, 105), 10, w.active);
     return { input: m.mix, ref: w.signal, active: w.active, fricative: w.fricative };
-  });
+  }, 'separation', improve);
   add('whisper-music-5db', 'Whisper under music, 5 dB SNR', () => {
     const w = S.talker({ seconds, seed: 41, whisper: true });
     const m = S.mixAtSnr(w.signal, S.music(n, 106), 5, w.active);
