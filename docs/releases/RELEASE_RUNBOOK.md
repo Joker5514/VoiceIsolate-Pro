@@ -79,18 +79,23 @@ both the PR gate and the release workflow's gate fail.
 2. Build the artifacts from that commit: `pnpm android:bundle` (or
    `pnpm android:release` for an APK) with the signing variables from §2, and
    `pnpm build:electron` (Windows, or Linux with `wine` + `wine32`).
-3. Publish GitHub release `v25.1.0` at that commit with the AAB/APK and
-   `VoiceIsolate-Pro-25.1.0-win-x64.exe` attached, marked latest.
-4. Merge the bump. `pnpm downloads:validate` now passes, so CI's network tier
-   does too. A tag push now also passes `release-build.yml`'s gate; the
-   workflow cannot build a release that does not exist yet, because its gate
-   validates the published one.
-5. Record provenance in `docs/releases/release-provenance.json` from the
-   artifacts actually published: SHA-256, source SHA and build time for
-   Android and Windows, and for Web the Vercel production deployment of the
-   same SHA (`verification.method: "vercel-deployment"` with the deployment
-   id/URL as evidence; strict mode refuses a Web record inferred from git
-   HEAD). Then:
+3. Publish GitHub release `v25.1.0` at that commit, marked latest, with
+   `VoiceIsolate-Pro-25.1.0-win-x64.exe` and an APK named exactly
+   `VoiceIsolate-Pro-android-debug.apk`: `scripts/validate-download-links.mjs`
+   and the `/download/*.apk` redirects require that name (attach the AAB too
+   if you like). Shipping a signed release APK under its own name needs the
+   rename described in §2 first.
+4. On the bump branch, update `docs/releases/release-provenance.json` before
+   merging: `productVersion` `25.1.0`, `tag` `v25.1.0`, and the Android and
+   Windows records from the assets you just published (SHA-256, URL, source
+   SHA, build time). `downloads:validate` compares these against the release,
+   so CI's network tier fails without them. Then merge; a tag push now also
+   passes `release-build.yml`'s gate (the workflow cannot build a release
+   that does not exist yet, because its gate validates the published one).
+5. After Vercel deploys that commit, record the Web platform from the
+   production deployment (`verification.method: "vercel-deployment"` with
+   the deployment id/URL as evidence; strict mode refuses a Web record
+   inferred from git HEAD). Then:
 
 ```bash
 pnpm provenance:validate:strict
