@@ -257,3 +257,28 @@ describe('F15 — explicit body budgets per route', () => {
     expect(bad.body).toMatchObject({ error: 'Malformed JSON body' });
   });
 });
+
+describe('STRIPE_API_BASE (e2e smoke override)', () => {
+  const saved = { base: process.env.STRIPE_API_BASE, env: process.env.NODE_ENV };
+  afterEach(() => {
+    if (saved.base === undefined) delete process.env.STRIPE_API_BASE; else process.env.STRIPE_API_BASE = saved.base;
+    process.env.NODE_ENV = saved.env;
+  });
+
+  test('unset leaves the SDK on api.stripe.com', () => {
+    delete process.env.STRIPE_API_BASE;
+    expect(monetization.stripeApiBase()).toEqual({});
+  });
+
+  test('maps a local base URL to SDK host options outside production', () => {
+    process.env.NODE_ENV = 'test';
+    process.env.STRIPE_API_BASE = 'http://127.0.0.1:12111';
+    expect(monetization.stripeApiBase()).toEqual({ host: '127.0.0.1', port: 12111, protocol: 'http' });
+  });
+
+  test('is refused in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.STRIPE_API_BASE = 'http://127.0.0.1:12111';
+    expect(() => monetization.stripeApiBase()).toThrow(/not allowed in production/);
+  });
+});
