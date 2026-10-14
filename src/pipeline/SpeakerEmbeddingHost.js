@@ -45,6 +45,8 @@ export function createSpeakerEmbeddingHost(opts = {}) {
       }
       const timer = setTimeout(() => {
         unavailableReason = 'ECAPA init timed out';
+        worker?.terminate?.();
+        worker = null;
         resolve(false);
       }, INIT_TIMEOUT_MS);
       worker.onerror = (e) => {
