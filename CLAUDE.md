@@ -372,8 +372,9 @@ shipped models over deterministic fixtures and fails on any pinned metric
 dropping more than 0.5 dB; re-pin only with `node scripts/quality/quality-gate.cjs --update` and a
 reviewed baseline diff. Its improvement tier (`improvementRequired`) holds
 every listed pair at SI-SDR delta >= 0 dB and only grows. MLWorker first runs
-`src/workers/MainsHumFilter.js`, an offline 50/60 Hz notch, once per Process
-before the model chain (no slider, no extra STFT). Both shipped networks are single-frame and weak: the
+`src/workers/MainsHumFilter.js`, an offline 50/60 Hz notch, once per channel per
+Process before the model chain (no slider; its detection FFTs are not a model
+STFT/iSTFT pass). Both shipped networks are single-frame and weak: the
 default chain still lowers SI-SDR on some noisy inputs. Do not describe them
 as more capable than the gate shows.
 

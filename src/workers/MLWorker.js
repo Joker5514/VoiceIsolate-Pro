@@ -47,8 +47,8 @@ importScripts('/lib/ort.min.js');
 // the existing fused STFT/iSTFT. Do not convert this worker to ESM; ORT uses
 // importScripts in this production path.
 importScripts('/src/workers/EngineerSpectralControls.js');
-// Classic-worker helper: offline mains-hum notch run once per Process before
-// the model chain (src/workers/MainsHumFilter.js).
+// Classic-worker helper: offline mains-hum notch run on each channel once per
+// Process before the model chain (src/workers/MainsHumFilter.js).
 importScripts('/src/workers/MainsHumFilter.js');
 
 // Canonical schema (keep in sync with ModelIdbSchema.js + ml-worker-fetch-cache.js)
@@ -1468,14 +1468,18 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   // so notch it out before inference. The noise stem below stays the residual
   // against the untouched input, so the removed hum is audible there.
   let humRemoved = null;
-  const modelInput = typeof self.removeMainsHum === 'function'
-    ? channelData.map((samples) => {
-      checkCancelled(requestId);
-      const r = self.removeMainsHum(samples, sampleRate);
+  let modelInput = channelData;
+  if (typeof self.removeMainsHum === 'function') {
+    modelInput = [];
+    for (const samples of channelData) {
+      // Detection and filtering run per channel; the filter yields to the
+      // cancellation point between chunks so a long file stays cancellable.
+      const r = await self.removeMainsHum(samples, sampleRate, () => cancellationPoint(requestId));
       if (r.hum) humRemoved = r.hum;
-      return r.samples;
-    })
-    : channelData;
+      modelInput.push(r.samples);
+    }
+    checkCancelled(requestId);
+  }
   const engineerConfigAccepted = typeof self.sanitizeEngineerProcessingConfig === 'function'
     && Boolean(self.sanitizeEngineerProcessingConfig(processingConfig));
   const requestedProcessingRevision = engineerConfigAccepted && typeof processingConfig?.revision === 'string'

@@ -112,14 +112,14 @@ The default-chain clean drop (16.69 -> 16.54 dB on one utterance) is real
 the reference contains it, so removing it costs SI-SDR against that reference.
 
 - **Mains hum notch** (`src/workers/MainsHumFilter.js`, run by MLWorker once
-  per Process before the model chain). Detects a stationary 50/60 Hz series
+  per channel per Process before the model chain). Detects a stationary 50/60 Hz series
   (fundamental may be missing) from long-window spectra, then applies a
   zero-phase notch per detected harmonic up to Nyquist: Q 30 at the
   fundamental and the same ~2 Hz bandwidth at every harmonic, each centred on
   its measured frequency. A per-harmonic Q of 30 would overlap into a comb
   above ~1.8 kHz. The noise stem is still the residual against the original
-  input, so the removed hum is audible there. A sustained tone exactly on a
-  mains harmonic is indistinguishable from hum and is notched too.
+  input, so the removed hum is audible there. Once a hum series is detected,
+  a sustained tone exactly on one of its harmonics is notched with it.
 - **Maximum chain exponent.** `rnnoise.chainMaskExponent: 0.15` applies when
   rnnoise follows BSRNN in the fused chain; BSRNN keeps `maskExponent: 0.5`
   and the single-model defaults are unchanged. The old product

@@ -92,9 +92,10 @@ async function main() {
   const required = new Set(previous?.improvementRequired || []);
   for (const k of required) {
     if (!improvementKeys.includes(k)) failures.push(`${k}: listed in improvementRequired but not a tagged improvement metric`);
-    else if (rounded[k] < 0) failures.push(`${k}: ${rounded[k]} dB < 0 dB (improvement tier)`);
+    else if (metrics[k] < 0) failures.push(`${k}: ${metrics[k].toFixed(3)} dB < 0 dB (improvement tier)`);
   }
-  const gaps = improvementKeys.filter((k) => !required.has(k) && rounded[k] < 0);
+  // Compare unrounded values: rounding would turn -0.004 dB into -0 and pass.
+  const gaps = improvementKeys.filter((k) => !required.has(k) && metrics[k] < 0);
   const toleranceValue = Number(base?.toleranceDb);
   // A non-finite tolerance (e.g. 1e999 → Infinity) would disable every check.
   const tolerance = Number.isFinite(toleranceValue) && toleranceValue > 0 ? toleranceValue : DEFAULT_TOLERANCE_DB;
@@ -111,7 +112,7 @@ async function main() {
       note: 'dB; pinned by scripts/quality/quality-gate.cjs --update. Lower is a regression beyond the tolerance.',
       toleranceDb: DEFAULT_TOLERANCE_DB,
       improvementNote: 'SI-SDR delta must stay >= 0 dB for these pairs; the list only grows.',
-      improvementRequired: improvementKeys.filter((k) => rounded[k] >= 0),
+      improvementRequired: improvementKeys.filter((k) => metrics[k] >= 0),
       metrics: rounded,
     }, null, 2)}\n`);
     console.log(`[quality] baseline written: ${Object.keys(rounded).length} metrics`);

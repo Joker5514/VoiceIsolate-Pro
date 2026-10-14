@@ -19,8 +19,8 @@ AudioWorklet. `MLWorker` imports it during offline Process work, where it applie
 the Engineer spectral configuration inside the already-existing STFT frame loop.
 It is copied and precached with the worker assets on Web, Android, and Desktop.
 `src/workers/MainsHumFilter.js` follows the same rule: MLWorker imports it to
-notch stationary 50/60 Hz hum out of the input once per Process, before the
-model chain. It has no control and is not an AudioWorklet.
+notch stationary 50/60 Hz hum out of each input channel once per Process,
+before the model chain. It has no control and is not an AudioWorklet.
 
 ## Delivery path
 

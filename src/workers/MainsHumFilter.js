@@ -1,8 +1,8 @@
 /*
  * VoiceIsolate Pro — mains hum removal (Layer 2 classic-worker helper)
  *
- * Loaded by MLWorker with importScripts() and run once per Process, before
- * the spectral chain. Never a live control: there is no slider and nothing
+ * Loaded by MLWorker with importScripts() and run on each channel once per
+ * Process, before the model chain. Never a live control: there is no slider and nothing
  * here can start inference.
  *
  * Detection: averaged long-window spectra over a sample of the file look for
@@ -23,7 +23,8 @@
   const MAINS = [50, 60];
   const Q_FUNDAMENTAL = 30;
   const MAX_WINDOWS = 24;
-  const MAX_NOTCHES = 96;
+  /** Samples per filter chunk between cancellation points (~5 ms of work). */
+  const CHUNK = 1 << 18;
   /** Power ratio a peak must clear over its neighbours (10 dB, 6 dB). */
   const SERIES_PROMINENCE = 10;
   const HARMONIC_PROMINENCE = 4;
@@ -163,7 +164,7 @@
     // tight window keeps nearby voice or music partials out of the series.
     const nyquist = sampleRate / 2;
     const harmonics = [];
-    for (let h = 1; best.f0 * h < nyquist - 2 * binHz && harmonics.length < MAX_NOTCHES; h++) {
+    for (let h = 1; best.f0 * h < nyquist - 2 * binHz; h++) {
       const target = best.f0 * h;
       const found = [];
       for (const p of spectra) {
@@ -192,26 +193,36 @@
     return { b0: 1 / a0, b1: -2 * cos / a0, b2: 1 / a0, a1: -2 * cos / a0, a2: (1 - alpha) / a0 };
   }
 
-  function runBiquad(x, c, reverse) {
+  /**
+   * One biquad pass over x in place, in chunks; awaits yieldFn between
+   * chunks so a long file stays cancellable.
+   */
+  async function runBiquad(x, c, reverse, yieldFn) {
     let x1 = 0; let x2 = 0; let y1 = 0; let y2 = 0;
     const n = x.length;
-    for (let s = 0; s < n; s++) {
-      const i = reverse ? n - 1 - s : s;
-      const v = x[i];
-      const y = c.b0 * v + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
-      x2 = x1; x1 = v; y2 = y1; y1 = y;
-      x[i] = y;
+    for (let s0 = 0; s0 < n; s0 += CHUNK) {
+      const end = Math.min(n, s0 + CHUNK);
+      for (let s = s0; s < end; s++) {
+        const i = reverse ? n - 1 - s : s;
+        const v = x[i];
+        const y = c.b0 * v + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+        x2 = x1; x1 = v; y2 = y1; y1 = y;
+        x[i] = y;
+      }
+      if (yieldFn && end < n) await yieldFn();
     }
   }
 
   /**
-   * Remove detected mains hum. Returns the input unchanged (same array) when
-   * no stationary hum series is found.
+   * Remove detected mains hum. Resolves to the input unchanged (same array)
+   * when no stationary hum series is found.
    * @param {Float32Array} samples
    * @param {number} sampleRate
-   * @returns {{ samples: Float32Array, hum: { fundamental: number, harmonics: number[] } | null }}
+   * @param {(() => Promise<void> | void) | null} [yieldFn] awaited between
+   *   filter chunks (MLWorker passes its cancellation point)
+   * @returns {Promise<{ samples: Float32Array, hum: { fundamental: number, harmonics: number[] } | null }>}
    */
-  function removeMainsHum(samples, sampleRate) {
+  async function removeMainsHum(samples, sampleRate, yieldFn = null) {
     const hum = detectMainsHum(samples, sampleRate);
     if (!hum) return { samples, hum: null };
     const bandwidth = hum.fundamental / Q_FUNDAMENTAL;
@@ -229,8 +240,8 @@
     for (let i = 0; i < n; i++) work[pad + i] = samples[i];
     for (const f of hum.harmonics) {
       const c = notchCoefficients(f, bandwidth, sampleRate);
-      runBiquad(work, c, false);
-      runBiquad(work, c, true);
+      await runBiquad(work, c, false, yieldFn);
+      await runBiquad(work, c, true, yieldFn);
     }
     return { samples: work.subarray(pad, pad + n), hum };
   }

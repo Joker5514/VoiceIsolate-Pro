@@ -39,9 +39,9 @@ function amplitudeAt(x, f) {
 }
 
 describe('MainsHumFilter', () => {
-  it('detects a 50 Hz series and notches every harmonic by >= 30 dB', () => {
+  it('detects a 50 Hz series and notches every harmonic by >= 30 dB', async () => {
     const x = tones(4, [[50, 0.3], [100, 0.15], [150, 0.1], [1030, 0.2]]);
-    const { samples, hum } = removeMainsHum(x, SR);
+    const { samples, hum } = await removeMainsHum(x, SR);
     expect(hum.fundamental).toBe(50);
     for (const f of [50, 100, 150]) {
       expect(hum.harmonics.some((h) => Math.abs(h - f) < 0.2)).toBe(true);
@@ -52,33 +52,52 @@ describe('MainsHumFilter', () => {
     expect(samples.length).toBe(x.length);
   });
 
-  it('follows off-nominal mains (60.3 Hz) and a missing fundamental (120/180 Hz buzz)', () => {
-    const drift = removeMainsHum(tones(4, [[60.3, 0.3], [120.6, 0.2]]), SR);
+  it('follows off-nominal mains (60.3 Hz) and a missing fundamental (120/180 Hz buzz)', async () => {
+    const off = tones(4, [[60.3, 0.3], [120.6, 0.2]]);
+    const drift = await removeMainsHum(off, SR);
     expect(drift.hum.fundamental).toBe(60);
     expect(Math.abs(drift.hum.harmonics[0] - 60.3)).toBeLessThan(0.1);
+    expect(20 * Math.log10(amplitudeAt(drift.samples, 60.3) / amplitudeAt(off, 60.3))).toBeLessThan(-30);
 
     const buzz = tones(4, [[120, 0.3], [180, 0.2], [240, 0.1]]);
-    const out = removeMainsHum(buzz, SR);
+    const out = await removeMainsHum(buzz, SR);
     expect(out.hum.fundamental).toBe(60);
     expect(20 * Math.log10(amplitudeAt(out.samples, 120) / amplitudeAt(buzz, 120))).toBeLessThan(-30);
   });
 
   // Speech synthesis is slow under Jest (~2 s per second of talker), so this
   // samples one fixture per noise family; the quality gate covers the rest.
-  it('leaves speech, noise and music fixtures alone (returns the same array)', () => {
+  it('leaves speech, noise and music fixtures alone (returns the same array)', async () => {
     for (const sc of scenarios(2)) {
       if (!['clean-speech', 'hvac-5db', 'music-0db', 'noise-only'].includes(sc.id)) continue;
       const { input } = sc.build();
-      const r = removeMainsHum(input, SR);
+      const r = await removeMainsHum(input, SR);
       expect({ id: sc.id, hum: r.hum }).toEqual({ id: sc.id, hum: null });
       expect(r.samples).toBe(input);
     }
   });
 
-  it('raises SI-SDR of the 10 dB hum fixture by more than 10 dB', () => {
+  it('raises SI-SDR of the 10 dB hum fixture by more than 10 dB', async () => {
     const fx = scenarios(2).find((s) => s.id === 'hum-10db').build();
-    const { samples } = removeMainsHum(fx.input, SR);
+    const { samples } = await removeMainsHum(fx.input, SR);
     expect(M.siSdr(samples, fx.ref) - M.siSdr(fx.input, fx.ref)).toBeGreaterThan(10);
+  });
+
+  it('yields between filter chunks so a long file stays cancellable', async () => {
+    const x = tones(12, [[60, 0.3], [180, 0.1]]);
+    let yields = 0;
+    await removeMainsHum(x, SR, () => { yields++; });
+    // 12 s + 2 s padding = 672000 samples = 3 chunks per pass, 2 passes per notch.
+    expect(yields).toBeGreaterThanOrEqual(8);
+  });
+
+  it('notches detected harmonics above 6 kHz (no fixed notch cap)', async () => {
+    const parts = [[50, 0.3]];
+    for (let h = 2; h <= 140; h++) parts.push([50 * h, 0.01]);
+    const x = tones(2, parts);
+    const { hum, samples } = await removeMainsHum(x, SR);
+    expect(hum.harmonics.length).toBeGreaterThan(96);
+    expect(20 * Math.log10(amplitudeAt(samples, 6500) / amplitudeAt(x, 6500))).toBeLessThan(-20);
   });
 
   it('skips input shorter than one analysis window and digital silence', () => {
