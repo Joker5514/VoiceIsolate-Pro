@@ -8,7 +8,7 @@
  *
  * Profiles: landing (bsrnn_vocals, no Engineer snapshot), engineer (registry
  * defaults through the real calibration + ParameterSchema snapshot), maximum
- * (bsrnn_vocals + rnnoise fused). Metrics are explained in docs/guides/AUDIO_QUALITY.md.
+ * (bsrnn_vocals + rnnoise fused), enhance (deepfilternet3, its own STFT). Metrics are explained in docs/guides/AUDIO_QUALITY.md.
  */
 const fs = require('fs');
 const { createMlWorker } = require('./lib/mlworker-node.cjs');

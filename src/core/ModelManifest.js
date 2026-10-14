@@ -367,7 +367,7 @@ export function modelChainRevision(modelIds = []) {
     return [
       id,
       e.parts
-        ? Object.values(e.parts).map((p) => MODEL_MANIFEST[p]?.sha256 || `${p}-unpinned`).join('+')
+        ? Object.values(e.parts).map((p) => MODEL_MANIFEST[p]?.sha256 || `${p}-unpinned-${MODEL_MANIFEST[p]?.sizeBytes ?? 'na'}`).join('+')
         : (e.sha256 || `unpinned-${e.sizeBytes ?? 'na'}`),
       e.inputNormalization || 'raw',
       e.maskExponent ?? 1,

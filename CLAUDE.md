@@ -391,7 +391,7 @@ Process before the model chain (no slider; its detection FFTs are not a model
 STFT/iSTFT pass). Both shipped networks are single-frame and weak: the
 default chain still lowers SI-SDR on some noisy inputs. Do not describe them
 as more capable than the gate shows. DeepFilterNet3 is the reverse case: on
-recorded speech it beats both chains by 5-9 dB SI-SDR, but it scores far below
+noisy recorded speech it beats both chains by 5-9 dB SI-SDR, but it scores far below
 them on the gate's synthetic talker and suppresses synthetic whispers (it treats
 that synthesis as noise). Its gate metrics are pinned as regressions only; do
 not make it the default from gate numbers, and do not claim whisper safety.

@@ -15,6 +15,8 @@ export const QUICK_CLEAN_OUTCOMES = Object.freeze([
 
 /** Strategies whose fixed 48 kHz chain a Quick Clean outcome may use. */
 const QUICK_CLEAN_STRATEGIES = new Set(['spectral-mask', 'deepfilternet']);
+/** Part roles MLWorker's deepfilternet strategy runs. */
+const DEEPFILTERNET_PARTS = Object.freeze(['enc', 'erb_dec', 'df_dec']);
 
 export function resolveQuickCleanPlan(id, { manifest = MODEL_MANIFEST, backend = 'wasm' } = {}) {
   const outcome = QUICK_CLEAN_OUTCOMES.find((item) => item.id === id);
@@ -27,7 +29,8 @@ export function resolveQuickCleanPlan(id, { manifest = MODEL_MANIFEST, backend =
     ? Object.values(model.parts).map((partId) => manifest[partId])
     : [model]));
   if (models.some((model) => unshipped(model)
-    || !QUICK_CLEAN_STRATEGIES.has(model.strategy) || model.sampleRate !== SAMPLE_RATE)
+    || !QUICK_CLEAN_STRATEGIES.has(model.strategy) || model.sampleRate !== SAMPLE_RATE
+    || (model.strategy === 'deepfilternet' && !DEEPFILTERNET_PARTS.every((part) => model.parts?.[part])))
     || files.some((file) => unshipped(file) || !/^[a-f0-9]{64}$/.test(file.sha256 || '')
       || !Number.isFinite(file.sizeBytes) || file.sizeBytes <= 0)) {
     throw new Error('This outcome has no shipped, integrity-pinned model chain. Choose another outcome.');

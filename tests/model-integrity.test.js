@@ -65,6 +65,11 @@ describe('model integrity validator', () => {
       vercelJson: null,
     });
     expect(unshipped.errors).toContain('shipped composite model deepfilternet3 part dfn3_enc is not a shipped file');
+    const empty = integrity.validateModelIntegrity({
+      manifest: { ...MODEL_MANIFEST, deepfilternet3: { ...MODEL_MANIFEST.deepfilternet3, parts: {} } },
+      vercelJson: null,
+    });
+    expect(empty.errors).toContain('composite model deepfilternet3 names no parts');
   });
 
   test('rejects unpinned models that are not explicitly optional', () => {

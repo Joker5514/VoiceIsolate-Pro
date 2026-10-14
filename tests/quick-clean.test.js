@@ -61,6 +61,12 @@ test.each([{ shipped: false }, { sha256: null }, { sizeBytes: 0 }])('rejects Enh
   expect(() => plans.resolveQuickCleanPlan('enhance_speech', { manifest })).toThrow(/shipped/);
 });
 
+test.each([{}, { enc: 'dfn3_enc', erb_dec: 'dfn3_erb_dec' }])('rejects Enhance Speech with incomplete composite parts %j', async (parts) => {
+  const { MODEL_MANIFEST } = await import('../src/core/ModelManifest.js');
+  const manifest = { ...MODEL_MANIFEST, deepfilternet3: { ...MODEL_MANIFEST.deepfilternet3, parts } };
+  expect(() => plans.resolveQuickCleanPlan('enhance_speech', { manifest })).toThrow(/shipped/);
+});
+
 test('unknown backend disables every choice; offline and unknown quota are explicit', async () => {
   const dom = new JSDOM(fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8'));
   const ui = new QuickCleanUI(dom.window.document);

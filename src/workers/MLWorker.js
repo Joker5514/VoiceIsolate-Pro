@@ -300,8 +300,10 @@ function actualBackendsFor(chain) {
   let backend = null;
   let mixed = false;
   for (const id of ids) {
-    // A composite (DeepFilterNet3) reports the backend of its encoder session.
-    const used = sessionBackend(MANIFEST[id]?.parts?.enc || id);
+    // A composite (DeepFilterNet3) reports 'mixed' unless all part sessions agree.
+    const parts = MANIFEST[id]?.parts ? Object.values(MANIFEST[id].parts) : [id];
+    const partBackends = new Set(parts.map((p) => sessionBackend(p)));
+    const used = partBackends.size === 1 ? [...partBackends][0] : 'mixed';
     map[id] = used;
     if (backend == null) backend = used;
     else if (used !== backend) mixed = true;
