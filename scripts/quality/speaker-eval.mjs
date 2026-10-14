@@ -28,8 +28,9 @@ function readWav(file) {
   while (off + 8 <= b.length) {
     const id = b.toString('ascii', off, off + 4);
     const size = b.readUInt32LE(off + 4);
-    if (id === 'fmt ') fmt = { ch: b.readUInt16LE(off + 10), sr: b.readUInt32LE(off + 12), bits: b.readUInt16LE(off + 22) };
+    if (id === 'fmt ') fmt = { format: b.readUInt16LE(off + 8), ch: b.readUInt16LE(off + 10), sr: b.readUInt32LE(off + 12), bits: b.readUInt16LE(off + 22) };
     if (id === 'data') {
+      if (!fmt || fmt.format !== 1 || fmt.bits !== 16 || fmt.ch !== 1) throw new Error(`${file}: need 16-bit mono PCM`);
       if (!fmt || fmt.bits !== 16 || fmt.ch !== 1) throw new Error(`${file}: need 16-bit mono PCM`);
       const x = new Float32Array(size / 2);
       for (let i = 0; i < x.length; i++) x[i] = b.readInt16LE(off + 8 + 2 * i) / 32768;
