@@ -257,3 +257,38 @@ describe('F15 — explicit body budgets per route', () => {
     expect(bad.body).toMatchObject({ error: 'Malformed JSON body' });
   });
 });
+
+describe('license-issued email (Resend transport, mocked fetch)', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_FROM;
+  });
+
+  test('a paid checkout mails the buyer once; a replayed event does not resend', async () => {
+    process.env.RESEND_API_KEY = 're_test_key';
+    process.env.EMAIL_FROM = 'VoiceIsolate Pro <billing@example.com>';
+    const sent = [];
+    globalThis.fetch = async (url, init) => {
+      sent.push({ url, key: init.headers['idempotency-key'], body: JSON.parse(init.body) });
+      return { ok: true, status: 200, json: async () => ({ id: `em_${sent.length}` }) };
+    };
+    const event = { id: 'evt_mail_1', type: 'checkout.session.completed', created: 5, data: { object: { customer: 'cus_mail', customer_email: 'mail@example.com', metadata: { tier: 'studio' } } } };
+    expect((await sendEvent(event)).body).toEqual({ received: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await sendEvent(event)).body).toEqual({ received: true, duplicate: true });
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Earlier suites' pending rows drain too; this buyer is mailed exactly once.
+    const mine = sent.filter((m) => m.key === 'license-issued:evt_mail_1');
+    expect(mine).toHaveLength(1);
+    expect(new Set(sent.map((m) => m.key)).size).toBe(sent.length);
+    expect(mine[0].url).toBe('https://api.resend.com/emails');
+    expect(mine[0].body).toMatchObject({ to: ['mail@example.com'], subject: expect.stringContaining('STUDIO') });
+    const row = (await storeMod.getStore().read()).outbox.find((m) => m.customerId === 'cus_mail');
+    expect(row).toMatchObject({ status: 'sent' });
+    const health = await request(app).get('/api/health');
+    expect(health.body.services.email).toBe('configured');
+  });
+});

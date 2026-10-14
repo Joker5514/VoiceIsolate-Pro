@@ -32,7 +32,7 @@ const EMPTY = () => ({
 /** Webhook ids are kept long enough to absorb Stripe's 3-day retry window. */
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_USAGE_ROWS = 100_000;
-/** Nothing consumes the outbox yet (no mail transport); keep it bounded. */
+/** Sent and failed rows are history; keep the outbox bounded. */
 const MAX_OUTBOX_ROWS = 10_000;
 
 function prune(state, now) {
