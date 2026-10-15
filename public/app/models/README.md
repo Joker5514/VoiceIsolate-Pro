@@ -63,10 +63,12 @@ Rename downloaded files to match the `filename` field in the manifest.
 - `load_priority: "eager"` → loaded immediately on init (VAD, RNNoise)
 - `load_priority: "lazy"` → loaded on first Creator/Forensic mode request (Demucs, BSRNN)
 
-The files in the table above, DeepFilterNet3's three parts included, are loaded by
-`src/workers/MLWorker.js` from `src/core/ModelManifest.js` (not this legacy list):
-each is fetched from `/app/models/`, SHA-256 verified and cached in IndexedDB (the
-filesystem cache on desktop) on first use, keyed by id and hash. `deepfilternet3`
+The shipped, hash-pinned models above that `src/workers/MLWorker.js` runs
+(BSRNN, the BiGRU suppressor, Silero VAD and DeepFilterNet3's three parts; not the
+offline-only, unpinned `bsrnn_vocals_complex.onnx`) are defined in
+`src/core/ModelManifest.js` (not this legacy list): each is fetched from
+`/app/models/`, SHA-256 verified and cached in IndexedDB (the filesystem cache on
+desktop) on first use, keyed by id and hash. `deepfilternet3`
 is a composite entry: selecting Landing **Enhance Speech** loads its three part
 sessions, never on import or from a slider.
 
