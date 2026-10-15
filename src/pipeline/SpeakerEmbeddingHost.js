@@ -29,7 +29,7 @@ export function createSpeakerEmbeddingHost(opts = {}) {
 
   function fail(reason) {
     unavailableReason = reason;
-    for (const [requestId, p] of pending) {
+    for (const p of pending.values()) {
       clearTimeout(p.timer);
       p.reject(new Error(reason));
     }
@@ -48,6 +48,7 @@ export function createSpeakerEmbeddingHost(opts = {}) {
       }
       const timer = setTimeout(() => {
         unavailableReason = 'ECAPA init timed out';
+        // A late load must not keep its ONNX/WASM memory alive.
         worker?.terminate?.();
         worker = null;
         resolve(false);

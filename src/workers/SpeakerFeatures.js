@@ -159,6 +159,15 @@
    * @param {number} sampleRate
    * @returns {Float32Array}
    */
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  /** Above this many tabulated taps (odd input rates), taps are computed per sample. */
+  const MAX_TABLE_TAPS = 1 << 20;
+
+  /**
+   * Windowed-sinc (Blackman, 16 zero crossings) resample to 16 kHz. Rational
+   * rates repeat their fractional offset every 16000 / gcd outputs, so the
+   * normalised taps are tabulated once per phase (48 kHz: one phase).
+   */
   function resampleTo16k(samples, sampleRate) {
     if (sampleRate === ECAPA_SAMPLE_RATE) return samples;
     const ratio = ECAPA_SAMPLE_RATE / sampleRate;
@@ -167,23 +176,56 @@
     const cutoff = Math.min(1, ratio) * 0.95; // relative to input Nyquist
     const zc = 16;
     const half = Math.ceil(zc / cutoff);
-    for (let n = 0; n < outLen; n++) {
-      const x = n / ratio;
-      const c = Math.floor(x);
-      let acc = 0;
+    const taps = 2 * half;
+    /** Normalised taps for offsets k = c - half + 1 … c + half at fractional position frac. */
+    const kernel = (frac, into) => {
       let norm = 0;
-      for (let k = c - half + 1; k <= c + half; k++) {
-        const d = x - k;
+      for (let j = 0; j < taps; j++) {
+        const d = frac - (j - half + 1);
         const u = d * cutoff;
         const sinc = u === 0 ? 1 : Math.sin(Math.PI * u) / (Math.PI * u);
         const wpos = d / half;
-        if (wpos <= -1 || wpos >= 1) continue;
-        const win = 0.42 + 0.5 * Math.cos(Math.PI * wpos) + 0.08 * Math.cos(2 * Math.PI * wpos);
-        const h = sinc * win;
+        const h = wpos <= -1 || wpos >= 1
+          ? 0
+          : sinc * (0.42 + 0.5 * Math.cos(Math.PI * wpos) + 0.08 * Math.cos(2 * Math.PI * wpos));
+        into[j] = h;
         norm += h;
-        if (k >= 0 && k < samples.length) acc += samples[k] * h;
       }
-      out[n] = norm ? acc / norm : 0;
+      for (let j = 0; j < taps; j++) into[j] = norm ? into[j] / norm : 0;
+      return into;
+    };
+    const intRate = Number.isInteger(sampleRate);
+    const phases = intRate ? ECAPA_SAMPLE_RATE / gcd(ECAPA_SAMPLE_RATE, sampleRate) : Infinity;
+    const table = phases * taps <= MAX_TABLE_TAPS ? new Float64Array(phases * taps) : null;
+    if (table) {
+      for (let p = 0; p < phases; p++) {
+        kernel(((p * sampleRate) % ECAPA_SAMPLE_RATE) / ECAPA_SAMPLE_RATE, table.subarray(p * taps, (p + 1) * taps));
+      }
+    }
+    const h = table || new Float64Array(taps);
+    for (let n = 0; n < outLen; n++) {
+      let c;
+      let o = 0; // offset of this output's taps in h
+      if (table) {
+        const p = n % phases;
+        c = (n * sampleRate - ((p * sampleRate) % ECAPA_SAMPLE_RATE)) / ECAPA_SAMPLE_RATE;
+        o = p * taps;
+      } else {
+        const x = n / ratio;
+        c = Math.floor(x);
+        kernel(x - c, h);
+      }
+      const k0 = c - half + 1;
+      let acc = 0;
+      if (k0 >= 0 && k0 + taps <= samples.length) {
+        for (let j = 0; j < taps; j++) acc += samples[k0 + j] * h[o + j];
+      } else {
+        for (let j = 0; j < taps; j++) {
+          const k = k0 + j;
+          if (k >= 0 && k < samples.length) acc += samples[k] * h[o + j];
+        }
+      }
+      out[n] = acc;
     }
     return out;
   }

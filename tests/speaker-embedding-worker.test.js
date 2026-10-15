@@ -77,6 +77,7 @@ describe('SpeakerEmbeddingWorker init', () => {
     const w = createWorker(stubOrt([]));
     const [m] = await w.send({ type: 'init', entry: entry({ sha256: null }) });
     expect(m.reason).toMatch(/not pinned/);
+    expect(w.fetched).toEqual([]);
   });
 
   test('requests before a successful init are errors', async () => {

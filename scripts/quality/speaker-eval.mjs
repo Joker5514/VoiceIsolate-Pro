@@ -31,7 +31,6 @@ function readWav(file) {
     if (id === 'fmt ') fmt = { format: b.readUInt16LE(off + 8), ch: b.readUInt16LE(off + 10), sr: b.readUInt32LE(off + 12), bits: b.readUInt16LE(off + 22) };
     if (id === 'data') {
       if (!fmt || fmt.format !== 1 || fmt.bits !== 16 || fmt.ch !== 1) throw new Error(`${file}: need 16-bit mono PCM`);
-      if (!fmt || fmt.bits !== 16 || fmt.ch !== 1) throw new Error(`${file}: need 16-bit mono PCM`);
       const x = new Float32Array(size / 2);
       for (let i = 0; i < x.length; i++) x[i] = b.readInt16LE(off + 8 + 2 * i) / 32768;
       return { x, sr: fmt.sr };
@@ -65,6 +64,12 @@ if (!dir) {
 const speakers = fs.readdirSync(dir).filter((d) => fs.statSync(path.join(dir, d)).isDirectory()).sort();
 const files = Object.fromEntries(speakers.map((s) => [s, fs.readdirSync(path.join(dir, s)).filter((f) => f.endsWith('.wav')).sort()
   .map((f) => readWav(path.join(dir, s, f)))]));
+// Each speaker enrolls on its first utterance and is tested on the rest.
+const short = speakers.filter((s) => files[s].length < 2);
+if (speakers.length < 2 || short.length) {
+  console.error(`[speaker-eval] need at least two speakers with two or more .wav files each${short.length ? ` (too few: ${short.join(', ')})` : ''}`);
+  process.exit(2);
+}
 
 const worker = createSpeakerWorker(realOrt());
 const [init] = await worker.send({ type: 'init', entry: ecapaEntry() });
@@ -93,16 +98,25 @@ for (const s of speakers) {
     const windows = similarityWindows(x.length, sr, ECAPA_SIMILARITY.windowSec, ECAPA_SIMILARITY.hopSec);
     windowsTotal += windows.length;
     const mels = windows.map(([a, b]) => extractLocalVoiceprint(x.subarray(a, b), sr));
+    // Embed every window once (one 'cluster' per window), then compare to all enrollments.
+    const { clusters } = await call({
+      type: 'cluster', requestId: `${s}-${windowsTotal}`, samples: x, sampleRate: sr,
+      segments: windows.map(([a, b], i) => ({ speakerId: i, start: a / sr, end: b / sr })),
+    });
+    const embs = clusters.sort((p, q) => Number(p.speakerId) - Number(q.speakerId)).map((c) => c.embedding);
     for (const t of speakers) {
-      const { sims } = await call({ type: 'score', requestId: `${s}-${t}`, samples: x, sampleRate: sr, target: Array.from(enrollE[t]), windows });
-      for (const v of sims) res.ecapa[s === t ? 'same' : 'diff'].push(v);
+      for (const e of embs) res.ecapa[s === t ? 'same' : 'diff'].push(cosineSimilarity(e, enrollE[t]));
       for (const m of mels) res.mel[s === t ? 'same' : 'diff'].push(cosineSimilarity(m, enrollM[t]));
     }
   }
 }
-console.log(`[speaker-eval] ${speakers.length} speakers, ${windowsTotal} windows of ${ECAPA_SIMILARITY.windowSec} s`);
+console.log(`[speaker-eval] ${speakers.length} speakers, ${windowsTotal} windows of ${ECAPA_SIMILARITY.windowSec} s, each embedded once`);
 for (const [name, thr] of [['ecapa', ECAPA_SIMILARITY.threshold], ['mel', DEFAULT_SIM_THRESHOLD]]) {
   const { same, diff } = res[name];
+  if (!same.length || !diff.length) {
+    console.error('[speaker-eval] need at least two speakers, each with two or more utterances');
+    process.exit(2);
+  }
   const e = eer(same, diff);
   const at = rates(same, diff, thr);
   console.log(`${name.padEnd(5)} EER ${pct(e.eer)} at ${e.t.toFixed(3)} | at default ${thr}: target missed ${pct(at.frr)}, others passed ${pct(at.far)}`);
