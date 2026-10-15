@@ -197,6 +197,67 @@ export const MODEL_MANIFEST = Object.freeze({
     }),
   }),
 
+  // ── Speech enhancement: DeepFilterNet3 (Schröter et al., MIT / Apache-2.0) ──
+  // The upstream ONNX export is three graphs; each part is an ordinary pinned
+  // file. Only the composite `deepfilternet3` entry is selectable in a chain.
+  // Source: Rikorose/DeepFilterNet models/DeepFilterNet3_onnx.tar.gz.
+  dfn3_enc: Object.freeze({
+    id: 'dfn3_enc',
+    name: 'DeepFilterNet3 encoder',
+    task: 'speech-enhancement-part',
+    url: '/app/models/dfn3_enc.onnx',
+    sizeBytes: 1954042,
+    quantization: 'fp32',
+    sha256: '7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916',
+    strategy: 'deepfilternet-part',
+    /** Named graph inputs / outputs (comma-separated); fed by DeepFilterNet.js. */
+    io: Object.freeze({ input: 'feat_erb,feat_spec', output: 'e0,e1,e2,e3,emb,c0,lsnr' }),
+    license: 'MIT OR Apache-2.0',
+  }),
+  dfn3_erb_dec: Object.freeze({
+    id: 'dfn3_erb_dec',
+    name: 'DeepFilterNet3 ERB decoder',
+    task: 'speech-enhancement-part',
+    url: '/app/models/dfn3_erb_dec.onnx',
+    sizeBytes: 3292397,
+    quantization: 'fp32',
+    sha256: 'ab669a1d10afe20911728b33053a452071042317a90581092b325da7b2f9d895',
+    strategy: 'deepfilternet-part',
+    /** Named graph inputs / outputs (comma-separated); fed by DeepFilterNet.js. */
+    io: Object.freeze({ input: 'emb,e3,e2,e1,e0', output: 'm' }),
+    license: 'MIT OR Apache-2.0',
+  }),
+  dfn3_df_dec: Object.freeze({
+    id: 'dfn3_df_dec',
+    name: 'DeepFilterNet3 deep-filter decoder',
+    task: 'speech-enhancement-part',
+    url: '/app/models/dfn3_df_dec.onnx',
+    sizeBytes: 3340803,
+    quantization: 'fp32',
+    sha256: '23114ce3b0f6464b763ee62f7bb8aab6b2a129a21eabd5bcfe59413db05f278a',
+    strategy: 'deepfilternet-part',
+    /** Named graph inputs / outputs (comma-separated); fed by DeepFilterNet.js. */
+    io: Object.freeze({ input: 'emb,c0', output: 'coefs' }),
+    license: 'MIT OR Apache-2.0',
+  }),
+  deepfilternet3: Object.freeze({
+    id: 'deepfilternet3',
+    name: 'DeepFilterNet3 Speech Enhancer',
+    task: 'speech-enhancement',
+    /**
+     * Composite: no file of its own. MLWorker loads the three part sessions
+     * and runs src/workers/DeepFilterNet.js (its own 960-point STFT/iSTFT,
+     * a separate branch from the fused 4096-point spectral-mask chain).
+     */
+    composite: true,
+    parts: Object.freeze({ enc: 'dfn3_enc', erb_dec: 'dfn3_erb_dec', df_dec: 'dfn3_df_dec' }),
+    strategy: 'deepfilternet',
+    fftSize: 960,
+    hopSize: 480,
+    sampleRate: 48000,
+    license: 'MIT OR Apache-2.0',
+  }),
+
   // ── Speaker embedding (optional ECAPA) ────────────────────────────────
   // WeSpeaker voxceleb ECAPA-TDNN (C=512, 192-D, Apache-2.0), pinned to the
   // Hub commit below; the sha256 equals the Hub's own LFS digest. Not bundled
@@ -305,7 +366,9 @@ export function modelChainRevision(modelIds = []) {
     if (!e) return `${id}:unknown`;
     return [
       id,
-      e.sha256 || `unpinned-${e.sizeBytes ?? 'na'}`,
+      e.parts
+        ? Object.values(e.parts).map((p) => MODEL_MANIFEST[p]?.sha256 || `${p}-unpinned-${MODEL_MANIFEST[p]?.sizeBytes ?? 'na'}`).join('+')
+        : (e.sha256 || `unpinned-${e.sizeBytes ?? 'na'}`),
       e.inputNormalization || 'raw',
       e.maskExponent ?? 1,
       e.chainMaskExponent ?? '',
@@ -344,6 +407,12 @@ export function getModel(id) {
  * @returns {boolean}
  */
 export function isValidEntry(entry) {
+  // A composite (DeepFilterNet3) owns no file: it is valid when every part is.
+  if (entry && entry.composite === true) {
+    return Boolean(typeof entry.id === 'string' && entry.parts
+      && Object.values(entry.parts).length > 0
+      && Object.values(entry.parts).every((id) => MODEL_MANIFEST[id] && isValidEntry(MODEL_MANIFEST[id])));
+  }
   return Boolean(
     entry &&
     typeof entry.id === 'string' &&

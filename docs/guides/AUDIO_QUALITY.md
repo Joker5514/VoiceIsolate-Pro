@@ -8,7 +8,7 @@ audio worse fails a gate instead of shipping.
 
 | Command | What it does | Runtime |
 |---|---|---|
-| `pnpm test:quality` | Gate: 9 fixtures x 3 profiles through the production `MLWorker.js` with the shipped ONNX models; hard invariants plus 66 pinned metrics (SI-SDR, speech level, fricative-band level, noise reduction). Also `prod:verify` step `audio-quality`. | about 30 s |
+| `pnpm test:quality` | Gate: 9 fixtures x 4 profiles (landing, engineer, maximum, enhance = DeepFilterNet3) through the production `MLWorker.js` with the shipped ONNX models; hard invariants plus 88 pinned metrics (SI-SDR, speech level, fricative-band level, noise reduction). Also `prod:verify` step `audio-quality`. | about 30 s |
 | `node scripts/quality/quality-gate.cjs --update` | Re-pin `scripts/quality/quality-baseline.json` after an intended change. The diff is the review record. | about 30 s |
 | `pnpm quality:matrix -- --secs 6 [--json out.json] [--only id,id]` | Full 15-scenario x 3-profile report (markdown table). | about 2.5 min |
 
@@ -144,6 +144,43 @@ Engineer noise reduction (stronger on flat noise floors, weaker on harmonic
 ones) moved every Engineer metric by about 0.1 dB, and weakening subtraction
 on music lowered music SI-SDR (-1.79 -> -2.03 dB). `SpectralCleanup.js` is
 not on any production path, so changes there would not reach users.
+
+## DeepFilterNet3 speech enhancement (2026-10-14)
+
+`deepfilternet3` is the pretrained DeepFilterNet3 (Schröter et al., MIT OR
+Apache-2.0), shipped as its three upstream ONNX graphs and run by
+`src/workers/DeepFilterNet.js`, a port of libDF 0.5.6 (960-point STFT, hop
+480, 32 ERB bands, order-5 deep filter on the lowest 96 bins). The port
+matches libDF's own Python pipeline around the same graphs at 55 dB SI-SDR on
+recorded speech and above 40 dB on the committed fixture
+(`tests/fixtures/dfn3-libdf-output.f32`). It is opt-in: Landing outcome
+**Enhance Speech**.
+
+Recorded speech, same protocol and four LibriSpeech utterances as the table
+above. Mean SI-SDR delta (clean row: absolute SI-SDR):
+
+| Condition | Default chain | Maximum chain | DeepFilterNet3 |
+|---|---|---|---|
+| clean (absolute) | 13.77 | 13.75 | 33.01 |
+| white 5 dB | 2.04 | 4.51 | 10.99 |
+| HVAC 5 dB | 2.75 | 3.08 | 8.41 |
+| music 5 dB | 0.06 | -0.09 | 5.09 |
+| 60 Hz hum 10 dB | 2.38 | 2.36 | 9.97 |
+| 50 Hz hum 10 dB | 3.08 | 2.99 | 9.89 |
+
+On clean recorded speech DeepFilterNet3 changes level by -0.29 dB and the
+4-12 kHz band by -0.42 dB (default chain: -1.68 dB and -0.97 dB). Speed in
+Node, WASM, one thread: 12.2x real time (default chain 12.4x).
+
+On the gate's synthetic fixtures it is far worse than either chain (pinned as
+the `enhance` profile, regressions only): clean synthetic speech -3.01 dB
+SI-SDR, whispered synthetic speech -13.07 dB SI-SDR with its level cut by
+21.1 dB, fricatives cut by 22-43 dB, every improvement-tier pair below 0 dB.
+Noise-only suppression is 42.46 dB. The synthetic talker is a formant buzz,
+not speech, and the network treats it as noise; the recorded numbers above
+are the evidence for shipping it, and they include no whispered recordings.
+Do not describe it as whisper-safe, and do not make it the default from these
+numbers alone.
 
 ## Re-running the recorded-speech check locally
 

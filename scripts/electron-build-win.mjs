@@ -21,11 +21,14 @@ const env = {
   CSC_LINK: '',
 };
 
-/** Models required for 100% offline default isolation (bsrnn + denoise + VAD). */
+/** Models required for 100% offline isolation (bsrnn + denoise + VAD + DeepFilterNet3). */
 const REQUIRED_OFFLINE_MODELS = [
   'bsrnn_vocals.onnx',
   'rnnoise_suppressor.onnx',
   'silero_vad.onnx',
+  'dfn3_enc.onnx',
+  'dfn3_erb_dec.onnx',
+  'dfn3_df_dec.onnx',
 ];
 
 function run(cmd, args) {

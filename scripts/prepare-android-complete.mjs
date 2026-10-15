@@ -22,11 +22,14 @@ const PACKAGE_VERSION = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'),
 ).version;
 
-/** Models required for a complete offline isolation app (default + denoise + VAD). */
+/** Models required for a complete offline isolation app (default + denoise + VAD + Enhance Speech). */
 const REQUIRED_MODELS = [
   'bsrnn_vocals.onnx',
   'rnnoise_suppressor.onnx',
   'silero_vad.onnx',
+  'dfn3_enc.onnx',
+  'dfn3_erb_dec.onnx',
+  'dfn3_df_dec.onnx',
 ];
 
 /** Optional but useful if present (still keep APK lean). */
@@ -73,6 +76,7 @@ const REQUIRED_PATHS = [
   'src/workers/MLWorker.js',
   'src/workers/EngineerSpectralControls.js',
   'src/workers/MainsHumFilter.js',
+  'src/workers/DeepFilterNet.js',
   'src/workers/SpeakerEmbeddingWorker.js',
   'src/workers/SpeakerFeatures.js',
   'src/presentation/DspSlider.js',

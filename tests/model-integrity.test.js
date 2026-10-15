@@ -36,7 +36,7 @@ describe('model integrity validator', () => {
   test('uses ModelManifest.js shipped entries and passes the real source tree', () => {
     const result = integrity.validateModelIntegrity();
     expect(result.shippedIds.sort()).toEqual(
-      ['bsrnn_vocals', 'rnnoise', 'vad', 'vad_int8'].sort(),
+      ['bsrnn_vocals', 'rnnoise', 'vad', 'vad_int8', 'dfn3_enc', 'dfn3_erb_dec', 'dfn3_df_dec'].sort(),
     );
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
@@ -51,6 +51,25 @@ describe('model integrity validator', () => {
     expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.bsrnn_complex)).toBe(false);
     expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.ecapa_tdnn)).toBe(false);
     expect(integrity.shippedModelIds()).not.toContain('demucs');
+  });
+
+  test('a composite entry owns no file and must name shipped parts', () => {
+    expect(integrity.isCompositeModel(MODEL_MANIFEST.deepfilternet3)).toBe(true);
+    expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.deepfilternet3)).toBe(false);
+    const manifest = { ...MODEL_MANIFEST, dfn3_df_dec: undefined };
+    delete manifest.dfn3_df_dec;
+    const missing = integrity.validateModelIntegrity({ manifest, vercelJson: null });
+    expect(missing.errors).toContain('composite model deepfilternet3 names missing part dfn3_df_dec');
+    const unshipped = integrity.validateModelIntegrity({
+      manifest: { ...MODEL_MANIFEST, dfn3_enc: { ...MODEL_MANIFEST.dfn3_enc, shipped: false } },
+      vercelJson: null,
+    });
+    expect(unshipped.errors).toContain('shipped composite model deepfilternet3 part dfn3_enc is not a shipped file');
+    const empty = integrity.validateModelIntegrity({
+      manifest: { ...MODEL_MANIFEST, deepfilternet3: { ...MODEL_MANIFEST.deepfilternet3, parts: {} } },
+      vercelJson: null,
+    });
+    expect(empty.errors).toContain('composite model deepfilternet3 names no parts');
   });
 
   test('rejects unpinned models that are not explicitly optional', () => {

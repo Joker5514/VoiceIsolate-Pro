@@ -58,6 +58,18 @@ const OFFLINE_MODELS = Object.freeze([
     file: 'silero_vad_int8.onnx',
     cacheKey: 'vad_int8:16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
   },
+  {
+    file: 'dfn3_enc.onnx',
+    cacheKey: 'dfn3_enc:7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916',
+  },
+  {
+    file: 'dfn3_erb_dec.onnx',
+    cacheKey: 'dfn3_erb_dec:ab669a1d10afe20911728b33053a452071042317a90581092b325da7b2f9d895',
+  },
+  {
+    file: 'dfn3_df_dec.onnx',
+    cacheKey: 'dfn3_df_dec:23114ce3b0f6464b763ee62f7bb8aab6b2a129a21eabd5bcfe59413db05f278a',
+  },
 ]);
 
 /** @type {BrowserWindow | null} */

@@ -13,6 +13,7 @@ async function profiles() {
     { id: 'landing', modelIds: ['bsrnn_vocals'], processingConfig: null },
     { id: 'engineer', modelIds: ['bsrnn_vocals'], processingConfig: await engineerConfig() },
     { id: 'maximum', modelIds: ['bsrnn_vocals', 'rnnoise'], processingConfig: null },
+    { id: 'enhance', modelIds: ['deepfilternet3'], processingConfig: null },
   ];
 }
 
