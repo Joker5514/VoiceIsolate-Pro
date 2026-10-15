@@ -69,10 +69,13 @@ describe('TargetSpeakerUI enrollment race', () => {
       for (let i = 0; i < x.length; i++) {
         x[i] = 0.3 * Math.sin((2 * Math.PI * 140 * i) / sr) + 0.1 * Math.sin((2 * Math.PI * 900 * i) / sr);
       }
-      let finish;
+      let finish = null;
       const host = {
         ready: async () => true,
-        embed: () => new Promise((resolve) => { finish = resolve; }),
+        // First enrollment resolves at once; the second is held pending.
+        embed: () => (finish === null
+          ? (finish = undefined, Promise.resolve(new Float32Array(192).fill(0.2)))
+          : new Promise((resolve) => { finish = resolve; })),
         unavailableReason: null,
       };
       const container = dom.window.document.getElementById('host');
@@ -88,8 +91,12 @@ describe('TargetSpeakerUI enrollment race', () => {
       inputs[1].value = '1.5';
       q('.vip-ts-enroll').click();
       await new Promise((r) => setTimeout(r, 0));
+      expect(q('.vip-ts-status').textContent).toMatch(/ECAPA speaker embedding/);
+      // Re-enroll; Clear stays enabled from the first enrollment, as a user sees it.
+      q('.vip-ts-enroll').click();
+      await new Promise((r) => setTimeout(r, 0));
       expect(typeof finish).toBe('function');
-      q('.vip-ts-clear').disabled = false;
+      expect(q('.vip-ts-clear').disabled).toBe(false);
       q('.vip-ts-clear').click();
       finish(new Float32Array(192).fill(0.1));
       await new Promise((r) => setTimeout(r, 0));

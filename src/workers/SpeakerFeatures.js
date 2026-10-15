@@ -160,8 +160,8 @@
    * @returns {Float32Array}
    */
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);
-  /** Above this many filter phases (odd input rates), taps are computed per sample. */
-  const MAX_PHASES = 4096;
+  /** Above this many tabulated taps (odd input rates), taps are computed per sample. */
+  const MAX_TABLE_TAPS = 1 << 20;
 
   /**
    * Windowed-sinc (Blackman, 16 zero crossings) resample to 16 kHz. Rational
@@ -196,33 +196,33 @@
     };
     const intRate = Number.isInteger(sampleRate);
     const phases = intRate ? ECAPA_SAMPLE_RATE / gcd(ECAPA_SAMPLE_RATE, sampleRate) : Infinity;
-    const table = phases <= MAX_PHASES ? new Float64Array(phases * taps) : null;
+    const table = phases * taps <= MAX_TABLE_TAPS ? new Float64Array(phases * taps) : null;
     if (table) {
       for (let p = 0; p < phases; p++) {
         kernel(((p * sampleRate) % ECAPA_SAMPLE_RATE) / ECAPA_SAMPLE_RATE, table.subarray(p * taps, (p + 1) * taps));
       }
     }
-    const scratch = table ? null : new Float64Array(taps);
+    const h = table || new Float64Array(taps);
     for (let n = 0; n < outLen; n++) {
       let c;
-      let h;
+      let o = 0; // offset of this output's taps in h
       if (table) {
         const p = n % phases;
         c = (n * sampleRate - ((p * sampleRate) % ECAPA_SAMPLE_RATE)) / ECAPA_SAMPLE_RATE;
-        h = table.subarray(p * taps, (p + 1) * taps);
+        o = p * taps;
       } else {
         const x = n / ratio;
         c = Math.floor(x);
-        h = kernel(x - c, scratch);
+        kernel(x - c, h);
       }
       const k0 = c - half + 1;
       let acc = 0;
       if (k0 >= 0 && k0 + taps <= samples.length) {
-        for (let j = 0; j < taps; j++) acc += samples[k0 + j] * h[j];
+        for (let j = 0; j < taps; j++) acc += samples[k0 + j] * h[o + j];
       } else {
         for (let j = 0; j < taps; j++) {
           const k = k0 + j;
-          if (k >= 0 && k < samples.length) acc += samples[k] * h[j];
+          if (k >= 0 && k < samples.length) acc += samples[k] * h[o + j];
         }
       }
       out[n] = acc;

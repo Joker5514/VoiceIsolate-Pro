@@ -64,6 +64,12 @@ if (!dir) {
 const speakers = fs.readdirSync(dir).filter((d) => fs.statSync(path.join(dir, d)).isDirectory()).sort();
 const files = Object.fromEntries(speakers.map((s) => [s, fs.readdirSync(path.join(dir, s)).filter((f) => f.endsWith('.wav')).sort()
   .map((f) => readWav(path.join(dir, s, f)))]));
+// Each speaker enrolls on its first utterance and is tested on the rest.
+const short = speakers.filter((s) => files[s].length < 2);
+if (speakers.length < 2 || short.length) {
+  console.error(`[speaker-eval] need at least two speakers with two or more .wav files each${short.length ? ` (too few: ${short.join(', ')})` : ''}`);
+  process.exit(2);
+}
 
 const worker = createSpeakerWorker(realOrt());
 const [init] = await worker.send({ type: 'init', entry: ecapaEntry() });
