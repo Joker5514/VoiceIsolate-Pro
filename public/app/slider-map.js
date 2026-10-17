@@ -124,7 +124,7 @@ export const SLIDER_HINTS = {
 
   voiceIso: {
     hint: 'Trims the separated voice stem in the Live-Mix (about –3 dB at 0% to +2.3 dB at 100%); the ML mask itself is fixed when Process runs. Raise toward 85% to bring speech forward against the background stem; lower toward 55% if the voice sounds pushed.',
-    purpose: 'Sets the Live-Mix level of the clean (voice) stem after one ML separation; it does not change the ML or spectral mask.',
+    purpose: 'Sets the Live-Mix level of the clean (voice) stem after one ML separation; the Process-time DSP fallback also weights its voice-band mask by this value.',
     bestFor: ['podcast', 'interview', 'crowd', 'forensic', 'whisper'],
     artifactRisk: 'gargling, pumping, phasey isolation, hollowed-out voice when pushed with high BG Suppress',
     pairedWith: 'Caps effective BG Suppress above ~75 isolation unless Voice Focus spans a speech-safe band (≈800–3400 Hz width). Soft-clamped with narrow focus bands.',
