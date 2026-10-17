@@ -113,6 +113,14 @@
     const whisperThreshold = 0.5 + (s.whisperThreshold / 100) * 2.5;
     const transientAmount = s.transientShaper / 100;
     const breathStrength = s.breathControl / 100;
+    // Breath frames are quiet relative to the surrounding speech. frameEnergy
+    // is in un-normalised STFT units (a −20 dBFS broadband signal measures ≈ 4
+    // at this geometry), so a fixed constant cannot describe "between
+    // phrases"; a slow peak tracker of the frame level can. Release ≈ 2 s so
+    // the level still refers to the last phrase while the breath is taken.
+    const BREATH_RELATIVE_LEVEL = Math.pow(10, -24 / 20);
+    const speechLevelDecay = Math.exp(-hop / sampleRate / 2);
+    let speechLevel = 0;
     const subHarmonicStrength = s.subHarmonic / 100;
 
     // preRoll: a reflect-padded frame before sample 0. It is processed like any
@@ -134,6 +142,8 @@
         }
       }
       frameEnergy = Math.sqrt(frameEnergy / Math.max(1, maxBins));
+      if (!preRoll) speechLevel = Math.max(frameEnergy, speechLevel * speechLevelDecay);
+      const breathFrame = breathStrength > 0 && frameEnergy < speechLevel * BREATH_RELATIVE_LEVEL;
 
       for (let k = 0; k < maxBins; k++) {
         const hz = k * binHz;
@@ -196,7 +206,7 @@
           const transient = clamp((mag - prior) / Math.max(prior, EPSILON), -1, 1);
           gain *= 1 + transientAmount * transient * 0.35;
         }
-        if (breathStrength > 0 && hz > 4500 && frameEnergy < 0.025) {
+        if (breathFrame && hz > 4500) {
           gain *= 1 - breathStrength * 0.72;
         }
 
@@ -208,6 +218,13 @@
             gain *= 1 + (whisperLift - 1) * speechConfidence;
           }
         }
+
+        // nrFloor is the minimum gain any bin may be reduced to by this pass.
+        // The NR term alone bottoms out at 0.18 (−15 dB), above every value in
+        // the control's −120..−20 dB range, so the floor binds on the combined
+        // reduction (NR, focus band, dereverb, Extreme and whisper cuts) or the
+        // control does nothing. A convex smoothing blend keeps the floor.
+        if (gain < nrFloorGain) gain = nrFloorGain;
 
         const smoothed = initialized ? previousGain[k] * smoothing + gain * (1 - smoothing) : gain;
         previousGain[k] = Math.max(0, Math.min(4, smoothed));

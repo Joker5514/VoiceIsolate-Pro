@@ -87,7 +87,7 @@ export const SLIDER_HINTS = {
   nrAmount: 'Sets overall spectral noise reduction strength. Raise toward 85% for steady hiss or air-conditioning; lower toward 50% if voices sound underwater.',
   nrSensitivity: 'Controls how aggressively quiet bins are treated as noise. Raise toward 70% in constant background hum; lower toward 30% to protect soft consonants.',
   nrSpectralSub: 'Balances subtraction depth against musical noise artifacts. Increase toward 65% for fan noise; decrease toward 25% when tonal ringing appears.',
-  nrFloor: 'Sets the minimum gain any frequency can be reduced to. Raise toward –60 dB if suppression sounds hollow; lower toward –90 dB for maximum hiss removal.',
+  nrFloor: 'Caps how far the Process-time spectral chain (NR, voice focus, dereverb, Extreme and whisper cuts combined) can reduce any frequency. Raise toward –20 dB when aggressive settings sound hollow; at –68 dB and below the cap rarely engages.',
   nrSmoothing: 'Smooths noise estimates over time to reduce warble. Raise toward 60% for steady HVAC noise; lower toward 20% when transients feel dulled.',
   eqSub: 'Trims deep sub-bass below 60 Hz. Cut toward –6 dB when desk rumble or traffic shakes the mic on a voice-over track.',
   eqBass: 'Shapes low warmth between 60–200 Hz. Cut toward –4 dB for a boomy room; add +2 dB if the speaker sounds thin on a phone recording.',
@@ -123,8 +123,8 @@ export const SLIDER_HINTS = {
   phaseCorr: 'Blends each stereo channel toward their shared midpoint for a more mono-stable result. It does not measure or correct a microphone time offset.',
 
   voiceIso: {
-    hint: 'Sets machine-learning voice mask strength. Raise toward 85% to pull speech from crowd noise; lower toward 55% if words sound gargled.',
-    purpose: 'Controls how strongly the ML/spectral mask keeps speech and rejects non-voice content.',
+    hint: 'Trims the separated voice stem in the Live-Mix (about –3 dB at 0% to +2.3 dB at 100%); the ML mask itself is fixed when Process runs. Raise toward 85% to bring speech forward against the background stem; lower toward 55% if the voice sounds pushed.',
+    purpose: 'Sets the Live-Mix level of the clean (voice) stem after one ML separation; the Process-time DSP fallback also weights its voice-band mask by this value.',
     bestFor: ['podcast', 'interview', 'crowd', 'forensic', 'whisper'],
     artifactRisk: 'gargling, pumping, phasey isolation, hollowed-out voice when pushed with high BG Suppress',
     pairedWith: 'Caps effective BG Suppress above ~75 isolation unless Voice Focus spans a speech-safe band (≈800–3400 Hz width). Soft-clamped with narrow focus bands.',
@@ -209,7 +209,7 @@ export const SLIDER_HINTS = {
     pairedWith: 'Pairs with BG Suppress; keep lower when Voice Iso is already high.',
     modeDefaults: { whisper: 60, podcast: 0, interview: 40, crowd: 80, forensic: 70 },
   },
-  snrFloor: 'Bins quieter than this are treated as noise-only. Lower toward –60 dBFS to rescue faint whispers; raise toward –45 dBFS to reduce musical artifacts.',
+  snrFloor: 'Bins quieter than this are treated as noise-only; active only while Crowd Null, Music Kill or Whisper Lift is engaged. Lower toward –60 dBFS to rescue faint whispers; raise toward –45 dBFS to reduce musical artifacts.',
   whisperMode: {
     hint: 'Sets how many aggressive passes run (Off / Light / Heavy / Forensic). Choose Heavy for club whispers; Forensic only when maximum extraction is worth the wait.',
     purpose: 'Selects whisper-isolation aggression tier (Off → Forensic).',
@@ -328,7 +328,7 @@ const RAW_SLIDER_REGISTRY = [
     id: 'nrFloor', key: 'nrFloor', label: 'NR Floor',
     min: -120, max: -20, step: 5, default: -68, unit: 'dB',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
-    tip: 'Minimum gain floor for NR bins. Prevents over-suppression artifacts on tonal content.'
+    tip: 'Minimum gain any bin may be reduced to by the Process-time spectral chain. Prevents over-suppression artifacts from stacked aggressive settings.'
   },
   {
     id: 'nrSmoothing', key: 'nrSmoothing', label: 'NR Smoothing',
