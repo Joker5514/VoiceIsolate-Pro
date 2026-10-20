@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '../src/workers/MLWorker.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '../src/workers/MLWorker.js'), 'utf8').replace(/\r\n/g, '\n');
 const start = src.indexOf('/** Precomputed FFT tables');
 const end = src.indexOf('/**\n * Spectral-mask inference: the contract shared by both shipped models');
 
