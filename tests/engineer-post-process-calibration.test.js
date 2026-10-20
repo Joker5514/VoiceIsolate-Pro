@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const appSource = fs.readFileSync(path.join(__dirname, '..', 'public/app/app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'public/app/app.js'), 'utf8').replace(/\r\n/g, '\n');
 
 function methodSource(name, signature) {
   const start = appSource.indexOf(`\n  ${name}(${signature}) {`);

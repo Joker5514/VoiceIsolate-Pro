@@ -169,7 +169,7 @@ describe('F12 — durable, transactional, restart-safe persistence', () => {
     expect(pull.body.presets.map((p) => p.id)).toEqual(['p1']);
   });
 
-  test('the store file is owner-only', async () => {
+  (process.platform === 'win32' ? test.skip : test)('the store file is owner-only', async () => {
     await storeMod.getStore().transact((st) => { st.usage.push({ at: 1 }); });
     const mode = fs.statSync(path.join(DATA_DIR, 'vip-backend.json')).mode & 0o777;
     expect(mode).toBe(0o600);

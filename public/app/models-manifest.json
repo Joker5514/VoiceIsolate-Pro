@@ -50,7 +50,7 @@
       ]
     }
   },
-  "_sha256_note": "SHA256 last updated: 2026-10-14. Regenerate with: pnpm worklets:hash",
+  "_sha256_note": "SHA256 last updated: 2026-10-18. Regenerate with: pnpm worklets:hash",
   "worklets": {
     "dsp_processor": {
       "filename": "dsp-processor.js",

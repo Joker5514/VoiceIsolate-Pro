@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8').replace(/\r\n/g, '\n');
 const fallback = app.slice(app.indexOf('  async _runFallbackPipeline(sourceBuf) {'));
 const body = fallback.slice(0, fallback.indexOf('\n  }\n'));
 const helper = app.slice(app.indexOf('  async _dspWorkerChannels('), app.indexOf('  async _runFallbackPipeline('));

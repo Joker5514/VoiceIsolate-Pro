@@ -54,6 +54,8 @@ describe('TargetSpeakerUI UX', () => {
 });
 
 describe('TargetSpeakerUI enrollment race', () => {
+  // Allow extra time: the module import + JSDOM + audio processing can be slow on
+  // first run in CI / cold Node environments (especially Windows).
   test('Clear during a pending ECAPA enrollment discards the late embedding', async () => {
     const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<!doctype html><div id="host"></div>');
@@ -106,5 +108,5 @@ describe('TargetSpeakerUI enrollment race', () => {
       Object.assign(g, saved);
       dom.window.close();
     }
-  });
+  }, 15000);
 });

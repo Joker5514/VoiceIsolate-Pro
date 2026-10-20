@@ -94,7 +94,9 @@ describe('Electron navigation policy', () => {
   });
 });
 
-describe('Electron model cache symlinks', () => {
+// Symlink creation requires Developer Mode or elevated privileges on Windows;
+// skip the whole describe block on that platform.
+(process.platform === 'win32' ? describe.skip : describe)('Electron model cache symlinks', () => {
   const fsp = fs.promises;
   let root;
   let cache;

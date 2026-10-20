@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '../public/landing.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '../public/landing.js'), 'utf8').replace(/\r\n/g, '\n');
 
 test('detectSpeakers passes an AbortSignal to the pipeline', () => {
   expect(src).toMatch(/detectSpeakersPipeline\(clean, sampleRate, \{ signal: ctl\.signal \}\)/);
