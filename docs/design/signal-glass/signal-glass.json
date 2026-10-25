@@ -1,0 +1,56 @@
+{
+  "name": "VoiceIsolate Signal Glass",
+  "mix": "Signal Glass light model on the live local desk. One session, one braid, four ribbons.",
+  "doNotInvent": [
+    "No neural stem model, no 67-control schema, no model SHA, no fake LUFS or ratings",
+    "No microphone, record dot, latency claim, or cloud upload",
+    "Import stays four filtered focus buses. Demo stays four independent performances",
+    "Faders never re-run separation. Mute and solo change the real sum"
+  ],
+  "light": {
+    "canvas": "#0a0e14",
+    "key": { "color": "#22d3ee", "from": "upper left", "means": "Voice and the one primary action" },
+    "rim": { "color": "#f5b942", "from": "back right", "means": "Music bed" },
+    "room": "#c9843a",
+    "airAndFullMix": "#c3cbd5",
+    "instrument": "#e8eef5",
+    "safety": { "near": "#ff8a5c", "clip": "#ff5c6e" },
+    "local": "#3ddc97",
+    "glassEdge": "1px at 135deg, cyan 36% to gold 30%, reading surface 88%+",
+    "primary": "Cyan pill, dark ink #061018. One filled primary per screen",
+    "type": { "ui": "Geist", "numbers": "Geist Mono", "oneItalicWord": "Instrument Serif" }
+  },
+  "screens": {
+    "session": {
+      "headline": "Bring the voice forward.",
+      "accentWord": "forward.",
+      "picture": "Helix enters lower left, passes a tilted lens, splits into voice, music, room, and air. Gate names the session or reads Gate closed.",
+      "primary": "Load studio demo",
+      "glass": "Import audio",
+      "honesty": "Audio stays on this device. Not a neural split."
+    },
+    "stems": {
+      "bays": ["01 Voice cyan", "02 Music gold", "03 Room", "04 Air silver", "Master silver pre-limiter"],
+      "meters": "Live analyser. Clip is red with the word CLIP. Tap clears the latch.",
+      "unity": "Instrument-white tick at 0 dB. Shift-drag is fine. Double-click returns to unity."
+    },
+    "engineer": {
+      "curve": "Instrument white, never a stem color",
+      "selectedChannel": "Cyan ring",
+      "processingToggles": "Instrument white, not gold",
+      "flatMonitor": "Bypasses EQ, dynamics, polarity, width, and high-pass without forgetting them"
+    },
+    "transport": "Play is the cyan pill. Loop and Export stay glass. Same mix on every page. Undo and redo stay."
+  },
+  "motion": {
+    "ribbon": "Opacity breathe on the voice ribbon only",
+    "reducedMotion": "Still ribbons, no glow pulse",
+    "durationsMs": { "hover": 150, "toggle": 200, "sheet": 300 }
+  },
+  "negative": [
+    "Purple or rainbow gradients",
+    "Gold used as the primary button",
+    "Microphone, record, ratings, testimonials, people, device frames",
+    "Illegible glass, tilted UI, fake processed-chain chips"
+  ]
+}
