@@ -60,7 +60,7 @@ Single coherent product system across Browser, Android & Desktop. **Signal canva
 **Workflow:** Upload → Automatic Local Analysis → Select Signal → Contextual Action → Preview/Compare → Export. Raw immutable. There is no live microphone and no record step.
 
 - **New IA:** Home, Analyze, Enhance, Compare, Export, Settings. Isolate is contextual action, not nav. Manual Separation removed from primary nav.
-- **Landing:** Hero "Hear What Others Miss." 100% on-device whisper recovery. Interactive demo drag→Isolate→before/after.
+- **Landing:** Hero "Bring the voice forward." 100% on-device whisper recovery. Interactive demo drag→Isolate→before/after.
 - **Workspace:** Direct waveform (horizontal drag) + spectrogram (rectangle) selection with handles/timestamp/zoom/clear/selected playback. Contextual palette: Isolate, Enhance Voice, Reduce Noise, Boost Whisper, Preview.
 - **Automatic analysis:** VAD, whisper candidates, noise floor, speaker detection, mask generation in worker/WebGPU/WASM/native with deterministic DSP fallback. Overlays: Speech, Whisper, Background Noise, Hum, Music/bleed, secondary speaker.
 - **Comparison:** Raw / Processed / Removed (Delta) A/B switching.

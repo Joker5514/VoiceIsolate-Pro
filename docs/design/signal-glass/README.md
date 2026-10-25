@@ -1,6 +1,6 @@
 # VoiceIsolate Signal Glass
 
-Light-model desk for one session, one braid, and four ribbons. This is a design page, not product code. Nothing here is loaded by `public/` or `src/`.
+Light-model desk for one session, one braid, and four ribbons. This page is not loaded by the app. The landing hero in `public/index.html` uses the same picture and the line “Bring the voice forward.” The isolator is still the upload, stem split, and Live-Mix below that picture.
 
 Open `index.html` in a browser. The contract is `signal-glass.json`.
 
