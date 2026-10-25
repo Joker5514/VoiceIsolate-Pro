@@ -4,13 +4,15 @@ This document describes what is **published**, what is **current in source**, an
 
 | Field | Current value |
 |---|---|
-| Source SHA (this build) | `69b317ce0abb85b5164ccc359395248995e929a5` |
+| Reviewed source | `f5b271892de7bb8aca85b351062dd81f9191f756` (2026-10-20) |
 | Package version | `25.0.2` / native build number `250002` |
-| Latest GitHub release | [`v25.0.2`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2) |
-| Artifacts built (UTC) | `2026-09-09` |
-| Android asset | `VoiceIsolate-Pro-android-debug.apk` · 101,650,376 bytes · SHA-256 `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626` |
-| Windows asset | `VoiceIsolate-Pro-25.0.2-win-x64.exe` · 144,667,075 bytes · SHA-256 `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8` |
-| Sync verdict | **Native artifacts rebuilt from merged main. All latency, processing, and platform-sync fixes are included. Web + Android + Electron in sync.** |
+| Latest GitHub release | [`v25.0.3`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.3) (published 2026-09-09) |
+| Release-note source | `038b3104e659be4c3914bd5ecd763e6141b98f16` (ancestor of reviewed source; not an embedded binary manifest) |
+| Android asset | `VoiceIsolate-Pro-android-debug.apk` · 101,650,376 bytes · SHA-256 `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626` · updated `2026-09-09T23:31:41Z` |
+| Windows asset | `VoiceIsolate-Pro-25.0.2-win-x64.exe` · 144,667,075 bytes · SHA-256 `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8` · updated `2026-09-09T23:31:43Z` |
+| Pinned Android URL | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-android-debug.apk |
+| Pinned Windows URL | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| Sync verdict | **Not synchronized.** The v25.0.3 APK and EXE are older than reviewed `main`. The production web deployment SHA is not proven. Do not describe Web, Android, Windows, `main`, and the release tag as the same build. |
 
 Machine-readable evidence: [`release-provenance.json`](release-provenance.json).
 
@@ -22,7 +24,7 @@ Machine-readable evidence: [`release-provenance.json`](release-provenance.json).
 | Android version | `android/app/build.gradle` | `25.0.2` / `250002` |
 | Capacitor user agent | `capacitor.config.json` | `VoiceIsolatePro/25.0.2` |
 | iOS metadata | `ios/App/App/Info.plist` | `25.0.2` / `250002` |
-| Download page | `public/download/index.html` | current `v25.0.2` assets |
+| Download page | `public/download/index.html` | published `v25.0.3` assets; page still shows repository `v25.0.2` |
 | Release evidence | GitHub Release API + `release-provenance.json` | asset name, size, digest, URL |
 
 The iOS project is kept version-aligned for repository consistency, but **iOS is outside the supported v1.0 platform scope** and no current iOS release artifact is published.
@@ -39,9 +41,13 @@ Web, Android, and Windows may be called synchronized only when all of these are 
 
 A release description that says packages "match" is not sufficient evidence by itself.
 
-## What was fixed in this build
+## Shared shell
 
-All fixes from `fix/quick-clean-capability-gate-and-test-sync` are now in main and these artifacts:
+Desktop browsers, Android browsers, Capacitor Android, and Electron Windows load one upload-only product shell from source: Landing at `/` and the Engineer Console at `public/app/`. Android Chrome uses the website. The APK and the EXE are separate packages. They match the website only when each one was built from the commit that website is serving. That commit match is not proven here.
+
+## What the v25.0.3 release notes list
+
+These items are named in the v25.0.3 release notes. They are on reviewed `main` because `038b3104e659be4c3914bd5ecd763e6141b98f16` is an ancestor of that commit. Later `main` commits are not in the published APK or EXE.
 
 | Fix | Platform |
 |---|---|

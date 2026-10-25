@@ -456,12 +456,17 @@ agents, and the browser PWA manifest; Electron reads the same package version
 and uses it in artifact names. `pnpm version:check` must pass before packaging
 and verifies Web/PWA, Electron, Android, API health metadata, and download-page
 asset naming (`versionCode` / `CFBundleVersion` = **250002**). Published GitHub
-Release **`latest` = v25.0.2**.
+Release **`latest` = v25.0.3**. That tag still ships
+`VoiceIsolate-Pro-25.0.2-win-x64.exe` because the package version was 25.0.2
+when the installer was built. `claims.allowPackageFilenameOnNewerTag` records
+the split. One Engineer Console ships to desktop browsers, Android browsers,
+Capacitor, and Electron; do not fork a second mobile or desktop product UI.
 
 **Release provenance is evidence-driven:** the current published APK and Windows
-NSIS are valid `v25.0.2` release assets, but they predate current `main` and their
-source SHAs are not independently proven by immutable build metadata in the
-refreshed provenance record. Do **not** claim Web, Android, Windows, `main`, and
+NSIS are valid `v25.0.3` release assets. They predate reviewed `main`
+`f5b271892de7bb8aca85b351062dd81f9191f756`. Release notes name source commit
+`038b3104e659be4c3914bd5ecd763e6141b98f16`, an ancestor of `main`, and that
+note is not an embedded binary manifest. Do **not** claim Web, Android, Windows, `main`, and
 the release tag are the same build unless `pnpm provenance:validate:strict`
 passes. Machine-readable evidence:
 [docs/releases/release-provenance.json](docs/releases/release-provenance.json).
