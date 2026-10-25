@@ -1,6 +1,6 @@
 # VoiceIsolate Pro — Electron desktop
 
-The Electron desktop path reuses the same renderer produced by `pnpm build`: Landing + the shared Engineer Console under `public/app/`. Desktop-specific behavior is limited to the native shell, filesystem/cache integration, dialogs, update plumbing, and approved preload IPC.
+The Electron desktop path reuses the same renderer produced by `pnpm build`: Landing + the shared Engineer Console under `public/app/`. That is the same upload-only shell used by desktop browsers, Android browsers, and the Capacitor app. Desktop-specific behavior is limited to the native shell, filesystem/cache integration, dialogs, update plumbing, and approved preload IPC.
 
 ## Security model
 
@@ -29,18 +29,18 @@ See `electron/preload.cjs`, `src/core/DesktopBridge.js`, `src/core/DesktopModelC
 ## Current Windows download
 
 - Latest: https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe
-- Pinned `v25.0.2`: https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe
+- Pinned `v25.0.3`: https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-25.0.2-win-x64.exe
 - All releases: https://github.com/Joker5514/VoiceIsolate-Pro/releases
 - Download hub: https://voice-isolate-pro.vercel.app/download/
 
-Published `v25.0.2` Windows asset:
+Published `v25.0.3` Windows asset (filename still follows package version `25.0.2`):
 
 - File: `VoiceIsolate-Pro-25.0.2-win-x64.exe`
-- Size: `144628415` bytes
-- SHA-256: `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621`
-- GitHub asset updated: `2026-08-24T17:20:22Z`
+- Size: `144667075` bytes
+- SHA-256: `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8`
+- GitHub asset updated: `2026-09-09T23:31:43Z`
 
-The published installer is a release snapshot and predates current `main`. Its source SHA is not independently proven by immutable build metadata in the refreshed provenance record.
+The published installer is a release snapshot and predates reviewed `main` `f5b271892de7bb8aca85b351062dd81f9191f756`. Release notes name source `038b3104e659be4c3914bd5ecd763e6141b98f16`. That note is not an embedded binary manifest.
 
 ## Development
 
@@ -116,7 +116,7 @@ The repository contains signing/notarization hooks. **Configuration is not proof
 
 Local Windows builds commonly disable automatic certificate discovery and may be unsigned. An unsigned installer can trigger Microsoft SmartScreen.
 
-No macOS or Linux binaries are currently published in GitHub Release `v25.0.2`.
+No macOS or Linux binaries are currently published in GitHub Release `v25.0.3`.
 
 ## Live/processing architecture
 

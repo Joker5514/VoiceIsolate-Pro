@@ -25,27 +25,29 @@
 
 ## Current release
 
-Repository version: **25.0.2**.  
-Latest published GitHub Release: **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**.
+Repository version: **25.0.2** (Android `versionCode` **250002**).  
+Latest published GitHub Release: **[v25.0.3](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.3)** (published 2026-09-09). The Windows installer on that release is still named `VoiceIsolate-Pro-25.0.2-win-x64.exe`.
 
 | Platform | Current public entry |
 |---|---|
-| Web | https://voice-isolate-pro.vercel.app/ |
+| Web (desktop and Android browsers) | https://voice-isolate-pro.vercel.app/ |
 | Engineer Console | https://voice-isolate-pro.vercel.app/app/ |
 | Android sideload APK | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
+| Android APK pinned `v25.0.3` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-android-debug.apk |
 | Windows x64 installer | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| Windows installer pinned `v25.0.3` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-25.0.2-win-x64.exe |
 | Download hub | https://voice-isolate-pro.vercel.app/download/ |
 
-Published native asset metadata observed from GitHub Release `v25.0.2`:
+Published native asset metadata observed from GitHub Release `v25.0.3`:
 
-| Asset | Size | SHA-256 |
-|---|---:|---|
-| `VoiceIsolate-Pro-android-debug.apk` | 101,365,796 bytes | `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b` |
-| `VoiceIsolate-Pro-25.0.2-win-x64.exe` | 144,628,415 bytes | `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621` |
+| Asset | Size | SHA-256 | Asset updated |
+|---|---:|---|---|
+| `VoiceIsolate-Pro-android-debug.apk` | 101,650,376 bytes | `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626` | `2026-09-09T23:31:41Z` |
+| `VoiceIsolate-Pro-25.0.2-win-x64.exe` | 144,667,075 bytes | `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8` | `2026-09-09T23:31:43Z` |
 
-The Android artifact is a **debug/sideload APK**. The Windows installer may be unsigned. Current source can move ahead of published native binaries, so cross-platform same-build claims are governed by [`docs/releases/release-provenance.json`](docs/releases/release-provenance.json), not by the release description alone.
+The Android artifact is a **debug/sideload APK**. The Windows installer may be unsigned. Current `main` (`f5b271892de7bb8aca85b351062dd81f9191f756`) is newer than the release-note commit `038b3104e659be4c3914bd5ecd763e6141b98f16`. Do not describe Web, Android, Windows, `main`, and the release tag as the same build unless [`docs/releases/release-provenance.json`](docs/releases/release-provenance.json) proves it.
 
-**iOS is outside the supported v1.0 platform scope** even though repository scaffolding/version metadata exists. No current iOS, macOS, or Linux artifact is published in `v25.0.2`.
+**iOS is outside the supported v1.0 platform scope** even though repository scaffolding/version metadata exists. No current iOS, macOS, or Linux artifact is published in `v25.0.3`.
 
 ## What the product does
 
@@ -55,7 +57,7 @@ VoiceIsolate Pro accepts uploaded audio/video files and performs local analysis,
 
 Single coherent product system across Browser, Android & Desktop. **Signal canvas is center.**
 
-**Workflow:** Import/Record → Automatic Local Analysis → Select Signal → Contextual Action → Preview/Compare → Export. Raw immutable.
+**Workflow:** Upload → Automatic Local Analysis → Select Signal → Contextual Action → Preview/Compare → Export. Raw immutable. There is no live microphone and no record step.
 
 - **New IA:** Home, Analyze, Enhance, Compare, Export, Settings. Isolate is contextual action, not nav. Manual Separation removed from primary nav.
 - **Landing:** Hero "Hear What Others Miss." 100% on-device whisper recovery. Interactive demo drag→Isolate→before/after.
@@ -87,7 +89,7 @@ Slider movement must never trigger ML inference. Process-time controls are captu
 | `/app/` | Engineer Console | Full studio/forensic control surface, analysis workspace, visualization, diagnostics |
 | `/download/` | Downloads | Current Android/Windows assets and Web entry points |
 
-Web, Android, and Electron share the same Engineer Console product shell when each package is rebuilt from the same source.
+Desktop browsers, Android browsers, the Capacitor Android app, and Electron Windows use one upload-only product shell: Landing at `/` and the Engineer Console at `/app/`. Rebuild a native package from the commit you intend to ship before describing that package as current.
 
 ## Architecture
 
