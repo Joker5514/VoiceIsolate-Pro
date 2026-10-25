@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="VoiceIsolate Pro — Hear What Others Miss. 100% on-device voice isolation, automatic audio isolation, whisper recovery, privacy / zero cloud. No cloud audio, no telemetry, no mic. Works offline once the app and its models have loaded.">
-  <meta name="theme-color" content="#070b10">
+  <meta name="description" content="VoiceIsolate Pro — Bring the voice forward. 100% on-device voice isolation, automatic audio isolation, whisper recovery, privacy / zero cloud. No cloud audio, no telemetry, no mic. Works offline once the app and its models have loaded.">
+  <meta name="theme-color" content="#0a0e14">
   <meta name="color-scheme" content="dark">
-  <meta property="og:title" content="VoiceIsolate Pro — Hear What Others Miss">
+  <meta property="og:title" content="VoiceIsolate Pro — Bring the voice forward">
   <meta property="og:description" content="100% on-device voice isolation. Zero cloud audio. Zero telemetry. Automatic noise removal, whisper recovery, works offline once the app and its models have loaded. Private by design.">
   <meta property="og:type" content="website">
-  <title>VoiceIsolate Pro — Hear What Others Miss · 100% On-Device</title>
+  <title>VoiceIsolate Pro — Bring the voice forward · 100% On-Device</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/icon.jpg">
   <link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
@@ -28,7 +28,7 @@
 
   <header class="titlebar ps-titlebar v3-header">
     <a class="v3-brand" href="#home" aria-label="VoiceIsolate Pro, back to top">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M8 6v12M4 10v4M16 6v12M20 10v4"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M8 6v12M4 10v4M16 6v12M20 10v4"/></svg>
       <span class="app-title">VoiceIsolate Pro</span>
     </a>
     <span class="v3-header__status">
@@ -70,26 +70,41 @@
     <div class="v3-hero__grid">
       <div class="v3-hero__lead">
         <p class="v3-eyebrow v3-in"><span aria-hidden="true"></span>Voice isolation for recorded audio</p>
-        <h1 id="heroTitle" class="v3-display"><span class="v3-in v3-in--1">Hear What</span> <em class="v3-in v3-in--2">Others Miss.</em><span class="visually-hidden"> Clean voice. Keep the evidence.</span></h1>
-      </div>
-      <div class="v3-hero__side v3-in v3-in--3">
+        <h1 id="heroTitle" class="v3-display"><span class="v3-in v3-in--1">Bring the voice </span><em class="v3-in v3-in--2">forward.</em><span class="visually-hidden"> Clean voice. Keep the evidence.</span></h1>
         <p class="v3-lede">Choose a recording and VoiceIsolate Pro splits it into a clean voice and the background, then lets you remix the two. For interviews, meetings, voice memos and field recordings where speech is hard to hear. Processing happens on this device, so your audio is never uploaded to our servers.</p>
         <div class="v3-actions">
           <a href="#uploadPanel" class="v3-btn v3-btn--primary" id="startIsolatingBtn">Start Isolating</a>
           <a href="#engineer" class="v3-btn v3-btn--ghost">Engineer mode</a>
         </div>
       </div>
-    </div>
-
-    <div class="v3-stage" id="heroStage" aria-hidden="true">
-      <div class="v3-stage__glow"></div>
-      <canvas id="heroGl" class="v3-stage__gl"></canvas>
-      <div id="heroFallback" class="v3-stage__fallback" hidden></div>
-      <div class="v3-stage__fade v3-stage__fade--top"></div>
-      <div class="v3-stage__fade v3-stage__fade--bottom"></div>
-      <div class="v3-legend">
-        <span><i class="v3-swatch v3-swatch--voice"></i>Voice</span>
-        <span><i class="v3-swatch v3-swatch--bg"></i>Background</span>
+      <div class="v3-stage" id="heroStage">
+        <svg class="v3-signal" viewBox="0 0 960 520" role="img" aria-label="A helix enters from the lower left, passes a tilted lens, and splits into voice, music, room, and air.">
+          <defs>
+            <linearGradient id="signalGlassEdge" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.36"/>
+              <stop offset="100%" stop-color="#f5b942" stop-opacity="0.30"/>
+            </linearGradient>
+          </defs>
+          <path d="M70 450 C120 400 100 360 150 345 C200 330 175 285 225 270 C280 252 340 268 379 270 C420 272 438 250 455 230 C472 210 500 198 532 190" fill="none" stroke="#e8eef5" stroke-width="3" stroke-linecap="round"/>
+          <path d="M96 424 C146 386 128 348 176 338 C226 328 204 292 252 280 C310 266 360 292 400 286 C430 282 448 258 468 236" fill="none" stroke="#c3cbd5" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+          <g transform="rotate(-28 455 230)">
+            <ellipse cx="455" cy="230" rx="92" ry="50" fill="rgba(232,238,245,0.07)" stroke="#e8eef5" stroke-opacity="0.55" stroke-width="1.5"/>
+            <ellipse cx="455" cy="230" rx="92" ry="50" fill="none" stroke="url(#signalGlassEdge)" stroke-width="3"/>
+          </g>
+          <path class="ribbon-voice" d="M532 190 C620 120 740 78 880 64" fill="none" stroke="#22d3ee" stroke-width="5" stroke-linecap="round"/>
+          <path d="M532 190 C630 176 750 168 880 160" fill="none" stroke="#f5b942" stroke-width="5" stroke-linecap="round"/>
+          <path d="M532 190 C630 230 750 268 880 286" fill="none" stroke="#c9843a" stroke-width="5" stroke-linecap="round"/>
+          <path d="M532 190 C620 280 740 360 880 404" fill="none" stroke="#c3cbd5" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <canvas id="heroGl" class="v3-stage__gl" hidden></canvas>
+        <div id="heroFallback" class="v3-stage__fallback" hidden></div>
+        <ul class="v3-legend">
+          <li><i class="v3-swatch v3-swatch--voice"></i>Voice</li>
+          <li><i class="v3-swatch v3-swatch--music"></i>Music</li>
+          <li><i class="v3-swatch v3-swatch--room"></i>Room</li>
+          <li><i class="v3-swatch v3-swatch--air"></i>Air</li>
+        </ul>
+        <p class="v3-signal__note">The picture brings the voice ribbon forward. The mix you control is still voice and background.</p>
       </div>
     </div>
 

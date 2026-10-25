@@ -7,6 +7,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- Landing hero is “Bring the voice forward.” with the Signal Glass helix on the shared Web, Android-browser, and desktop shell. The filled action is the cyan pill. Upload, stem split, and Live-Mix are unchanged.
+
 ### Added
 
 - Release provenance (`docs/releases/release-provenance.json`) and

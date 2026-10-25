@@ -89,6 +89,8 @@ async function mountHeroStage() {
   const canvas = $('heroGl');
   const fallback = $('heroFallback');
   if (!stage || !canvas || !fallback) return;
+  // The landing picture is the Signal Glass helix. Leave the WebGL field off so it cannot cover that SVG.
+  if (stage.querySelector('.v3-signal')) return;
   if (!shouldLoadHeroScene()) { // a user preference, not a failure: no warning
     canvas.remove();
     mountFallback(fallback, stage);
@@ -105,27 +107,9 @@ async function mountHeroStage() {
   }
 }
 
-/** Panels start tilted back and flatten as they scroll into view. */
+/** Panels stay flat. The only tilt is the lens drawn inside the hero picture. */
 function wireScrollTilt() {
-  const items = [
-    { el: $('stemsTilt'), deg: 22, min: 0.92 },
-    { el: $('engineerTilt'), deg: 26, min: 0.9 },
-  ].filter((i) => i.el);
-  if (!items.length || reduceMotion) return;
-  let raf = 0;
-  const update = () => {
-    raf = 0;
-    const vh = window.innerHeight;
-    for (const { el, deg, min } of items) {
-      const r = el.getBoundingClientRect();
-      const p = Math.max(0, Math.min(1, (vh - r.top) / (vh * 0.75)));
-      el.style.transform = p >= 1 ? 'none' : `rotateX(${((1 - p) * deg).toFixed(2)}deg) scale(${(min + (1 - min) * p).toFixed(3)})`;
-    }
-  };
-  const schedule = () => { if (!raf) raf = requestAnimationFrame(update); };
-  window.addEventListener('scroll', schedule, { passive: true });
-  window.addEventListener('resize', schedule);
-  update();
+  // Intentionally no scroll rotateX. A tilted panel is not part of this shell.
 }
 
 /** Highlight the header link for the section currently in view. */

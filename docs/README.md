@@ -34,7 +34,7 @@ This index separates **current implementation/release truth** from historical au
 | [`PRODUCTION_PIPELINE.md`](PRODUCTION_PIPELINE.md) | Shipping processing path and Engineer Console integration |
 | [`product/PRODUCT_STRATEGY.md`](product/PRODUCT_STRATEGY.md) | Product definition, roadmap, risks, and release gates |
 | [`design/mockups/README.md`](design/mockups/README.md) | Explain / Stems / Engineer UI mockups: design direction only, not implementation truth |
-| [`design/signal-glass/README.md`](design/signal-glass/README.md) | Signal Glass light desk: one session, four ribbons. Design page only, not the shipping isolator |
+| [`design/signal-glass/README.md`](design/signal-glass/README.md) | Signal Glass picture and type. The landing hero uses this picture. The desk page is not the isolator |
 
 ## Current guides
 
