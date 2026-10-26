@@ -96,6 +96,7 @@
   <link rel="stylesheet" href="/premium-signal.css" />
   <!-- Studio console skin (layout/visual only — preserves IDs) -->
   <link rel="stylesheet" href="engineer-console.css" />
+  <link rel="stylesheet" href="workstation-premium.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -188,7 +189,7 @@
 
   <header class="hdr">
     <div class="hdr-left">
-      <div class="hdr-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
+      <div class="hdr-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div style="display:flex;flex-direction:column;gap:2px;">
         <h1 class="hdr-title" style="margin:0;">VoiceIsolate</h1>
         <span class="hdr-ver">PRO</span>
@@ -212,18 +213,18 @@
     </div>
     <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" title="Toggle stats" aria-expanded="false">&#9660;</button>
     <div class="hdr-stats" id="hdrStats">
-      <div class="hdr-stat"><span class="hs-val" id="hVoice">--</span><span class="hs-lbl">Voice %</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hNoise">--</span><span class="hs-lbl">Noise %</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hCh">--</span><span class="hs-lbl">Channels</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hLUFS">--</span><span class="hs-lbl">LUFS</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hVoices">--</span><span class="hs-lbl">Voices</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hFile">--</span><span class="hs-lbl">File</span></div>
-      <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
+      <div class="hdr-stat" title="Share of energy kept as the signal. Raise Voice Iso in Live-Mix if the voice is still buried after Process."><span class="hs-val" id="hVoice">--</span><span class="hs-lbl">Voice %</span></div>
+      <div class="hdr-stat" title="Residual against the original. Raise Background Suppress in Live-Mix, or run Process again after noise reduction."><span class="hs-val" id="hNoise">--</span><span class="hs-lbl">Noise %</span></div>
+      <div class="hdr-stat" title="Processed signal versus the residual, in dB. A higher number means the kept signal sits further above that residual."><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR</span></div>
+      <div class="hdr-stat" title="Length of the loaded buffer. This is how much audio Process will cover."><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
+      <div class="hdr-stat" title="Sample rate of the decoded buffer. Processing runs at 48 kHz."><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
+      <div class="hdr-stat" title="Channel count of the decoded buffer. Phase and crosstalk controls apply to stereo files."><span class="hs-val" id="hCh">--</span><span class="hs-lbl">Channels</span></div>
+      <div class="hdr-stat" title="Root-mean-square level of the current meter window, in dB."><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
+      <div class="hdr-stat" title="Sample peak of the current meter window, in dB. Near 0 dB means clip risk. Lower the output trim or the limiter."><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
+      <div class="hdr-stat" title="Mean-square level with a −0.691 offset. K-weighting is omitted, so this is not an ITU loudness reading. It fills in after Process."><span class="hs-val" id="hLUFS">--</span><span class="hs-lbl">Level</span></div>
+      <div class="hdr-stat" title="Speaker count from diarization when segments exist. Otherwise 1 when speech energy is present, or 0."><span class="hs-val" id="hVoices">--</span><span class="hs-lbl">Voices</span></div>
+      <div class="hdr-stat" title="File name of the loaded source, shortened to fit the header."><span class="hs-val" id="hFile">--</span><span class="hs-lbl">File</span></div>
+      <div class="hdr-stat" title="Pipeline state for this session."><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
     </div>
   </header>
 
@@ -265,7 +266,7 @@
       </div>
       <div class="vip-hero-copy">
         <p class="vip-hero-kicker">PRECISION STUDIO · LOCAL DSP · SINGLE-PASS STFT</p>
-        <h2 id="heroTitle" class="vip-hero-title">Engineer Workstation</h2>
+        <h2 id="heroTitle" class="vip-hero-title">Engineer <em>Workstation.</em></h2>
         <p id="heroTagline" class="vip-hero-tagline">Studio rack for on-device isolation — Process auto-runs analysis &amp; diarization. Export broadcast-ready audio without leaving your device.</p>
         <div class="vip-hero-tier" role="group" aria-label="Workflow tier">
           <span class="vip-hero-tier-label">Workflow</span>
@@ -436,11 +437,11 @@
       <div class="card" style="padding:12px;">
         <h3 style="margin:0 0 8px;font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Analysis Overlay</h3>
         <div id="analysisOverlayLegend" style="display:flex;flex-wrap:wrap;gap:6px;">
-          <span class="vip-chip" style="--chip-color:#2ed5e5;background:rgba(46,213,229,0.12);border:1px solid rgba(46,213,229,0.24);color:#2ed5e5;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Speech</span>
-          <span class="vip-chip" style="background:rgba(155,108,255,0.12);border:1px solid rgba(155,108,255,0.24);color:#9b6cff;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Whisper</span>
-          <span class="vip-chip" style="background:rgba(139,154,168,0.12);border:1px solid rgba(139,154,168,0.24);color:#8d9aaa;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Background Noise</span>
-          <span class="vip-chip" style="background:rgba(255,185,72,0.12);border:1px solid rgba(255,185,72,0.24);color:#ffb948;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Hum</span>
-          <span class="vip-chip" style="background:rgba(255,90,122,0.12);border:1px solid rgba(255,90,122,0.24);color:#ff5a7a;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Music/bleed</span>
+          <span class="vip-chip" style="--chip-color:#22d3ee;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.24);color:#22d3ee;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Speech</span>
+          <span class="vip-chip" style="background:rgba(34,211,238,0.10);border:1px solid rgba(34,211,238,0.28);color:#22d3ee;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Whisper</span>
+          <span class="vip-chip" style="background:rgba(195,203,213,0.12);border:1px solid rgba(195,203,213,0.28);color:#c3cbd5;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Background Noise</span>
+          <span class="vip-chip" style="background:rgba(201,132,58,0.14);border:1px solid rgba(201,132,58,0.32);color:#c9843a;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Hum</span>
+          <span class="vip-chip" style="background:rgba(245,185,66,0.12);border:1px solid rgba(245,185,66,0.32);color:#f5b942;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Music/bleed</span>
         </div>
         <div id="analysisOverlayList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>
       </div>
@@ -451,8 +452,8 @@
             <span>SNR: <span id="deepSnr">--</span> dB</span>
             <span>RMS: <span id="deepRms">--</span></span>
             <span>Peak: <span id="deepPeak">--</span></span>
-            <span>LUFS: <span id="deepLufs">--</span></span>
-            <span>Voices: <span id="deepVoices">--</span></span>
+            <span title="Mean-square level with a −0.691 offset. K-weighting is omitted.">Level: <span id="deepLufs">--</span></span>
+            <span title="Speaker count from diarization when segments exist. Otherwise 1 when speech energy is present, or 0.">Voices: <span id="deepVoices">--</span></span>
             <span>Duration: <span id="deepDuration">--</span></span>
           </div>
         </details>
@@ -539,6 +540,19 @@
         <div class="vip-section-body">
       <section id="analysisWorkspace" class="analysis-workspace-inner" data-state="idle" aria-label="Full audio analysis workspace">
         <p class="analysis-lead">Upload above (instant — no decode freeze). Analyze starts local PCM decode and maps voices, whispers, music, horns, barks, and other noise — then shares that map with WhisperHunter so isolation protects speech and suppresses interference. Audio never leaves this device.</p>
+        <dl class="vip-metric-guide" id="vipMetricGuide">
+          <div><dt>Duration</dt><dd>Length of the loaded buffer. It is the span Process will cover. Import a file when it stays blank.</dd></div>
+          <div><dt>Sample rate</dt><dd>Rate of the decoded buffer. Processing runs at 48 kHz. A different rate here means the file was decoded at its own rate first.</dd></div>
+          <div><dt>Channels</dt><dd>Mono or stereo on that buffer. Bit depth and codec are not kept. Phase and crosstalk controls apply when the file is stereo.</dd></div>
+          <div><dt>Voice %</dt><dd>Share of energy kept as the signal. If the voice is still buried after Process, raise Voice Iso. That slider does not run the model again.</dd></div>
+          <div><dt>Noise %</dt><dd>Residual against the original, not a separate noise-floor meter. Raise Background Suppress to duck it in playback, or run Process again after noise reduction.</dd></div>
+          <div><dt>SNR</dt><dd>Processed level versus that residual, in dB. A higher number means the kept signal sits further above the residual.</dd></div>
+          <div><dt>Peak</dt><dd>Sample peak in dB. Close to 0 dB means clip risk. Lower the output trim or Limiter Threshold, then Compare.</dd></div>
+          <div><dt>Level</dt><dd>Mean-square level with a −0.691 offset. K-weighting is omitted, so it is not an ITU loudness reading. It stays blank until Process publishes it.</dd></div>
+          <div><dt>Voices</dt><dd>Speaker count from diarization when segments exist. Otherwise 1 when speech energy is present, or 0. Enroll a voice under Focus on one voice if you need one speaker.</dd></div>
+          <div><dt>Audit log</dt><dd>SHA-256 of each processing stage, written locally. Audit Log enables after Process and downloads that history.</dd></div>
+        </dl>
+        <p class="vip-metric-action" id="vipMetricAction">Import a file. Duration, sample rate, and channels come from the decode. Voice, noise, SNR, peak, and level come from Process.</p>
         <div id="capabilityPanel" class="capability-panel" aria-live="polite"></div>
         <div class="analysis-actions">
           <button id="btnAnalyzeFull" class="btn btn-primary" type="button">Analyze Full Audio</button>
@@ -658,7 +672,7 @@
         <details class="whisper-hunter-row vip-section" id="section-whisper-hunter" open>
           <summary class="vip-section-summary whisper-hunter-label">2 · WhisperHunter AI</summary>
           <div class="vip-section-body">
-          <button id="btn-whisper-hunter" type="button" title="Uses the analyzer joint map when available (protect voice/whisper, suppress music/horns/noise)">🎙️ WhisperHunter AI</button>
+          <button id="btn-whisper-hunter" type="button" title="Uses the analyzer joint map when available (protect voice/whisper, suppress music/horns/noise)">WhisperHunter AI</button>
           <p class="whisper-hunter-hint">Best after Analyze Full Audio — collaborates with the workspace above to remove unwanted sound and lift voices/whispers. Uses USM stems when available.</p>
           </div>
         </details>
@@ -694,8 +708,8 @@
         <details class="slider-group vip-section" id="section-dynamics"><summary class="vip-section-summary">Dynamics<span class="module-sub">Dynamics &amp; loudness · smoothed</span></summary><div id="group-dynamics" class="slider-group-content vip-section-body"><div class="group-toolbar"><button type="button" class="btn btn-outline btn-reset-group" data-reset-group="section-dynamics" title="Reset unlocked dynamics controls">Reset group</button></div><p class="group-desc">Evens out volume. The <strong>compressor</strong> brings loud and soft words closer together; the <strong>limiter</strong> sets a hard ceiling so nothing clips. <em>Example:</em> a guest who keeps drifting from the mic — Threshold ~−24 dB, Ratio 4:1, Makeup +3 dB for a steady, broadcast-level voice.</p><div id="tab-dyn" class="slider-panel"></div></div></details>
         <details class="slider-group vip-section" id="section-spectral"><summary class="vip-section-summary">Spectral<span class="module-sub">Filters · de-ess · formants</span></summary><div id="group-spectral" class="slider-group-content vip-section-body"><div class="group-toolbar"><button type="button" class="btn btn-outline btn-reset-group" data-reset-group="section-spectral" title="Reset unlocked spectral controls">Reset group</button></div><p class="group-desc">Surgical frequency tools: high-/low-pass filters to trim the extremes, a de-esser to tame harsh "s" sounds, tilt for quick brighter/darker, and formant shift for vocal character. <em>Example:</em> a sharp, sibilant narrator — De-ess Amount ~6 dB at 7 kHz, HP Freq 90 Hz to drop rumble.</p><div id="tab-spec" class="slider-panel"></div></div></details>
         <details class="slider-group vip-section" id="section-advanced"><summary class="vip-section-summary">Advanced<span class="module-sub">Room &amp; stereo</span></summary><div id="group-advanced" class="slider-group-content vip-section-body"><div class="group-toolbar"><button type="button" class="btn btn-outline btn-reset-group" data-reset-group="section-advanced" title="Reset unlocked advanced controls">Reset group</button></div><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></details>
-        <details class="slider-group vip-section" id="section-output" open><summary class="vip-section-summary">Output<span class="module-sub">Master bus · −1 dBTP ceiling</span></summary><div id="group-output" class="slider-group-content vip-section-body"><div class="group-toolbar"><button type="button" class="btn btn-outline btn-reset-group" data-reset-group="section-output" title="Reset unlocked output controls">Reset group</button></div><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></details>
-        <details class="slider-group vip-section" id="section-separation" open><summary class="vip-section-summary">Separation → Isolation<span class="module-sub">Isolation depth · Live-Mix</span></summary><div id="group-separation" class="slider-group-content vip-section-body"><div class="group-toolbar"><button type="button" class="btn btn-outline btn-reset-group" data-reset-group="section-separation" title="Reset unlocked isolation controls">Reset group</button></div><p class="group-desc"><strong>Separation</strong> (ML, once per Process) splits voice vs background stems. <strong>Isolation</strong> sliders below refine that mix in real time — Voice Iso lifts the clean stem, BG Suppress ducks residual noise — without re-running ML. <em>Example:</em> after Process, set Voice Iso ~85% and BG Suppress ~60% to hear a clearer dialogue stem.</p><div id="tab-sep" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-output" open><summary class="vip-section-summary">Output<span class="module-sub">Master bus · limiter ceiling</span></summary><div id="group-output" class="slider-group-content vip-section-body"><div class="group-toolbar"><button type="button" class="btn btn-outline btn-reset-group" data-reset-group="section-output" title="Reset unlocked output controls">Reset group</button></div><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-separation" open><summary class="vip-section-summary">Separation → Isolation<span class="module-sub">Isolation depth · Live-Mix</span></summary><div id="group-separation" class="slider-group-content vip-section-body"><div class="group-toolbar"><button type="button" class="btn btn-outline btn-reset-group" data-reset-group="section-separation" title="Reset unlocked isolation controls">Reset group</button></div><p class="group-desc"><strong>Separation</strong> (ML, once per Process) splits voice vs background stems. <strong>Isolation</strong> sliders below refine that mix in real time — Voice Iso lifts the clean stem, BG Suppress ducks residual noise — without re-running ML. <em>Example:</em> after Process, set Voice Iso ~85% and BG Suppress ~60% to hear a clearer dialogue stem.</p><nav class="vip-stem-path" id="vipStemPath" aria-label="Stems workflow"><a href="#section-upload">Source</a><a href="#vizCard">Playback</a><a href="#section-separation">Stems</a><a href="#processBtn">Process</a><a href="#tpAB">Compare</a><a href="#saveProcBtn">Export</a></nav><div id="tab-sep" class="slider-panel"></div></div></details>
         <details class="slider-group vip-section" id="tab-extreme-group">
           <summary class="vip-section-summary">EXTREME / Whisper isolation</summary>
           <div id="group-extreme" class="slider-group-content vip-section-body" role="region">
@@ -723,14 +737,21 @@
           <span class="vip-sonar-spinner vip-pb-spinner" aria-hidden="true" style="display:none"><i></i><i></i><i></i><b></b></span>
         </div>
         <div class="pipe-header"><span class="pipe-stage" id="pipeStage">S00</span><span id="pipePercent">0%</span></div>
+        <ol class="vip-signal-chain" id="vipSignalChain">
+          <li>Import decodes the file. Processing runs at 48 kHz.</li>
+          <li>Process splits voice and background once. One STFT on the fused path.</li>
+          <li>Live-Mix sliders change playback only. They do not start inference.</li>
+          <li>Compare switches original and processed without moving the playhead.</li>
+          <li>Export writes the local file. Drive upload happens only if you ask.</li>
+        </ol>
         <div class="vip-stat-strip" aria-label="Session stats">
-          <span class="vip-stat"><span class="vip-stat-lbl">Duration</span><span id="stat-duration" class="vip-stat-val">--</span></span>
-          <span class="vip-stat"><span class="vip-stat-lbl">Status</span><span id="stat-status" class="vip-stat-val">Idle</span></span>
-          <span class="vip-stat"><span class="vip-stat-lbl">Voice %</span><span id="stat-voice" class="vip-stat-val">--</span></span>
-          <span class="vip-stat"><span class="vip-stat-lbl">Noise %</span><span id="stat-noise" class="vip-stat-val">--</span></span>
-          <span class="vip-stat"><span class="vip-stat-lbl">SNR</span><span id="stat-snr" class="vip-stat-val">--</span></span>
-          <span class="vip-stat"><span class="vip-stat-lbl">Sample Rate</span><span id="stat-sr" class="vip-stat-val">--</span></span>
-          <span class="vip-stat"><span class="vip-stat-lbl">Channels</span><span id="stat-channels" class="vip-stat-val">--</span></span>
+          <span class="vip-stat" title="Length of the loaded buffer."><span class="vip-stat-lbl">Duration</span><span id="stat-duration" class="vip-stat-val">--</span></span>
+          <span class="vip-stat" title="Pipeline state for this file."><span class="vip-stat-lbl">Status</span><span id="stat-status" class="vip-stat-val">Idle</span></span>
+          <span class="vip-stat" title="Share of energy kept as the signal."><span class="vip-stat-lbl">Voice %</span><span id="stat-voice" class="vip-stat-val">--</span></span>
+          <span class="vip-stat" title="Residual against the original. Not a separate measured noise floor."><span class="vip-stat-lbl">Noise %</span><span id="stat-noise" class="vip-stat-val">--</span></span>
+          <span class="vip-stat" title="Processed level versus that residual, in dB. Not LUFS."><span class="vip-stat-lbl">SNR</span><span id="stat-snr" class="vip-stat-val">--</span></span>
+          <span class="vip-stat" title="Sample rate of the buffer in this session."><span class="vip-stat-lbl">Sample Rate</span><span id="stat-sr" class="vip-stat-val">--</span></span>
+          <span class="vip-stat" title="Channel count of the decoded buffer. Bit depth and codec are not kept on this buffer."><span class="vip-stat-lbl">Channels</span><span id="stat-channels" class="vip-stat-val">--</span></span>
         </div>
         <div class="pipe-bar" id="pipeBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress">
           <div id="pipeFill" class="pipe-fill"></div>
@@ -836,7 +857,7 @@
           <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
           <button id="btn-waveform" class="tab-btn" type="button" role="tab" aria-controls="tab-waveform" data-tab="waveform" aria-selected="false" tabindex="-1">Waveform</button>
           <button id="btn-abcompare" class="tab-btn" type="button" role="tab" aria-controls="tab-abcompare" data-tab="abcompare" aria-selected="false" tabindex="-1">A/B</button>
-          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1">LUFS</button>
+          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1" title="Playback mean-square level. K-weighting is omitted.">Level</button>
           <button id="btn-clusters" class="tab-btn" type="button" role="tab" aria-controls="tab-clusters" data-tab="clusters" aria-selected="false" tabindex="-1">Clusters</button>
           <button id="btn-aura" class="tab-btn" type="button" role="tab" aria-controls="tab-aura" data-tab="aura" aria-selected="false" tabindex="-1">Aura</button>
           <button id="btn-topo" class="tab-btn" type="button" role="tab" aria-controls="tab-topo" data-tab="topo" aria-selected="false" tabindex="-1">3D Topo</button>
@@ -854,7 +875,7 @@
           </div>
           <div id="tab-waveform" role="tabpanel" aria-labelledby="btn-waveform" class="panel" data-viz-panel="waveform"><div class="viz-panel-label">Waveform</div><div class="viz-legend">Static inspection before playback · live playhead during transport</div><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas><canvas id="inputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div>
           <div id="tab-abcompare" role="tabpanel" aria-labelledby="btn-abcompare" class="panel" data-viz-panel="abcompare"><div class="viz-panel-label">A/B Compare</div><div class="viz-legend">Original vs processed waveform overlay for transport A/B</div><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas><canvas id="outputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div></div>
-          <div id="tab-lufs" role="tabpanel" aria-labelledby="btn-lufs" class="panel" data-viz-panel="lufs"><div class="viz-panel-label">LUFS</div><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">-23.0</span><span class="lufs-lbl">Integrated</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">-20.0</span><span class="lufs-lbl">Short</span></div></div></div>
+          <div id="tab-lufs" role="tabpanel" aria-labelledby="btn-lufs" class="panel" data-viz-panel="lufs"><div class="viz-panel-label" title="Playback mean-square level with a −0.691 offset. K-weighting is omitted.">Level</div><p class="hint vip-level-note">Blank until playback. The numbers are a mean-square estimate, not an ITU loudness reading.</p><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">—</span><span class="lufs-lbl" title="Running mean of the playback window.">Window</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">—</span><span class="lufs-lbl" title="Shorter playback window.">Short</span></div></div></div>
           <div id="tab-clusters" role="tabpanel" aria-labelledby="btn-clusters" class="panel" data-viz-panel="clusters">
             <div class="viz-panel-label">Clusters</div>
             <canvas id="diarCanvas" class="viz-canvas"></canvas>
