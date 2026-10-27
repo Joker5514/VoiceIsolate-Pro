@@ -77,6 +77,8 @@ export class ComparisonToggle {
     this.container.addEventListener('keydown', (e) => {
       if (e.key.toLowerCase() === 'x') {
         e.preventDefault();
+        // The page-level X shortcut would toggle a second time and cancel this one.
+        e.stopPropagation();
         this._emit('abToggle');
       }
     });

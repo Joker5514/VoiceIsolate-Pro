@@ -3043,18 +3043,95 @@ class VoiceIsolatePro {
     this.abMode = 'processed';
     this._bridgeBuf = null;
     // Prefer stem-pair Live-Mix when separation retained clean+noise
-    if (this._cleanStemChannels?.length) {
-      this._loadSeparationStemsToBridge().catch(() => {});
+    const stems = this._cleanStemChannels?.length
+      ? this._loadSeparationStemsToBridge().catch(() => {})
+      : Promise.resolve();
+    // A/B is ready the moment processed audio exists: no extra step.
+    void stems.then(() => this._armInstantAB()).catch(() => {});
+    const ab = this._liveABButton();
+    if (ab) {
+      ab.classList.add('active');
+      ab.disabled = false;
+      ab.setAttribute('aria-pressed', 'true');
+      ab.title = 'Compare Original / Processed (X) — sample-accurate, keeps playhead';
     }
-    if (this.dom?.tpAB) {
-      this.dom.tpAB.classList.add('active');
-      this.dom.tpAB.disabled = false;
-      this.dom.tpAB.title = 'Compare Original / Processed (X) — sample-accurate, keeps playhead';
+    const label = this._liveABLabel();
+    if (label) {
+      label.dataset.version = 'B';
+      label.innerHTML = '<span class="tp-ab-tag">B</span><span class="tp-ab-name">Processed</span>';
     }
-    if (this.dom?.tpABLabel) {
-      this.dom.tpABLabel.dataset.version = 'B';
-      this.dom.tpABLabel.innerHTML = '<span class="tp-ab-tag">B</span><span class="tp-ab-name">Processed</span>';
-    }
+  }
+
+  /** The connected A/B button (vip-fixes replaces the node it was cached from). */
+  _liveABButton() {
+    const cached = this.dom?.tpAB;
+    if (cached && (cached.isConnected !== false)) return cached;
+    const live = typeof document !== 'undefined' && document.getElementById ? document.getElementById('tpAB') : null;
+    if (live && this.dom) this.dom.tpAB = live;
+    return live || cached || null;
+  }
+
+  _liveABLabel() {
+    const cached = this.dom?.tpABLabel;
+    if (cached && (cached.isConnected !== false)) return cached;
+    const live = typeof document !== 'undefined' && document.getElementById ? document.getElementById('tpABLabel') : null;
+    return live || cached || null;
+  }
+
+  /**
+   * Make Original a sample-aligned comparison lane next to the processed
+   * stems (zero-copy: the decoded input is the reference). Afterwards A/B is
+   * a gain crossfade on the running transport — no reload, no restart.
+   * @returns {Promise<boolean>} true when instant A/B is armed
+   */
+  async _armInstantAB() {
+    const ref = this.inputBuffer || this.origBuffer;
+    if (!ref || !(this.outputBuffer || this.procBuffer)) return false;
+    await this.ensureCtx();
+    const bridge = this._bridge || await this._ensureBridge();
+    if (!bridge || typeof bridge.setComparisonReference !== 'function') return false;
+    // A newer file or Process replaced the buffers while the bridge loaded.
+    if (ref !== (this.inputBuffer || this.origBuffer)) return false;
+    bridge.setComparisonReference(ref);
+    bridge.setComparisonMode(this.abMode === 'original' ? 'original' : 'processed');
+    return true;
+  }
+
+  /** True when A/B can switch as a crossfade (Original lane armed for this input). */
+  _instantABReady() {
+    const ref = this.inputBuffer || this.origBuffer;
+    return Boolean(
+      !this.isProcessing
+      && (this.outputBuffer || this.procBuffer)
+      && this._bridge?.holdsComparisonReference?.(ref),
+    );
+  }
+
+  /**
+   * Buffer the Live-Mix bridge should hold. With instant A/B armed it always
+   * holds the processed output (Original is the comparison lane), so A/B never
+   * swaps what the bridge plays.
+   */
+  _getBridgePlaybackBuffer() {
+    if (this._instantABReady()) return this.outputBuffer || this.procBuffer;
+    return this._getPlaybackBuffer();
+  }
+
+  /**
+   * Switch A/B as a ~7.5 ms crossfade on the running transport.
+   * @param {'original'|'processed'} next
+   * @returns {boolean} true when switched instantly; false = caller falls back
+   */
+  _switchABInstant(next) {
+    if (!this._instantABReady()) return false;
+    const bridge = this._bridge;
+    const processed = this.outputBuffer || this.procBuffer;
+    // Playing something other than the processed output (e.g. Original was
+    // playing when Process finished): the caller restarts once onto it.
+    if (bridge.isPlaying?.() && this._bridgeBuf !== processed) return false;
+    if (!bridge.setComparisonMode(next)) return false;
+    this.abMode = next;
+    return true;
   }
 
   _resetSliders({ unlockedOnly = true } = {}) {
@@ -3736,6 +3813,7 @@ class VoiceIsolatePro {
     const isVideoFile = isVideoSource(file);
     this._sourceFile = file;
     this.isVideo = isVideoFile;
+    this._bridge?.clearComparisonReference?.();
     this.inputBuffer = null;
     this.origBuffer = null;
     this.procBuffer = null;
@@ -4515,6 +4593,7 @@ class VoiceIsolatePro {
     refreshLibraryList(this).catch(() => {});
     HeroExperience.onClear();
     this.stop();
+    this._bridge?.clearComparisonReference?.();
     this.inputBuffer = null;
     this.outputBuffer = null;
     this.origBuffer = null;
@@ -6985,7 +7064,9 @@ class VoiceIsolatePro {
       this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
     }
 
-    await this.buildLiveChain(buf);
+    await this.buildLiveChain(
+      wantProcessed || !this._instantABReady?.() ? buf : (this.outputBuffer || this.procBuffer),
+    );
 
     if (this.isVideo && this.dom && this.dom.videoPlayer) {
       const vp = this.dom.videoPlayer;
@@ -7077,7 +7158,11 @@ class VoiceIsolatePro {
     const bridge = this._bridge || await this._ensureBridge();
     if (bridge && (typeof bridge.loadBuffer === 'function' || typeof bridge.loadStemPair === 'function')) {
       try {
-        const useStems = this.abMode === 'processed'
+        // Armed: the bridge holds the processed output and abMode picks the
+        // lane. Not armed: A/B swaps what the bridge holds, so its graph
+        // output must be the audible lane.
+        bridge.setComparisonMode?.(this._instantABReady?.() && this.abMode === 'original' ? 'original' : 'processed');
+        const useStems = (this.abMode === 'processed' || this._instantABReady?.())
           && this._cleanStemChannels?.length
           && buf === (this.outputBuffer || this.procBuffer);
         if (this._bridgeBuf !== buf || (useStems && !bridge.hasNoiseStem?.())) {
@@ -7308,6 +7393,12 @@ class VoiceIsolatePro {
     if (this._fixABPatched) return;
     const buf = this.outputBuffer || this.procBuffer;
     if (!buf) return;
+    const next = this.abMode === 'original' ? 'processed' : 'original';
+    if (typeof this._switchABInstant === 'function' && this._switchABInstant(next)) {
+      VoiceIsolatePro.prototype._paintABState.call(this);
+      this.updateAudioMetrics(this._computeAudioMetricsState());
+      return;
+    }
     if (this.isPlaying && typeof this._getTransportPosition === 'function') {
       this.playOffset = this._getTransportPosition();
     } else if (this.isPlaying) {
@@ -7315,7 +7406,15 @@ class VoiceIsolatePro {
       this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     }
     this._bridgeBuf = null;
-    this.abMode = this.abMode === 'original' ? 'processed' : 'original';
+    this.abMode = next;
+    VoiceIsolatePro.prototype._paintABState.call(this);
+    if (this.isPlaying) this.play();
+    // Keep Voice/Noise/SNR in sync across every readout on A/B toggle.
+    this.updateAudioMetrics(this._computeAudioMetricsState());
+  }
+
+  /** Paint the A/B button + label for the current abMode. */
+  _paintABState() {
     if (this.dom.tpAB) {
       if (this.dom.tpAB.classList && typeof this.dom.tpAB.classList.toggle === 'function') {
         this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
@@ -7336,9 +7435,6 @@ class VoiceIsolatePro {
           : '<span class="tp-ab-tag">A</span><span class="tp-ab-name">Original</span>';
       }
     }
-    if (this.isPlaying) this.play();
-    // Keep Voice/Noise/SNR in sync across every readout on A/B toggle.
-    this.updateAudioMetrics(this._computeAudioMetricsState());
   }
 
   /**
@@ -7888,10 +7984,13 @@ class VoiceIsolatePro {
     if (this.dom.tpDur) this.dom.tpDur.textContent = fmtTime(dur);
     const enabled = Boolean(buf);
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew,
-     this.dom.tpFwd, this.dom.tpSeek, this.dom.tpAB,
+     this.dom.tpFwd, this.dom.tpSeek,
      this.dom.tpLoop, this.dom.tpCropIn, this.dom.tpCropOut, this.dom.tpCropClear].forEach(b => {
       if (b) b.disabled = !enabled;
     });
+    // A/B compares against processed audio, so it is live exactly when that exists.
+    const ab = typeof this._liveABButton === 'function' ? this._liveABButton() : this.dom.tpAB;
+    if (ab) ab.disabled = !(this.outputBuffer || this.procBuffer) || Boolean(this.isProcessing);
     if (enabled) {
       this._ensureTransportRegionWiring();
       if (!this.isPlaying) this._paintTransport(this.playOffset || 0, dur);
