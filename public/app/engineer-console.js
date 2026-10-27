@@ -178,7 +178,7 @@
       const mode = el('span', 'ec-mode-badge');
       mode.id = 'ecModeBadge';
       mode.dataset.mode = 'offline';
-      mode.textContent = 'Creator / Offline';
+      mode.textContent = 'Studio';
       badge.insertAdjacentElement('afterend', mode);
     }
 
@@ -238,12 +238,12 @@
         <span class="ec-status-pill" id="ecSafetyPill" data-state="ok">Clean</span>
       </div>
       <div class="ec-meter-row">
-        <div class="ec-meter"><span class="ec-meter-lbl">Peak</span><span class="ec-meter-val" id="ecPeakVal">—</span></div>
-        <div class="ec-meter"><span class="ec-meter-lbl">True-peak</span><span class="ec-meter-val" id="ecTpVal">— dBTP</span></div>
-        <div class="ec-meter"><span class="ec-meter-lbl">Ceiling</span><span class="ec-meter-val" id="ecCeilVal">−1.0</span></div>
+        <div class="ec-meter"><span class="ec-meter-lbl">Peak</span><span class="ec-meter-val" id="ecPeakVal" title="Sample peak copied from the header meter.">—</span></div>
+        <div class="ec-meter"><span class="ec-meter-lbl">Sample peak</span><span class="ec-meter-val" id="ecTpVal" title="Sample peak in dBFS. This is not an ITU true-peak reading.">— dBFS</span></div>
+        <div class="ec-meter"><span class="ec-meter-lbl">Limiter</span><span class="ec-meter-val" id="ecCeilVal" title="Limiter Threshold control, in dBFS. It is a setting, not a measured true-peak.">—</span></div>
       </div>
       <p class="hint" style="margin:8px 0 0;font-size:0.7rem;opacity:0.75">
-        Transparent brickwall limit on process output · micro-fades on mute/solo · no extra gain staging in UI
+        Sample peak is the header meter in dBFS. Limiter is the Limiter Threshold setting. Neither number is an ITU true-peak.
       </p>`;
 
     const processing = document.getElementById('section-processing');
@@ -269,7 +269,8 @@
       <h3>Analysis Summary</h3>
       <div class="ec-summary-body" id="ecAnalysisSummary">
         Runs automatically after Process. SNR, voice %, and findings appear here.
-      </div>`;
+      </div>
+      <p class="ec-metric-gloss" id="ecMetricGloss">Import a file. Duration, sample rate, and channels come from the decode. Voice, noise, SNR, peak, and level come from Process.</p>`;
 
     const diar = el('div', 'card ec-summary-card');
     diar.innerHTML = `
@@ -352,6 +353,7 @@
     installWorkspaceNav();
     installFieldNav();
     installQuickStrip();
+    installStemPath();
     syncWorkspaceMode();
     window.addEventListener('vip:tierChanged', syncWorkspaceMode);
   }
@@ -417,6 +419,79 @@
     else if (mq.addListener) mq.addListener(onChange);
   }
 
+  const WORKFLOWS = [
+    {
+      id: 'stems',
+      label: 'Stems',
+      short: 'Stems',
+      focus: '#section-separation',
+      open: ['#section-upload', '#vizCard', '#section-separation'],
+      blurb: 'Import, play, and balance the voice stem against the background. Process splits the file once. These sliders do not run it again.',
+    },
+    {
+      id: 'advanced',
+      label: 'Advanced',
+      short: 'Advanced',
+      focus: '#section-advanced',
+      open: ['#section-gate', '#section-spectral', '#section-dynamics', '#section-advanced'],
+      blurb: 'Noise, spectral, dynamics, and room controls that exist on this rack. Live-Mix moves the sound now. Process-time controls wait for the next Process.',
+    },
+    {
+      id: 'engineer',
+      label: 'Engineer',
+      short: 'Engineer',
+      focus: '#section-processing',
+      open: ['#section-processing', '#section-presets', '#section-output'],
+      blurb: 'Import, one Process, Live-Mix, compare, then export. The chain is fixed. Dragging a slider does not reorder it or start inference.',
+    },
+    {
+      id: 'forensic',
+      label: 'Forensic Inspector',
+      short: 'Forensic',
+      focus: '#section-analysis',
+      open: ['#section-analysis', '#vizCard', '#section-target-speaker'],
+      blurb: 'File duration, sample rate, channels, voice, noise, SNR, and sample peak. Only values this session measured are shown.',
+    },
+  ];
+
+  function revealTarget(sel) {
+    const t = document.querySelector(sel);
+    if (!t) return null;
+    if (t instanceof HTMLDetailsElement) t.open = true;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    t.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    return t;
+  }
+
+  function activateWorkflow(flow) {
+    (flow.open || [flow.focus]).forEach((sel) => {
+      const node = document.querySelector(sel);
+      if (node instanceof HTMLDetailsElement) node.open = true;
+    });
+    const target = revealTarget(flow.focus);
+    const status = document.getElementById('heroStatus');
+    const hero = document.getElementById('vipHero');
+    if (status && flow.blurb && (!hero || hero.dataset.uiState === 'idle' || !hero.dataset.uiState)) {
+      status.textContent = flow.blurb;
+    }
+    target?.focus?.({ preventScroll: true });
+  }
+
+  function applyRecommendedPreset() {
+    const sel = document.getElementById('presetSel');
+    if (!sel) return;
+    const tier = document.body.dataset.psMode;
+    const name = tier === 'forensic' ? 'Forensic Extract' : tier === 'quick' ? 'Voice Clarity' : 'Podcast Clean';
+    const opt = [...sel.options].find((o) => !o.hidden && !o.disabled && (o.value === name || o.textContent === name));
+    if (!opt) {
+      activateWorkflow(WORKFLOWS[2]);
+      return;
+    }
+    sel.value = opt.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    revealTarget('#section-presets');
+  }
+
   function currentTierId() {
     try {
       const fromHero = document.getElementById('vipHero')?.dataset.workflowTier;
@@ -446,26 +521,8 @@
 
   function installWorkspaceNav() {
     if (document.getElementById('psWorkspaceNav')) return;
-    const studioItems = [
-      ['Overview', '#vipHero'],
-      ['Media', '#section-upload'],
-      ['Analysis', '#section-analysis'],
-      ['Sources', '#section-target-speaker'],
-      ['Processing', '#section-processing'],
-      ['Compare', '#btn-abcompare'],
-      ['Exports', '#exportProjectPackBtn'],
-      ['Audit', '#ecIntegrityCard'],
-      ['Settings', '#ecViewToggle'],
-    ];
-    const forensicItems = [
-      ['Observe', '#vizCard'],
-      ['Analyze', '#section-analysis'],
-      ['Isolate', '#section-separation'],
-      ['Restore', '#section-spectral'],
-      ['Mix', '.transport-card'],
-      ['Compare', '#btn-abcompare'],
-      ['Export', '#exportProjectPackBtn'],
-    ];
+    const studioItems = WORKFLOWS.map((w) => [w.label, w.focus]);
+    const forensicItems = studioItems;
     const nav = el('nav', 'ps-workspace-nav');
     nav.id = 'psWorkspaceNav';
     nav.setAttribute('aria-label', 'Studio workspace');
@@ -484,16 +541,12 @@
       a.href = sel;
       a.textContent = label;
       a.dataset.psNav = sel;
+      const flow = WORKFLOWS.find((w) => w.focus === sel);
+      if (flow) a.title = flow.blurb;
       a.addEventListener('click', (e) => {
-        const t = document.querySelector(sel);
-        if (!t) return;
         e.preventDefault();
-        if (t instanceof HTMLDetailsElement) t.open = true;
-        if (t.id === 'btn-abcompare') t.click();
-        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        t.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
-        t.focus?.({ preventScroll: true });
-        nav.querySelectorAll('[aria-current]').forEach((n) => n.removeAttribute('aria-current'));
+        activateWorkflow(flow || { focus: sel, open: [sel], blurb: '' });
+        document.querySelectorAll('.ps-workspace-nav [aria-current]').forEach((n) => n.removeAttribute('aria-current'));
         a.setAttribute('aria-current', 'page');
       });
       if (i === 0) a.setAttribute('aria-current', 'page');
@@ -506,24 +559,15 @@
     const bar = el('nav', 'ps-field-nav');
     bar.id = 'psFieldNav';
     bar.setAttribute('aria-label', 'Field navigation');
-    const items = [
-      ['Files', '#section-upload'],
-      ['Analyze', '#section-analysis'],
-      ['Mix', '.transport-card'],
-      ['Export', '#exportProjectPackBtn'],
-    ];
-    items.forEach(([label, sel], i) => {
+    WORKFLOWS.forEach((flow, i) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = label;
+      b.textContent = flow.short;
       b.className = 'ps-field-nav__btn';
+      b.title = flow.blurb;
       if (i === 0) b.setAttribute('aria-current', 'page');
       b.addEventListener('click', () => {
-        const t = document.querySelector(sel);
-        if (!t) return;
-        if (t instanceof HTMLDetailsElement) t.open = true;
-        openFieldSheet(t);
-        t.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        activateWorkflow(flow);
         bar.querySelectorAll('[aria-current]').forEach((n) => n.removeAttribute('aria-current'));
         b.setAttribute('aria-current', 'page');
       });
@@ -532,27 +576,22 @@
     document.body.appendChild(bar);
   }
 
-  function openFieldSheet(node) {
-    if (!window.matchMedia || !window.matchMedia('(max-width: 640px)').matches) return;
-    const existing = document.getElementById('psFieldSheet');
-    if (existing) existing.remove();
-    const sheet = el('div', 'ps-field-sheet');
-    sheet.id = 'psFieldSheet';
-    sheet.setAttribute('role', 'dialog');
-    sheet.setAttribute('aria-modal', 'false');
-    sheet.setAttribute('aria-label', 'Inspector');
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'ps-field-sheet__close';
-    close.textContent = 'Close';
-    const previouslyFocused = document.activeElement;
-    close.addEventListener('click', () => {
-      sheet.remove();
-      if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+  function installStemPath() {
+    const path = document.getElementById('vipStemPath');
+    if (!path || path.dataset.bound === '1') return;
+    path.dataset.bound = '1';
+    path.addEventListener('click', (e) => {
+      const a = e.target.closest('a');
+      if (!a) return;
+      const sel = a.getAttribute('href');
+      if (!sel || sel.charAt(0) !== '#') return;
+      e.preventDefault();
+      revealTarget(sel);
     });
-    sheet.appendChild(close);
-    document.body.appendChild(sheet);
-    close.focus();
+  }
+
+  function openFieldSheet() {
+    // The old sheet was an empty dialog. The section itself scrolls into view.
   }
 
   function installQuickStrip() {
@@ -561,10 +600,30 @@
     strip.id = 'psQuickStrip';
     strip.hidden = true;
     strip.setAttribute('aria-label', 'Quick workflow');
-    ['Import', 'Recommended preset', 'Fix My Audio', 'A/B review', 'Export'].forEach((label, i) => {
+    [
+      ['Import', () => document.getElementById('heroCtaUpload')?.click()],
+      ['Recommended preset', applyRecommendedPreset],
+      ['Fix My Audio', () => {
+        const proc = document.getElementById('processBtn');
+        if (proc && !proc.disabled) proc.click();
+        else activateWorkflow(WORKFLOWS[0]);
+      }],
+      ['A/B review', () => {
+        const card = document.getElementById('vizCard');
+        if (card instanceof HTMLDetailsElement) card.open = true;
+        document.getElementById('btn-abcompare')?.click();
+        revealTarget('#tpAB');
+      }],
+      ['Export', () => revealTarget('#saveProcBtn')],
+    ].forEach(([label, run], i) => {
       const li = document.createElement('li');
-      li.textContent = label;
       li.dataset.step = String(i + 1);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ps-quick-strip__btn';
+      btn.textContent = label;
+      btn.addEventListener('click', run);
+      li.appendChild(btn);
       strip.appendChild(li);
     });
     const hdr = document.querySelector('.hdr');
@@ -619,7 +678,7 @@
     let tpDb = '—';
     if (peakLin != null && Number.isFinite(peakLin)) {
       const db = 20 * Math.log10(Math.max(1e-9, peakLin));
-      tpDb = `${db.toFixed(1)} dBTP`;
+      tpDb = `${db.toFixed(1)} dBFS`;
       if (db > -0.3) {
         safety = 'risk';
         safetyLabel = 'Clip risk';
@@ -634,6 +693,12 @@
     setPill('ecSafetyPill', safety, safetyLabel);
     const tp = document.getElementById('ecTpVal');
     if (tp) tp.textContent = tpDb;
+    const ceil = document.getElementById('ecCeilVal');
+    const lim = document.getElementById('sl_limThresh') || document.getElementById('limThresh');
+    if (ceil) {
+      const n = lim ? Number(lim.value) : NaN;
+      ceil.textContent = Number.isFinite(n) ? `${n.toFixed(1)} dBFS` : '—';
+    }
 
     document.body.classList.toggle('ec-clean-output', safety === 'ok');
 
@@ -649,7 +714,8 @@
         mode.textContent = 'Live-Mix';
       } else {
         mode.dataset.mode = 'offline';
-        mode.textContent = 'Creator / Offline';
+        const tierName = document.body.dataset.psMode;
+        mode.textContent = tierName === 'forensic' ? 'Forensic' : tierName === 'quick' ? 'Quick' : 'Studio';
       }
     }
 
@@ -663,6 +729,32 @@
       setPill('ecStftPill', 'ok', '1× STFT');
       setPill('ecIntegrityOverall', 'ok', 'Click-safe');
     }
+    writeMetricAction(safety);
+  }
+
+  function writeMetricAction(safety) {
+    const blank = (s) => {
+      const t = String(s || '').trim();
+      return !t || t === '--' || t === '—' || t.startsWith('--');
+    };
+    const dur = document.getElementById('hDur')?.textContent;
+    const voice = document.getElementById('hVoice')?.textContent;
+    let text;
+    if (blank(dur) && blank(voice)) {
+      text = 'Import a file. Duration, sample rate, and channels come from the decode. Voice, noise, SNR, peak, and level come from Process.';
+    } else if (safety === 'risk') {
+      text = 'Sample peak is at the ceiling. Lower the output trim or Limiter Threshold, then use Compare before you export.';
+    } else if (safety === 'warn') {
+      text = 'Sample peak is close to the ceiling. Keep Limiter Threshold at or under this peak if you want headroom, then Compare.';
+    } else if (blank(voice)) {
+      text = 'The file is loaded. Run Process to fill voice, noise, SNR, peak, and level. Live-Mix sliders move the sound after that without running the model again.';
+    } else {
+      text = 'These numbers are from this file. Use Compare to hear original and processed, then Save Processed if the voice stem is the part you want to keep.';
+    }
+    const action = document.getElementById('vipMetricAction');
+    if (action) action.textContent = text;
+    const gloss = document.getElementById('ecMetricGloss');
+    if (gloss) gloss.textContent = text;
   }
 
   function refreshSummaryFromApp() {

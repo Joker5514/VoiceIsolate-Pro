@@ -69,6 +69,10 @@ const REQUIRED_PATHS = [
   'app/style.css',
   'app/engineer-console.css',
   'app/engineer-console.js',
+  'app/workstation-premium.css',
+  'fonts/Geist-Variable.woff2',
+  'fonts/GeistMono-Variable.woff2',
+  'fonts/instrument-serif-latin-400-italic.woff2',
   'app/models-manifest.json',
   // Worklets + ORT
   'src/workers/GateProcessor.js',

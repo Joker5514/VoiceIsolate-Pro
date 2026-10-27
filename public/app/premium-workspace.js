@@ -119,7 +119,7 @@ function drawWaveform(canvas, data) {
 
 function drawWavePeaks(ctx, peaks, w, mid) {
 
-  ctx.strokeStyle = '#2ed5e5';
+  ctx.strokeStyle = '#22d3ee';
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = 0; x < w; x++) {
@@ -535,7 +535,7 @@ function updateLiveMetrics(metrics) {
     deepSnr: metrics.snrDb != null ? `${metrics.snrDb.toFixed(1)}` : null,
     deepRms: metrics.rms != null ? metrics.rms.toFixed(4) : null,
     deepPeak: metrics.peak != null ? metrics.peak.toFixed(4) : null,
-    deepLufs: metrics.lufs != null ? `${metrics.lufs.toFixed(1)} LUFS` : null,
+    deepLufs: metrics.lufs != null ? metrics.lufs.toFixed(1) : null,
     deepVoices: metrics.voices != null ? String(metrics.voices) : null,
     deepDuration: metrics.duration != null ? `${metrics.duration.toFixed(2)}s` : null,
   };
@@ -544,6 +544,14 @@ function updateLiveMetrics(metrics) {
       const el = $(id);
       if (el) el.textContent = val;
     }
+  }
+  if (metrics.lufs != null) {
+    const level = $('hLUFS');
+    if (level) level.textContent = metrics.lufs.toFixed(1);
+  }
+  if (metrics.voices != null) {
+    const voices = $('hVoices');
+    if (voices) voices.textContent = String(metrics.voices);
   }
 }
 
