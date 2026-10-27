@@ -216,6 +216,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/core/ring-buffer-constants.js` | 1 | Codified `QUANTUM`, `FFT_SIZE_LIVE`, `FFT_SIZE_CREATOR`, `HOP_SIZE`, `QUANTA_PER_HOP`, enrollment defaults. |
 | `src/core/OverlapAddAccumulator.js` | 1 | `QuantumHopBridge` + `OverlapAddReconstructor` — symmetric Hann OLA per blueprint §III. |
 | `src/core/DesktopBridge.js` | 1 | Thin `window.vipDesktop` adapter — native open/save IPC (no Node in renderer). |
+| `src/core/HeroMotionPolicy.js` | 1 | Pure Landing hero motion gate: `shouldLoadHeroVideo` opt-outs (reduced motion, Save-Data, 2G, offline) → still; `PerformanceTier` HIGH drift + bloom, BALANCED 30 fps no bloom, CONSTRAINED still. |
 | `src/core/BufferPool.js` | 1 | Pre-allocated `Float32Array` pool (128 / 2048 / 4096) — zero-GC DSP. |
 | `src/core/ModelManifest.js` | 1 | Canonical model metadata: URLs, sizes, SHA-256 integrity hashes, I/O specs. |
 | `src/core/diarization.js` | 1 | Pure speaker diarization (frame features + k-means) run once per file on the clean stem. |
@@ -237,6 +238,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/presentation/ExportControls.js` | 4 | Export format/quality picker; wires DOM events to `ExportOrchestrator`. |
 | `src/presentation/IsolationModeSelector.js` | 4 | Isolation-mode dropdown (Voice Only / Maximum Isolation / etc.) that feeds `ProcessingOrchestrator`. |
 | `src/presentation/LandingVisualizer.js` | 4 | Canvas 2D waveform overview + live spectrum analyzer; reads PlaybackMixer analyser. |
+| `src/presentation/HeroSculpture.js` | 4 | Landing hero sculpture drift (Signal Glass L2): two compositor transforms per rAF, paused when hidden/offscreen. The still is static SVG generated into `public/index.html` by `scripts/generate-hero-sculpture.mjs`. Never touches audio. |
 
 Rules:
 - **ESM everywhere** in `src/` (`import`/`export`). Tests use CommonJS (`require`).
