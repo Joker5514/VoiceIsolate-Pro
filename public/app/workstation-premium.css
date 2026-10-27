@@ -211,14 +211,18 @@ body.eng-console .spectro3d-container {
   background: #070b10 !important;
 }
 body.eng-console #btn-whisper-hunter,
-body.eng-console #btn-whisper-hunter:hover,
-body.eng-console #btn-whisper-hunter.running {
+body.eng-console #btn-whisper-hunter:hover {
   background: transparent !important;
   border: 1px solid rgba(34, 211, 238, 0.4) !important;
   color: #e8eef5 !important;
   border-radius: 999px !important;
   box-shadow: none !important;
   transform: none !important;
+}
+body.eng-console #btn-whisper-hunter.running {
+  background: rgba(34, 211, 238, 0.14) !important;
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.35) !important;
 }
 body.eng-console .btn-ab,
 body.eng-console .btn-ab.active {
