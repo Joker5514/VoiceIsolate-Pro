@@ -1,0 +1,275 @@
+/*
+ * VoiceIsolate Pro — shared motion layer (Signal Glass, CLAUDE.md §1.3).
+ *
+ * Loaded last on Landing and the Engineer Console. Every animation here is
+ * keyed off root flags written by src/presentation/MotionController.js from
+ * the pure src/core/MotionPolicy.js:
+ *
+ *   data-motion            marketing level   full | calm | still
+ *   data-motion-work       work-area level   full | calm | still
+ *   data-motion-ambient    marketing ambient illustration motion  on | off
+ *   data-motion-work-ambient   empty-state illustration motion (HIGH only)
+ *   data-motion-work-state     drag-over / processing / reveal motion
+ *
+ * Timings: 150 ms hover/press, 200 ms toggle/segment, 300 ms sheet, Landing
+ * section reveals 900 ms with 60 ms staggers. Easing is custom everywhere:
+ * expo-out cubic-bezier(0.16, 1, 0.3, 1), quart-out for micro-interactions,
+ * a gentle overshoot spring for pointer release; never linear or a default
+ * keyword. Only transform / translate / scale /
+ * opacity animate (clip-path once for a waveform wipe, from JS).
+ * Reduced motion: instant hover/toggle, 120 ms sheet fade, no entrances, no
+ * ambient or state motion; every illustration is a complete still.
+ */
+
+:root {
+  --vip-voice: #22d3ee;
+  --vip-bgst: #f5b942;
+  --vip-ref: #c3cbd5;
+  --vip-canvas: #0a0e14;
+  --vip-motion-press: 150ms;
+  --vip-motion-toggle: 200ms;
+  --vip-motion-sheet: 300ms;
+  --vip-motion-reveal: 300ms;
+  --vip-motion-reveal-marketing: 900ms;
+  --vip-motion-stagger: 60ms;
+  --vip-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --vip-motion-ease-marketing: cubic-bezier(0.16, 1, 0.3, 1);
+  --vip-motion-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --vip-motion-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --vip-motion-ease-loop: cubic-bezier(0.37, 0, 0.63, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vip-motion-press: 0ms;
+    --vip-motion-toggle: 0ms;
+    --vip-motion-sheet: 120ms;
+    --vip-motion-reveal: 0ms;
+    --vip-motion-reveal-marketing: 0ms;
+  }
+}
+
+/* ── Hover / press (150 ms) ─────────────────────────────────────────────
+   `scale` / `translate` are individual transform properties, so they
+   compose with any transform a component already owns. */
+html[data-motion-ready] :is(.v3-btn, .vip-btn, .btn, .ps-btn, .vip-iconbtn, .btn-tp-region, .tab-btn, .ps-field-nav__btn, .btn-ab) {
+  transition:
+    color var(--vip-motion-press) var(--vip-motion-ease-quart),
+    background-color var(--vip-motion-press) var(--vip-motion-ease-quart),
+    border-color var(--vip-motion-press) var(--vip-motion-ease-quart),
+    box-shadow var(--vip-motion-toggle) var(--vip-motion-ease-quart),
+    opacity var(--vip-motion-press) var(--vip-motion-ease-quart),
+    transform var(--vip-motion-press) var(--vip-motion-ease),
+    scale var(--vip-motion-press) var(--vip-motion-ease-quart),
+    translate var(--vip-motion-toggle) var(--vip-motion-ease-quart);
+}
+html[data-motion-ready] :is(.v3-btn, .vip-btn, .btn, .ps-btn, .vip-iconbtn, .btn-tp-region, .tab-btn, .ps-field-nav__btn, .btn-ab):not(:disabled):active {
+  scale: 0.97;
+}
+
+/* Story cards: flat 2 px lift (panels stay flat; no rotateX tilt). */
+html[data-motion-ready] body.v3 .v3-pipeline li:hover,
+html[data-motion-ready] body.v3 .v3-modes .ps-card:hover { transform: translateY(-2px); }
+
+/* ── Scroll entrances (Landing story sections only) ─────────────────── */
+html[data-motion-ready] body [data-vip-reveal] {
+  /* Keeps the cards' own hover transitions alongside the entrance. */
+  transition:
+    opacity var(--vip-motion-reveal-marketing) var(--vip-motion-ease-marketing) var(--vip-reveal-delay, 0ms),
+    translate var(--vip-motion-reveal-marketing) var(--vip-motion-ease-marketing) var(--vip-reveal-delay, 0ms),
+    transform var(--vip-motion-press) var(--vip-motion-ease-quart),
+    border-color var(--vip-motion-press) var(--vip-motion-ease-quart),
+    box-shadow var(--vip-motion-toggle) var(--vip-motion-ease-quart);
+}
+html[data-motion-ready] [data-vip-reveal="pending"] { opacity: 0; translate: 0 28px; }
+html[data-motion-ready] [data-vip-reveal="in"] { opacity: 1; translate: none; }
+@media print { [data-vip-reveal] { opacity: 1 !important; translate: none !important; } }
+
+/* ── Segmented controls and tabs: 200 ms sliding indicator ──────────────
+   Three stacked tone layers crossfade on opacity: silver Original/Raw,
+   cyan Clean Voice/Processed, gold Background/Removed. */
+.vip-seg-host { position: relative; }
+.vip-seg-ind {
+  position: absolute; left: 0; bottom: 0; z-index: 1;
+  width: 100px; height: 2px;
+  transform-origin: 0 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--vip-motion-toggle) var(--vip-motion-ease-quart);
+}
+.vip-seg-ind[data-on="1"] { opacity: 1; }
+.vip-seg-ind[data-ready="1"] {
+  transition: transform var(--vip-motion-toggle) var(--vip-motion-ease), opacity var(--vip-motion-toggle) var(--vip-motion-ease-quart);
+}
+.vip-seg-ind i { position: absolute; inset: 0; border-radius: 2px; opacity: 0; transition: opacity var(--vip-motion-toggle) var(--vip-motion-ease-quart); }
+.vip-seg-ind i[data-tone="voice"] { background: var(--vip-voice); }
+.vip-seg-ind i[data-tone="bgst"] { background: var(--vip-bgst); }
+.vip-seg-ind i[data-tone="ref"] { background: var(--vip-ref); }
+.vip-seg-ind[data-tone="voice"] i[data-tone="voice"],
+.vip-seg-ind[data-tone="bgst"] i[data-tone="bgst"],
+.vip-seg-ind[data-tone="ref"] i[data-tone="ref"] { opacity: 1; }
+html[data-motion-tier="HIGH"]:not([data-motion="still"]) .vip-seg-ind i[data-tone="voice"] { box-shadow: 0 0 8px rgba(34, 211, 238, 0.55); }
+html[data-motion-tier="HIGH"]:not([data-motion="still"]) .vip-seg-ind i[data-tone="bgst"] { box-shadow: 0 0 8px rgba(245, 185, 66, 0.5); }
+
+/* Engineer transport A/B: silver A / cyan B tone bar crossfades on switch. */
+#tpAB { position: relative; }
+#tpAB::before, #tpAB::after {
+  content: ''; position: absolute; left: 10px; right: 10px; bottom: 3px; height: 2px;
+  border-radius: 2px; opacity: 0; pointer-events: none;
+  transition: opacity var(--vip-motion-toggle) var(--vip-motion-ease-quart);
+}
+#tpAB::before { background: var(--vip-ref); }
+#tpAB::after { background: var(--vip-voice); }
+#tpAB:not(:disabled)[data-ab-version="A"]::before,
+#tpAB:not(:disabled)[data-ab-version="B"]::after { opacity: 1; }
+
+/* ── Split-line heading reveals (Landing): each line rises out of a mask
+   and sharpens from a slight blur. Lines stagger 80 ms. ─────────────── */
+.vip-line { display: block; overflow: clip; overflow-clip-margin: 0.16em; }
+.vip-line__inner { display: block; }
+html[data-motion-ready] [data-vip-split] .vip-line__inner {
+  transition:
+    transform 1100ms var(--vip-motion-ease-marketing) calc(var(--vip-line-i, 0) * 80ms),
+    opacity 900ms var(--vip-motion-ease-marketing) calc(var(--vip-line-i, 0) * 80ms),
+    filter 900ms var(--vip-motion-ease-marketing) calc(var(--vip-line-i, 0) * 80ms);
+}
+html[data-motion-ready] [data-vip-split="pending"] .vip-line__inner { transform: translateY(108%); opacity: 0; filter: blur(8px); }
+html[data-motion-ready] [data-vip-split="in"] .vip-line__inner { transform: none; opacity: 1; filter: none; }
+
+/* ── Magnetic CTAs (pointer: fine, Landing only) ────────────────────── */
+html[data-motion-pointer="on"] body .vip-magnetic[data-magnet="off"] {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, scale, translate;
+  transition-duration: var(--vip-motion-press), var(--vip-motion-press), var(--vip-motion-press), var(--vip-motion-toggle), var(--vip-motion-press), var(--vip-motion-press), var(--vip-motion-press), 700ms;
+  transition-timing-function: var(--vip-motion-ease-quart), var(--vip-motion-ease-quart), var(--vip-motion-ease-quart), var(--vip-motion-ease-quart), var(--vip-motion-ease-quart), var(--vip-motion-ease-quart), var(--vip-motion-ease-quart), var(--vip-motion-spring);
+}
+
+/* ── Card tilt + specular light (pointer: fine, Landing only) ───────── */
+html[data-motion-pointer="on"] body .vip-tilt[class] {
+  position: relative;
+  transition:
+    transform var(--vip-motion-toggle) var(--vip-motion-ease-quart),
+    opacity var(--vip-motion-reveal-marketing) var(--vip-motion-ease-marketing) var(--vip-reveal-delay, 0ms),
+    translate var(--vip-motion-reveal-marketing) var(--vip-motion-ease-marketing) var(--vip-reveal-delay, 0ms),
+    border-color var(--vip-motion-press) var(--vip-motion-ease-quart),
+    box-shadow var(--vip-motion-toggle) var(--vip-motion-ease-quart);
+}
+html[data-motion-pointer="on"] body .vip-tilt[data-tilt="off"] {
+  transition:
+    transform 700ms var(--vip-motion-spring),
+    opacity var(--vip-motion-reveal-marketing) var(--vip-motion-ease-marketing) var(--vip-reveal-delay, 0ms),
+    translate var(--vip-motion-reveal-marketing) var(--vip-motion-ease-marketing) var(--vip-reveal-delay, 0ms),
+    border-color var(--vip-motion-press) var(--vip-motion-ease-quart),
+    box-shadow var(--vip-motion-toggle) var(--vip-motion-ease-quart);
+}
+.vip-spec {
+  position: absolute; inset: 0; border-radius: inherit; overflow: hidden;
+  pointer-events: none; opacity: 0; z-index: 0;
+  transition: opacity var(--vip-motion-sheet) var(--vip-motion-ease-quart);
+}
+.vip-tilt[data-tilt="on"] > .vip-spec { opacity: 1; }
+.vip-spec__light {
+  position: absolute; left: -140px; top: -140px; width: 280px; height: 280px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.13), rgba(34, 211, 238, 0.06) 38%, transparent 70%);
+  mix-blend-mode: screen;
+  transition: transform 120ms var(--vip-motion-ease-quart);
+}
+
+/* ── Illustrations ──────────────────────────────────────────────────── */
+.vi-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.vi-label {
+  font: 600 9px/1 'Geist Mono', ui-monospace, monospace;
+  letter-spacing: 0.12em; fill: #8d9aaa;
+}
+.vi-label--mono { letter-spacing: 0.04em; font-weight: 500; }
+.vi-sweep { transform: translateX(0); }
+.vi-svg :is(.vi-file, .vi-arrow, .vi-cap, .vi-out, .vi-mix) {
+  transform-box: fill-box; transform-origin: center;
+}
+@keyframes viSweep { from { transform: translateX(0); } to { transform: translateX(var(--vi-run, 800px)); } }
+@keyframes viBreathe { from { opacity: 0.55; } to { opacity: 1; } }
+@keyframes viBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+
+/* Paused when offscreen or when the tab is hidden. */
+[data-vip-offscreen] .vi-svg *,
+html[data-motion-hidden] .vi-svg * { animation-play-state: paused !important; }
+
+/* How-it-works figure (marketing ambient: slow sheen + breathing rim). */
+body.v3 .v3-split-figure {
+  margin: 0; padding: 20px 20px 14px;
+  border: 1px solid var(--v3-line, #1d2a34); border-radius: 12px;
+  background:
+    radial-gradient(ellipse 60% 70% at 50% 50%, rgba(34, 211, 238, 0.05), transparent 70%),
+    linear-gradient(180deg, #0f151d, #0a0e14);
+}
+body.v3 .v3-split-figure figcaption { margin-top: 10px; font-size: 13px; color: var(--v3-fg-3, #8d9aaa); }
+html[data-motion-ambient="on"] .v3-split-figure .vi-sweep { animation: viSweep 7s var(--vip-motion-ease-loop) infinite; }
+html[data-motion-ambient="on"] .v3-split-figure .vi-lens__rim { animation: viBreathe 3s var(--vip-motion-ease-loop) infinite alternate; }
+
+/* Pipeline glyphs: still by default, a nudge on hover. */
+body.v3 .v3-pipeline__art { display: block; width: 100%; max-width: 132px; margin: 2px 0 6px; }
+body.v3 .v3-pipeline__art .vi-svg { height: 52px; width: auto; max-width: 100%; }
+.v3-pipeline__art :is(.vi-arrow, .vi-cap, .vi-ribbon) { transition: translate var(--vip-motion-press) var(--vip-motion-ease), opacity var(--vip-motion-press) var(--vip-motion-ease-quart); }
+body.v3 .v3-pipeline li:hover .v3-pipeline__art .vi-arrow { translate: 3px 0; }
+body.v3 .v3-pipeline li:hover .v3-pipeline__art .vi-glyph--export .vi-arrow { translate: 0 3px; }
+body.v3 .v3-pipeline li:hover .v3-pipeline__art .vi-cap { translate: 0 -3px; }
+
+/* ── Quick Clean drop zone ──────────────────────────────────────────── */
+body.v3 .v3-drop:has(.vip-drop-art[data-vip-illustrated]) .upload-svg { display: none; }
+body.v3 .vip-drop-art { display: block; width: min(300px, 100%); margin: 0 auto 2px; }
+.vip-drop-art .vi-out { opacity: 0.6; transition: opacity var(--vip-motion-toggle) var(--vip-motion-ease-quart); }
+.vip-drop-art .vi-mix { transition: opacity var(--vip-motion-toggle) var(--vip-motion-ease-quart); }
+.vip-drop-art .vi-file { transition: translate var(--vip-motion-toggle) var(--vip-motion-ease); }
+.vip-drop-art .vi-lens__rim { opacity: 0.75; transition: opacity var(--vip-motion-press) var(--vip-motion-ease-quart); }
+body.v3 .v3-drop { transition: border-color var(--vip-motion-press) var(--vip-motion-ease-quart), background-color var(--vip-motion-press) var(--vip-motion-ease-quart), box-shadow var(--vip-motion-toggle) var(--vip-motion-ease-quart); }
+body.v3 .v3-drop:is(:hover, :focus-visible) .vip-drop-art .vi-out,
+body.v3 .v3-drop.drag-over .vip-drop-art .vi-out,
+body.v3 #uploadPanel.upload-panel--dragging .vip-drop-art .vi-out { opacity: 1; }
+body.v3 .v3-drop:is(:hover, :focus-visible) .vip-drop-art .vi-lens__rim,
+body.v3 .v3-drop.drag-over .vip-drop-art .vi-lens__rim,
+body.v3 #uploadPanel.upload-panel--dragging .vip-drop-art .vi-lens__rim { opacity: 1; }
+body.v3 .v3-drop:hover .vip-drop-art .vi-file { translate: 0 3px; }
+body.v3 .v3-drop.drag-over .vip-drop-art .vi-file,
+body.v3 #uploadPanel.upload-panel--dragging .vip-drop-art .vi-file { translate: 0 9px; }
+body.v3 #uploadPanel.upload-panel--dragging .v3-drop { box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18), inset 0 0 40px rgba(34, 211, 238, 0.06); }
+/* Idle empty state (HIGH only): a slow sheen and a gentle file bob. */
+html[data-motion-work-ambient="on"] #uploadPanel[data-state="empty"] .vip-drop-art .vi-sweep { animation: viSweep 6s var(--vip-motion-ease-loop) infinite; }
+html[data-motion-work-ambient="on"] #uploadPanel[data-state="empty"] .v3-drop:not(:hover) .vip-drop-art .vi-file { animation: viBob 3.2s var(--vip-motion-ease-loop) infinite; }
+/* Working: the sheen runs through the lens while a job is in flight. */
+html[data-motion-work-state="on"] #uploadPanel:is([data-state="importing"], [data-state="downloading"], [data-state="processing"]) .vip-drop-art .vi-sweep { animation: viSweep 1.6s var(--vip-motion-ease) infinite; }
+html[data-motion-work-state="on"] #uploadPanel:is([data-state="importing"], [data-state="downloading"], [data-state="processing"]) .vip-drop-art .vi-lens__rim { animation: viBreathe 0.6s var(--vip-motion-ease-loop) infinite alternate; }
+#uploadPanel:is([data-state="processed"], [data-state="comparing"], [data-state="exported"]) .vip-drop-art .vi-out { opacity: 1; }
+#uploadPanel:is([data-state="processed"], [data-state="comparing"], [data-state="exported"]) .vip-drop-art .vi-mix { opacity: 0.4; }
+/* Processing loader: its own scan animation stops where work motion is off. */
+html[data-motion-work="still"] #procLoaderMount * { animation: none !important; }
+
+/* ── Engineer empty state ───────────────────────────────────────────── */
+.vip-empty {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 10px 18px; text-align: center; pointer-events: none;
+  container-type: size;
+  background:
+    radial-gradient(ellipse 55% 60% at 50% 42%, rgba(34, 211, 238, 0.07), transparent 70%),
+    rgba(10, 14, 20, 0.94);
+}
+.vip-empty__art { flex: 1 1 auto; min-height: 0; width: min(620px, 94%); display: flex; align-items: center; }
+.vip-empty__art .vi-svg { max-height: 100%; }
+.vip-empty__title { margin: 0; font: 600 14px/1.3 'Geist', ui-sans-serif, system-ui, sans-serif; color: #e8eef5; }
+.vip-empty__sub { margin: 0; max-width: 56ch; font: 400 12px/1.45 'Geist', ui-sans-serif, system-ui, sans-serif; color: #9aa7b6; }
+html[data-motion-work-ambient="on"] .vip-empty .vi-sweep { animation: viSweep 9s var(--vip-motion-ease-loop) infinite; }
+@container (max-height: 180px) { .vip-empty__sub { display: none; } }
+
+/* ── Toasts: always visible after entering (the WAAPI entrance animates). */
+#toastRegion .toast { opacity: 1; transform: none; }
+
+/* ── Reduced motion and CONSTRAINED work areas: everything holds still. ─ */
+html[data-motion="still"] [data-vip-reveal] { opacity: 1 !important; translate: none !important; }
+html[data-motion="still"] .vip-line__inner { transform: none !important; opacity: 1 !important; filter: none !important; }
+html[data-motion="still"] .vi-svg *,
+html[data-motion-work="still"] :is(.vip-drop-art, .vip-empty) .vi-svg * { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .vi-svg *, .vip-seg-ind, .vip-seg-ind i { animation: none !important; transition-duration: 0ms !important; }
+  [data-vip-reveal] { opacity: 1 !important; translate: none !important; }
+  .vip-line__inner { transform: none !important; opacity: 1 !important; filter: none !important; }
+  .vip-spec { display: none; }
+  html:has(body.v3) { scroll-behavior: auto; }
+}

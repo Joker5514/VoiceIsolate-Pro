@@ -130,7 +130,18 @@ function wireSectionNav() {
   sections.forEach((s) => io.observe(s));
 }
 
+/** Shared motion layer + Signal Glass illustrations (src/presentation/MotionController.js). */
+async function mountMotion() {
+  try {
+    const { initMotion } = await import('/src/presentation/MotionController.js');
+    initMotion({ page: 'landing' });
+  } catch (err) {
+    console.warn('[VIP][v3] motion layer not loaded (non-fatal)', err);
+  }
+}
+
 function init() {
+  void mountMotion();
   void mountHeroStage();
   wireScrollTilt();
   wireSectionNav();
