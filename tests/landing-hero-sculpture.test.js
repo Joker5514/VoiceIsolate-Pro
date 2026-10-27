@@ -3,8 +3,9 @@
  *
  * Pins the motion policy (opt-outs mirror app.js#shouldLoadHeroVideo; tiers
  * follow PerformanceTier), the 2 px / 6 px drift bounds, the rAF lifecycle
- * (paused when hidden, still under reduced motion), and that the generated
- * still in public/index.html is current and same-origin only.
+ * (paused when hidden, still under reduced motion), the 3D renderer budget
+ * and its lazy hand-over / fallback to the SVG, the shared geometry, and that
+ * the generated still in public/index.html is current and same-origin only.
  */
 'use strict';
 
@@ -18,9 +19,11 @@ const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
 
 let policy;
 let sculpture;
+let geo;
 beforeAll(async () => {
   policy = await import('../src/core/HeroMotionPolicy.js');
   sculpture = await import('../src/presentation/HeroSculpture.js');
+  geo = await import('../src/core/HeroSculptureGeometry.js');
 });
 
 describe('selectHeroMotion', () => {
@@ -88,6 +91,7 @@ function makeWin({ reducedMotion = false, connection, cores = 8, memory = 8 } = 
     addEventListener: (_t, fn) => mqListeners.push(fn),
     removeEventListener: () => {},
   });
+  win.HTMLCanvasElement.prototype.getContext = () => null; // no WebGL in JSDOM
   win.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length; };
   win.cancelAnimationFrame = (id) => { frames[id - 1] = null; };
   Object.defineProperty(win, 'performance', { value: { now: () => now }, configurable: true });
@@ -203,5 +207,148 @@ describe('generated still in public/index.html', () => {
     const js = fs.readFileSync(path.join(ROOT, 'public/landing-v3.js'), 'utf8');
     expect(js).not.toMatch(/hero-gl\.js/);
     expect(js).toMatch(/\/src\/presentation\/HeroSculpture\.js/);
+  });
+});
+
+describe('selectHeroRenderer', () => {
+  const HIGH = { motion: 'drift', fps: 0, bloom: true };
+  const BAL = { motion: 'drift', fps: 30, bloom: false };
+
+  test('the still, no WebGL2 and software GL all keep the SVG', () => {
+    expect(policy.selectHeroRenderer({ motion: 'still', fps: 0 }, { webgl2: true })).toMatchObject({ renderer: 'svg', reason: 'still' });
+    expect(policy.selectHeroRenderer(HIGH, { webgl2: false })).toMatchObject({ renderer: 'svg', reason: 'no-webgl2' });
+    expect(policy.selectHeroRenderer(HIGH, { webgl2: true, software: true })).toMatchObject({ renderer: 'svg', reason: 'software-gl' });
+  });
+
+  test('HIGH: DPR cap 1.75, glow shells, dense dust; BALANCED: 1.25, no glow, 30 fps', () => {
+    expect(policy.selectHeroRenderer(HIGH, { webgl2: true, viewportWidth: 1440 })).toMatchObject({ renderer: '3d', dprCap: 1.75, glow: true, particles: 900, fps: 0 });
+    expect(policy.selectHeroRenderer(BAL, { webgl2: true, viewportWidth: 1440 })).toMatchObject({ renderer: '3d', dprCap: 1.25, glow: false, particles: 480, fps: 30 });
+  });
+
+  test('narrow screens keep the band with fewer particles and a lower DPR', () => {
+    expect(policy.selectHeroRenderer(HIGH, { webgl2: true, viewportWidth: 390 })).toMatchObject({ renderer: '3d', dprCap: 1.25, particles: 220, reason: 'narrow' });
+  });
+
+  test('heroPixelRatio honours the DPR cap and the pixel budget', () => {
+    const b = policy.selectHeroRenderer(HIGH, { webgl2: true, viewportWidth: 1920 });
+    expect(policy.heroPixelRatio(b, 1440, 900, 3)).toBeCloseTo(1.75, 5);
+    expect(policy.heroPixelRatio(b, 1440, 900, 1)).toBe(1);
+    const big = policy.heroPixelRatio(b, 2560, 1600, 2);
+    expect(2560 * 1600 * big * big).toBeLessThanOrEqual(4.2e6 + 1);
+  });
+});
+
+describe('HeroSculptureGeometry', () => {
+  test('the helix enters at x0 y~930, splits at the lens and exits at y~300 / y~690', () => {
+    const helix = geo.helixSamples();
+    expect(Math.abs(geo.nearestX(helix, 0).p[1] - 930)).toBeLessThan(12);
+    const v = geo.voiceSamples(), b = geo.bgSamples();
+    expect(Math.abs(geo.nearestX(v, 1920).p[1] - 300)).toBeLessThan(8);
+    expect(Math.abs(geo.nearestX(b, 1920).p[1] - 690)).toBeLessThan(8);
+    expect(helix[helix.length - 1].p).toEqual([...geo.HUB]);
+    expect(geo.LENS.cx - geo.LENS.rx * 1.3).toBeGreaterThanOrEqual(970);
+    expect(geo.LENS.cx + geo.LENS.rx * 1.3).toBeLessThanOrEqual(1260);
+  });
+
+  test('helix strands stay within the braid amplitude and alternate depth', () => {
+    const s = geo.helixSamples(120);
+    const a = geo.helixStrand(1, s), b = geo.helixStrand(-1, s);
+    for (let i = 0; i < s.length; i++) {
+      expect(Math.abs(a[i].z)).toBeLessThanOrEqual(geo.helixAmp(s[i]) + 1e-9);
+      expect(a[i].z).toBeCloseTo(-b[i].z, 9);
+    }
+  });
+
+  test('signalGlassEase is cubic-bezier(0.2, 0.7, 0.2, 1): monotonic ease-out from 0 to 1', () => {
+    expect(geo.signalGlassEase(0)).toBeCloseTo(0, 6);
+    expect(geo.signalGlassEase(1)).toBeCloseTo(1, 6);
+    expect(geo.signalGlassEase(0.5)).toBeGreaterThan(0.8);
+    let prev = 0;
+    for (let x = 0; x <= 1; x += 0.01) { const y = geo.signalGlassEase(x); expect(y).toBeGreaterThanOrEqual(prev - 1e-9); prev = y; }
+    expect(policy.HERO_ENTRANCE.durationMs).toBeGreaterThanOrEqual(1200);
+    expect(policy.HERO_ENTRANCE.durationMs).toBeLessThanOrEqual(1600);
+  });
+
+  test('seededRandom is deterministic', () => {
+    const r1 = geo.seededRandom(7), r2 = geo.seededRandom(7);
+    for (let i = 0; i < 5; i++) expect(r1()).toBe(r2());
+  });
+});
+
+describe('3D hand-over and fallback', () => {
+  const gl2 = () => ({ webgl2: true, software: false });
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  test('lazy-loads the 3D render only when motion is allowed and WebGL2 exists', async () => {
+    for (const [opts, probe] of [[{ reducedMotion: true }, gl2], [{ connection: { saveData: true } }, gl2], [{ cores: 2, memory: 2 }, gl2], [{}, () => ({ webgl2: false })], [{}, () => ({ webgl2: true, software: true })]]) {
+      const { win, stage } = makeWin(opts);
+      const load3D = jest.fn();
+      const h = sculpture.mountHeroSculpture(stage, { win, webgl2: probe, load3D });
+      await expect(h.ready).resolves.toBe('svg');
+      expect(load3D).not.toHaveBeenCalled();
+      expect(stage.dataset.render).toBe('svg');
+    }
+  });
+
+  test('3D takes over: the SVG drift stops and stop() tears the 3D render down', async () => {
+    const { win, tick, stage } = makeWin();
+    const stop3d = jest.fn();
+    const mount3d = jest.fn(async () => ({ stop: stop3d, stats: () => ({ frames: 1 }) }));
+    const h = sculpture.mountHeroSculpture(stage, { win, webgl2: gl2, load3D: async () => ({ mountHeroSculpture3D: mount3d }) });
+    expect(h.budget).toMatchObject({ renderer: '3d', dprCap: 1.75, glow: true });
+    tick(16);
+    await expect(h.ready).resolves.toBe('3d');
+    expect(mount3d).toHaveBeenCalledWith(stage, expect.objectContaining({ budget: h.budget }));
+    const body = stage.querySelector('.v3-sculpture__layer--body');
+    expect(body.style.transform).toBe('');
+    tick(500);
+    expect(body.style.transform).toBe('');
+    h.stop();
+    expect(stop3d).toHaveBeenCalledTimes(1);
+    expect(stage.dataset).toMatchObject({ motion: 'still', render: 'svg' });
+  });
+
+  test('a failed load or a lost context hands the picture back to the SVG drift', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const a = makeWin();
+      const h1 = sculpture.mountHeroSculpture(a.stage, { win: a.win, webgl2: gl2, load3D: () => Promise.reject(new Error('nope')) });
+      await expect(h1.ready).resolves.toBe('svg');
+      a.tick(16); a.tick(400);
+      expect(a.stage.querySelector('.v3-sculpture__layer--body').style.transform).not.toBe('');
+
+      const b = makeWin();
+      let onFail;
+      const h2 = sculpture.mountHeroSculpture(b.stage, { win: b.win, webgl2: gl2, load3D: async () => ({ mountHeroSculpture3D: async (_s, o) => { onFail = o.onFail; return { stop() {} }; } }) });
+      await expect(h2.ready).resolves.toBe('3d');
+      onFail('context-lost');
+      await flush();
+      b.tick(16); b.tick(400);
+      expect(b.stage.dataset.render).toBe('svg');
+      expect(b.stage.querySelector('.v3-sculpture__layer--body').style.transform).not.toBe('');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('[VIP][v3] 3D hero off (context-lost)'), '');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('probeWebGL2 flags software rasterisers', () => {
+    const fakeWin = (renderer) => ({ document: { createElement: () => ({ getContext: () => ({
+      getExtension: (n) => (n === 'WEBGL_debug_renderer_info' ? { UNMASKED_RENDERER_WEBGL: 1 } : { loseContext() {} }),
+      getParameter: () => renderer, RENDERER: 2,
+    }) }) } });
+    expect(sculpture.probeWebGL2(fakeWin('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))'))).toMatchObject({ webgl2: true, software: true });
+    expect(sculpture.probeWebGL2(fakeWin('llvmpipe (LLVM 15.0.7, 256 bits)'))).toMatchObject({ software: true });
+    expect(sculpture.probeWebGL2(fakeWin('ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)'))).toMatchObject({ webgl2: true, software: false });
+    expect(sculpture.probeWebGL2({ document: { createElement: () => ({ getContext: () => null }) } })).toMatchObject({ webgl2: false });
+  });
+
+  test('the 3D module loads Three.js only from the same-origin vendored build', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/presentation/HeroSculpture3D.js'), 'utf8');
+    expect(src).toMatch(/import\('\/lib\/three\.module\.min\.js'\)/);
+    expect(src).not.toMatch(/https?:\/\//);
+    expect(src).not.toMatch(/getUserMedia|AudioContext|microphone/i);
+    expect(fs.existsSync(path.join(ROOT, 'public/lib/three.module.min.js'))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'public/lib/three.core.min.js'))).toBe(true);
   });
 });

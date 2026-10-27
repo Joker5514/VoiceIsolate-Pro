@@ -254,9 +254,12 @@ body.v3 .v3-sculpture__art, body.v3 .v3-sculpture__dust { display: block; width:
 /* Bloom is HIGH-tier only (BALANCED / CONSTRAINED and the no-JS still skip it). */
 body.v3 .v3-sculpture__bloom { display: none; }
 body.v3 .v3-sculpture[data-tier="HIGH"] .v3-sculpture__bloom { display: inline; }
-body.v3 .v3-sculpture__leaders { display: none; }
+body.v3 .v3-sculpture__leaders { display: none; position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* 3D render (HeroSculpture3D.js): same box as the SVG, which it wipes away
+   during the entrance and replaces after its first frame. */
+body.v3 .v3-sculpture__gl { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 /* Narrow band: fade the frame's top and bottom so the band has no hard edge. */
-body.v3 .v3-sculpture__layer {
+body.v3 .v3-sculpture__layer, body.v3 .v3-sculpture__gl {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 84%, transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 84%, transparent);
 }
@@ -305,8 +308,8 @@ body.v3 .v3-tag--bg .v3-tag__glyph { color: var(--v3-gold); }
       radial-gradient(ellipse 40% 34% at 100% calc(100% - 30vw), rgba(245, 185, 66, .09), transparent 72%);
   }
   body.v3 .v3-sculpture__frame { left: auto; right: 0; top: auto; bottom: 0; width: 100cqw; transform: none; }
-  body.v3 .v3-sculpture__leaders { display: inline; }
-  body.v3 .v3-sculpture__layer { -webkit-mask-image: none; mask-image: none; }
+  body.v3 .v3-sculpture__leaders { display: block; }
+  body.v3 .v3-sculpture__layer, body.v3 .v3-sculpture__gl { -webkit-mask-image: none; mask-image: none; }
   /* Same box as the frame, so tag anchors are frame percentages. */
   body.v3 .v3-legend { left: auto; right: 0; bottom: 0; width: 100cqw; aspect-ratio: 16 / 10; display: block; }
   body.v3 .v3-tag {
@@ -598,6 +601,7 @@ body.v3 .v3-close .vip-cta-band { display: flex; gap: 10px; flex-wrap: wrap; mar
   html:has(body.v3) { scroll-behavior: auto; }
   body.v3 .v3-in, body.v3 .v3-stage, body.v3 .v3-drop .upload-svg { animation: none !important; }
   body.v3 .v3-sculpture__layer { transform: none !important; }
+  body.v3 .v3-hero .v3-btn { transition: none; }
   body.v3 .v3-pipeline li:hover { transform: none; }
 }
 
@@ -675,6 +679,13 @@ body.v3 .v3-console__cta {
 }
 body.v3 .v3-btn--primary:hover { background: #67e4f4; color: #061018; box-shadow: none; }
 body.v3 .v3-console:hover .v3-console__cta { background: #67e4f4; box-shadow: none; }
+/* Hero CTAs: 150 ms cyan glow on the primary pill, and a visible focus halo. */
+body.v3 .v3-hero .v3-btn--primary { transition: background-color 150ms ease, box-shadow 150ms ease, transform 160ms var(--v3-ease); }
+body.v3 .v3-hero .v3-btn--primary:hover { box-shadow: 0 0 0 1px rgba(103, 228, 244, .5), 0 6px 24px -6px rgba(34, 211, 238, .55); }
+body.v3 .v3-hero .v3-btn:focus-visible {
+  outline: 2px solid var(--v3-fg); outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(34, 211, 238, .45);
+}
 body.v3 .v3-workspace .vip-btn--primary,
 body.v3 .v3-workspace .btn-primary,
 body.v3 #processBtn,
