@@ -40,7 +40,7 @@
     badge.setAttribute('data-state', 'idle');
     badge.innerHTML = [
       '<span class="vip-pb-dot" aria-hidden="true"></span>',
-      '<span class="vip-pb-label">Ready — drop a file or record to begin</span>',
+      '<span class="vip-pb-label">Ready — drop a file to begin</span>',
       HELIX_HTML.replace('vip-helix-spinner', 'vip-helix-spinner vip-pb-spinner'),
     ].join('');
     /* Insert before the pipe-header */
@@ -182,7 +182,7 @@
     addSpeedFlash();
     patchOverlay();
     hookAppStatus();
-    setBadge('idle', 'Ready — drop a file or record to begin');
+    setBadge('idle', 'Ready — drop a file to begin');
   }
 
   if (document.readyState === 'loading') {
