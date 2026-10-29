@@ -7,8 +7,8 @@ const $ = (id) => document.getElementById(id);
 /**
  * The hero sculpture (Signal Glass L2) is static SVG in index.html, which is
  * also the still for reduced motion, Save-Data, 2G, offline and CONSTRAINED
- * devices. HeroSculpture.js adds only the 12 s drift; if it cannot load, the
- * still stays and the rest of this file still runs.
+ * devices. HeroSculpture.js adds the 12 s drift and may lazy-load the 3D render;
+ * if it cannot load, the still stays and the rest of this file still runs.
  */
 async function mountHeroStage() {
   const stage = $('heroStage');
