@@ -349,3 +349,45 @@ describe('focusable content is never inside aria-hidden', () => {
   // display:none subtree is not focusable anyway. That assertion runs against
   // real computed visibility in scripts/precision-studio-ui-smoke.cjs.
 });
+
+describe('the Engineer hero title is never painted over its own gradient', () => {
+  // style.css paints `.vip-hero-title` as gradient text (a light ramp clipped
+  // to the glyphs, `color: transparent`). A skin that switches it to solid ink
+  // but keeps that gradient leaves the ramp behind the glyphs: it fringes the
+  // antialiased edges, and the shell-qa contrast probe correctly scores the
+  // ink against it (1.02:1 and 1.17:1 at 390/768px).
+  const appCss = fs.readdirSync(path.join(ROOT, 'public/app'))
+    .filter((f) => f.endsWith('.css'))
+    .map((f) => [f, code(read(`public/app/${f}`))]);
+
+  /** Innermost `selector { body }` rules; enough for flat and @media rules. */
+  const rules = (css) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, sel, body]) => ({ sel: sel.trim(), body }));
+  const targetsTitle = (sel) => sel.split(',').some((s) => /\.vip-hero-title\s*$/.test(s.trim()));
+  const decl = (body, prop) => {
+    const m = body.match(new RegExp(`(?:^|[;\\s])${prop}\\s*:\\s*([^;]+)`, 'i'));
+    return m ? m[1].trim() : null;
+  };
+
+  test('the base rule still uses gradient text (the premise of this guard)', () => {
+    const base = rules(code(read('public/app/style.css'))).find((r) => r.sel === '.vip-hero-title');
+    expect(base).toBeDefined();
+    expect(decl(base.body, 'background-clip')).toBe('text');
+    expect(decl(base.body, 'color')).toBe('transparent');
+  });
+
+  test('every rule that gives the title solid ink also drops the gradient', () => {
+    const offenders = [];
+    for (const [file, css] of appCss) {
+      for (const r of rules(css)) {
+        if (!targetsTitle(r.sel)) continue;
+        const color = decl(r.body, 'color');
+        if (!color || /^(transparent|inherit|unset)\b/i.test(color)) continue;
+        const bg = decl(r.body, 'background');
+        const bgImage = decl(r.body, 'background-image');
+        if (!/^none\b/i.test(bg || '') && !/^none\b/i.test(bgImage || '')) offenders.push(`${file}: ${r.sel}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

@@ -80,6 +80,9 @@ body.eng-console .vip-hero-kicker { color: #22d3ee !important; }
 body.eng-console .vip-hero-title {
   font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.04em;
+  /* Solid ink replaces style.css's gradient text; drop its clipped gradient too
+     so the title is not painted (or measured) over its own light ramp. */
+  background: none;
   color: #e8eef5;
 }
 body.eng-console .vip-hero-title em {
