@@ -7,6 +7,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- Landing hero is “Bring the voice forward.” with the Signal Glass helix on the shared Web, Android-browser, and desktop shell. The filled action is the cyan pill. Upload, stem split, and Live-Mix are unchanged.
+
 ### Added
 
 - Release provenance (`docs/releases/release-provenance.json`) and
@@ -46,6 +50,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   worker-wide disable on device loss.
 - Published v25.0.2 Android APK and Windows NSIS rebuilt from `0b791c2` (#784)
   on 2026-08-24T17:20Z; existing tag was clobber-updated, not moved.
+- Recorded published GitHub Release v25.0.3 (2026-09-09) separately from
+  repository package 25.0.2. Pinned download URLs, sizes, and SHA-256 values
+  match the live v25.0.3 assets. The Windows filename remains
+  `VoiceIsolate-Pro-25.0.2-win-x64.exe`.
 - Repo-wide download/release pins and landing-smoke title expectation aligned
   to the `0b791c2` platform sync (#786).
 - Landing page model select replaced: raw model names removed; three outcome-led
@@ -126,6 +134,15 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Corrected the CI workflow's invalid job-level secret conditions so optional
   Vercel CLI deployment steps skip cleanly when repository secrets are absent.
 
+## [25.0.3] - 2026-09-09
+
+### Changed
+
+- Published GitHub Release v25.0.3. The release kept package version 25.0.2
+  and the Windows installer name `VoiceIsolate-Pro-25.0.2-win-x64.exe`.
+  Release notes identify source `main` @ `038b310`. That commit is an ancestor
+  of later `main`; the published APK and EXE are not current `main`.
+
 ## [25.0.2] - 2026-08-13
 
 ### Changed
@@ -133,5 +150,6 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Published Web/PWA support with Android APK and Windows Electron installer
   release assets. The assets were refreshed on 2026-08-21.
 
-[Unreleased]: https://github.com/Joker5514/VoiceIsolate-Pro/compare/v25.0.2...HEAD
+[Unreleased]: https://github.com/Joker5514/VoiceIsolate-Pro/compare/v25.0.3...HEAD
+[25.0.3]: https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.3
 [25.0.2]: https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2

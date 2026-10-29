@@ -14,7 +14,7 @@ import { LiveMeters } from '/src/ui/components/LiveMeters/LiveMeters.js';
 import { OnDeviceBadge } from '/src/ui/components/OnDeviceBadge/OnDeviceBadge.js';
 import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
 import { createYieldBudget } from '/src/pipeline/ui-yield.js';
-import { Profiles, ComparisonModes } from '/src/ui/tokens/design-tokens.js';
+import { Profiles } from '/src/ui/tokens/design-tokens.js';
 
 function initUnifiedWorkspace() {
   const sessionStore = getAudioSessionStore();
@@ -68,23 +68,18 @@ function initUnifiedWorkspace() {
     toggle.on('modeChanged', (mode) => {
       sessionStore.setComparisonMode(mode);
       signalCanvas?.setComparisonMode(mode);
-      // Also trigger existing compare buttons for backwards compat
+      // The compare buttons own the audio (instant lane crossfade in
+      // landing.js); clicking them here is what makes this toggle audible.
       const map = { raw: 'compareOriginalBtn', processed: 'compareCleanedBtn', removed: 'compareRemovedBtn' };
       const btn = document.getElementById(map[mode]);
-      if (btn) {
-        document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
-        btn.setAttribute('aria-pressed', 'true');
-      }
+      if (btn && !btn.disabled && btn.getAttribute('aria-pressed') !== 'true') btn.click();
     });
     sessionStore.subscribe('COMPARE_MODE_CHANGED', (mode) => {
       toggle.setMode(mode);
     });
     // A/B toggle
     toggle.on('abToggle', () => {
-      const current = sessionStore.getComparisonMode();
-      const next = current === ComparisonModes.RAW ? ComparisonModes.PROCESSED : ComparisonModes.RAW;
-      sessionStore.setComparisonMode(next);
-      toggle.setMode(next);
+      window.dispatchEvent(new CustomEvent('vip:abToggle'));
     });
   }
 
@@ -189,7 +184,7 @@ function initUnifiedWorkspace() {
   // Keyboard shortcuts via platform adapter
   platform.setupKeyboardShortcuts({
     playPause: () => document.getElementById('playBtn')?.click(),
-    abToggle: () => document.getElementById('compareOriginalBtn')?.click(),
+    abToggle: () => window.dispatchEvent(new CustomEvent('vip:abToggle')),
     clearSelection: () => signalCanvas?.clearSelection(),
     toggleLoop: () => document.getElementById('loopBtn')?.click(),
     cropIn: () => document.getElementById('cropInBtn')?.click(),
@@ -199,11 +194,15 @@ function initUnifiedWorkspace() {
   console.log('[VIP][Premium] Unified signal-first workspace initialized', { platform: platform.platform });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  initUnifiedWorkspace();
-});
-
-// Also init immediately if DOM already loaded
-if (document.readyState !== 'loading') {
+// Exactly once. A module script runs while readyState is already
+// 'interactive' and DOMContentLoaded still fires afterwards, so the old
+// "listen and also run now" pair initialised twice: two keyboard handlers made
+// every X press toggle A/B twice (a no-op) and the compare panel mounted twice.
+let unifiedWorkspaceStarted = false;
+function startUnifiedWorkspace() {
+  if (unifiedWorkspaceStarted) return;
+  unifiedWorkspaceStarted = true;
   initUnifiedWorkspace();
 }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startUnifiedWorkspace, { once: true });
+else startUnifiedWorkspace();

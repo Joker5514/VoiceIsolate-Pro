@@ -21,7 +21,7 @@ import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { QuickCleanUI } from '/src/presentation/QuickCleanUI.js';
 import { AnalysisInsightsUI } from '/src/presentation/AnalysisInsightsUI.js';
 import { inspectQuickCleanDevice } from '/src/pipeline/QuickCleanPlan.js';
-import { QuickCleanReview } from '/src/pipeline/QuickCleanReview.js';
+import { ComparisonLevelMatcher } from '/src/pipeline/ComparisonLevelMatch.js';
 import { measureAudioBuffer, encodeReviewedWav } from '/src/pipeline/AudioReview.js';
 import { isVideoSource, getFileInputAccept } from '/src/core/media-types.js';
 import { saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
@@ -188,8 +188,19 @@ let lastRealProgress = 0;
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && processingInFlight) lastProcessProgress = lastRealProgress = Date.now();
 });
-let review = null;
-let reviewInFlight = false;
+// Instant A/B: the original is a sample-aligned PlaybackMixer lane beside the
+// processed graph; Raw / Processed / Removed are gain crossfades on the one
+// transport. Level matching runs in the background and never gates a switch.
+let comparisonSeq = 0;          // bumps whenever stems or the source change
+let comparisonReady = false;    // Raw lane installed for the current stems
+let comparisonEngaged = false;  // a side was picked: matched trims apply
+let comparisonGains = null;     // last { original, cleaned, matched }
+let comparisonReferenceFor = null; // ingested source the Raw lane was built from
+let levelMatcher = null;
+let levelMatchTimer = null;
+let levelMatchAbort = null;
+const LEVEL_MATCH_DEBOUNCE_MS = 500;
+const COMPARE_BUTTONS = Object.freeze({ original: 'compareOriginalBtn', processed: 'compareCleanedBtn', removed: 'compareRemovedBtn' });
 let preflightSeq = 0;
 const quickClean = new QuickCleanUI();
 
@@ -215,18 +226,139 @@ async function refreshPreflight() {
   if (seq !== preflightSeq) return;
   const available = quickClean.preflight(device, ingested);
   ui.modelSelect.disabled = !['wasm', 'webgpu'].includes(quickClean.backend) || processingInFlight || ingestInFlight;
-  ui.processBtn.disabled = (!available && worker !== null) || !ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight || reviewInFlight;
+  ui.processBtn.disabled = (!available && worker !== null) || !ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight;
 }
 
 function clearProcessWatch() { clearInterval(processWatch); processWatch = null; }
 
-function invalidateComparison() {
-  review?.clear();
-  for (const id of ['compareOriginalBtn', 'compareCleanedBtn', 'compareRemovedBtn']) {
+function setComparisonStatus(text) {
+  const status = $('comparisonStatus');
+  if (status) status.textContent = text;
+}
+
+/** Paint Raw / Processed / Removed from the mixer's actual lane state. */
+function paintComparisonButtons() {
+  const mode = comparisonReady && mixer?.getComparisonMode ? mixer.getComparisonMode() : null;
+  for (const [lane, id] of Object.entries(COMPARE_BUTTONS)) {
     const button = $(id);
-    if (button) { button.disabled = true; button.setAttribute('aria-pressed', 'false'); }
+    if (!button) continue;
+    button.disabled = !comparisonReady || (lane === 'removed' && !mixer?.noiseBuffer);
+    button.setAttribute('aria-pressed', String(mode === lane));
   }
-  if ($('prepareComparisonBtn')) $('prepareComparisonBtn').disabled = !hasProcessed || processingInFlight || downloadInFlight || reviewInFlight;
+}
+
+/** Stems are gone or being replaced: A/B is unavailable until they land. */
+function resetComparison({ dropReference = false } = {}) {
+  comparisonSeq += 1;
+  comparisonReady = false;
+  comparisonEngaged = false;
+  comparisonGains = null;
+  clearTimeout(levelMatchTimer);
+  levelMatchTimer = null;
+  levelMatchAbort?.abort();
+  levelMatchAbort = null;
+  if (mixer?.setComparisonMode) {
+    mixer.setComparisonMode('processed');
+    mixer.setComparisonLevels({ processed: 1, original: 1, removed: 1 });
+    if (dropReference) { mixer.setComparisonReference(null); comparisonReferenceFor = null; }
+  }
+  paintComparisonButtons();
+  setComparisonStatus('');
+}
+
+function applyComparisonLevels() {
+  if (!mixer?.setComparisonLevels) return;
+  const g = comparisonEngaged && comparisonGains?.matched ? comparisonGains : null;
+  mixer.setComparisonLevels({ original: g ? g.original : 1, processed: g ? g.cleaned : 1, removed: 1 });
+}
+
+/**
+ * Called once stems are installed: build the Raw lane (cooperative copy of the
+ * immutable upload, reused across re-Process of the same file), enable A/B at
+ * once, then level-match in the background.
+ */
+async function armComparison(isCurrent) {
+  const seq = ++comparisonSeq;
+  const source = ingested;
+  if (!mixer?.setComparisonReferenceAsync || !source?.channelData?.length) return;
+  try {
+    if (comparisonReferenceFor !== source || !mixer.hasComparisonReference()) {
+      mixer.setComparisonReference(null);
+      const ref = await mixer.setComparisonReferenceAsync(source.channelData, source.sampleRate || mixer.ctx.sampleRate);
+      if (!ref) return;
+      comparisonReferenceFor = source;
+    }
+    if (seq !== comparisonSeq || !isCurrent() || !hasProcessed) return;
+    comparisonReady = true;
+    mixer.setComparisonMode('processed');
+    applyComparisonLevels();
+    paintComparisonButtons();
+    setComparisonStatus('A/B ready: switch Raw, Processed or Removed any time (X toggles Raw/Processed). Matching levels in the background…');
+    scheduleLevelMatch(0);
+  } catch (err) {
+    if (seq !== comparisonSeq) return;
+    console.warn('[VIP][landing] A/B reference failed', err);
+    setComparisonStatus(`A/B unavailable: ${err.message}. Your mix is unchanged.`);
+  }
+}
+
+/** The mix changed: A/B stays live; re-match levels once the edits settle. */
+function scheduleLevelMatch(delay = LEVEL_MATCH_DEBOUNCE_MS) {
+  if (!comparisonReady) return;
+  clearTimeout(levelMatchTimer);
+  levelMatchAbort?.abort();
+  levelMatchAbort = null;
+  if (delay > 0 && comparisonGains) setComparisonStatus('Mix changed. A/B stays live; re-matching levels in the background…');
+  levelMatchTimer = setTimeout(() => { levelMatchTimer = null; void runLevelMatch(); }, delay);
+}
+
+async function runLevelMatch() {
+  if (!comparisonReady || !mixer) return;
+  const seq = comparisonSeq;
+  const ctl = new AbortController();
+  levelMatchAbort = ctl;
+  try {
+    sliderUI?.flush();
+    levelMatcher ||= new ComparisonLevelMatcher(mixer);
+    const gains = await levelMatcher.match(mixer.getComparisonReference(), { signal: ctl.signal });
+    if (seq !== comparisonSeq || ctl.signal.aborted) return;
+    comparisonGains = gains;
+    applyComparisonLevels();
+    setComparisonStatus(gains.matched
+      ? 'Average level matched (RMS, attenuation only, with peak headroom). Raw, Processed and Removed share one timeline and switch instantly; Removed lets you audition what was removed.'
+      : 'One side is silent or nearly silent; level matching is unavailable. A/B still switches instantly without normalization. Check Removed to detect speech destruction.');
+  } catch (err) {
+    if (ctl.signal.aborted || isCancellationError(err) || seq !== comparisonSeq) return;
+    console.warn('[VIP][landing] level matching failed', err);
+    setComparisonStatus(`Level matching unavailable: ${err.message}. A/B still switches instantly (unmatched).`);
+  } finally {
+    if (levelMatchAbort === ctl) levelMatchAbort = null;
+  }
+}
+
+/**
+ * Switch the audible lane. A crossfade on the running transport: the playhead,
+ * loop and crop are untouched. Buttons start playback when paused; X does not.
+ * @param {'original'|'processed'|'removed'} lane
+ */
+async function selectComparison(lane, { autoplay = true } = {}) {
+  if (!comparisonReady || !mixer) return false;
+  comparisonEngaged = true;
+  applyComparisonLevels();
+  if (!mixer.setComparisonMode(lane)) return false;
+  paintComparisonButtons();
+  const modeMap = { original: ComparisonModes.RAW, processed: ComparisonModes.PROCESSED, removed: ComparisonModes.REMOVED };
+  sessionStore.setComparisonMode(modeMap[lane]);
+  if (autoplay && !mixer.isPlaying() && ui.playBtn && !ui.playBtn.disabled) ui.playBtn.click();
+  return true;
+}
+
+/** X / the A/B Switch: Raw ↔ Processed (Removed → Raw). Never starts playback. */
+function toggleComparison() {
+  if (!comparisonReady || !mixer) return false;
+  const next = mixer.getComparisonMode() === 'original' ? 'processed' : 'original';
+  void selectComparison(next, { autoplay: false });
+  return true;
 }
 
 function failProcessing(error) {
@@ -241,7 +373,7 @@ function failProcessing(error) {
   setStatus('Processing failed — source unchanged; retry Process.', 'error');
   ui.fileInput.disabled = false;
   ui.modelSelect.disabled = false;
-  invalidateComparison();
+  resetComparison();
   updateDownloadButton();
   void refreshPreflight();
 }
@@ -525,22 +657,22 @@ function hasVideo() { return Boolean(videoUrl) && ui.videoCard && !ui.videoCard.
 
 function updateDownloadButton() {
   const ready = hasProcessed && Boolean(mixer?.cleanBuffer);
-  const busy = downloadInFlight || reviewInFlight || processingInFlight || ingestInFlight;
+  const busy = downloadInFlight || processingInFlight || ingestInFlight;
   for (const control of [...ui.mixSliders, ui.presetSelect, ui.muteVoiceBtn, ui.muteNoiseBtn]) {
     if (control) control.disabled = !ready || busy;
   }
   if (ui.exportRow) ui.exportRow.hidden = !ready;
   if (ui.downloadBtn) {
-    ui.downloadBtn.disabled = !ready || downloadInFlight || reviewInFlight || processingInFlight;
+    ui.downloadBtn.disabled = !ready || downloadInFlight || processingInFlight;
     ui.downloadBtn.textContent = 'Export mix as WAV';
   }
   const videoButton = $('downloadVideoBtn');
   if (videoButton) {
     videoButton.hidden = !sourceFile || !isVideoFile(sourceFile);
-    videoButton.disabled = !ready || downloadInFlight || processingInFlight || reviewInFlight;
+    videoButton.disabled = !ready || downloadInFlight || processingInFlight;
   }
   if (ui.saveDriveBtn) {
-    ui.saveDriveBtn.disabled = !ready || downloadInFlight || processingInFlight || reviewInFlight;
+    ui.saveDriveBtn.disabled = !ready || downloadInFlight || processingInFlight;
   }
 }
 
@@ -572,9 +704,8 @@ async function onOpenFromDrive() {
 async function onSaveToDrive() { await onDownloadProcessed({ drive: true }); }
 
 async function onDownloadProcessed({ video = false, drive = false } = {}) {
-  if (!hasProcessed || !mixer?.cleanBuffer || downloadInFlight || processingInFlight || reviewInFlight || ingestInFlight) return;
+  if (!hasProcessed || !mixer?.cleanBuffer || downloadInFlight || processingInFlight || ingestInFlight) return;
   downloadInFlight = true;
-  invalidateComparison();
   updateDownloadButton();
   ui.processBtn.disabled = true;
   const job = beginJob('Export processed', { kind: 'export' });
@@ -637,45 +768,6 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
   } finally {
     downloadInFlight = false;
     hideSpinner();
-    updateDownloadButton();
-    invalidateComparison();
-    void refreshPreflight();
-  }
-}
-
-async function prepareComparison() {
-  if (!hasProcessed || processingInFlight || downloadInFlight || reviewInFlight) return;
-  reviewInFlight = true;
-  invalidateComparison();
-  updateDownloadButton();
-  ui.processBtn.disabled = true;
-  const job = beginJob('Prepare comparison', { kind: 'review' });
-  const signal = job.controller.signal;
-  quickClean.setState('comparing', 'Preparing a level-matched comparison locally…');
-  setLandingCancelVisible(true);
-  try {
-    sliderUI?.flush();
-    review ||= new QuickCleanReview(mixer);
-    const gains = await review.prepare(ingested.channelData, { signal });
-    throwIfAborted(signal);
-    for (const id of ['compareOriginalBtn', 'compareCleanedBtn', 'compareRemovedBtn']) {
-      const btn = $(id);
-      if (btn) btn.disabled = false;
-    }
-    $('comparisonStatus').textContent = gains.matched
-      ? 'Average level matched (RMS), with peak headroom. Raw, Processed, and Removed use the same timeline. Removed lets you audition what was removed.'
-      : 'One side is silent or nearly silent; level matching is unavailable. Compare without normalization. Check Removed to detect speech destruction.';
-    quickClean.setState('processed', 'Comparison ready. Choose Original or Cleaned to listen.');
-    endJob(job.id, 'completed');
-  } catch (err) {
-    review?.clear();
-    $('comparisonStatus').textContent = isCancellationError(err) ? 'Comparison cancelled; prepare again when ready.' : `Comparison unavailable: ${err.message}. Your mix is unchanged.`;
-    quickClean.setState('processed', $('comparisonStatus').textContent);
-    endJob(job.id, isCancellationError(err) ? 'cancelled' : 'error', err);
-  } finally {
-    reviewInFlight = false;
-    setLandingCancelVisible(false);
-    $('prepareComparisonBtn').disabled = !hasProcessed;
     updateDownloadButton();
     void refreshPreflight();
   }
@@ -930,7 +1022,6 @@ async function ensureTargetSpeakerUi() {
         if (stemsInstalling) {
           throw new Error('Process is still finishing — apply target isolation when it completes');
         }
-        invalidateComparison();
         // Replace clean stem; preserve diarization (loadStems clears segments).
         const segs = mixer.getSpeakerSegments?.() || [];
         const noise = mixer.noiseBuffer
@@ -942,6 +1033,9 @@ async function ensureTargetSpeakerUi() {
         }
         if (segs.length) mixer.loadSpeakerSegments(segs);
         visualizer?.loadStems?.(channels, noise, mixer.duration());
+        // The Raw lane is the untouched upload; only the processed level moved.
+        paintComparisonButtons();
+        scheduleLevelMatch();
         setStatus('Target isolation applied on clean stem (local voiceprint). Press Play.', 'active');
       },
       notify: (msg, kind) => {
@@ -1114,7 +1208,7 @@ function applyPreset(name, sliderMap = PRESETS[name]) {
  * same file can be re-selected after a failed decode.
  */
 async function ingestFrom(file) {
-  if (!file || ingestInFlight || processingInFlight || downloadInFlight || reviewInFlight) return;
+  if (!file || ingestInFlight || processingInFlight || downloadInFlight) return;
   try {
     assertIngestible(file);
   } catch (err) {
@@ -1135,7 +1229,7 @@ async function ingestFrom(file) {
   }
   ingested = null;
   hasProcessed = false;
-  invalidateComparison();
+  resetComparison({ dropReference: true });
   getAnalysisInsights()?.reset();
   mixer?.stop();
   quickClean.setState('importing', 'Reading the recording on this device…');
@@ -1356,12 +1450,12 @@ function warnIfNotServed() {
 }
 
 async function onProcess() {
-  if (!ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight || reviewInFlight) return;
+  if (!ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight) return;
   processingInFlight = true;
   try {
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
     hasProcessed = false;
-    invalidateComparison();
+    resetComparison();
     updateDownloadButton();
     ui.processBtn.disabled = true;
     ui.fileInput.disabled = true;
@@ -1508,7 +1602,7 @@ async function installStems({ requestId, clean, noise, sampleRate, passthrough, 
   }
   if (!(await mixer.loadStemsAsync(clean, noise, sampleRate)) || !current()) return;
   hasProcessed = true;
-  invalidateComparison();
+  resetComparison();
   // Unified: set processed and compute Removed delta
   try {
     // One store update: the published removed buffer is the worker's
@@ -1537,7 +1631,9 @@ async function installStems({ requestId, clean, noise, sampleRate, passthrough, 
   }
   syncTransportRegionUi();
   applyPreset('original', { ...RT_SLIDER_DEFAULTS, noiseReductionSlider: 100 - (processPlan?.background || 0) });
-  quickClean.setState('processed', 'Processing complete. Prepare matched A/B, adjust Voice and Background, then export the mix.');
+  // A/B arms itself: no extra step before Raw / Processed / Removed switch.
+  void armComparison(current);
+  quickClean.setState('processed', 'Processing complete. A/B is live: switch Raw and Processed any time (X), adjust Voice and Background, then export the mix.');
   setStatus('Stems ready — compare, listen and export.', 'active');
   const scheduleIdle = globalThis.requestIdleCallback
     ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
@@ -1752,61 +1848,26 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 ui.processBtn.addEventListener('click', onProcess);
 ui.modelSelect.addEventListener('change', () => { void refreshPreflight(); });
-$('prepareComparisonBtn')?.addEventListener('click', () => { void prepareComparison(); });
-for (const [id, which] of [['compareOriginalBtn', 'original'], ['compareCleanedBtn', 'cleaned'], ['compareRemovedBtn', 'removed']]) {
+for (const [lane, id] of Object.entries(COMPARE_BUTTONS)) {
   $(id)?.addEventListener('click', async () => {
     try {
-      if (which === 'removed') {
-        // For removed, audition what was removed — use processing controller or noise stem
-        const removed = processingController.getRemoved() || processingController.getBufferForMode(ComparisonModes.REMOVED);
-        if (removed && mixer) {
-          // Temporarily load removed as clean for audition
-          const currentClean = mixer.cleanBuffer ? Array.from({ length: mixer.cleanBuffer.numberOfChannels }, (_, c) => mixer.cleanBuffer.getChannelData(c).slice()) : null;
-          const currentNoise = mixer.noiseBuffer ? Array.from({ length: mixer.noiseBuffer.numberOfChannels }, (_, c) => mixer.noiseBuffer.getChannelData(c).slice()) : null;
-          // Simple audition: play removed directly via a temporary buffer
-          // For now, use review if available, else just play via mixer if we can
-          if (review) {
-            // Review doesn't know removed, so we handle manually
-            // Stop current and play removed as processed
-            await mixer.pause();
-            // Store for restore
-            window.__vipRemovedAudition = { clean: currentClean, noise: currentNoise };
-            // Third argument is the sample rate (it was passed the duration).
-            // Superseded by a newer stem load: do not play or mark Removed active.
-            if (!(await mixer.loadStemsAsync(removed, removed.map(() => new Float32Array(removed[0].length)), mixer.cleanBuffer?.sampleRate || 48000))) return;
-            await mixer.play();
-          }
-        }
-      } else {
-        await review?.listen(which);
-      }
-      for (const buttonId of ['compareOriginalBtn', 'compareCleanedBtn', 'compareRemovedBtn']) {
-        const b = $(buttonId);
-        if (b) b.setAttribute('aria-pressed', String(buttonId === id));
-      }
-      // Update session store comparison mode
-      const modeMap = { original: ComparisonModes.RAW, cleaned: ComparisonModes.PROCESSED, removed: ComparisonModes.REMOVED };
-      if (modeMap[which]) sessionStore.setComparisonMode(modeMap[which]);
-    } catch (err) { $('comparisonStatus').textContent = `Playback failed: ${err.message}. Try Play again.`; }
+      await selectComparison(lane);
+    } catch (err) { setComparisonStatus(`Playback failed: ${err.message}. Try Play again.`); }
   });
 }
+// X (platform shortcut) and the premium A/B Switch both land here.
+window.addEventListener('vip:abToggle', () => { toggleComparison(); });
 document.addEventListener('input', (event) => {
   if (event.target.matches('input[type="range"]') && event.target.id !== 'seekSlider') {
-    invalidateComparison();
-    // Optional node: a host shell may omit the A/B block. This handler runs on
-    // every slider frame, so it must never throw — an exception here would also
-    // skip the aria-valuetext update below.
-    const status = $('comparisonStatus');
-    if (status) status.textContent = 'Mix changed. Prepare matched A/B again to compare this version.';
+    // A/B stays live; only the level match is refreshed once edits settle.
+    // Runs on every slider frame, so it must never throw.
+    scheduleLevelMatch();
   }
   if (event.target.id === 'noiseReductionSlider') event.target.setAttribute('aria-valuetext', `${100 - Number(event.target.value)} percent background retained`);
 });
-for (const id of ['playBtn', 'pauseBtn', 'stopBtn', 'seekSlider']) {
-  $(id)?.addEventListener(id === 'seekSlider' ? 'input' : 'click', () => review?.stop());
-}
 for (const id of ['muteVoiceBtn', 'muteNoiseBtn', 'presetSelect', 'speakerCardsGrid']) {
-  $(id)?.addEventListener('click', invalidateComparison);
-  $(id)?.addEventListener('change', invalidateComparison);
+  $(id)?.addEventListener('click', () => scheduleLevelMatch());
+  $(id)?.addEventListener('change', () => scheduleLevelMatch());
 }
 $('downloadVideoBtn')?.addEventListener('click', () => { void onDownloadProcessed({ video: true }); });
 ui.cancelProcessBtn?.addEventListener('click', () => { cancelLandingJob(); });
@@ -1864,4 +1925,4 @@ function wireClearLocalData() {
     }
   });
 }
-window.addEventListener('pagehide', () => { clearProcessWatch(); review?.clear(); worker?.terminate(); analysisInsights?.dispose(); });
+window.addEventListener('pagehide', () => { clearProcessWatch(); levelMatchAbort?.abort(); clearTimeout(levelMatchTimer); worker?.terminate(); analysisInsights?.dispose(); });

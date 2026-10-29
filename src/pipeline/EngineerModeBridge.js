@@ -289,6 +289,37 @@ export class EngineerModeBridge {
   }
 
   // ── Transport (delegated to the mixer; no-op safe defaults after dispose) ──
+  // ─── Instant A/B (Original ↔ Processed) ───────────────────────────────
+  // The original plays as a sample-aligned comparison lane next to the
+  // processed stems, so a switch is a short gain crossfade on the running
+  // transport instead of a reload + restart.
+
+  /**
+   * Set the reference the Original side plays (zero-copy). Null clears it.
+   * @param {AudioBuffer|null} audioBuffer
+   * @returns {boolean} true when the reference is installed
+   */
+  setComparisonReference(audioBuffer) {
+    if (!this.mixer?.setComparisonReference) return false;
+    this.mixer.setComparisonReference(audioBuffer || null);
+    return Boolean(audioBuffer);
+  }
+
+  clearComparisonReference() { this.mixer?.setComparisonReference?.(null); }
+
+  /** True when this exact buffer is the Original lane's reference. */
+  holdsComparisonReference(audioBuffer) {
+    return Boolean(audioBuffer) && this.mixer?.getComparisonReference?.() === audioBuffer;
+  }
+
+  /**
+   * @param {'processed'|'original'} mode
+   * @returns {boolean} false when the lane cannot play (no reference)
+   */
+  setComparisonMode(mode) { return this.mixer?.setComparisonMode ? this.mixer.setComparisonMode(mode) : false; }
+
+  getComparisonMode() { return this.mixer?.getComparisonMode?.() || 'processed'; }
+
   play() { return this.mixer ? this.mixer.play() : undefined; }
   pause() { return this.mixer ? this.mixer.pause() : undefined; }
   stop() { return this.mixer ? this.mixer.stop() : undefined; }

@@ -173,6 +173,7 @@ These were found by driving real Chromium against `pnpm dev` and are pinned by
 | **Focusable content is never inside `aria-hidden="true"`** | The visualization tablist sat inside an `aria-hidden` scroll wrapper while its tabs stayed keyboard-focusable. |
 | **The Whisper Mode row keeps its own grid template** | `.whisper-mode-row` is also a `.sr-row`, and slider-theme.css's four-column `.sr-row` base loads after style.css at equal specificity. With only style.css's areas surviving, the group track resolved to the flex group's 201px min-content, the row measured 487px inside a ~300px rack cell, and the lock and hint buttons were clipped out of `#tab-extreme-group`'s `overflow:hidden` box at 1024/1440/1920. slider-theme.css re-states the template with a `minmax(0, 1fr)` group track and stacks the row in the `@container vip-rack` blocks. |
 | **`--text-ghost` is AA-pinned** | It is only ever a text colour (9-10px `.vis-hint` / `.hint-range-*`). At `rgba(244,247,250,0.18)` it was 1.61:1; it is held at 0.48 alpha (4.65-4.72:1), still below `--text-dim`. Use a border or background token for decoration rather than dropping a text token below AA. |
+| **Solid-ink hero title drops the gradient** | `style.css` paints `.vip-hero-title` as gradient text (`background-clip: text`, `color: transparent`). The Engineer skin (`workstation-premium.css`, applied once `body.eng-console` lands) switches it to solid ink and must also set `background: none`; keeping the ramp fringed the glyph edges and failed the 390/768px contrast audit at 1.02:1 / 1.17:1. Any rule giving the title an opaque `color` clears the gradient. |
 
 **Browser-driven QA is part of the definition of done for shell changes.** Static
 checks pass on all of the above defects; only a real browser catches them.
@@ -216,6 +217,8 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/core/ring-buffer-constants.js` | 1 | Codified `QUANTUM`, `FFT_SIZE_LIVE`, `FFT_SIZE_CREATOR`, `HOP_SIZE`, `QUANTA_PER_HOP`, enrollment defaults. |
 | `src/core/OverlapAddAccumulator.js` | 1 | `QuantumHopBridge` + `OverlapAddReconstructor` — symmetric Hann OLA per blueprint §III. |
 | `src/core/DesktopBridge.js` | 1 | Thin `window.vipDesktop` adapter — native open/save IPC (no Node in renderer). |
+| `src/core/HeroMotionPolicy.js` | 1 | Pure Landing hero motion gate: `selectHeroMotion` opt-outs (reduced motion, Save-Data, 2G, offline) → still; `PerformanceTier` HIGH drift + bloom, BALANCED 30 fps no bloom, CONSTRAINED still. `selectHeroRenderer` picks the 3D render (WebGL2, not software GL) with DPR cap 1.75 HIGH / 1.25 BALANCED and narrow, particle counts and HIGH-only glow; `heroPixelRatio`, `HERO_ENTRANCE`. |
+| `src/core/HeroSculptureGeometry.js` | 1 | Pure Signal Glass L2 geometry (helix, lens, ribbon curves, tag anchors, `signalGlassEase`) shared by the SVG generator and the 3D render. |
 | `src/core/BufferPool.js` | 1 | Pre-allocated `Float32Array` pool (128 / 2048 / 4096) — zero-GC DSP. |
 | `src/core/ModelManifest.js` | 1 | Canonical model metadata: URLs, sizes, SHA-256 integrity hashes, I/O specs. |
 | `src/core/diarization.js` | 1 | Pure speaker diarization (frame features + k-means) run once per file on the clean stem. |
@@ -227,7 +230,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/workers/SpeakerEmbeddingWorker.js` | 2 | Classic worker (ORT's vendored build is classic): optional ECAPA-TDNN speaker embeddings for target-speaker enrollment/isolation. Refuses the model unless it matches the `ecapa_tdnn` SHA-256 pin; Kaldi fbank front end in `SpeakerFeatures.js`. |
 | `src/workers/AudioEncoderWorker.js` | 2 | Module worker that encodes stems to 16-bit WAV off the main thread (validated PCM, clipped-sample count); stateless, one request per job. No MP3 encoder is bundled. |
 | `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz; `pickAndIngestFile()` for Electron native open. |
-| `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. |
+| `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. Also owns the instant A/B **comparison lanes** (processed / original reference / removed residual, latency-aligned, always running; `setComparisonMode()` is a ~2.5 ms-τ gain crossfade, never a source rebuild; `setComparisonLevels()` is attenuation-only). |
 | `src/pipeline/ProcessingOrchestrator.js` | 3 | Bridges `IsolationModeSelector` → `FileIngestion` → `MLWorker`; translates user-chosen mode into a model-chain array for `MLWorker`. |
 | `src/pipeline/SpeakerEmbeddingHost.js` | 3 | Spawns `SpeakerEmbeddingWorker` with the manifest entry; `ready()` resolves false (never throws) when the model is absent or fails its pin, so callers fall back to the mel voiceprint. |
 | `src/pipeline/ExportOrchestrator.js` | 3 | Coordinates stem export: collects channels from `PlaybackMixer`, dispatches to `AudioEncoderWorker`, returns a downloadable `Blob`. |
@@ -237,6 +240,8 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/presentation/ExportControls.js` | 4 | Export format/quality picker; wires DOM events to `ExportOrchestrator`. |
 | `src/presentation/IsolationModeSelector.js` | 4 | Isolation-mode dropdown (Voice Only / Maximum Isolation / etc.) that feeds `ProcessingOrchestrator`. |
 | `src/presentation/LandingVisualizer.js` | 4 | Canvas 2D waveform overview + live spectrum analyzer; reads PlaybackMixer analyser. |
+| `src/presentation/HeroSculpture.js` | 4 | Landing hero sculpture drift (Signal Glass L2): two compositor transforms per rAF, paused when hidden/offscreen. The still is static SVG generated into `public/index.html` by `scripts/generate-hero-sculpture.mjs`. When allowed, lazy-loads `HeroSculpture3D.js` and hands over after its first frame; failure or context loss returns to the SVG. Never touches audio. |
+| `src/presentation/HeroSculpture3D.js` | 4 | Landing hero WebGL render on vendored `/lib/three.module.min.js`: shader tube ribbons, smoked-glass lens shader, DOF dust, HIGH glow shells, ACES + sRGB, 1.4 s entrance that wipes the SVG still, tags re-anchored to projected points, paused hidden/offscreen, disposed on stop. |
 
 Rules:
 - **ESM everywhere** in `src/` (`import`/`export`). Tests use CommonJS (`require`).
@@ -456,12 +461,17 @@ agents, and the browser PWA manifest; Electron reads the same package version
 and uses it in artifact names. `pnpm version:check` must pass before packaging
 and verifies Web/PWA, Electron, Android, API health metadata, and download-page
 asset naming (`versionCode` / `CFBundleVersion` = **250002**). Published GitHub
-Release **`latest` = v25.0.2**.
+Release **`latest` = v25.0.3**. That tag still ships
+`VoiceIsolate-Pro-25.0.2-win-x64.exe` because the package version was 25.0.2
+when the installer was built. `claims.allowPackageFilenameOnNewerTag` records
+the split. One Engineer Console ships to desktop browsers, Android browsers,
+Capacitor, and Electron; do not fork a second mobile or desktop product UI.
 
 **Release provenance is evidence-driven:** the current published APK and Windows
-NSIS are valid `v25.0.2` release assets, but they predate current `main` and their
-source SHAs are not independently proven by immutable build metadata in the
-refreshed provenance record. Do **not** claim Web, Android, Windows, `main`, and
+NSIS are valid `v25.0.3` release assets. They predate reviewed `main`
+`f5b271892de7bb8aca85b351062dd81f9191f756`. Release notes name source commit
+`038b3104e659be4c3914bd5ecd763e6141b98f16`, an ancestor of `main`, and that
+note is not an embedded binary manifest. Do **not** claim Web, Android, Windows, `main`, and
 the release tag are the same build unless `pnpm provenance:validate:strict`
 passes. Machine-readable evidence:
 [docs/releases/release-provenance.json](docs/releases/release-provenance.json).

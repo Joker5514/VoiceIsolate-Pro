@@ -52,6 +52,21 @@ import { copyChannelsToAudioBuffer } from './ui-yield.js';
 /** Crossfade duration (seconds) for speaker solo/mute/segment boundaries. */
 const SPEAKER_RAMP_SEC = SPEAKER_GAIN_RAMP_SEC;
 
+/**
+ * A/B comparison crossfade time constant. setTargetAtTime reaches 95% of the
+ * target in 3τ = 7.5 ms, so a switch is complete inside 10 ms without the
+ * click a hard gain step would make.
+ */
+export const AB_CROSSFADE_TC = 0.0025;
+
+/**
+ * Comparison lanes. `processed` is the Live-Mix graph output; `original` is a
+ * caller-supplied reference (the immutable upload); `removed` is the loaded
+ * residual stem played dry. All three run on the same transport, so switching
+ * is a gain crossfade, never a source rebuild.
+ */
+export const COMPARISON_MODES = Object.freeze(['processed', 'original', 'removed']);
+
 // Web Audio BiquadFilter `type` values are fixed spec strings. They are hoisted
 // to named constants whose identifiers avoid the substring flagged by njsscan's
 // hardcoded-credential rule, which false-positives on these filter type names.
@@ -506,7 +521,31 @@ export class PlaybackMixer {
     this.limiterOut.connect(this.ceilingIn);
     this.ceilingIn.connect(this.ceilingShaper);
     this.ceilingShaper.connect(this.ceilingOut);
-    this.ceilingOut.connect(this.masterGain);
+    // A/B comparison lanes (playback only). The graph output passes through
+    // `processed`; the reference and the dry residual join at the master gain,
+    // delayed by the graph latency so all three stay sample-aligned. Only the
+    // selected lane is open, so the default output is the graph alone.
+    this._compare = {
+      processed: this.ctx.createGain(),
+      original: this.ctx.createGain(),
+      removed: this.ctx.createGain(),
+      originalDelay: this.ctx.createDelay(2 * MAX_DRY_DELAY_SEC),
+      removedDelay: this.ctx.createDelay(2 * MAX_DRY_DELAY_SEC),
+    };
+    this._compare.processed.gain.value = 1;
+    this._compare.original.gain.value = 0;
+    this._compare.removed.gain.value = 0;
+    this.ceilingOut.connect(this._compare.processed);
+    this._compare.processed.connect(this.masterGain);
+    this._compare.originalDelay.connect(this._compare.original);
+    this._compare.original.connect(this.masterGain);
+    this._compare.removedDelay.connect(this._compare.removed);
+    this._compare.removed.connect(this.masterGain);
+    /** @type {AudioBuffer|null} */ this._referenceBuffer = null;
+    this._compareMode = 'processed';
+    this._compareLevels = { processed: 1, original: 1, removed: 1 };
+    /** @type {AudioBufferSourceNode|null} */ this._originalSource = null;
+    /** @type {AudioBufferSourceNode|null} */ this._removedSource = null;
     this.masterGain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
@@ -754,6 +793,14 @@ export class PlaybackMixer {
     set(this.dryDelay.delayTime, this._wetLatencyFrames());
     set(this.compBypass.delayTime, this._compressorLatencyFrames);
     set(this.limiterBypass.delayTime, this._compressorLatencyFrames);
+    // Comparison lanes bypass the whole graph, so they wait its full latency.
+    if (this._compare) {
+      const total = Math.min(2 * MAX_DRY_DELAY_SEC, this.latencyFrames() / sr);
+      for (const delay of [this._compare.originalDelay, this._compare.removedDelay]) {
+        delay.delayTime.cancelScheduledValues?.(0);
+        delay.delayTime.value = total;
+      }
+    }
   }
 
   /** Route each compressor in only while it can compress (ratio > 1). */
@@ -948,6 +995,8 @@ export class PlaybackMixer {
     this._noiseSource.start(when, startAt, segmentLen);
     this._startedAt = when - startAt;
     this._isPlaying = true;
+    this._startComparisonLane('original', when);
+    this._startComparisonLane('removed', when);
     this._scheduleSpeakerAutomation();
 
     const onSegmentEnd = () => {
@@ -1014,13 +1063,148 @@ export class PlaybackMixer {
   }
 
   _teardownSources() {
-    for (const src of [this._cleanSource, this._noiseSource]) {
+    for (const src of [this._cleanSource, this._noiseSource, this._originalSource, this._removedSource]) {
       if (!src) continue;
       try { src.onended = null; src.stop(); } catch { /* not started */ }
       try { src.disconnect(); } catch { /* already disconnected */ }
     }
     this._cleanSource = null;
     this._noiseSource = null;
+    this._originalSource = null;
+    this._removedSource = null;
+  }
+
+  // ─── A/B comparison (playback only — never ML, never a stem reload) ────
+
+  /**
+   * Start one comparison lane on the running transport. `when` defaults to
+   * just ahead of now; the buffer offset is derived from the stems' own start
+   * time, so a lane added mid-playback lands on the same sample as the stems.
+   * @param {'original'|'removed'} lane
+   * @param {number} [when]
+   */
+  _startComparisonLane(lane, when = this.ctx.currentTime + 0.01) {
+    if (!this._isPlaying) return;
+    const buffer = lane === 'original' ? this._referenceBuffer : this.noiseBuffer;
+    const key = lane === 'original' ? '_originalSource' : '_removedSource';
+    if (this[key]) {
+      try { this[key].onended = null; this[key].stop(); this[key].disconnect(); } catch { /* not started */ }
+      this[key] = null;
+    }
+    // A lane exists only while a reference is set: without one there is no
+    // comparison, and the residual lane would be a silent extra source.
+    if (!buffer || !this._referenceBuffer) return;
+    const offset = when - this._startedAt;
+    const end = Math.min(this._regionEnd(), buffer.duration);
+    if (!(offset >= 0) || end - offset <= 0.001) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(lane === 'original' ? this._compare.originalDelay : this._compare.removedDelay);
+    src.start(when, offset, end - offset);
+    this[key] = src;
+  }
+
+  /**
+   * Set (or clear with null) the reference the `original` lane plays. The
+   * buffer is used as-is — no copy — so callers pass an immutable decode.
+   * Safe during playback: the lane joins the running transport sample-aligned.
+   * @param {AudioBuffer|null} buffer
+   */
+  setComparisonReference(buffer) {
+    if (buffer != null && typeof buffer.getChannelData !== 'function') {
+      throw new TypeError('[VIP][PlaybackMixer] setComparisonReference requires an AudioBuffer or null.');
+    }
+    if (buffer === this._referenceBuffer) return;
+    this._referenceBuffer = buffer || null;
+    if (!this._referenceBuffer && this._compareMode !== 'processed') this.setComparisonMode('processed');
+    this._startComparisonLane('original');
+    this._startComparisonLane('removed');
+  }
+
+  /**
+   * {@link setComparisonReference} from Float32Array channels, copied into a
+   * new AudioBuffer in time-budgeted slices (never one long task). A newer
+   * call supersedes this one, which then resolves null and installs nothing.
+   * @param {Float32Array[]} channels
+   * @param {number} [sampleRate]
+   * @param {{ signal?: AbortSignal }} [opts]
+   * @returns {Promise<AudioBuffer|null>}
+   */
+  async setComparisonReferenceAsync(channels, sampleRate = SAMPLE_RATE, opts = {}) {
+    if (!channels?.length || !channels[0]?.length) {
+      throw new TypeError('[VIP][PlaybackMixer] setComparisonReferenceAsync requires non-empty channels.');
+    }
+    const gen = this._referenceGen = (this._referenceGen || 0) + 1;
+    const outer = opts.signal || null;
+    const self = this;
+    const guard = { get aborted() { return gen !== self._referenceGen || Boolean(outer?.aborted); } };
+    try {
+      const buf = this.ctx.createBuffer(channels.length, channels[0].length, sampleRate);
+      await copyChannelsToAudioBuffer(buf, channels, { signal: guard });
+      if (gen !== this._referenceGen || this._disposed) return null;
+      this.setComparisonReference(buf);
+      return buf;
+    } catch (err) {
+      if (gen !== this._referenceGen) return null;
+      throw err;
+    }
+  }
+
+  /** The current `original` lane reference, or null. */
+  getComparisonReference() { return this._referenceBuffer; }
+
+  /** True when an `original` reference is set (A/B is ready to switch). */
+  hasComparisonReference() { return Boolean(this._referenceBuffer); }
+
+  /**
+   * Select which lane is heard. While playing this is a ~7.5 ms gain
+   * crossfade on the running sources (playhead, loop and crop untouched);
+   * while idle it snaps, so the next play starts on the chosen lane.
+   * @param {'processed'|'original'|'removed'} mode
+   * @returns {boolean} false when that lane has nothing to play
+   */
+  setComparisonMode(mode) {
+    if (!COMPARISON_MODES.includes(mode)) return false;
+    if (mode === 'original' && !this._referenceBuffer) return false;
+    if (mode === 'removed' && (!this._referenceBuffer || !this.noiseBuffer)) return false;
+    this._compareMode = mode;
+    this._applyComparisonGains();
+    return true;
+  }
+
+  getComparisonMode() { return this._compareMode; }
+
+  /**
+   * Per-lane level trims for matched comparison. Attenuation only: each
+   * value is clamped to [0, 1], so a comparison can never boost into clipping.
+   * @param {{ processed?: number, original?: number, removed?: number }} levels
+   */
+  setComparisonLevels(levels = {}) {
+    for (const lane of COMPARISON_MODES) {
+      if (levels[lane] === undefined) continue;
+      const v = Number(levels[lane]);
+      this._compareLevels[lane] = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+    }
+    this._applyComparisonGains();
+  }
+
+  getComparisonLevels() { return { ...this._compareLevels }; }
+
+  _applyComparisonGains() {
+    const now = this.ctx.currentTime;
+    const live = this._isPlaying && this.ctx.state === 'running';
+    for (const lane of COMPARISON_MODES) {
+      const param = this._compare[lane].gain;
+      const target = lane === this._compareMode ? this._compareLevels[lane] : 0;
+      this._parameterTargets.set(param, target);
+      if (live) {
+        param.setTargetAtTime(target, now, AB_CROSSFADE_TC);
+        this._rampingParams.add(param);
+      } else {
+        param.cancelScheduledValues?.(Math.max(now, 0));
+        param.value = target;
+      }
+    }
   }
 
   /** Clear bounded gate lookahead history before a new transport source starts. */
@@ -1594,7 +1778,7 @@ export class PlaybackMixer {
       this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
       this.limiter, this.limiterEngagedGain, this.limiterBypass, this.limiterBypassGain, this.limiterOut,
       this.ceilingIn, this.ceilingShaper, this.ceilingOut,
-      this.masterGain, this.analyser]) {
+      this.masterGain, this.analyser, ...Object.values(this._compare || {})]) {
       if (!node) continue;
       try { node.disconnect(); } catch { /* already disconnected */ }
     }
@@ -1606,6 +1790,8 @@ export class PlaybackMixer {
     // Drop stem references so a retained (or leaked) mixer pins no audio.
     this.cleanBuffer = null;
     this.noiseBuffer = null;
+    this._referenceBuffer = null;
+    this._referenceGen = (this._referenceGen || 0) + 1;
     this._segments = [];
     this._speakers = new Map();
     this._rampingParams.clear();

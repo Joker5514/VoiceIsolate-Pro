@@ -24,11 +24,11 @@
   // ── Constants ──────────────────────────────────────────────────
   const MODES = ['SPECTRUM', 'WAVEFORM', 'RADIAL', 'WATERFALL', 'LISSAJOUS'];
   const MODE_COLORS = [
-    ['#ff0050', '#00e5ff'],   // spectrum
-    ['#00e5ff', '#00ff88'],   // waveform
-    ['#bf00ff', '#ff0050'],   // radial
-    ['#ff6600', '#ffd600'],   // waterfall
-    ['#bf00ff', '#00e5ff'],   // lissajous
+    ['#22d3ee', '#f5b942'],   // spectrum: voice, background
+    ['#c3cbd5', '#22d3ee'],   // waveform: input, output
+    ['#22d3ee', '#f5b942'],   // radial
+    ['#c9843a', '#f5b942'],   // waterfall
+    ['#c3cbd5', '#22d3ee'],   // lissajous
   ];
 
   // ── State ───────────────────────────────────────────────────────
@@ -173,11 +173,11 @@
     const el = document.getElementById('np-legend');
     if (!el) return;
     const legends = [
-      [['#ff0050','Voice'], ['#00e5ff','Background'], ['#ffd600','Peak Hold']],
-      [['#00e5ff','Input Waveform'], ['#00ff88','Output Waveform']],
-      [['#bf00ff','Radial Spectrum'], ['#ff0050','Peak Ring']],
-      [['#ff6600','Low Freq'], ['#ffd600','Mid Freq'], ['#00e5ff','High Freq']],
-      [['#bf00ff','L+R Phase'], ['#00e5ff','Lissajous Trail']],
+      [['#22d3ee','Voice'], ['#f5b942','Background'], ['#ff8a5c','Peak Hold']],
+      [['#c3cbd5','Input Waveform'], ['#22d3ee','Output Waveform']],
+      [['#22d3ee','Radial Spectrum'], ['#ff8a5c','Peak Ring']],
+      [['#c9843a','Low Freq'], ['#f5b942','Mid Freq'], ['#c3cbd5','High Freq']],
+      [['#c3cbd5','L+R Phase'], ['#22d3ee','Lissajous Trail']],
     ];
     el.innerHTML = (legends[_mode] || []).map(([c,l]) =>
       `<span class="np-legend-item"><span class="np-legend-dot" style="background:${c}"></span>${l}</span>`
@@ -243,9 +243,9 @@
     const bins = _dataL.length;
     const barW = Math.max(1, W / bins * 2.2);
     const grad = c.createLinearGradient(0, H, 0, 0);
-    grad.addColorStop(0,   '#ff0050');
-    grad.addColorStop(0.5, '#ff6600');
-    grad.addColorStop(1,   '#00e5ff');
+    grad.addColorStop(0,   '#22d3ee');
+    grad.addColorStop(0.5, '#f5b942');
+    grad.addColorStop(1,   '#c3cbd5');
 
     for (let i = 0; i < bins; i++) {
       const x  = (i / bins) * W;

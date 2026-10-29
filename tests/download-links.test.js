@@ -13,7 +13,7 @@ const pkg = JSON.parse(read('package.json'));
 const provenance = JSON.parse(read('docs/releases/release-provenance.json'));
 
 const VERSION = pkg.version;
-const TAG = `v${VERSION}`;
+const TAG = provenance.tag;
 const APK_NAME = 'VoiceIsolate-Pro-android-debug.apk';
 const EXE_NAME = `VoiceIsolate-Pro-${VERSION}-win-x64.exe`;
 const APK_LATEST =
@@ -65,9 +65,13 @@ describe('current download references', () => {
 });
 
 describe('release provenance references', () => {
-  test('provenance version and tag match package.json', () => {
+  test('provenance product version matches package.json; a newer published tag keeps the package filename', () => {
     expect(provenance.productVersion).toBe(VERSION);
-    expect(provenance.tag).toBe(TAG);
+    expect(provenance.tag).toMatch(/^v\d+\.\d+\.\d+$/);
+    expect(EXE_NAME).toBe(`VoiceIsolate-Pro-${VERSION}-win-x64.exe`);
+    if (provenance.tag !== `v${VERSION}`) {
+      expect(provenance.claims.allowPackageFilenameOnNewerTag).toBe(true);
+    }
   });
 
   test('native provenance points to current pinned asset names and URLs', () => {

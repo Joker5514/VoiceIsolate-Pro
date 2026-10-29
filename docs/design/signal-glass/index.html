@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoiceIsolate Signal Glass</title>
+<link rel="icon" href="data:,">
+<style>
+@font-face { font-family: Geist; src: url("Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Instrument Serif"; src: url("instrument-serif-latin-400-italic.woff2") format("woff2"); font-style: italic; font-weight: 400; font-display: swap; }
+:root {
+  --canvas: #0a0e14;
+  --voice: #22d3ee;
+  --ink: #061018;
+  --music: #f5b942;
+  --room: #c9843a;
+  --air: #c3cbd5;
+  --instrument: #e8eef5;
+  --near: #ff8a5c;
+  --clip: #ff5c6e;
+  --local: #3ddc97;
+  --glass: rgba(16, 22, 31, 0.92);
+  --well: #06090d;
+  --line: rgba(232, 238, 245, 0.14);
+  --hover: 150ms;
+  --toggle: 200ms;
+  --sheet: 300ms;
+  --edge: linear-gradient(135deg, rgba(34, 211, 238, 0.36), rgba(245, 185, 66, 0.30));
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background:
+    radial-gradient(900px 420px at 12% 0%, rgba(34, 211, 238, 0.16), transparent 62%),
+    radial-gradient(720px 480px at 100% 18%, rgba(245, 185, 66, 0.10), transparent 58%),
+    var(--canvas);
+  color: var(--instrument);
+  font-family: Geist, "Segoe UI", sans-serif;
+  letter-spacing: -0.011em;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.mono { font-family: "Geist Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.desk { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 28px; }
+.top { display: flex; justify-content: space-between; gap: 16px; align-items: end; margin-bottom: 18px; }
+.kicker { margin: 0 0 6px; color: var(--air); font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(32px, 5vw, 52px); font-weight: 560; letter-spacing: -0.045em; line-height: 0.98; }
+h1 em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; color: var(--voice); }
+.local { display: inline-flex; align-items: center; gap: 8px; color: var(--local); font-size: 13px; font-weight: 650; }
+.local i { width: 8px; height: 8px; border-radius: 99px; background: var(--local); display: block; }
+.nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.nav button, .glassbtn, .primary {
+  min-height: 44px; border-radius: 999px; padding: 0 16px;
+  transition: transform var(--hover) ease, background var(--hover) ease, border-color var(--hover) ease, opacity var(--toggle) ease;
+}
+.nav button { background: transparent; border: 1px solid var(--line); color: var(--air); }
+.nav button[aria-current="page"] { color: var(--instrument); background: transparent; box-shadow: inset 0 0 0 1px var(--voice); border-color: transparent; }
+.primary { background: var(--voice); color: var(--ink); border: 0; font-weight: 680; }
+.glassbtn { background: rgba(8, 12, 18, 0.45); color: var(--instrument); border: 1px solid rgba(195, 203, 213, 0.45); }
+.nav button:hover, .glassbtn:hover, .primary:hover { transform: translateY(-1px); }
+.glass { position: relative; background: var(--glass); border-radius: 18px; }
+.glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: var(--edge); pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.sheet { animation: sheet-in var(--sheet) ease; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.view { padding: 22px; }
+.session-grid { display: grid; grid-template-columns: minmax(260px, 0.85fr) 1.15fr; gap: 22px; align-items: center; }
+.honesty { margin: 14px 0 0; color: var(--air); line-height: 1.45; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.file { position: relative; overflow: hidden; }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.picture { background: var(--well); border-radius: 14px; min-height: 420px; display: grid; align-items: center; }
+.picture svg { display: block; width: 100%; height: auto; }
+.ribbon-voice { animation: voice-breathe 2.8s ease-in-out infinite alternate; }
+@keyframes voice-breathe { from { opacity: 0.55; } to { opacity: 1; } }
+.gate { margin: 0 0 8px; color: var(--air); }
+.mode { margin: 8px 0 0; color: var(--instrument); }
+.bays { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.bay { padding: 14px 12px 16px; min-height: 360px; display: flex; flex-direction: column; gap: 10px; }
+.bay header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.bay h2 { margin: 0; font-size: 16px; font-weight: 620; }
+.swatch { width: 10px; height: 10px; border-radius: 99px; display: inline-block; margin-right: 6px; }
+.meter { width: 22px; height: 120px; margin: 4px auto 0; border-radius: 10px; background: var(--well); position: relative; overflow: hidden; }
+.meter span { position: absolute; left: 0; right: 0; bottom: 0; }
+.clipbtn { align-self: flex-start; min-height: 36px; border: 0; border-radius: 8px; padding: 0 10px; background: var(--clip); color: var(--ink); font-weight: 750; letter-spacing: 0.08em; }
+.fader-wrap { position: relative; display: grid; justify-items: center; gap: 6px; margin-top: auto; }
+.fader-wrap input[type="range"] { width: 148px; accent-color: var(--instrument); }
+.unity { position: relative; height: 10px; width: 148px; margin-bottom: 2px; }
+.unity i { position: absolute; left: 50%; top: 0; width: 2px; height: 10px; background: var(--instrument); transform: translateX(-1px); }
+.row { display: flex; gap: 8px; }
+.row button { flex: 1; min-height: 36px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--air); transition: background var(--toggle) ease, color var(--toggle) ease; }
+.row button[aria-pressed="true"] { background: var(--instrument); color: var(--ink); border-color: transparent; }
+.engineer { display: grid; grid-template-columns: 200px 1fr 260px; gap: 16px; }
+.channels { display: flex; flex-direction: column; gap: 8px; }
+.channels button { text-align: left; min-height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; padding: 0 12px; }
+.channels button[aria-current="true"] { box-shadow: 0 0 0 2px var(--voice); }
+.curve { background: var(--well); border-radius: 14px; min-height: 280px; padding: 12px; }
+.curve svg { width: 100%; height: 240px; display: block; }
+.curve.bypassed .eq { opacity: 0.28; }
+.toggles { display: flex; flex-direction: column; gap: 8px; }
+.toggles button, .flat { min-height: 44px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--air); text-align: left; padding: 0 12px; transition: color var(--toggle) ease, background var(--toggle) ease; }
+.toggles button[aria-pressed="true"] { color: var(--instrument); background: rgba(232, 238, 245, 0.06); }
+.flat[aria-pressed="true"] { color: var(--instrument); box-shadow: inset 0 0 0 1px var(--instrument); }
+.note { color: var(--air); font-size: 13px; line-height: 1.45; margin: 8px 0 0; }
+.transport-view { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 18px; align-items: center; }
+.mixstrip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mixstrip div { background: var(--well); border-radius: 12px; padding: 12px; }
+.transport {
+  margin-top: 16px; padding: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+}
+.transport .primary { min-width: 112px; }
+.spacer { flex: 1; }
+.status { color: var(--air); }
+:focus-visible { outline: 2px solid var(--instrument); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .ribbon-voice { animation: none; opacity: 1; }
+  .sheet { animation: none; }
+  .nav button, .glassbtn, .primary, .row button, .toggles button { transition: none; }
+}
+@media (max-width: 900px) {
+  .session-grid, .engineer, .transport-view, .bays { grid-template-columns: 1fr 1fr; }
+  .engineer { grid-template-columns: 1fr; }
+  .bay { min-height: 0; }
+}
+@media (max-width: 640px) {
+  .desk { width: min(100% - 24px, 420px); }
+  .session-grid, .bays, .transport-view, .mixstrip { grid-template-columns: 1fr; }
+  .top { display: block; }
+  .transport .primary { flex: 1 1 100%; }
+}
+</style>
+</head>
+<body>
+<div class="desk">
+  <header class="top">
+    <div>
+      <p class="kicker">VoiceIsolate Signal Glass</p>
+      <p class="honesty" style="margin:0">Light model on the live local desk.</p>
+    </div>
+    <p class="local"><i></i><span id="gate">Gate closed</span></p>
+  </header>
+  <nav class="nav" aria-label="Desk">
+    <button type="button" data-view="session" aria-current="page">Session</button>
+    <button type="button" data-view="stems">Stems</button>
+    <button type="button" data-view="engineer">Engineer</button>
+    <button type="button" data-view="transport">Transport</button>
+  </nav>
+
+  <section class="glass sheet view" data-panel="session">
+    <div class="session-grid">
+      <div>
+        <h1>Bring the voice <em>forward.</em></h1>
+        <p class="gate mono" id="gate-copy">Gate closed</p>
+        <p class="mode" id="mode-copy">No session loaded.</p>
+        <div class="actions">
+          <button class="primary" type="button" id="demo">Load studio demo</button>
+          <label class="glassbtn file">Import audio
+            <input id="import" type="file" accept="audio/*">
+          </label>
+        </div>
+        <p class="honesty">Audio stays on this device. Not a neural split.</p>
+      </div>
+      <div class="picture" aria-hidden="false">
+        <svg viewBox="0 0 960 520" role="img" aria-label="Helix enters from the lower left, passes a tilted lens, and splits into voice, music, room, and air.">
+          <defs>
+            <linearGradient id="glassEdge" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.36"/>
+              <stop offset="100%" stop-color="#f5b942" stop-opacity="0.30"/>
+            </linearGradient>
+          </defs>
+          <path d="M70 450 C120 400 100 360 150 345 C200 330 175 285 225 270 C280 252 340 268 379 270 C420 272 438 250 455 230 C472 210 500 198 532 190" fill="none" stroke="#e8eef5" stroke-width="3" stroke-linecap="round"/>
+          <path d="M96 424 C146 386 128 348 176 338 C226 328 204 292 252 280 C310 266 360 292 400 286 C430 282 448 258 468 236" fill="none" stroke="#c3cbd5" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+          <g transform="rotate(-28 455 230)">
+            <ellipse cx="455" cy="230" rx="92" ry="50" fill="rgba(232,238,245,0.07)" stroke="#e8eef5" stroke-opacity="0.55" stroke-width="1.5"/>
+            <ellipse cx="455" cy="230" rx="92" ry="50" fill="none" stroke="url(#glassEdge)" stroke-width="3"/>
+          </g>
+          <path class="ribbon-voice" d="M532 190 C620 120 740 78 880 64" fill="none" stroke="#22d3ee" stroke-width="5" stroke-linecap="round"/>
+          <path d="M532 190 C630 176 750 168 880 160" fill="none" stroke="#f5b942" stroke-width="5" stroke-linecap="round"/>
+          <path d="M532 190 C630 230 750 268 880 286" fill="none" stroke="#c9843a" stroke-width="5" stroke-linecap="round"/>
+          <path d="M532 190 C620 280 740 360 880 404" fill="none" stroke="#c3cbd5" stroke-width="5" stroke-linecap="round"/>
+          <text x="848" y="68" fill="#22d3ee" font-family="Geist, sans-serif" font-size="15">Voice</text>
+          <text x="848" y="166" fill="#f5b942" font-family="Geist, sans-serif" font-size="15">Music</text>
+          <text x="848" y="282" fill="#c9843a" font-family="Geist, sans-serif" font-size="15">Room</text>
+          <text x="848" y="424" fill="#c3cbd5" font-family="Geist, sans-serif" font-size="15">Air</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section class="glass sheet view" data-panel="stems" hidden>
+    <p class="note" id="bay-kind">Gate closed. Faders do not re-run separation.</p>
+    <div class="bays" id="bays"></div>
+    <p class="note">Instrument-white tick at 0 dB. Shift-drag is fine. Double-click returns to unity. Mute and solo change the real sum.</p>
+  </section>
+
+  <section class="glass sheet view" data-panel="engineer" hidden>
+    <div class="engineer">
+      <div class="channels" id="channels" role="listbox" aria-label="Channel"></div>
+      <div class="curve" id="curve-well">
+        <svg viewBox="0 0 640 240" role="img" aria-label="EQ curve in instrument white. This is a control drawing, not a measurement.">
+          <path class="eq" d="M20 170 C 90 170 120 150 180 120 C 250 80 300 70 370 96 C 450 128 500 60 620 48" fill="none" stroke="#e8eef5" stroke-width="3" stroke-linecap="round"/>
+          <circle class="eq" cx="180" cy="120" r="5" fill="#e8eef5"/>
+          <circle class="eq" cx="370" cy="96" r="5" fill="#e8eef5"/>
+          <circle class="eq" cx="520" cy="78" r="5" fill="#e8eef5"/>
+        </svg>
+        <p class="note" id="flat-copy">Flat monitor is off. The curve stays instrument white.</p>
+      </div>
+      <div>
+        <div class="toggles" id="toggles"></div>
+        <button class="flat" type="button" id="flat" aria-pressed="false">Flat monitor</button>
+        <p class="note">Bypasses EQ, dynamics, polarity, width, and high-pass without forgetting them.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="glass sheet view" data-panel="transport" hidden>
+    <div class="transport-view">
+      <div>
+        <p class="kicker">Same mix</p>
+        <h2 style="margin:0 0 8px;font-size:28px;letter-spacing:-0.04em;">Play is the cyan pill.</h2>
+        <p class="honesty">Loop and Export stay glass. Undo and redo stay. This mix is the mix on Session, Stems, and Engineer.</p>
+      </div>
+      <div class="mixstrip" id="mixstrip"></div>
+    </div>
+  </section>
+
+  <section class="glass transport" aria-label="Transport">
+    <button class="glassbtn" type="button" id="undo">Undo</button>
+    <button class="glassbtn" type="button" id="redo">Redo</button>
+    <span class="status mono" id="sum">Sum —</span>
+    <span class="spacer"></span>
+    <button class="glassbtn" type="button" id="loop" aria-pressed="false">Loop</button>
+    <button class="primary" type="button" id="play" aria-pressed="false">Play</button>
+    <button class="glassbtn" type="button" id="export">Export</button>
+  </section>
+  <p class="status" id="export-note" aria-live="polite"></p>
+</div>
+<script>
+const BUSES = [
+  { id: 'voice', num: '01', name: 'Voice', color: '#22d3ee' },
+  { id: 'music', num: '02', name: 'Music', color: '#f5b942' },
+  { id: 'room', num: '03', name: 'Room', color: '#c9843a' },
+  { id: 'air', num: '04', name: 'Air', color: '#c3cbd5' }
+];
+const TOGGLES = ['EQ', 'Dynamics', 'Polarity', 'Width', 'High-pass'];
+const state = {
+  view: 'session',
+  gate: 'Gate closed',
+  mode: 'closed',
+  gains: { voice: 0, music: 0, room: 8, air: 0 },
+  mute: { voice: false, music: false, room: false, air: false },
+  solo: { voice: false, music: false, room: false, air: false },
+  clip: { voice: false, music: false, room: true, air: false, master: false },
+  selected: 'voice',
+  toggles: { EQ: true, Dynamics: true, Polarity: true, Width: true, 'High-pass': true },
+  flat: false,
+  loop: false,
+  playing: false
+};
+const past = [];
+const future = [];
+const $ = (id) => document.getElementById(id);
+
+function snap() {
+  return JSON.stringify({
+    gate: state.gate, mode: state.mode, gains: state.gains, mute: state.mute,
+    solo: state.solo, clip: state.clip, selected: state.selected,
+    toggles: state.toggles, flat: state.flat, loop: state.loop, playing: state.playing
+  });
+}
+function commit() { past.push(snap()); future.length = 0; if (past.length > 80) past.shift(); }
+function restore(raw) {
+  const next = JSON.parse(raw);
+  Object.assign(state, next);
+  state.gains = next.gains; state.mute = next.mute; state.solo = next.solo;
+  state.clip = next.clip; state.toggles = next.toggles;
+  paint();
+}
+function linear(db) { return Math.pow(10, db / 20); }
+function audible(id) {
+  const anySolo = BUSES.some((bus) => state.solo[bus.id]);
+  if (state.mute[id]) return false;
+  if (anySolo) return state.solo[id];
+  return true;
+}
+function sumDb() {
+  const sum = BUSES.reduce((total, bus) => total + (audible(bus.id) ? linear(state.gains[bus.id]) : 0), 0);
+  if (sum <= 0) return null;
+  return 20 * Math.log10(sum);
+}
+function modeLine() {
+  if (state.mode === 'demo') return 'Four independent performances.';
+  if (state.mode === 'import') return 'Four filtered focus buses.';
+  return 'No session loaded.';
+}
+function bayKind() {
+  if (state.mode === 'demo') return 'Studio demo. Four independent performances. Faders do not re-run separation.';
+  if (state.mode === 'import') return 'Import. Four filtered focus buses. Faders do not re-run separation.';
+  return 'Gate closed. Faders do not re-run separation.';
+}
+function meterColor(id) {
+  if (state.clip[id]) return 'var(--clip)';
+  if (state.gains[id] >= 3) return 'var(--near)';
+  return BUSES.find((bus) => bus.id === id).color;
+}
+function ensureBays() {
+  const root = $('bays');
+  if (root.childElementCount === 5) return;
+  root.replaceChildren();
+  for (const bus of BUSES) root.append(bayNode(bus));
+  root.append(masterNode());
+  const strip = $('mixstrip');
+  strip.replaceChildren();
+  for (const bus of BUSES) {
+    const cell = document.createElement('div');
+    cell.dataset.strip = bus.id;
+    cell.innerHTML = `<strong>${bus.name}</strong><p class="mono" style="margin:6px 0 0"></p>`;
+    strip.append(cell);
+  }
+}
+function syncBus(id) {
+  const article = document.querySelector(`[data-bay="${id}"]`);
+  if (!article) return;
+  const db = state.gains[id];
+  article.querySelector('[data-read]').textContent = db.toFixed(1);
+  const bar = article.querySelector('.meter span');
+  bar.style.height = `${Math.max(6, ((db + 12) / 24) * 100)}%`;
+  bar.style.background = meterColor(id);
+  const input = article.querySelector('input[data-bus]');
+  if (document.activeElement !== input) input.value = String(db);
+  article.querySelector('[data-mute]').setAttribute('aria-pressed', String(state.mute[id]));
+  article.querySelector('[data-solo]').setAttribute('aria-pressed', String(state.solo[id]));
+  let clear = article.querySelector('[data-clip]');
+  if (state.clip[id] && !clear) {
+    clear = document.createElement('button');
+    clear.className = 'clipbtn';
+    clear.type = 'button';
+    clear.dataset.clip = id;
+    clear.textContent = 'CLIP';
+    article.insertBefore(clear, article.querySelector('.fader-wrap'));
+  } else if (!state.clip[id] && clear) {
+    clear.remove();
+  }
+  const cell = document.querySelector(`[data-strip="${id}"] p`);
+  cell.textContent = audible(id) ? `${db.toFixed(1)} dB` : 'out';
+  cell.style.color = BUSES.find((bus) => bus.id === id).color;
+}
+function syncMaster() {
+  const article = document.querySelector('[data-bay="master"]');
+  const sum = sumDb();
+  article.querySelector('[data-read]').textContent = sum === null ? '—' : sum.toFixed(1);
+  const bar = article.querySelector('.meter span');
+  bar.style.height = `${sum === null ? 6 : Math.max(6, Math.min(100, ((sum + 12) / 36) * 100))}%`;
+  bar.style.background = state.clip.master ? 'var(--clip)' : '#c3cbd5';
+  let clear = article.querySelector('[data-clip]');
+  if (state.clip.master && !clear) {
+    clear = document.createElement('button');
+    clear.className = 'clipbtn';
+    clear.type = 'button';
+    clear.dataset.clip = 'master';
+    clear.textContent = 'CLIP';
+    article.append(clear);
+  } else if (!state.clip.master && clear) {
+    clear.remove();
+  }
+  $('sum').textContent = sum === null ? 'Sum —' : `Sum ${sum.toFixed(1)} dB`;
+}
+function bayNode(bus, compact) {
+  const article = document.createElement('article');
+  article.className = 'glass bay';
+  article.dataset.bay = bus.id;
+  const db = state.gains[bus.id];
+  article.innerHTML = `
+    <header><h2><i class="swatch" style="background:${bus.color}"></i>${bus.num} ${bus.name}</h2><span class="mono" data-read>${db.toFixed(1)}</span></header>
+    <div class="meter" aria-hidden="true"><span style="height:${Math.max(6, ((db + 12) / 24) * 100)}%;background:${meterColor(bus.id)}"></span></div>
+    <div class="fader-wrap">
+      <div class="unity" title="0 dB"><i></i></div>
+      <input type="range" min="-12" max="12" step="0.1" value="${db}" aria-label="${bus.name} fader" data-bus="${bus.id}">
+    </div>
+    <div class="row">
+      <button type="button" data-mute="${bus.id}" aria-pressed="${state.mute[bus.id]}">Mute</button>
+      <button type="button" data-solo="${bus.id}" aria-pressed="${state.solo[bus.id]}">Solo</button>
+    </div>`;
+  if (state.clip[bus.id]) {
+    const clear = document.createElement('button');
+    clear.className = 'clipbtn';
+    clear.type = 'button';
+    clear.dataset.clip = bus.id;
+    clear.textContent = 'CLIP';
+    article.insertBefore(clear, article.querySelector('.fader-wrap'));
+  }
+  if (compact) article.querySelector('.row').remove();
+  return article;
+}
+function masterNode() {
+  const article = document.createElement('article');
+  article.className = 'glass bay';
+  article.dataset.bay = 'master';
+  const sum = sumDb();
+  const hot = state.clip.master;
+  article.innerHTML = `
+    <header><h2><i class="swatch" style="background:#c3cbd5"></i>Master</h2><span class="mono" data-read>${sum === null ? '—' : sum.toFixed(1)}</span></header>
+    <p class="note" style="margin:0">Silver. Pre-limiter. Live analyser of the sum.</p>
+    <div class="meter" aria-hidden="true"><span style="height:${sum === null ? 6 : Math.max(6, Math.min(100, (sum + 12) / 36 * 100))}%;background:${hot ? 'var(--clip)' : '#c3cbd5'}"></span></div>`;
+  if (hot) {
+    const clear = document.createElement('button');
+    clear.className = 'clipbtn';
+    clear.type = 'button';
+    clear.dataset.clip = 'master';
+    clear.textContent = 'CLIP';
+    article.append(clear);
+  }
+  return article;
+}
+function paintEngineer() {
+  const list = $('channels');
+  list.replaceChildren();
+  for (const bus of BUSES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.channel = bus.id;
+    button.setAttribute('aria-current', String(state.selected === bus.id));
+    button.innerHTML = `<i class="swatch" style="background:${bus.color}"></i>${bus.num} ${bus.name}`;
+    list.append(button);
+  }
+  const toggles = $('toggles');
+  toggles.replaceChildren();
+  for (const name of TOGGLES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.toggle = name;
+    button.setAttribute('aria-pressed', String(state.toggles[name]));
+    button.textContent = name;
+    toggles.append(button);
+  }
+  $('flat').setAttribute('aria-pressed', String(state.flat));
+  $('curve-well').classList.toggle('bypassed', state.flat);
+  $('flat-copy').textContent = state.flat
+    ? 'Flat monitor is on. Those settings are still remembered.'
+    : 'Flat monitor is off. The curve stays instrument white.';
+}
+function paint() {
+  document.querySelectorAll('[data-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== state.view;
+  });
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    if (button.dataset.view === state.view) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  $('gate').textContent = state.gate;
+  $('gate-copy').textContent = state.gate;
+  $('mode-copy').textContent = modeLine();
+  $('bay-kind').textContent = bayKind();
+  $('play').setAttribute('aria-pressed', String(state.playing));
+  $('loop').setAttribute('aria-pressed', String(state.loop));
+  ensureBays();
+  for (const bus of BUSES) syncBus(bus.id);
+  syncMaster();
+  paintEngineer();
+}
+function setView(view) {
+  state.view = view;
+  paint();
+}
+document.querySelector('.nav').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-view]');
+  if (button) setView(button.dataset.view);
+});
+$('demo').addEventListener('click', () => {
+  commit();
+  state.gate = 'Studio demo';
+  state.mode = 'demo';
+  paint();
+});
+$('import').addEventListener('change', () => {
+  const file = $('import').files && $('import').files[0];
+  if (!file) return;
+  commit();
+  state.gate = file.name;
+  state.mode = 'import';
+  paint();
+});
+document.body.addEventListener('click', (event) => {
+  const clip = event.target.closest('[data-clip]');
+  const mute = event.target.closest('[data-mute]');
+  const solo = event.target.closest('[data-solo]');
+  const channel = event.target.closest('[data-channel]');
+  const toggle = event.target.closest('[data-toggle]');
+  if (clip) { commit(); state.clip[clip.dataset.clip] = false; paint(); }
+  if (mute) { commit(); state.mute[mute.dataset.mute] = !state.mute[mute.dataset.mute]; paint(); }
+  if (solo) { commit(); state.solo[solo.dataset.solo] = !state.solo[solo.dataset.solo]; paint(); }
+  if (channel) { state.selected = channel.dataset.channel; paint(); }
+  if (toggle) { commit(); state.toggles[toggle.dataset.toggle] = !state.toggles[toggle.dataset.toggle]; paint(); }
+});
+document.body.addEventListener('input', (event) => {
+  const input = event.target.closest('input[data-bus]');
+  if (!input) return;
+  const step = event.shiftKey ? 0.01 : 0.1;
+  const value = Math.round(Number(input.value) / step) * step;
+  state.gains[input.dataset.bus] = Math.max(-12, Math.min(12, value));
+  syncBus(input.dataset.bus);
+  syncMaster();
+});
+document.body.addEventListener('pointerdown', (event) => {
+  if (event.target.matches('input[data-bus]')) commit();
+});
+document.body.addEventListener('keydown', (event) => {
+  if (event.target.matches('input[data-bus]')) event.target.step = event.shiftKey ? '0.01' : '0.1';
+});
+document.body.addEventListener('keyup', (event) => {
+  if (event.key === 'Shift') document.querySelectorAll('input[data-bus]').forEach((input) => { input.step = '0.1'; });
+});
+document.body.addEventListener('dblclick', (event) => {
+  const input = event.target.closest('input[data-bus]');
+  if (!input) return;
+  commit();
+  state.gains[input.dataset.bus] = 0;
+  state.clip[input.dataset.bus] = false;
+  paint();
+});
+$('flat').addEventListener('click', () => { commit(); state.flat = !state.flat; paint(); });
+$('play').addEventListener('click', () => { commit(); state.playing = !state.playing; paint(); });
+$('loop').addEventListener('click', () => { commit(); state.loop = !state.loop; paint(); });
+$('export').addEventListener('click', () => {
+  $('export-note').textContent = 'Export stays on this device.';
+});
+$('undo').addEventListener('click', () => {
+  if (!past.length) return;
+  future.push(snap());
+  restore(past.pop());
+});
+$('redo').addEventListener('click', () => {
+  if (!future.length) return;
+  past.push(snap());
+  restore(future.pop());
+});
+paint();
+</script>
+</body>
+</html>

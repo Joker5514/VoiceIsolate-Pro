@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
   "productVersion": "25.0.2",
-  "generatedAt": "2026-09-03T14:47:00Z",
-  "reviewedMainSha": "d8514bad2f665b65b6489e200524d8800f5c800d",
-  "tag": "v25.0.2",
+  "generatedAt": "2026-10-25T18:00:00Z",
+  "reviewedMainSha": "f5b271892de7bb8aca85b351062dd81f9191f756",
+  "tag": "v25.0.3",
   "platforms": [
     {
       "platform": "web",
       "status": "unknown",
       "version": "25.0.2",
-      "sourceSha": "d8514bad2f665b65b6489e200524d8800f5c800d",
+      "sourceSha": null,
       "builtAt": null,
       "artifact": {
         "kind": "vercel-hosting",
@@ -19,62 +19,62 @@
         "sizeBytes": null
       },
       "verification": {
-        "method": "vercel-deployment",
-        "evidence": "Vercel commit status is successful for main d8514bad2f665b65b6489e200524d8800f5c800d, but this refresh does not independently record the production deployment timestamp or immutable deployment SHA."
+        "method": "unknown",
+        "evidence": "The public production URL responds. This refresh does not record an immutable Vercel deployment SHA or timestamp for reviewed main f5b271892de7bb8aca85b351062dd81f9191f756."
       },
-      "notes": "The public production URL is live, but this record intentionally does not infer byte-for-byte deployment identity from repository HEAD."
+      "notes": "Desktop browsers and Android browsers load this deployment. It is not proven to match reviewed main, the v25.0.3 APK, or the Windows installer."
     },
     {
       "platform": "android",
       "status": "stale",
       "version": "25.0.2",
-      "sourceSha": null,
+      "sourceSha": "038b3104e659be4c3914bd5ecd763e6141b98f16",
       "builtAt": null,
       "artifact": {
         "kind": "github-release",
         "filename": "VoiceIsolate-Pro-android-debug.apk",
-        "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk",
-        "sha256": "5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b",
-        "sizeBytes": 101365796
+        "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-android-debug.apk",
+        "sha256": "70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626",
+        "sizeBytes": 101650376
       },
       "verification": {
         "method": "github-release-asset",
-        "evidence": "GitHub release v25.0.2 reports the APK asset uploaded 2026-08-25T21:22:36Z, updated 2026-08-25T21:22:40Z, size 101365796 bytes, digest sha256:5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b."
+        "evidence": "GitHub release v25.0.3 reports the APK asset updated 2026-09-09T23:31:41Z, size 101650376 bytes, digest sha256:70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626."
       },
-      "notes": "Published sideload/debug APK is valid, but it predates current main and its source commit was not independently proven by immutable build metadata during this refresh."
+      "notes": "Published sideload/debug APK is a valid v25.0.3 download. Release notes name source commit 038b3104e659be4c3914bd5ecd763e6141b98f16. That identifier is not an embedded binary manifest. The commit is an ancestor of reviewed main, and this APK was not rebuilt from reviewed main."
     },
     {
       "platform": "windows",
       "status": "stale",
       "version": "25.0.2",
-      "sourceSha": null,
+      "sourceSha": "038b3104e659be4c3914bd5ecd763e6141b98f16",
       "builtAt": null,
       "artifact": {
         "kind": "github-release",
         "filename": "VoiceIsolate-Pro-25.0.2-win-x64.exe",
-        "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe",
-        "sha256": "6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621",
-        "sizeBytes": 144628415
+        "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-25.0.2-win-x64.exe",
+        "sha256": "926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8",
+        "sizeBytes": 144667075
       },
       "verification": {
         "method": "github-release-asset",
-        "evidence": "GitHub release v25.0.2 reports the Windows asset uploaded 2026-08-24T17:20:11Z, updated 2026-08-24T17:20:22Z, size 144628415 bytes, digest sha256:6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621."
+        "evidence": "GitHub release v25.0.3 reports the Windows asset updated 2026-09-09T23:31:43Z, size 144667075 bytes, digest sha256:926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8."
       },
-      "notes": "Published Windows installer is valid, but it predates current main and its source commit was not independently proven by immutable build metadata during this refresh."
+      "notes": "Published Windows installer is a valid v25.0.3 download. Its filename still embeds package version 25.0.2. Release notes name source commit 038b3104e659be4c3914bd5ecd763e6141b98f16, which is not an embedded binary manifest. That commit is an ancestor of reviewed main, and this installer was not rebuilt from reviewed main."
     }
   ],
   "claims": {
     "sameBuildAcrossWebAndroidWindowsMainAndTag": false,
     "synchronizedPublishedArtifacts": false,
-    "tagMoved": false
+    "tagMoved": false,
+    "allowPackageFilenameOnNewerTag": true
   },
   "rebuildRequired": {
     "android": true,
     "windows": true,
     "commandsNotPerformed": [
       "pnpm android:build:win",
-      "pnpm build:electron",
-      "gh release upload v25.0.2 <rebuilt-assets> --clobber"
+      "pnpm build:electron"
     ]
   }
 }
