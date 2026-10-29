@@ -7,10 +7,10 @@ This document describes what is **published**, what is **current in source**, an
 | Source SHA (this build) | `69b317ce0abb85b5164ccc359395248995e929a5` |
 | Package version | `25.0.2` / native build number `250002` |
 | Latest GitHub release | [`v25.0.2`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2) |
-| Artifacts built (UTC) | `2026-09-09` |
-| Android asset | `VoiceIsolate-Pro-android-debug.apk` · 101,650,376 bytes · SHA-256 `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626` |
-| Windows asset | `VoiceIsolate-Pro-25.0.2-win-x64.exe` · 144,667,075 bytes · SHA-256 `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8` |
-| Sync verdict | **Native artifacts rebuilt from merged main. All latency, processing, and platform-sync fixes are included. Web + Android + Electron in sync.** |
+| Artifacts built (UTC) | `2026-08-25` |
+| Android asset | `VoiceIsolate-Pro-android-debug.apk` · 101,365,796 bytes · SHA-256 `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b` |
+| Windows asset | `VoiceIsolate-Pro-25.0.2-win-x64.exe` · 144,628,415 bytes · SHA-256 `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621` |
+| Sync verdict | **Published release `v25.0.2`. These artifacts predate current `main`; do not claim they contain post-publish fixes without rebuilding and updating provenance.** |
 
 Machine-readable evidence: [`release-provenance.json`](release-provenance.json).
 

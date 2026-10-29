@@ -50,14 +50,6 @@ export async function pickAudioFile() {
 }
 
 /**
- * Save a blob via the native save dialog (Electron main process).
- * @param {Blob} blob
- * @param {object} opts
- * @param {string} opts.defaultName
- * @param {{ name: string, extensions: string[] }[]} [opts.filters]
- * @returns {Promise<{ canceled: boolean, filePath?: string }>}
- */
-/**
  * Local SAM-Audio worker controls (Electron main process only).
  * @returns {Promise<object|null>}
  */
@@ -83,6 +75,14 @@ export async function samWorkerStop() {
   return globalThis.vipDesktop.samWorkerStop();
 }
 
+/**
+ * Save a blob via the native save dialog (Electron main process).
+ * @param {Blob} blob
+ * @param {object} [opts]
+ * @param {string} [opts.defaultName]
+ * @param {{ name: string, extensions: string[] }[]} [opts.filters]
+ * @returns {Promise<{ canceled: boolean, filePath?: string }>}
+ */
 export async function saveExportBlob(blob, opts) {
   if (!isDesktopShell()) {
     return { canceled: true };
