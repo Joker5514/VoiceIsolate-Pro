@@ -216,6 +216,8 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/core/ring-buffer-constants.js` | 1 | Codified `QUANTUM`, `FFT_SIZE_LIVE`, `FFT_SIZE_CREATOR`, `HOP_SIZE`, `QUANTA_PER_HOP`, enrollment defaults. |
 | `src/core/OverlapAddAccumulator.js` | 1 | `QuantumHopBridge` + `OverlapAddReconstructor` — symmetric Hann OLA per blueprint §III. |
 | `src/core/DesktopBridge.js` | 1 | Thin `window.vipDesktop` adapter — native open/save IPC (no Node in renderer). |
+| `src/core/HeroMotionPolicy.js` | 1 | Pure Landing hero motion gate: `selectHeroMotion` opt-outs (reduced motion, Save-Data, 2G, offline) → still; `PerformanceTier` HIGH drift + bloom, BALANCED 30 fps no bloom, CONSTRAINED still. `selectHeroRenderer` picks the 3D render (WebGL2, not software GL) with DPR cap 1.75 HIGH / 1.25 BALANCED and narrow, particle counts and HIGH-only glow; `heroPixelRatio`, `HERO_ENTRANCE`. |
+| `src/core/HeroSculptureGeometry.js` | 1 | Pure Signal Glass L2 geometry (helix, lens, ribbon curves, tag anchors, `signalGlassEase`) shared by the SVG generator and the 3D render. |
 | `src/core/BufferPool.js` | 1 | Pre-allocated `Float32Array` pool (128 / 2048 / 4096) — zero-GC DSP. |
 | `src/core/ModelManifest.js` | 1 | Canonical model metadata: URLs, sizes, SHA-256 integrity hashes, I/O specs. |
 | `src/core/diarization.js` | 1 | Pure speaker diarization (frame features + k-means) run once per file on the clean stem. |
@@ -237,6 +239,8 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/presentation/ExportControls.js` | 4 | Export format/quality picker; wires DOM events to `ExportOrchestrator`. |
 | `src/presentation/IsolationModeSelector.js` | 4 | Isolation-mode dropdown (Voice Only / Maximum Isolation / etc.) that feeds `ProcessingOrchestrator`. |
 | `src/presentation/LandingVisualizer.js` | 4 | Canvas 2D waveform overview + live spectrum analyzer; reads PlaybackMixer analyser. |
+| `src/presentation/HeroSculpture.js` | 4 | Landing hero sculpture drift (Signal Glass L2): two compositor transforms per rAF, paused when hidden/offscreen. The still is static SVG generated into `public/index.html` by `scripts/generate-hero-sculpture.mjs`. When allowed, lazy-loads `HeroSculpture3D.js` and hands over after its first frame; failure or context loss returns to the SVG. Never touches audio. |
+| `src/presentation/HeroSculpture3D.js` | 4 | Landing hero WebGL render on vendored `/lib/three.module.min.js`: shader tube ribbons, smoked-glass lens shader, DOF dust, HIGH glow shells, ACES + sRGB, 1.4 s entrance that wipes the SVG still, tags re-anchored to projected points, paused hidden/offscreen, disposed on stop. |
 
 Rules:
 - **ESM everywhere** in `src/` (`import`/`export`). Tests use CommonJS (`require`).
