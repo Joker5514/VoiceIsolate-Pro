@@ -216,7 +216,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/core/ring-buffer-constants.js` | 1 | Codified `QUANTUM`, `FFT_SIZE_LIVE`, `FFT_SIZE_CREATOR`, `HOP_SIZE`, `QUANTA_PER_HOP`, enrollment defaults. |
 | `src/core/OverlapAddAccumulator.js` | 1 | `QuantumHopBridge` + `OverlapAddReconstructor` — symmetric Hann OLA per blueprint §III. |
 | `src/core/DesktopBridge.js` | 1 | Thin `window.vipDesktop` adapter — native open/save IPC (no Node in renderer). |
-| `src/core/HeroMotionPolicy.js` | 1 | Pure Landing hero motion gate: `shouldLoadHeroVideo` opt-outs (reduced motion, Save-Data, 2G, offline) → still; `PerformanceTier` HIGH drift + bloom, BALANCED 30 fps no bloom, CONSTRAINED still. `selectHeroRenderer` picks the 3D render (WebGL2, not software GL) with DPR cap 1.75 HIGH / 1.25 BALANCED and narrow, particle counts and HIGH-only glow; `heroPixelRatio`, `HERO_ENTRANCE`. |
+| `src/core/HeroMotionPolicy.js` | 1 | Pure Landing hero motion gate: `selectHeroMotion` opt-outs (reduced motion, Save-Data, 2G, offline) → still; `PerformanceTier` HIGH drift + bloom, BALANCED 30 fps no bloom, CONSTRAINED still. `selectHeroRenderer` picks the 3D render (WebGL2, not software GL) with DPR cap 1.75 HIGH / 1.25 BALANCED and narrow, particle counts and HIGH-only glow; `heroPixelRatio`, `HERO_ENTRANCE`. |
 | `src/core/HeroSculptureGeometry.js` | 1 | Pure Signal Glass L2 geometry (helix, lens, ribbon curves, tag anchors, `signalGlassEase`) shared by the SVG generator and the 3D render. |
 | `src/core/BufferPool.js` | 1 | Pre-allocated `Float32Array` pool (128 / 2048 / 4096) — zero-GC DSP. |
 | `src/core/ModelManifest.js` | 1 | Canonical model metadata: URLs, sizes, SHA-256 integrity hashes, I/O specs. |
