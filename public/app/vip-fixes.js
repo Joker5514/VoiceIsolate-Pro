@@ -598,6 +598,8 @@
         log('A/B switched instantly to', next);
         return;
       }
+      const wasPlaying = !!app._fixPlayState?.isPlaying;
+      const pos = (typeof app._getTransportPosition === 'function')
         ? app._getTransportPosition()
         : (app.playOffset || 0);
       app.abMode = next;
