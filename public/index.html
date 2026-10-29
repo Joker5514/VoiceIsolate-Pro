@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="/premium-refresh.css">
   <link rel="stylesheet" href="/premium-signal.css">
   <link rel="stylesheet" href="/landing-v3.css">
+  <link rel="stylesheet" href="/src/ui/motion/motion.css">
 </head>
 <body class="ps-shell v3">
   <a class="ps-skip-link" href="#workspace">Skip to audio workspace</a>
@@ -114,47 +115,19 @@
       <li class="vip-facts__item"><strong>0 bytes</strong><span>audio sent to our servers</span></li>
     </ul>
 
-    <div class="v3-block">
-      <div class="v3-block__head">
-        <h2 class="v3-h2">Simple on the surface.<br><em>Strict underneath.</em></h2>
-        <p class="v3-sub">One forward STFT. In-place spectral work. One inverse STFT. Audio is decoded locally; batch ML never runs from a slider.</p>
-      </div>
-      <ol class="v3-pipeline" aria-label="Processing pipeline">
-        <li><span>01</span><h3>Input</h3><p>Upload-only file pick. No microphone.</p></li>
-        <li><span>02</span><h3>Decode / resample</h3><p>Local decode to 48 kHz buffers.</p></li>
-        <li class="v3-pipeline__key"><span>03</span><h3>Stem separation</h3><p>Batch ONNX in a worker (BS-RNN default).</p></li>
-        <li><span>04</span><h3>Spectral processing</h3><p>Fused masks on one STFT representation.</p></li>
-        <li><span>05</span><h3>Reconstruction</h3><p>One inverse STFT. No extra phase passes.</p></li>
-        <li><span>06</span><h3>Live-Mix</h3><p>Zero-ML playback graph: gains, EQ, gate, de-esser.</p></li>
-        <li><span>07</span><h3>Export</h3><p>Local encode. Optional user-initiated Drive save.</p></li>
+    <section class="v3-flow" id="howItWorks" aria-labelledby="flowLabel">
+      <h2 id="flowLabel" class="v3-label">How it works · five steps, in order</h2>
+      <ol class="v3-flow__steps">
+        <li><a href="#uploadPanel"><span class="v3-flow__num">01</span><i class="v3-flow__art" data-vip-illustration="pipeline-input" aria-hidden="true"></i><strong>Import</strong><small>Drop or choose an audio or video file. It is decoded on this device.</small></a></li>
+        <li><a href="#modelSelect"><span class="v3-flow__num">02</span><i class="v3-flow__art" data-vip-illustration="pipeline-separate" aria-hidden="true"></i><strong>Choose outcome</strong><small>Clean Speech, Maximum Isolation or Preserve Ambience.</small></a></li>
+        <li><a href="#processBtn"><span class="v3-flow__num">03</span><i class="v3-flow__art" data-vip-illustration="pipeline-spectral" aria-hidden="true"></i><strong>Process locally</strong><small>One Process splits the voice and the background.</small></a></li>
+        <li><a href="#compareRow"><span class="v3-flow__num">04</span><i class="v3-flow__art" data-vip-illustration="pipeline-livemix" aria-hidden="true"></i><strong>Compare A/B</strong><small>Switch Raw, Processed and Removed instantly; the playhead stays put.</small></a></li>
+        <li><a href="#exportRow"><span class="v3-flow__num">05</span><i class="v3-flow__art" data-vip-illustration="pipeline-export" aria-hidden="true"></i><strong>Adjust and export</strong><small>Set the mix, then download the result.</small></a></li>
       </ol>
-    </div>
-
-    <div class="v3-principles">
-      <div><h3>Batch ML</h3><p>Explicit Process / Separate. ONNX in MLWorker. Sliders do not retrigger it.</p></div>
-      <div><h3>Live-Mix</h3><p>AudioParam + Gate/De-Esser worklets on already-separated stems. Immediate, reversible.</p></div>
-      <div><h3>Privacy</h3><p>No cloud inference. Optional Drive I/O is user-initiated file transfer only.</p></div>
-    </div>
-
-    <section class="vip-use-cases v3-uses" aria-labelledby="useCasesLabel">
-      <h2 id="useCasesLabel" class="v3-label">Built for</h2>
-      <article class="vip-use-case">
-        <h3 class="vip-use-case__title">Meetings</h3>
-        <p class="vip-use-case__desc">Isolate voices from background noise, hum, and cross-talk. Automatic speaker detection with confidence.</p>
-      </article>
-      <article class="vip-use-case">
-        <h3 class="vip-use-case__title">Field Recording</h3>
-        <p class="vip-use-case__desc">Recover whispers and faint speech in noisy environments. Works offline in the field once it has loaded.</p>
-      </article>
-      <article class="vip-use-case">
-        <h3 class="vip-use-case__title">Investigation</h3>
-        <p class="vip-use-case__desc">Forensic inspection with spectrogram time-frequency selection and Removed (Delta) audition.</p>
-      </article>
-      <article class="vip-use-case">
-        <h3 class="vip-use-case__title">Content Creation</h3>
-        <p class="vip-use-case__desc">Clean voice for podcasts and video. Preserve raw as immutable, process non-destructively.</p>
-      </article>
     </section>
+
+
+
   </section>
 
   <!-- 02 · Stems -->
@@ -174,6 +147,7 @@
         <section class="panel vip-card v3-card v3-upload" id="uploadPanel" aria-labelledby="uploadLabel" data-state="empty">
           <h2 id="uploadLabel" class="v3-label">Import</h2>
           <div id="uploadZone" class="upload-zone v3-drop" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
+            <span class="vip-drop-art" data-vip-illustration="drop" aria-hidden="true"></span>
             <svg class="upload-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <p class="upload-title">Drop audio or video here</p>
             <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
@@ -407,6 +381,35 @@
     </div>
   </section>
 
+  <!-- Under the hood: the processing pipeline behind steps 03-05 -->
+  <section class="v3-section v3-section--pipeline" id="pipeline" aria-labelledby="pipelineTitle">
+    <div class="v3-wrap">
+    <div class="v3-block">
+      <div class="v3-block__head">
+        <h2 class="v3-h2" id="pipelineTitle">Simple on the surface.<br><em>Strict underneath.</em></h2>
+        <p class="v3-sub">One forward STFT. In-place spectral work. One inverse STFT. Audio is decoded locally; batch ML never runs from a slider.</p>
+      </div>
+      <figure class="v3-split-figure" data-vip-illustration="split">
+        <figcaption>Illustration: one recording passes the separation step and leaves as two stems, a clean voice and the background. You mix those two.</figcaption>
+      </figure>
+      <ol class="v3-pipeline" aria-label="Processing pipeline">
+        <li><span>01</span><i class="v3-pipeline__art" data-vip-illustration="pipeline-input" aria-hidden="true"></i><h3>Input</h3><p>Upload-only file pick. No microphone.</p></li>
+        <li><span>02</span><i class="v3-pipeline__art" data-vip-illustration="pipeline-decode" aria-hidden="true"></i><h3>Decode / resample</h3><p>Local decode to 48 kHz buffers.</p></li>
+        <li class="v3-pipeline__key"><span>03</span><i class="v3-pipeline__art" data-vip-illustration="pipeline-separate" aria-hidden="true"></i><h3>Stem separation</h3><p>Batch ONNX in a worker (BS-RNN default).</p></li>
+        <li><span>04</span><i class="v3-pipeline__art" data-vip-illustration="pipeline-spectral" aria-hidden="true"></i><h3>Spectral processing</h3><p>Fused masks on one STFT representation.</p></li>
+        <li><span>05</span><i class="v3-pipeline__art" data-vip-illustration="pipeline-reconstruct" aria-hidden="true"></i><h3>Reconstruction</h3><p>One inverse STFT. No extra phase passes.</p></li>
+        <li><span>06</span><i class="v3-pipeline__art" data-vip-illustration="pipeline-livemix" aria-hidden="true"></i><h3>Live-Mix</h3><p>Zero-ML playback graph: gains, EQ, gate, de-esser.</p></li>
+        <li><span>07</span><i class="v3-pipeline__art" data-vip-illustration="pipeline-export" aria-hidden="true"></i><h3>Export</h3><p>Local encode. Optional user-initiated Drive save.</p></li>
+      </ol>
+    </div>
+    <div class="v3-principles">
+      <div><h3>Batch ML</h3><p>Explicit Process / Separate. ONNX in MLWorker. Sliders do not retrigger it.</p></div>
+      <div><h3>Live-Mix</h3><p>AudioParam + Gate/De-Esser worklets on already-separated stems. Immediate, reversible.</p></div>
+      <div><h3>Privacy</h3><p>No cloud inference. Optional Drive I/O is user-initiated file transfer only.</p></div>
+    </div>
+    </div>
+  </section>
+
   <!-- 03 · Engineer -->
   <section class="v3-section" id="engineer" aria-labelledby="engineerTitle">
     <div class="v3-wrap">
@@ -452,6 +455,31 @@
           <a class="ps-btn ps-btn--ghost" href="/app/?tier=forensic">Open Forensic</a>
         </article>
       </section>
+    </div>
+  </section>
+
+  <!-- Built for -->
+  <section class="v3-section v3-section--uses" aria-label="Who it is for">
+    <div class="v3-wrap">
+    <section class="vip-use-cases v3-uses" aria-labelledby="useCasesLabel">
+      <h2 id="useCasesLabel" class="v3-label">Built for</h2>
+      <article class="vip-use-case">
+        <h3 class="vip-use-case__title">Meetings</h3>
+        <p class="vip-use-case__desc">Isolate voices from background noise, hum, and cross-talk. Automatic speaker detection with confidence.</p>
+      </article>
+      <article class="vip-use-case">
+        <h3 class="vip-use-case__title">Field Recording</h3>
+        <p class="vip-use-case__desc">Recover whispers and faint speech in noisy environments. Works offline in the field once it has loaded.</p>
+      </article>
+      <article class="vip-use-case">
+        <h3 class="vip-use-case__title">Investigation</h3>
+        <p class="vip-use-case__desc">Forensic inspection with spectrogram time-frequency selection and Removed (Delta) audition.</p>
+      </article>
+      <article class="vip-use-case">
+        <h3 class="vip-use-case__title">Content Creation</h3>
+        <p class="vip-use-case__desc">Clean voice for podcasts and video. Preserve raw as immutable, process non-destructively.</p>
+      </article>
+    </section>
     </div>
   </section>
 

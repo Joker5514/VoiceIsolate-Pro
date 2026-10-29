@@ -191,7 +191,7 @@ export class WaveformLayer {
       ctx.fillStyle = Tokens.text.ghost;
       ctx.font = `12px ${Tokens.font.mono}`;
       ctx.textAlign = 'center';
-      ctx.fillText('No audio — import or record to begin', width / 2, height / 2);
+      ctx.fillText('No audio — import a file to begin', width / 2, height / 2);
       return;
     }
 

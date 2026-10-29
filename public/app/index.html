@@ -97,6 +97,7 @@
   <!-- Studio console skin (layout/visual only — preserves IDs) -->
   <link rel="stylesheet" href="engineer-console.css" />
   <link rel="stylesheet" href="workstation-premium.css" />
+  <link rel="stylesheet" href="/src/ui/motion/motion.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -972,6 +973,12 @@
     /* debug-menu.js — live system debug panel (` key to toggle) */
     import('./debug-menu.js').catch(err => {
       console.warn('[VIP] debug-menu.js not loaded:', err);
+    });
+    /* Shared motion layer + empty-state illustration (decorative, src/presentation) */
+    import('/src/presentation/MotionController.js').then(({ initMotion }) => {
+      initMotion({ page: 'engineer' });
+    }).catch(err => {
+      console.warn('[VIP] motion layer not loaded (non-fatal):', err);
     });
     /* premium-workspace.js — unified signal-first UX (Issue #820) */
     import('./premium-workspace.js').catch(err => {

@@ -11,6 +11,30 @@
 
 import { Tokens } from '../../tokens/design-tokens.js';
 
+/** Meter release (Signal Glass motion table): attack is instant, release eases over 300 ms. */
+export const METER_RELEASE_MS = 300;
+
+/**
+ * Compositor-only meter fill: scaleX instead of width, so a meter update
+ * never triggers layout. Rising values jump (attack 0); falling values ease.
+ */
+export function meterFillStyle(prevFrac, nextFrac) {
+  const next = Math.max(0, Math.min(1, Number(nextFrac) || 0));
+  const falling = Number.isFinite(prevFrac) && next < prevFrac;
+  return {
+    transform: `scaleX(${next.toFixed(4)})`,
+    transition: falling ? `transform ${METER_RELEASE_MS}ms var(--vip-motion-ease, cubic-bezier(0.16, 1, 0.3, 1))` : 'none',
+    frac: next,
+  };
+}
+
+function setMeterFill(els, frac) {
+  const st = meterFillStyle(els.frac, frac);
+  els.fillEl.style.transition = st.transition;
+  els.fillEl.style.transform = st.transform;
+  els.frac = st.frac;
+}
+
 export class LiveMeters {
   constructor(container, options = {}) {
     this.container = container;
@@ -93,7 +117,7 @@ export class LiveMeters {
         <span data-value style="font:700 12px/1 ${Tokens.font.mono}; color:${Tokens.text.primary};">--</span>
       </div>
       <div style="position:relative; height:6px; background:${Tokens.surface.overlay}; border-radius:999px; overflow:hidden;">
-        <div data-fill style="position:absolute; inset:0 auto 0 0; width:0%; background:${color}; border-radius:999px; transition:width 0.2s ease;"></div>
+        <div data-fill style="position:absolute; inset:0; transform-origin:0 50%; transform:scaleX(0); background:${color}; border-radius:999px;"></div>
       </div>
     `;
     return {
@@ -160,12 +184,12 @@ export class LiveMeters {
     if (!els) return;
     if (value == null || isNaN(value)) {
       els.valueEl.textContent = '--';
-      els.fillEl.style.width = '0%';
+      setMeterFill(els, 0);
       return;
     }
     const clamped = Math.max(min, Math.min(max, value));
     const pct = ((clamped - min) / (max - min)) * 100;
-    els.fillEl.style.width = `${pct}%`;
+    setMeterFill(els, pct / 100);
     if (isDb) {
       els.valueEl.textContent = `${value.toFixed(1)}${unit}`;
     } else {
