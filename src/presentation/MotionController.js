@@ -409,7 +409,7 @@ function wireQuickClean(doc, win, getWork) {
 }
 
 const ENGINEER_EMPTY_COPY = {
-  title: 'Import a recording to begin',
+  title: 'Import a file to begin',
   sub: 'After Process, the Clean Voice and Background stems appear here beside the original. Everything runs on this device.',
 };
 
