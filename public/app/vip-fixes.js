@@ -592,12 +592,12 @@
       // stems, so switching is a short crossfade — no reload, no restart.
       if (typeof app._switchABInstant === 'function' && app._switchABInstant(next)) {
         _setABLabel(next === 'processed' ? 'B' : 'A');
+        const btn = $('tpAB');
+        if (btn) btn.classList.toggle('active', next === 'processed');
         try { app.updateAudioMetrics?.(app._computeAudioMetricsState?.()); } catch (_) { /* metrics are cosmetic */ }
         log('A/B switched instantly to', next);
         return;
       }
-      const wasPlaying = !!app._fixPlayState?.isPlaying;
-      const pos = (typeof app._getTransportPosition === 'function')
         ? app._getTransportPosition()
         : (app.playOffset || 0);
       app.abMode = next;
