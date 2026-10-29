@@ -363,7 +363,15 @@ describe('the Engineer hero title is never painted over its own gradient', () =>
   /** Innermost `selector { body }` rules; enough for flat and @media rules. */
   const rules = (css) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .map(([, sel, body]) => ({ sel: sel.trim(), body }));
-  const targetsTitle = (sel) => sel.split(',').some((s) => /\.vip-hero-title\s*$/.test(s.trim()));
+  // The title is the subject when its class sits in the last compound selector,
+  // with or without pseudo-classes (`:hover`, `.is-x`). `::before`/`::after`
+  // style a separate box, not the title's own glyphs.
+  const targetsTitle = (sel) => sel.split(',').some((s) => {
+    const last = s.trim().split(/[\s>+~]+/).pop();
+    return /\.vip-hero-title(?![\w-])/.test(last) && !last.includes('::');
+  });
+  // The glyphs are painted with -webkit-text-fill-color when set, else color.
+  const ink = (body) => decl(body, '-webkit-text-fill-color') || decl(body, 'color');
   const decl = (body, prop) => {
     const m = body.match(new RegExp(`(?:^|[;\\s])${prop}\\s*:\\s*([^;]+)`, 'i'));
     return m ? m[1].trim() : null;
@@ -376,13 +384,25 @@ describe('the Engineer hero title is never painted over its own gradient', () =>
     expect(decl(base.body, 'color')).toBe('transparent');
   });
 
+  test('the matcher sees pseudo-class rules and solid text fills', () => {
+    expect(targetsTitle('body.eng-console .vip-hero-title')).toBe(true);
+    expect(targetsTitle('.vip-hero-title:hover')).toBe(true);
+    expect(targetsTitle('#vipHero .vip-hero-title.is-live:focus-visible')).toBe(true);
+    expect(targetsTitle('.vip-hero-title::before')).toBe(false);
+    expect(targetsTitle('.vip-hero-title em')).toBe(false);
+    expect(targetsTitle('.vip-hero-titles')).toBe(false);
+    expect(ink('color: transparent; -webkit-text-fill-color: #fff')).toBe('#fff');
+    expect(ink('color: #e8eef5; -webkit-text-fill-color: transparent')).toBe('transparent');
+    expect(ink('background-color: #000; color: #e8eef5')).toBe('#e8eef5');
+  });
+
   test('every rule that gives the title solid ink also drops the gradient', () => {
     const offenders = [];
     for (const [file, css] of appCss) {
       for (const r of rules(css)) {
         if (!targetsTitle(r.sel)) continue;
-        const color = decl(r.body, 'color');
-        if (!color || /^(transparent|inherit|unset)\b/i.test(color)) continue;
+        const fill = ink(r.body);
+        if (!fill || /^(transparent|inherit|unset)\b/i.test(fill)) continue;
         const bg = decl(r.body, 'background');
         const bgImage = decl(r.body, 'background-image');
         if (!/^none\b/i.test(bg || '') && !/^none\b/i.test(bgImage || '')) offenders.push(`${file}: ${r.sel}`);
