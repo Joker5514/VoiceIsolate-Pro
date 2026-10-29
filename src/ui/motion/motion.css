@@ -265,7 +265,11 @@ html[data-motion-work-ambient="on"] .vip-empty .vi-sweep { animation: viSweep 9s
 html[data-motion="still"] [data-vip-reveal] { opacity: 1 !important; translate: none !important; }
 html[data-motion="still"] .vip-line__inner { transform: none !important; opacity: 1 !important; filter: none !important; }
 html[data-motion="still"] .vi-svg *,
-html[data-motion-work="still"] :is(.vip-drop-art, .vip-empty) .vi-svg * { animation: none !important; }
+html[data-motion-work="still"] :is(.vip-drop-art, .vip-empty) .vi-svg *,
+html[data-motion-work="still"] .v3-drop .upload-svg,
+html[data-motion-work="still"] .v3-drop.drag-over,
+html[data-motion="still"] .v3-drop .upload-svg,
+html[data-motion="still"] .v3-drop.drag-over { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .vi-svg *, .vip-seg-ind, .vip-seg-ind i { animation: none !important; transition-duration: 0ms !important; }
   [data-vip-reveal] { opacity: 1 !important; translate: none !important; }
