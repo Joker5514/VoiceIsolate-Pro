@@ -606,74 +606,76 @@ const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * 5; // FLAG_SLOTS = 5
 // The inline definition here (rather than importing from a separate file) ensures
 // tests can parse this single source file to verify the complete slider contract.
 // ---------------------------------------------------------------------------
+// SLIDERS block: min/max/default must match ParameterSchema.js (canonical source of truth).
+// Ranges narrowed here were preventing preset values from reaching the DSP.
 const SLIDERS = {
   gate: [
-    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-42, step:1, unit:' dB', rt:true, desc:'Audio quieter than this level is treated as silence and turned down.', example:'Raise toward -30 dB to mute the room tone between sentences in a voice memo; lower toward -60 dB so soft speech is never cut off.' },
-    { id:'gateRange', label:'Range', min:-80, max:-5, val:-60, step:1, unit:' dB', rt:true, desc:'How far the gated (silent) sections are turned down.', example:'-60 dB fully silences gaps; set -12 dB to just soften background hiss instead of killing it, keeping a natural ambience.' },
-    { id:'gateAttack', label:'Attack', min:0, max:500, val:5, step:1, unit:' ms', rt:true, desc:'How fast the gate opens when speech starts.', example:'Keep at ~5 ms so the start of each word ("Hello") is not clipped; longer values soften hard consonants.' },
-    { id:'gateRelease', label:'Release', min:50, max:2000, val:200, step:10, unit:' ms', rt:true, desc:'How fast the gate closes after sound stops.', example:'~200 ms feels natural for speech; raise to 800 ms so the tail of a sung note or reverb is not chopped off abruptly.' },
-    { id:'gateHold', label:'Hold', min:0, max:500, val:50, step:1, unit:' ms', rt:true, desc:'Minimum time the gate stays open after a sound.', example:'Set ~80 ms to stop the gate "chattering" open and shut during a stuttered or breathy phrase.' },
-    { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:5, step:1, unit:' ms', rt:true, desc:'Delays the Live-Mix gate path so its detector can open before a sound arrives.', example:'5–10 ms preserves a plosive attack; higher values add the same amount of preview latency.' },
+    { id:'gateThresh', label:'Threshold', min:-120, max:0, val:-42, step:5, unit:' dB', rt:true, desc:'Audio quieter than this level is treated as silence and turned down.', example:'Raise toward -30 dB to mute the room tone between sentences in a voice memo; lower toward -60 dB so soft speech is never cut off.' },
+    { id:'gateRange', label:'Range', min:-120, max:0, val:-60, step:5, unit:' dB', rt:true, desc:'How far the gated (silent) sections are turned down.', example:'-60 dB fully silences gaps; set -12 dB to just soften background hiss instead of killing it, keeping a natural ambience.' },
+    { id:'gateAttack', label:'Attack', min:0, max:100, val:5, step:5, unit:' ms', rt:true, desc:'How fast the gate opens when speech starts.', example:'Keep at ~5 ms so the start of each word ("Hello") is not clipped; longer values soften hard consonants.' },
+    { id:'gateRelease', label:'Release', min:10, max:2000, val:200, step:50, unit:' ms', rt:true, desc:'How fast the gate closes after sound stops.', example:'~200 ms feels natural for speech; raise to 800 ms so the tail of a sung note or reverb is not chopped off abruptly.' },
+    { id:'gateHold', label:'Hold', min:0, max:500, val:20, step:25, unit:' ms', rt:true, desc:'Minimum time the gate stays open after a sound.', example:'Set ~80 ms to stop the gate "chattering" open and shut during a stuttered or breathy phrase.' },
+    { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:2, step:1, unit:' ms', rt:true, desc:'Delays the Live-Mix gate path so its detector can open before a sound arrives.', example:'5–10 ms preserves a plosive attack; higher values add the same amount of preview latency.' },
   ],
   nr: [
-    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:52, step:1, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~50–55% cleans steady hiss without high-pitch musical noise; push past 85% only for heavy noise (can sound underwater).' },
-    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:48, step:1, unit:'%', rt:false, desc:'How aggressively the noise floor is detected and learned.', example:'Raise to ~80% when noise is loud and constant (traffic); lower to ~40% to avoid mistaking quiet speech for noise.' },
-    { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:35, step:1, unit:'%', rt:false, desc:'Extra subtraction of the learned noise spectrum.', example:'Bump to ~70% to scrub tonal hum/whine; high values can add a "musical noise" warble, so back off if you hear bubbling.' },
-    { id:'nrFloor', label:'NR Floor', min:-96, max:-30, val:-68, step:1, unit:' dB', rt:false, desc:'How deep the quietest residual noise is allowed to drop.', example:'-68 dB is transparent; set -40 dB to leave a faint natural noise bed so dialogue does not sound unnaturally dead.' },
-    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:32, step:1, unit:'%', rt:false, desc:'Averages noise estimates over time to reduce artifacts.', example:'~30–40% reduces smear; high values blur consonants and can smear the voice.' },
+    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:52, step:5, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~50–55% cleans steady hiss without high-pitch musical noise; push past 85% only for heavy noise (can sound underwater).' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:48, step:5, unit:'%', rt:false, desc:'How aggressively the noise floor is detected and learned.', example:'Raise to ~80% when noise is loud and constant (traffic); lower to ~40% to avoid mistaking quiet speech for noise.' },
+    { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:35, step:5, unit:'%', rt:false, desc:'Extra subtraction of the learned noise spectrum.', example:'Bump to ~70% to scrub tonal hum/whine; high values can add a "musical noise" warble, so back off if you hear bubbling.' },
+    { id:'nrFloor', label:'NR Floor', min:-120, max:-20, val:-68, step:5, unit:' dB', rt:false, desc:'How deep the quietest residual noise is allowed to drop. -68 dB is transparent; presets may reach -80 dB for heavy extraction.', example:'-68 dB is transparent; set -40 dB to leave a faint natural noise bed so dialogue does not sound unnaturally dead.' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:32, step:5, unit:'%', rt:false, desc:'Averages noise estimates over time to reduce artifacts.', example:'~30–40% reduces smear; high values blur consonants and can smear the voice.' },
   ],
   eq: [
-    { id:'eqSub', label:'Sub', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Lowest rumble band (20–60 Hz).', example:'Cut -6 dB to remove desk thumps and AC rumble from a podcast; rarely boosted for voice.' },
-    { id:'eqBass', label:'Bass', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Bass weight band (60–200 Hz).', example:'Boost +2 dB for a fuller, radio-style male voice; cut -4 dB if speech sounds boomy or muddy.' },
-    { id:'eqWarmth', label:'Warmth', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Lower-midrange warmth (200–500 Hz).', example:'A small +1.5 dB adds chest/warmth; cut -3 dB to clear "boxy" muddiness on a close-mic recording.' },
-    { id:'eqBody', label:'Body', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Core body of the voice (500 Hz–1 kHz).', example:'Boost +1 dB for a thicker voice; cut to reduce a hollow, telephone-like tone.' },
-    { id:'eqLowMid', label:'Low Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Low-mid definition (1–2 kHz).', example:'Nudge +1 dB to help vowels cut through music; cut if the voice sounds nasal or honky.' },
-    { id:'eqMid', label:'Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Intelligibility band (2–4 kHz).', example:'Boost +2 dB so dialogue is easier to understand over background noise; too much sounds harsh.' },
-    { id:'eqPresence', label:'Presence', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Presence and forwardness (4–6 kHz).', example:'+1.5 dB makes a voice sound closer and more "in the room"; cut to tame an aggressive announcer.' },
-    { id:'eqClarity', label:'Clarity', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Detail and consonants (6–10 kHz).', example:'Boost +1 dB for crisp "s" and "t" sounds; cut if sibilance is harsh (pair with the de-esser).' },
-    { id:'eqAir', label:'Air', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Open "air" band (10–16 kHz).', example:'+1 dB adds an expensive, airy sheen to vocals; cut on noisy phone recordings to hide hiss.' },
-    { id:'eqBrill', label:'Brilliance', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Top-end sparkle (16–20 kHz).', example:'A gentle +0.5 dB adds shimmer to music vocals; usually left flat or cut for spoken word.' },
+    { id:'eqSub', label:'Sub', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Lowest rumble band (20–60 Hz).', example:'Cut -6 dB to remove desk thumps and AC rumble from a podcast; rarely boosted for voice.' },
+    { id:'eqBass', label:'Bass', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Bass weight band (60–200 Hz).', example:'Boost +2 dB for a fuller, radio-style male voice; cut -4 dB if speech sounds boomy or muddy.' },
+    { id:'eqWarmth', label:'Warmth', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Lower-midrange warmth (200–500 Hz).', example:'A small +1.5 dB adds chest/warmth; cut -3 dB to clear "boxy" muddiness on a close-mic recording.' },
+    { id:'eqBody', label:'Body', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Core body of the voice (500 Hz–1 kHz).', example:'Boost +1 dB for a thicker voice; cut to reduce a hollow, telephone-like tone.' },
+    { id:'eqLowMid', label:'Low Mid', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Low-mid definition (1–2 kHz).', example:'Nudge +1 dB to help vowels cut through music; cut if the voice sounds nasal or honky.' },
+    { id:'eqMid', label:'Mid', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Intelligibility band (2–4 kHz).', example:'Boost +2 dB so dialogue is easier to understand over background noise; too much sounds harsh.' },
+    { id:'eqPresence', label:'Presence', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Presence and forwardness (4–6 kHz).', example:'+1.5 dB makes a voice sound closer and more "in the room"; cut to tame an aggressive announcer.' },
+    { id:'eqClarity', label:'Clarity', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Detail and consonants (6–10 kHz).', example:'Boost +1 dB for crisp "s" and "t" sounds; cut if sibilance is harsh (pair with the de-esser).' },
+    { id:'eqAir', label:'Air', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Open "air" band (10–16 kHz).', example:'+1 dB adds an expensive, airy sheen to vocals; cut on noisy phone recordings to hide hiss.' },
+    { id:'eqBrill', label:'Brilliance', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Top-end sparkle (16–20 kHz).', example:'A gentle +0.5 dB adds shimmer to music vocals; usually left flat or cut for spoken word.' },
   ],
   dyn: [
     { id:'compThresh', label:'Threshold', min:-60, max:0, val:-24, step:1, unit:' dB', rt:true, desc:'Level where the compressor starts evening out volume.', example:'Set ~-24 dB so loud and soft words sit closer together; lower it to compress more of the performance.' },
     { id:'compRatio', label:'Ratio', min:1, max:20, val:4, step:0.5, unit:':1', rt:true, desc:'How hard volume above the threshold is reduced.', example:'4:1 is a natural podcast setting; 10:1+ acts almost like a limiter for very uneven phone audio.' },
-    { id:'compAttack', label:'Attack', min:1, max:200, val:10, step:1, unit:' ms', rt:true, desc:'How quickly compression clamps down on a loud peak.', example:'~10 ms keeps speech punchy; very fast (1 ms) squashes transients for a denser, controlled sound.' },
-    { id:'compRelease', label:'Release', min:10, max:1000, val:150, step:10, unit:' ms', rt:true, desc:'How quickly compression lets go after a peak.', example:'~150 ms breathes naturally with speech; too short can cause an audible pumping on sustained notes.' },
-    { id:'compKnee', label:'Knee', min:0, max:30, val:6, step:1, unit:' dB', rt:true, desc:'How gradually compression eases in around the threshold.', example:'A soft 6 dB knee is gentle and transparent for voice; 0 dB (hard knee) is more obvious and aggressive.' },
-    { id:'compMakeup', label:'Makeup', min:0, max:30, val:0, step:0.5, unit:' dB', rt:true, desc:'Volume added back after compression lowers the level.', example:'Add +3 dB so the compressed voice is as loud as before but more consistent and present.' },
-    { id:'limThresh', label:'Lim Thresh', min:-12, max:0, val:-1, step:0.5, unit:' dB', rt:true, desc:'Hard ceiling that output peaks can never exceed.', example:'-1 dB prevents clipping/distortion on export; lower to -3 dB for extra safety headroom before encoding.' },
-    { id:'limRelease', label:'Lim Release', min:10, max:500, val:50, step:5, unit:' ms', rt:true, desc:'How fast the limiter recovers after catching a peak.', example:'~50 ms is clean for speech; longer values sound smoother on music but can dull transients.' },
+    { id:'compAttack', label:'Attack', min:0.1, max:200, val:10, step:5, unit:' ms', rt:true, desc:'How quickly compression clamps down on a loud peak.', example:'~10 ms keeps speech punchy; very fast (1 ms) squashes transients for a denser, controlled sound.' },
+    { id:'compRelease', label:'Release', min:10, max:2000, val:150, step:50, unit:' ms', rt:true, desc:'How quickly compression lets go after a peak.', example:'~150 ms breathes naturally with speech; too short can cause an audible pumping on sustained notes.' },
+    { id:'compKnee', label:'Knee', min:0, max:24, val:6, step:1, unit:' dB', rt:true, desc:'How gradually compression eases in around the threshold.', example:'A soft 6 dB knee is gentle and transparent for voice; 0 dB (hard knee) is more obvious and aggressive.' },
+    { id:'compMakeup', label:'Makeup', min:-12, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Volume added back after compression lowers the level. Negative values reduce the post-compressor level.', example:'Add +3 dB so the compressed voice is as loud as before but more consistent and present.' },
+    { id:'limThresh', label:'Lim Thresh', min:-24, max:0, val:-1, step:1, unit:' dB', rt:true, desc:'Hard ceiling that output peaks can never exceed.', example:'-1 dB prevents clipping/distortion on export; lower to -3 dB for extra safety headroom before encoding.' },
+    { id:'limRelease', label:'Lim Release', min:1, max:500, val:50, step:10, unit:' ms', rt:true, desc:'How fast the limiter recovers after catching a peak.', example:'~50 ms is clean for speech; longer values sound smoother on music but can dull transients.' },
   ],
   spec: [
-    { id:'hpFreq', label:'HP Freq', min:20, max:2000, val:80, step:1, unit:' Hz', rt:true, desc:'Removes everything below this frequency (a high-pass filter).', example:'80 Hz strips rumble from speech; raise to 300 Hz for a thin telephone/walkie-talkie effect.' },
-    { id:'hpQ', label:'HP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Sharpness of the high-pass cutoff.', example:'0.7 is a smooth, natural roll-off; higher Q makes the cut steeper with a slight bump at the corner.' },
-    { id:'lpFreq', label:'LP Freq', min:4000, max:20000, val:18000, step:100, unit:' Hz', rt:true, desc:'Removes everything above this frequency (a low-pass filter).', example:'18 kHz keeps it natural; drop to 4 kHz to hide hiss or fake an old-radio sound.' },
-    { id:'lpQ', label:'LP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Sharpness of the low-pass cutoff.', example:'0.7 is gentle; higher Q steepens the cut and adds a resonant edge near the corner frequency.' },
-    { id:'deEssFreq', label:'De-ess Freq', min:2000, max:12000, val:6500, step:100, unit:' Hz', rt:true, desc:'Center of the harsh "ess/sh" sibilance the de-esser targets.', example:'~6–7 kHz for most voices; sweep to 7–8 kHz for a bright/sharp speaker whose "s" sounds pierce.' },
-    { id:'deEssAmt', label:'De-ess Amt', min:0, max:30, val:5, step:1, unit:' dB', rt:true, desc:'How much the harsh "s" and "sh" sounds are tamed.', example:'~5 dB softens piercing sibilance and high-pitch residue without lisping; 0 leaves it untouched.' },
-    { id:'specTilt', label:'Spec Tilt', min:-6, max:6, val:0, step:0.5, unit:' dB', rt:true, desc:'Tilts overall tone darker (−) or brighter (+) in one move.', example:'+2 dB brightens a dull recording; -2 dB warms a harsh one without touching individual EQ bands.' },
-    { id:'formantShift', label:'Formant Shift', min:-6, max:6, val:0, step:0.5, unit:' st', rt:false, desc:'Shifts vocal character without changing pitch (semitones).', example:'-2 st makes a voice sound larger/deeper; +2 st sounds smaller/younger — useful for light disguise or tone.' },
+    { id:'hpFreq', label:'HP Freq', min:10, max:1000, val:80, step:10, unit:' Hz', rt:true, desc:'Removes everything below this frequency (a high-pass filter).', example:'80 Hz strips rumble from speech; raise to 300 Hz for a thin telephone/walkie-talkie effect.' },
+    { id:'hpQ', label:'HP Q', min:0.5, max:10, val:0.707, step:0.5, unit:'', rt:true, desc:'Sharpness of the high-pass cutoff.', example:'0.707 is a smooth, natural roll-off; higher Q makes the cut steeper with a slight bump at the corner.' },
+    { id:'lpFreq', label:'LP Freq', min:1000, max:20000, val:14000, step:500, unit:' Hz', rt:true, desc:'Removes everything above this frequency (a low-pass filter).', example:'14 kHz keeps it natural; drop to 3800 Hz for a telephone/radio band effect.' },
+    { id:'lpQ', label:'LP Q', min:0.5, max:10, val:0.707, step:0.5, unit:'', rt:true, desc:'Sharpness of the low-pass cutoff.', example:'0.707 is gentle; higher Q steepens the cut and adds a resonant edge near the corner frequency.' },
+    { id:'deEssFreq', label:'De-ess Freq', min:2000, max:16000, val:6500, step:500, unit:' Hz', rt:true, desc:'Center of the harsh "ess/sh" sibilance the de-esser targets.', example:'~6–7 kHz for most voices; sweep to 7–8 kHz for a bright/sharp speaker whose "s" sounds pierce.' },
+    { id:'deEssAmt', label:'De-ess Amt', min:0, max:24, val:5, step:1, unit:' dB', rt:true, desc:'How much the harsh "s" and "sh" sounds are tamed. 0–24 dB maps to 0–100% de-esser depth.', example:'~5 dB softens piercing sibilance and high-pitch residue without lisping; 0 leaves it untouched.' },
+    { id:'specTilt', label:'Spec Tilt', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Tilts overall tone darker (−) or brighter (+) in one move.', example:'+2 dB brightens a dull recording; -2 dB warms a harsh one without touching individual EQ bands.' },
+    { id:'formantShift', label:'Formant Shift', min:-12, max:12, val:0, step:1, unit:' st', rt:false, desc:'Shifts vocal character without changing pitch (semitones). Process-time only.', example:'-2 st makes a voice sound larger/deeper; +2 st sounds smaller/younger.' },
   ],
   adv: [
-    { id:'derevAmt', label:'Dereverb', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Reduces echo/room reverb so a voice sounds drier and closer.', example:'Set ~50% to pull a voice out of an echoey hall recording; too high can sound thin and gated.' },
-    { id:'derevDecay', label:'Rev Decay', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Tells dereverb how long the room\'s echo tail lasts.', example:'Raise toward 80% for a big, slow church/stairwell echo; lower for a small, fast bathroom slap.' },
-    { id:'harmRecov', label:'Harm Recovery', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Rebuilds harmonics lost to heavy noise reduction or low bitrate.', example:'Add ~40% to restore richness to a muffled phone-call or over-denoised voice.' },
-    { id:'harmOrder', label:'Harm Order', min:1, max:10, val:3, step:1, unit:'', rt:false, desc:'How many harmonic overtones are reconstructed.', example:'3 is natural for speech; higher orders add more brightness/edge to the recovered tone.' },
-    { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Widens or narrows the stereo image (mid/side).', example:'120% makes music vocals feel wider; 0% collapses to mono for a focused, centered voice.' },
-    { id:'phaseCorr', label:'Mono Correlation', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Blends stereo channels toward their shared midpoint for a more mono-stable result; it does not estimate time offset.', example:'Raise to ~40% when a stereo clip sounds hollow after mono summing.' },
+    { id:'derevAmt', label:'Dereverb', min:0, max:100, val:0, step:5, unit:'%', rt:false, desc:'Reduces echo/room reverb so a voice sounds drier and closer.', example:'Set ~50% to pull a voice out of an echoey hall recording; too high can sound thin and gated.' },
+    { id:'derevDecay', label:'Rev Decay', min:0, max:100, val:30, step:5, unit:'%', rt:false, desc:'Tells dereverb how long the room\'s echo tail lasts.', example:'Raise toward 80% for a big, slow church/stairwell echo; lower for a small, fast bathroom slap.' },
+    { id:'harmRecov', label:'Harm Recovery', min:0, max:100, val:0, step:5, unit:'%', rt:false, desc:'Rebuilds harmonics lost to heavy noise reduction or low bitrate.', example:'Add ~40% to restore richness to a muffled phone-call or over-denoised voice.' },
+    { id:'harmOrder', label:'Harm Order', min:1, max:8, val:3, step:1, unit:'', rt:false, desc:'How many harmonic overtones are reconstructed (1–8). The DSP processes up to 8.', example:'3 is natural for speech; higher orders add more brightness/edge to the recovered tone.' },
+    { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:10, unit:'%', rt:true, desc:'Widens or narrows the stereo image (mid/side).', example:'120% makes music vocals feel wider; 0% collapses to mono for a focused, centered voice.' },
+    { id:'phaseCorr', label:'Mono Correlation', min:0, max:100, val:0, step:5, unit:'%', rt:false, desc:'Blends stereo channels toward their shared midpoint for a more mono-stable result; it does not estimate time offset.', example:'Raise to ~40% when a stereo clip sounds hollow after mono summing.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:72, step:1, unit:'%', rt:true, desc:'Rebalances the retained clean stem in Live-Mix after one ML separation.', example:'~70% lifts a speaker out of background music without running ML again.' },
-    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:38, step:1, unit:'%', rt:true, desc:'Attenuates the retained residual stem in Live-Mix after one ML separation.', example:'Set ~60% to lower street noise and crowd chatter without another ML pass.' },
-    { id:'voiceFocusLo', label:'Focus Lo', min:80, max:500, val:100, step:10, unit:' Hz', rt:false, desc:'Bottom edge of the band kept as "voice".', example:'~100–120 Hz suits most voices; raise to 200 Hz to ignore deep rumble, lower for very deep male voices.' },
-    { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:8000, val:4200, step:100, unit:' Hz', rt:false, desc:'Top edge of the band kept as "voice" (lower blocks high-pitch residual).', example:'4200 Hz mimics telephone clarity; raise to 5000 Hz to keep crisp consonants and a more natural top.' },
-    { id:'crosstalkCancel', label:'Crosstalk', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Removes bleed of one stereo channel into the other.', example:'Use ~40% on a two-mic interview where each voice leaks into the opposite channel.' },
+    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:72, step:5, unit:'%', rt:true, desc:'Rebalances the retained clean stem in Live-Mix after one ML separation.', example:'~70% lifts a speaker out of background music without running ML again.' },
+    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:38, step:5, unit:'%', rt:true, desc:'Attenuates the retained residual stem in Live-Mix after one ML separation.', example:'Set ~60% to lower street noise and crowd chatter without another ML pass.' },
+    { id:'voiceFocusLo', label:'Focus Lo', min:50, max:1000, val:100, step:25, unit:' Hz', rt:false, desc:'Bottom edge of the band kept as "voice".', example:'~100–120 Hz suits most voices; raise to 200 Hz to ignore deep rumble, lower for very deep male voices.' },
+    { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:16000, val:4500, step:500, unit:' Hz', rt:false, desc:'Top edge of the band kept as "voice" (lower blocks high-pitch residual).', example:'4500 Hz covers intelligibility; raise to 5000 Hz to keep crisp consonants and a more natural top.' },
+    { id:'crosstalkCancel', label:'Crosstalk', min:0, max:100, val:0, step:5, unit:'%', rt:false, desc:'Reduces correlated bleed between stereo channels. Conservative without stereo evidence.', example:'Use ~40% on a two-mic interview where each voice leaks into the opposite channel.' },
   ],
   out: [
-    { id:'outGain', label:'Output Gain', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Final overall volume trim on the processed output.', example:'Add +3 dB if the cleaned voice is too quiet; the limiter still prevents clipping above its ceiling.' },
-    { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:1, unit:'%', rt:true, desc:'Blends the original (dry) with the processed (wet) signal.', example:'100% is fully processed; drop to 70% to keep a touch of the natural original and soften aggressive cleanup.' },
+    { id:'outGain', label:'Output Gain', min:-24, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Final output trim after all processing. Maximum +12 dB; the limiter ceiling prevents output clipping.', example:'Add +3 dB if the cleaned voice is too quiet; the limiter still prevents clipping above its ceiling.' },
+    { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:5, unit:'%', rt:true, desc:'Blends the original (dry) with the processed (wet) signal.', example:'100% is fully processed; drop to 70% to keep a touch of the natural original and soften aggressive cleanup.' },
     { id:'ditherAmt', label:'Dither', min:0, max:3, val:0, step:1, unit:'', rt:false, desc:'Adds encoder-only dither while quantising a 16-bit WAV: 0=off, 1=TPDF, 2=shaped, 3=high-pass.', example:'Leave at 0 for deterministic 16-bit exports; use 1 for a standard TPDF export.' },
-    { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Final stereo width applied at the very end of the chain.', example:'100% leaves width unchanged; 0% guarantees a centered mono output for phone playback.' },
+    { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:10, unit:'%', rt:true, desc:'Final stereo width applied at the very end of the chain.', example:'100% leaves width unchanged; 0% guarantees a centered mono output for phone playback.' },
   ],
   extreme: [
     { id:'whisperLift', label:'Whisper Lift Gain', min:0, max:40, val:0, step:1, unit:' dB', rt:false, desc:'Process-time post-mask lift where voice confidence is high. The 0–40 dB display maps to a bounded 0–12 dB internal gain.', example:'Start near 10 dB for a buried whisper; Process to hear the result.' },
@@ -3397,6 +3399,7 @@ class VoiceIsolatePro {
 
   _resetCollaborationState() {
     this._lastFullAnalysis = null;
+    this._analysisFileSeq = -1; // invalidate stale-result guard
     this._jointIsolationPlan = null;
     this._hunterEnvFromAnalysis = null;
     this._hunterSliderTargets = null;
@@ -4650,10 +4653,13 @@ class VoiceIsolatePro {
               el.value = val;
               el.dispatchEvent(new Event('input', { bubbles: true }));
             } else {
+              // No DOM element — clamp to slider spec before writing to avoid
+              // out-of-range values leaking into VIP_PARAMS / onSlider routing.
+              const clamped = clampToSlider(id, val);
               window.VIP_PARAMS = window.VIP_PARAMS || {};
-              window.VIP_PARAMS[id] = val;
-              this.params[id] = val;
-              this.onSlider(id, val);
+              window.VIP_PARAMS[id] = clamped;
+              this.params[id] = clamped;
+              this.onSlider(id, clamped);
             }
           }
         });
@@ -8130,6 +8136,8 @@ class VoiceIsolatePro {
 // (protect speech/whisper zones; suppress music, horns, barks, crowd, etc.).
 const WHISPER_HUNTER = {
   _running: false,
+  /** fileSeq captured at run-start; prevents stale-file writes on async resume. */
+  _runningFileSeq: -1,
 
   async run(audioBuffer, app) {
     app = app || window._vipApp;
@@ -8145,9 +8153,21 @@ const WHISPER_HUNTER = {
     }
 
     this._running = true;
+    // Capture file sequence so any await below can detect a file-change race.
+    const runFileSeq = app._fileSeq;
+    this._runningFileSeq = runFileSeq;
+    const staleFile = () => app._fileSeq !== runFileSeq;
+
+    // Guard: check for stale analysis from a previous file. If the stored analysis
+    // belongs to a different file, ignore it rather than driving preset selection
+    // with the wrong content map.
+    const analysisFileSeq = app._analysisFileSeq ?? -1;
+    const analysis = (analysisFileSeq === runFileSeq || analysisFileSeq === -1)
+      ? (app._lastFullAnalysis || null)
+      : null;
+
     const platformProfile = getWhisperPlatformProfile(detectWhisperPlatform());
     const detail = document.getElementById('pipeDetail');
-    const analysis = app._lastFullAnalysis || null;
     const hasJoint = !!(analysis && (analysis.jointPlan || app._jointIsolationPlan || app._preferAnalysisForHunter));
     if (detail) {
       detail.textContent = hasJoint
@@ -8155,115 +8175,154 @@ const WHISPER_HUNTER = {
         : `WhisperHunter analyzing (${platformProfile.platform})…`;
     }
 
+    // Outer safety timeout: if runPipeline or ML inference stalls completely,
+    // release _running so the button is not permanently stuck disabled.
+    // 120 s covers the longest supported file at forensic pass count 1.
+    let outerTimer = null;
+    const outerTimeout = new Promise((_, reject) => {
+      outerTimer = setTimeout(() => reject(new Error('WhisperHunter outer timeout')), 120000);
+    });
+
     try {
-      const hunter = ensureWhisperHunterInstance(4096, audioBuffer.sampleRate);
-      if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
-        hunter.reset();
-        // Prefer noise-only seeding when analyzer marked suppress zones (approximate: full seed still OK)
-        hunter.seedNoiseFromAudio(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
+      await Promise.race([this._runInternal(audioBuffer, app, analysis, envProfile => {
+        // Stale-file check at each async boundary — abort silently if file changed.
+        if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
+        return envProfile;
+      }, platformProfile, hasJoint, staleFile), outerTimeout]);
+    } catch (err) {
+      if (err?.code === 'STALE_FILE') {
+        structuredLog('info', '[WHISPER_HUNTER] aborted — file changed during analysis');
+        // Do not show an error to the user; the new file is loading.
+      } else {
+        throw err;
       }
+    } finally {
+      clearTimeout(outerTimer);
+      this._running = false;
+      this._runningFileSeq = -1;
+    }
+  },
 
-      let envProfile = this.analyzeEnvironment(audioBuffer);
-      // Fuse analyzer map when available (music / impulse / whisper / SNR)
-      if (analysis?.jointPlan?.jointEnv) {
-        envProfile = { ...envProfile, ...analysis.jointPlan.jointEnv, source: 'analyzer+hunter' };
-      } else if (app._hunterEnvFromAnalysis) {
-        envProfile = { ...envProfile, ...app._hunterEnvFromAnalysis, source: 'analyzer+hunter' };
-      }
+  async _runInternal(audioBuffer, app, analysis, _checkStale, platformProfile, hasJoint, staleFile) {
+    const hunter = ensureWhisperHunterInstance(4096, audioBuffer.sampleRate);
+    if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
+      hunter.reset();
+      // Prefer noise-only seeding when analyzer marked suppress zones (approximate: full seed still OK)
+      hunter.seedNoiseFromAudio(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
+    }
+    if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
 
-      // Prefer joint plan preset, then hunter heuristic
-      let basePreset = this.selectPreset(envProfile, analysis);
-      if (analysis?.jointPlan?.recommendedPreset) {
-        basePreset = analysis.jointPlan.recommendedPreset;
-      } else if (app._hunterSliderTargets?.preset) {
-        basePreset = app._hunterSliderTargets.preset;
-      }
-      // resolvePresetNameLocal maps retired names → current catalog
-      basePreset = resolvePresetNameLocal(basePreset);
+    let envProfile = this.analyzeEnvironment(audioBuffer);
+    // Fuse analyzer map when available (music / impulse / whisper / SNR)
+    if (analysis?.jointPlan?.jointEnv) {
+      envProfile = { ...envProfile, ...analysis.jointPlan.jointEnv, source: 'analyzer+hunter' };
+    } else if (app._hunterEnvFromAnalysis) {
+      envProfile = { ...envProfile, ...app._hunterEnvFromAnalysis, source: 'analyzer+hunter' };
+    }
+    if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
 
-      if (PRESETS[basePreset]) {
-        app.applyPreset(basePreset);
-        await app.morphSlidersTo(
-          Object.fromEntries(
-            Object.entries(PRESETS[basePreset]).filter(([k]) => k !== 'description')
-          ),
-          400
-        );
-      }
+    // Prefer joint plan preset, then hunter heuristic
+    let basePreset = this.selectPreset(envProfile, analysis);
+    if (analysis?.jointPlan?.recommendedPreset) {
+      basePreset = analysis.jointPlan.recommendedPreset;
+    } else if (app._hunterSliderTargets?.preset) {
+      basePreset = app._hunterSliderTargets.preset;
+    }
+    // resolvePresetNameLocal maps retired names → current catalog
+    basePreset = resolvePresetNameLocal(basePreset);
 
-      const masks = await this.runDeepFilterNet(audioBuffer, app, platformProfile);
-      const avgMaskConf = maskConfidence(masks);
-      const separationScore = Math.max(0, Math.min(1, (1 - avgMaskConf) * 0.55 + (1 - (envProfile.speechPresence || 0.4)) * 0.45));
+    if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
 
-      // Slider targets: joint analyzer plan when present, else pure hunter heuristic
-      let morph = null;
-      if (app._hunterSliderTargets?.sliders) {
-        morph = { ...app._hunterSliderTargets.sliders };
-      } else if (analysis && typeof window !== 'undefined') {
-        try {
-          // Lazy import not needed — targets may already be on analysis.jointPlan
-          const cfg = analysis.jointPlan?.recommendedStageConfig
-            || analysis.recommendedStageConfig
-            || analysis.recommendation?.recommendedStageConfig;
-          if (cfg && Object.keys(cfg).length) {
-            morph = {
-              whisperClarity: Math.round(cfg.whisperClarity ?? (58 + separationScore * 32)),
-              whisperSensitivity: Math.round(cfg.whisperSensitivity ?? (48 + (1 - (envProfile.voiceRatio || 0.3)) * 38)),
-              whisperThreshold: Math.round(cfg.whisperThreshold ?? (42 + separationScore * 48)),
-              harmRecov: Math.round(cfg.harmRecov ?? ((envProfile.voiceRatio || 0) < 0.25 ? 18 + separationScore * 22 : 8)),
-              whisperLift: Math.round(cfg.whisperLift ?? (14 + separationScore * 24)),
-              snrFloor: Math.round(cfg.snrFloor ?? (-78 + avgMaskConf * 26)),
-              crowdNull: Math.round(cfg.crowdNull ?? (68 + separationScore * 28)),
-              musicKill: Math.round(cfg.musicKill ?? (envProfile.dominantNoise === 'music' ? 82 + separationScore * 16 : 45 + separationScore * 20)),
-              bassCrush: Math.round(cfg.bassCrush ?? (55 + (envProfile.musicRatio || 0) * 40)),
-              reverbStrip: Math.min(1200, Math.round(cfg.reverbStrip ?? ((envProfile.rt60 || 400) * (0.85 + separationScore * 0.35)))),
-              voiceTunnel: Math.round(cfg.voiceTunnel ?? (52 + avgMaskConf * 38)),
-              voiceIso: Math.round(cfg.voiceIso ?? 85),
-              bgSuppress: Math.round(cfg.bgSuppress ?? 55),
-              nrAmount: Math.round(cfg.nrAmount ?? 60),
-              humRemoval: Math.round(cfg.humRemoval ?? 0),
-              derevAmt: Math.round(cfg.derevAmt ?? 0),
-              whisperMode: cfg.whisperMode ?? (separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1),
-              transientShaper: Math.round(cfg.transientShaper ?? 12),
-            };
-          }
-        } catch { /* fall through */ }
-      }
+    if (PRESETS[basePreset]) {
+      app.applyPreset(basePreset);
+      if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
+      await app.morphSlidersTo(
+        Object.fromEntries(
+          Object.entries(PRESETS[basePreset]).filter(([k]) => k !== 'description')
+        ),
+        400
+      );
+    }
 
-      if (!morph) {
-        morph = {
-          whisperClarity: Math.round(58 + separationScore * 32),
-          whisperSensitivity: Math.round(48 + (1 - (envProfile.voiceRatio || 0.3)) * 38),
-          whisperThreshold: Math.round(42 + separationScore * 48),
-          harmRecov: (envProfile.voiceRatio || 0) < 0.25 ? Math.round(18 + separationScore * 22) : 8,
-          whisperLift: Math.round(14 + separationScore * 24),
-          snrFloor: Math.round(-78 + avgMaskConf * 26),
-          crowdNull: Math.round(68 + separationScore * 28),
-          musicKill: envProfile.dominantNoise === 'music' ? Math.round(82 + separationScore * 16) : Math.round(45 + separationScore * 20),
-          bassCrush: Math.round(55 + (envProfile.musicRatio || 0) * 40),
-          reverbStrip: Math.min(1200, Math.round((envProfile.rt60 || 400) * (0.85 + separationScore * 0.35))),
-          voiceTunnel: Math.round(52 + avgMaskConf * 38),
-          whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
-        };
-      }
+    if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
 
-      await app.morphSlidersTo(morph, 600);
+    const masks = await this.runDeepFilterNet(audioBuffer, app, platformProfile);
+    if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
 
-      // Single pipeline pass keeps the UI responsive. WhisperMode still drives
-      // spectral aggressiveness inside the offline path — multi-pass loops froze tabs.
-      app._forceSinglePass = true;
+    const avgMaskConf = maskConfidence(masks);
+    const separationScore = Math.max(0, Math.min(1, (1 - avgMaskConf) * 0.55 + (1 - (envProfile.speechPresence || 0.4)) * 0.45));
+
+    // Slider targets: joint analyzer plan when present, else pure hunter heuristic
+    let morph = null;
+    if (app._hunterSliderTargets?.sliders) {
+      morph = { ...app._hunterSliderTargets.sliders };
+    } else if (analysis && typeof window !== 'undefined') {
       try {
-        await app.runPipeline();
-      } finally {
-        app._forceSinglePass = false;
-      }
+        // Lazy import not needed — targets may already be on analysis.jointPlan
+        const cfg = analysis.jointPlan?.recommendedStageConfig
+          || analysis.recommendedStageConfig
+          || analysis.recommendation?.recommendedStageConfig;
+        if (cfg && Object.keys(cfg).length) {
+          morph = {
+            whisperClarity: Math.round(cfg.whisperClarity ?? (58 + separationScore * 32)),
+            whisperSensitivity: Math.round(cfg.whisperSensitivity ?? (48 + (1 - (envProfile.voiceRatio || 0.3)) * 38)),
+            whisperThreshold: Math.round(cfg.whisperThreshold ?? (42 + separationScore * 48)),
+            harmRecov: Math.round(cfg.harmRecov ?? ((envProfile.voiceRatio || 0) < 0.25 ? 18 + separationScore * 22 : 8)),
+            whisperLift: Math.round(cfg.whisperLift ?? (14 + separationScore * 24)),
+            snrFloor: Math.round(cfg.snrFloor ?? (-78 + avgMaskConf * 26)),
+            crowdNull: Math.round(cfg.crowdNull ?? (68 + separationScore * 28)),
+            musicKill: Math.round(cfg.musicKill ?? (envProfile.dominantNoise === 'music' ? 82 + separationScore * 16 : 45 + separationScore * 20)),
+            bassCrush: Math.round(cfg.bassCrush ?? (55 + (envProfile.musicRatio || 0) * 40)),
+            reverbStrip: Math.min(1200, Math.max(0, Math.round(cfg.reverbStrip ?? ((envProfile.rt60 || 400) * (0.85 + separationScore * 0.35))))),
+            voiceTunnel: Math.round(cfg.voiceTunnel ?? (52 + avgMaskConf * 38)),
+            voiceIso: Math.round(cfg.voiceIso ?? 85),
+            bgSuppress: Math.round(cfg.bgSuppress ?? 55),
+            nrAmount: Math.round(cfg.nrAmount ?? 60),
+            humRemoval: Math.round(cfg.humRemoval ?? 0),
+            derevAmt: Math.round(cfg.derevAmt ?? 0),
+            whisperMode: cfg.whisperMode ?? (separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1),
+            transientShaper: Math.round(cfg.transientShaper ?? 12),
+          };
+        }
+      } catch { /* fall through */ }
+    }
 
+    if (!morph) {
+      morph = {
+        whisperClarity: Math.round(58 + separationScore * 32),
+        whisperSensitivity: Math.round(48 + (1 - (envProfile.voiceRatio || 0.3)) * 38),
+        whisperThreshold: Math.round(42 + separationScore * 48),
+        harmRecov: (envProfile.voiceRatio || 0) < 0.25 ? Math.round(18 + separationScore * 22) : 8,
+        whisperLift: Math.round(14 + separationScore * 24),
+        snrFloor: Math.round(-78 + avgMaskConf * 26),
+        crowdNull: Math.round(68 + separationScore * 28),
+        musicKill: envProfile.dominantNoise === 'music' ? Math.round(82 + separationScore * 16) : Math.round(45 + separationScore * 20),
+        bassCrush: Math.round(55 + (envProfile.musicRatio || 0) * 40),
+        reverbStrip: Math.min(1200, Math.max(0, Math.round((envProfile.rt60 || 400) * (0.85 + separationScore * 0.35)))),
+        voiceTunnel: Math.round(52 + avgMaskConf * 38),
+        whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
+      };
+    }
+
+    if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
+    await app.morphSlidersTo(morph, 600);
+
+    if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
+
+    // Single pipeline pass keeps the UI responsive. WhisperMode still drives
+    // spectral aggressiveness inside the offline path — multi-pass loops froze tabs.
+    app._forceSinglePass = true;
+    try {
+      await app.runPipeline();
+    } finally {
+      app._forceSinglePass = false;
+    }
+
+    if (!staleFile()) {
       app._lastHunterEnv = envProfile;
       app._lastHunterMaskConf = avgMaskConf;
       app._lastHunterPlatform = platformProfile.platform;
       this.reportResults(envProfile, avgMaskConf, app, platformProfile, hasJoint);
-    } finally {
-      this._running = false;
     }
   },
 

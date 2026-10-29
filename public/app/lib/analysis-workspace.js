@@ -396,6 +396,7 @@ export function installAnalysisWorkspace(app) {
     }
     const enriched = enrichAnalysisWithCollaboration(analysis, envProfile);
     app._lastFullAnalysis = enriched;
+    app._analysisFileSeq = app._fileSeq; // stamp for stale-result guard
     app._jointIsolationPlan = enriched.jointPlan || null;
     app._hunterEnvFromAnalysis = envProfile;
     lastAnalysis = enriched;
@@ -472,6 +473,7 @@ export function installAnalysisWorkspace(app) {
   function renderAnalysis(analysis) {
     lastAnalysis = analysis;
     app._lastFullAnalysis = analysis;
+    app._analysisFileSeq = app._fileSeq; // stamp for stale-result guard
     if (analysis?.jointPlan) app._jointIsolationPlan = analysis.jointPlan;
 
     if (timeline) timeline.setAnalysis(analysis);
@@ -536,6 +538,7 @@ export function installAnalysisWorkspace(app) {
     cancelled = false;
     lastAnalysis = null;
     app._lastFullAnalysis = null;
+    app._analysisFileSeq = -1; // invalidate stale-result guard
     app._jointIsolationPlan = null;
     app._hunterEnvFromAnalysis = null;
     app._usmResult = null;
@@ -941,6 +944,7 @@ export function installAnalysisWorkspace(app) {
       });
       lastAnalysis = enriched;
       app._lastFullAnalysis = enriched;
+      app._analysisFileSeq = app._fileSeq; // stamp for stale-result guard
       renderAnalysis(enriched);
       if (lastAnalysis) await ensureAuditionBuffers(lastAnalysis);
 
