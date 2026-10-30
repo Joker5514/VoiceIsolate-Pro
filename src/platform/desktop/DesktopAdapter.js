@@ -128,7 +128,9 @@ export class DesktopAdapter {
         handlers.abToggle?.();
         return;
       }
-      if (isTextEntry(e.target)) return;
+      // Form controls keep their native keys (Space toggles a checkbox, digits
+      // never reach a focused slider); contenteditable counts as text entry.
+      if (isTextEntry(e.target) || e.target?.matches?.('input, textarea, select')) return;
       if (e.code === 'Space') {
         e.preventDefault();
         handlers.playPause?.();
