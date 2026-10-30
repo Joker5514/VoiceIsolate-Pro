@@ -432,8 +432,8 @@ function wireContextualActions() {
     const startSec = state.selection.start * state.duration;
     const endSec = state.selection.end * state.duration;
 
-    // Dispatch to session store
-    sessionStore.setSelection(state.selection);
+    // The store already holds this selection (in seconds): setSelection()
+    // pushes it through sessionStore.selectRegion on pointerup.
     // Trigger processing via existing engineer pipeline if available
     if (window.__vipEngineerProcessSelection) {
       window.__vipEngineerProcessSelection({ action, startSec, endSec, startNorm: state.selection.start, endNorm: state.selection.end });
@@ -467,13 +467,11 @@ function wireProfiles() {
     if (!btn) return;
     const profile = btn.dataset.profile;
     container.querySelectorAll('[data-profile]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
-    sessionStore.setActiveProfile(profile);
+    sessionStore.setProfile(profile);
     // Apply profile to existing DSP controls if engineer app has it
     if (window.__vipApplyProfile) {
       window.__vipApplyProfile(profile);
     }
-    // Update UI store
-    uiStore.setActiveProfile?.(profile);
   });
 }
 
