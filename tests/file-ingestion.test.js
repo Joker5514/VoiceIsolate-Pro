@@ -2,6 +2,8 @@
 
 let inferMediaKind;
 let isIngestibleMedia;
+let isImageMimeType;
+let isImageFile;
 let assertIngestible;
 
 let isVideoSource;
@@ -11,6 +13,8 @@ beforeAll(async () => {
   const fileIngestion = await import('../src/pipeline/FileIngestion.js');
   inferMediaKind = mediaTypes.inferMediaKind;
   isIngestibleMedia = mediaTypes.isIngestibleMedia;
+  isImageMimeType = mediaTypes.isImageMimeType;
+  isImageFile = mediaTypes.isImageFile;
   isVideoSource = mediaTypes.isVideoSource;
   assertIngestible = fileIngestion.assertIngestible;
 });
@@ -57,6 +61,52 @@ describe('media-types', () => {
     expect(isVideoSource({ type: 'video/mp4', name: 'memo.m4a' })).toBe(false);
     expect(isVideoSource({ type: 'audio/wav', name: 'a.wav' })).toBe(false);
   });
+
+  describe('image detection', () => {
+    test('isImageMimeType identifies image/ MIME types', () => {
+      expect(isImageMimeType('image/jpeg')).toBe(true);
+      expect(isImageMimeType('image/png')).toBe(true);
+      expect(isImageMimeType('image/gif')).toBe(true);
+      expect(isImageMimeType('image/webp')).toBe(true);
+      expect(isImageMimeType('image/avif')).toBe(true);
+      expect(isImageMimeType('audio/mpeg')).toBe(false);
+      expect(isImageMimeType('video/mp4')).toBe(false);
+      expect(isImageMimeType('')).toBe(false);
+      expect(isImageMimeType(null)).toBe(false);
+    });
+
+    test('isImageFile detects images by MIME type', () => {
+      expect(isImageFile({ type: 'image/jpeg', name: 'photo.jpg' })).toBe(true);
+      expect(isImageFile({ type: 'image/png', name: 'icon.png' })).toBe(true);
+      expect(isImageFile({ type: 'audio/mpeg', name: 'track.mp3' })).toBe(false);
+    });
+
+    test('isImageFile detects images by extension when MIME is empty', () => {
+      expect(isImageFile({ type: '', name: 'photo.jpg' })).toBe(true);
+      expect(isImageFile({ type: '', name: 'screenshot.png' })).toBe(true);
+      expect(isImageFile({ type: '', name: 'icon.gif' })).toBe(true);
+      expect(isImageFile({ type: '', name: 'art.webp' })).toBe(true);
+      expect(isImageFile({ type: '', name: 'recording.wav' })).toBe(false);
+    });
+
+    test('inferMediaKind returns "image" for image MIME types', () => {
+      expect(inferMediaKind({ type: 'image/jpeg', name: 'photo.jpg' })).toBe('image');
+      expect(inferMediaKind({ type: 'image/png', name: 'icon.png' })).toBe('image');
+      expect(inferMediaKind({ type: 'image/gif', name: 'anim.gif' })).toBe('image');
+      expect(inferMediaKind({ type: 'image/webp', name: 'banner.webp' })).toBe('image');
+    });
+
+    test('inferMediaKind returns "image" for image extensions even with empty MIME', () => {
+      expect(inferMediaKind({ type: '', name: 'cover.jpg' })).toBe('image');
+      expect(inferMediaKind({ type: '', name: 'screenshot.png' })).toBe('image');
+      expect(inferMediaKind({ type: '', name: 'thumb.jpeg' })).toBe('image');
+    });
+
+    test('isIngestibleMedia returns false for images', () => {
+      expect(isIngestibleMedia({ type: 'image/jpeg', name: 'photo.jpg' })).toBe(false);
+      expect(isIngestibleMedia({ type: '', name: 'cover.jpg' })).toBe(false);
+    });
+  });
 });
 
 function makeFile(name, type, bytes = 16) {
@@ -80,5 +130,51 @@ describe('FileIngestion.assertIngestible', () => {
 
   test('rejects MIDI with a clear message', () => {
     expect(() => assertIngestible(makeFile('song.mid', 'audio/midi'))).toThrow(/MIDI/);
+  });
+
+  describe('image rejection', () => {
+    test('rejects image/jpeg with UNSUPPORTED_MEDIA_TYPE', () => {
+      expect(() => assertIngestible(makeFile('photo.jpg', 'image/jpeg')))
+        .toThrow(/UNSUPPORTED_MEDIA_TYPE/);
+    });
+
+    test('rejects image/png with UNSUPPORTED_MEDIA_TYPE', () => {
+      expect(() => assertIngestible(makeFile('icon.png', 'image/png')))
+        .toThrow(/UNSUPPORTED_MEDIA_TYPE/);
+    });
+
+    test('rejects image/gif with UNSUPPORTED_MEDIA_TYPE', () => {
+      expect(() => assertIngestible(makeFile('anim.gif', 'image/gif')))
+        .toThrow(/UNSUPPORTED_MEDIA_TYPE/);
+    });
+
+    test('rejects image/webp with UNSUPPORTED_MEDIA_TYPE', () => {
+      expect(() => assertIngestible(makeFile('banner.webp', 'image/webp')))
+        .toThrow(/UNSUPPORTED_MEDIA_TYPE/);
+    });
+
+    test('rejects .jpg extension with empty MIME (image extension wins)', () => {
+      expect(() => assertIngestible(makeFile('cover.jpg', '')))
+        .toThrow(/UNSUPPORTED_MEDIA_TYPE/);
+    });
+
+    test('rejects .jpeg extension with empty MIME', () => {
+      expect(() => assertIngestible(makeFile('photo.jpeg', '')))
+        .toThrow(/UNSUPPORTED_MEDIA_TYPE/);
+    });
+
+    test('rejects .png extension with empty MIME', () => {
+      expect(() => assertIngestible(makeFile('screenshot.png', '')))
+        .toThrow(/UNSUPPORTED_MEDIA_TYPE/);
+    });
+
+    test('error message mentions audio or video', () => {
+      const err = (() => {
+        try { assertIngestible(makeFile('photo.jpg', 'image/jpeg')); }
+        catch (e) { return e; }
+      })();
+      expect(err).toBeDefined();
+      expect(err.message).toMatch(/audio or video/i);
+    });
   });
 });
