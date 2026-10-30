@@ -973,6 +973,10 @@
     import('./debug-menu.js').catch(err => {
       console.warn('[VIP] debug-menu.js not loaded:', err);
     });
+    /* debug-audit.js — exposes window.VIP_runAudit() for the RUN AUDIT button */
+    import('./debug-audit.js').catch(err => {
+      console.warn('[VIP] debug-audit.js not loaded:', err);
+    });
     /* premium-workspace.js — unified signal-first UX (Issue #820) */
     import('./premium-workspace.js').catch(err => {
       console.warn('[VIP] premium-workspace.js not loaded:', err);
