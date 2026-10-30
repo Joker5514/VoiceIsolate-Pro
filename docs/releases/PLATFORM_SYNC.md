@@ -8,7 +8,7 @@ This document describes what is **published**, what is **current in source**, an
 | Package version | `25.0.2` / native build number `250002` |
 | Latest GitHub release | [`v25.0.2`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2) |
 | Artifacts built (UTC) | `2026-08-25` |
-| Android asset | `VoiceIsolate-Pro-android-debug.apk` · 101,365,796 bytes · SHA-256 `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b` |
+| Android build | `VoiceIsolate-Pro-android-debug.apk` · 101,365,796 bytes · digest `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b` (superseded by v25.0.3) |
 | Windows asset | `VoiceIsolate-Pro-25.0.2-win-x64.exe` · 144,628,415 bytes · SHA-256 `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621` |
 | Sync verdict | **Published release `v25.0.2`. These artifacts predate current `main`; do not claim they contain post-publish fixes without rebuilding and updating provenance.** |
 | Latest GitHub release | [`v25.0.3`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.3) (published 2026-09-09) |
