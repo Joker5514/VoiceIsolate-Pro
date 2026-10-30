@@ -25,7 +25,7 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS, resampledLength } from '../core/audio-config.js';
-import { inferMediaKind, isGenericMimeType, resolveMediaKind } from '../core/media-types.js';
+import { inferMediaKind, isGenericMimeType, isImageFile, resolveMediaKind } from '../core/media-types.js';
 import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
@@ -129,6 +129,13 @@ export function assertIngestible(blob) {
       '[VIP][FileIngestion] MIDI files are not supported. Use an audio file (WAV, MP3, etc).'
     );
   }
+  // Images must never enter the audio/video decode pipeline.
+  if (kind === 'image' || isImageFile(blob)) {
+    throw new TypeError(
+      `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ` +
+      `Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`
+    );
+  }
   const type = blob.type || '';
   // Some OSes hand over files with an empty or generic MIME type — fall back to
   // filename extension (and later magic-byte sniff) before rejecting.
@@ -152,15 +159,26 @@ export function assertIngestible(blob) {
  * @returns {Promise<'audio'|'video'>}
  */
 export async function assertIngestibleAsync(blob, options = {}) {
+  // assertIngestible handles image, MIDI, empty, and explicit non-media MIME.
   assertIngestible(blob);
   let kind = inferMediaKind(blob);
-  if (kind === 'midi') {
+  if (kind === 'midi' || kind === 'image') {
+    // assertIngestible already threw for these; this is a safety net.
     throw new TypeError(
-      '[VIP][FileIngestion] MIDI files are not supported. Use an audio file (WAV, MP3, etc).'
+      kind === 'image'
+        ? `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ` +
+          `Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`
+        : '[VIP][FileIngestion] MIDI files are not supported. Use an audio file (WAV, MP3, etc).'
     );
   }
   if (!kind) {
     kind = await resolveMediaKind(blob, options);
+  }
+  if (kind === 'image') {
+    throw new TypeError(
+      `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ` +
+      `Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`
+    );
   }
   if (kind !== 'audio' && kind !== 'video') {
     // Still allow empty/generic types into the decoder — many valid files sniff poorly.

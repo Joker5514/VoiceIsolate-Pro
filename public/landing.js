@@ -23,7 +23,7 @@ import { AnalysisInsightsUI } from '/src/presentation/AnalysisInsightsUI.js';
 import { inspectQuickCleanDevice } from '/src/pipeline/QuickCleanPlan.js';
 import { ComparisonLevelMatcher } from '/src/pipeline/ComparisonLevelMatch.js';
 import { measureAudioBuffer, encodeReviewedWav } from '/src/pipeline/AudioReview.js';
-import { isVideoSource, getFileInputAccept } from '/src/core/media-types.js';
+import { isVideoSource, isImageFile, getFileInputAccept } from '/src/core/media-types.js';
 import { saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
 import {
   exportVideoWithProcessedAudio,
@@ -1209,6 +1209,13 @@ function applyPreset(name, sliderMap = PRESETS[name]) {
  */
 async function ingestFrom(file) {
   if (!file || ingestInFlight || processingInFlight || downloadInFlight) return;
+  // Pre-flight: reject images before the pipeline is touched.
+  if (isImageFile(file)) {
+    const msg = `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`;
+    setStatus(msg, 'error');
+    quickClean.setState('error', `Cannot import image "${file.name || 'file'}". Choose an audio or video file.`);
+    return;
+  }
   try {
     assertIngestible(file);
   } catch (err) {

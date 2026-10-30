@@ -89,6 +89,7 @@ import {
   getFileInputAccept,
   inferMediaKind,
   isGenericMimeType,
+  isImageFile,
   isVideoSource,
   resolveMediaKind,
 } from '/src/core/media-types.js';
@@ -3764,6 +3765,17 @@ class VoiceIsolatePro {
         structuredLog('warn', '[VIP] resetStemSeparation failed', { err: err?.message });
       }
       await this._waitForPipelineIdle(90000);
+    }
+
+    // Reject image files early — they are never audio/video sources.
+    if (isImageFile(file)) {
+      if (this.dom && this.dom.fileInfo) {
+        this.dom.fileInfo.textContent =
+          `Cannot import image "${file.name || 'file'}". Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`;
+      }
+      this.setStatus('ERROR');
+      this.showNotification?.('Images cannot be processed as audio or video — select an audio or video file', 'error');
+      return;
     }
 
     // Reject MIDI files early — not supported by Web Audio API
