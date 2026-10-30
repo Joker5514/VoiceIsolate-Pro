@@ -467,7 +467,9 @@ function wireProfiles() {
     if (!btn) return;
     const profile = btn.dataset.profile;
     container.querySelectorAll('[data-profile]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
-    sessionStore.setActiveProfile(profile);
+    sessionStore.setProfile(profile);
+    // Android: haptic confirmation on profile selection (no-op on Browser/Desktop)
+    platform.hapticConfirm?.('selection');
     // Apply profile to existing DSP controls if engineer app has it
     if (window.__vipApplyProfile) {
       window.__vipApplyProfile(profile);
@@ -677,6 +679,19 @@ function initPlatform() {
       toggleLoop: () => window.__vipToggleLoop?.(),
       cropIn: () => window.__vipCropIn?.(),
       cropOut: () => window.__vipCropOut?.(),
+      // Desktop: keys 1-4 select Quick/Meeting/Studio/Forensic profiles
+      selectProfile: (profile) => {
+        sessionStore.setProfile(profile);
+        // Sync profile button aria-pressed state in the DOM
+        const container = $('engineerProfiles');
+        if (container) {
+          container.querySelectorAll('[data-profile]').forEach((b) => {
+            b.setAttribute('aria-pressed', String(b.dataset.profile === profile));
+          });
+        }
+        if (window.__vipApplyProfile) window.__vipApplyProfile(profile);
+        uiStore.setActiveProfile?.(profile);
+      },
     });
   } catch (e) {
     console.warn('[VIP][premium] platform init failed', e);
