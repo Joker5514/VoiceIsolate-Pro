@@ -467,7 +467,7 @@ function wireProfiles() {
     if (!btn) return;
     const profile = btn.dataset.profile;
     container.querySelectorAll('[data-profile]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
-    sessionStore.setActiveProfile(profile);
+    sessionStore.setProfile(profile);
     // Apply profile to existing DSP controls if engineer app has it
     if (window.__vipApplyProfile) {
       window.__vipApplyProfile(profile);
