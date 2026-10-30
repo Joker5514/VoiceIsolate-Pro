@@ -432,8 +432,8 @@ function wireContextualActions() {
     const startSec = state.selection.start * state.duration;
     const endSec = state.selection.end * state.duration;
 
-    // Dispatch to session store
-    sessionStore.setSelection(state.selection);
+    // The store already holds this selection (in seconds): setSelection()
+    // pushes it through sessionStore.selectRegion on pointerup.
     // Trigger processing via existing engineer pipeline if available
     if (window.__vipEngineerProcessSelection) {
       window.__vipEngineerProcessSelection({ action, startSec, endSec, startNorm: state.selection.start, endNorm: state.selection.end });
@@ -474,8 +474,6 @@ function wireProfiles() {
     if (window.__vipApplyProfile) {
       window.__vipApplyProfile(profile);
     }
-    // Update UI store
-    uiStore.setActiveProfile?.(profile);
   });
 }
 

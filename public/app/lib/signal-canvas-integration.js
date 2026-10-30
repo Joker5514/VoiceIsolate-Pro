@@ -190,7 +190,8 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
     window.__vipApplyProfile = window.__vipApplyProfile || ((profile) => {
       const appInstance = window._vipApp || app;
       if (!appInstance) return;
-      const presets = { quick: 'Voice Clarity', meeting: 'Meeting', studio: 'Studio', forensic: 'Forensic Extract' };
+      // Values must be real PRESETS keys: applyPreset() ignores unknown names.
+      const presets = { quick: 'Voice Clarity', meeting: 'Room Echo Reduction', studio: 'Podcast Clean', forensic: 'Forensic Extract' };
       const presetName = presets[profile] || 'Voice Clarity';
       appInstance.applyPreset?.(presetName);
     });
