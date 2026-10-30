@@ -474,6 +474,8 @@ function wireProfiles() {
     if (window.__vipApplyProfile) {
       window.__vipApplyProfile(profile);
     }
+    // Update UI store
+    uiStore.setActiveProfile?.(profile);
   });
 }
 
