@@ -118,6 +118,9 @@ export class DesktopAdapter {
   }
 
   setupKeyboardShortcuts(handlers = {}) {
+    // Profile key map: 1=Quick 2=Meeting 3=Studio 4=Forensic
+    const PROFILE_KEYS = { '1': 'quick', '2': 'meeting', '3': 'studio', '4': 'forensic' };
+
     const onKey = (e) => {
       // X (A/B) has no native action on sliders, toggles or buttons, so it
       // works there; everything else stays out of the way of form controls.
@@ -125,7 +128,7 @@ export class DesktopAdapter {
         handlers.abToggle?.();
         return;
       }
-      if (e.target.matches('input, textarea, select')) return;
+      if (isTextEntry(e.target)) return;
       if (e.code === 'Space') {
         e.preventDefault();
         handlers.playPause?.();
@@ -140,6 +143,9 @@ export class DesktopAdapter {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         handlers.enhance?.();
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && PROFILE_KEYS[e.key]) {
+        // 1-4: profile shortcuts (bare key, no modifier, no repeat, not in a text field)
+        handlers.selectProfile?.(PROFILE_KEYS[e.key]);
       }
     };
     window.addEventListener('keydown', onKey);
