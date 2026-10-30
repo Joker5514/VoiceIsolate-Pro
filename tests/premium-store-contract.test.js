@@ -27,6 +27,11 @@ const CONSUMERS = {
   'src/ui/components/RegionActionPalette/RegionActionPalette.js': { uiStore: 'ui' },
 };
 
+// Optional-chained calls kept on purpose as forward-compatibility hooks
+// (#873, pinned by tests/premium-workspace-profile-api.test.js PW-08). Any
+// other missing method fails, optional chaining or not.
+const FORWARD_HOOKS = new Set(['uiStore.setActiveProfile']);
+
 const stripComments = (src) => src
   .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
   .replace(/(^|\s)\/\/[^\n]*/g, '$1');
@@ -39,7 +44,9 @@ function storeCalls(src, aliases) {
     const esc = alias.replace(/[.$]/g, '\\$&');
     const re = new RegExp(`(?<![\\w.$])${esc}\\??\\.([A-Za-z_$][\\w$]*)\\s*(?:\\?\\.)?\\(`, 'g');
     lines.forEach((line, i) => {
-      for (const m of line.matchAll(re)) out.push({ alias, kind, method: m[1], line: i + 1 });
+      for (const m of line.matchAll(re)) {
+        out.push({ alias, kind, method: m[1], line: i + 1, optional: /\?\.\s*\($/.test(m[0]) });
+      }
     });
   }
   return out;
@@ -74,12 +81,17 @@ describe('store calls resolve on the real stores', () => {
     ].join('\n');
     const missing = storeCalls(broken, { sessionStore: 'session', uiStore: 'ui' })
       .filter((c) => !methods[c.kind].has(c.method))
-      .map((c) => `${c.alias}.${c.method}`);
+      .map((c) => `${c.alias}.${c.method}${c.optional ? '?.' : ''}`);
     expect(missing).toEqual([
       'sessionStore.setSelection',
       'sessionStore.setActiveProfile',
-      'uiStore.setActiveProfile',
+      'uiStore.setActiveProfile?.',
     ]);
+  });
+
+  test('only optional-chained calls can be forward hooks', () => {
+    const calls = storeCalls('uiStore.setActiveProfile(p);\nuiStore.setActiveProfile?.(p);', { uiStore: 'ui' });
+    expect(calls.map((c) => c.optional)).toEqual([false, true]);
   });
 
   test.each(Object.keys(CONSUMERS))('%s only calls methods that exist', (rel) => {
@@ -87,9 +99,10 @@ describe('store calls resolve on the real stores', () => {
     expect(calls.length).toBeGreaterThan(0);
     const missing = calls
       .filter((c) => !methods[c.kind].has(c.method))
+      .filter((c) => !(c.optional && FORWARD_HOOKS.has(`${c.alias}.${c.method}`)))
       .map((c) => `${rel}:${c.line} ${c.alias}.${c.method}`);
-    // Optional chaining does not excuse a missing method: it only turns the
-    // TypeError into a silent no-op.
+    // Optional chaining alone does not excuse a missing method: it only turns
+    // the TypeError into a silent no-op.
     expect(missing).toEqual([]);
   });
 });
