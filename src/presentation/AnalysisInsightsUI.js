@@ -160,10 +160,19 @@ export class AnalysisInsightsUI {
     this._controller = controller;
     const seq = ++this._seq;
 
-    if (this.container) {
+    const startedAt = performance.now();
+    const paintPending = (stage, pct) => {
+      if (!this.container || seq !== this._seq) return;
       this.container.dataset.state = 'pending';
-      this.container.textContent = 'Analysing on-device…';
-    }
+      const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+      const stageLabel = stage ? ` ${stage}` : '';
+      const pctLabel = Number.isFinite(pct) ? ` ${Math.round(pct)}%` : '';
+      this.container.textContent = `Analysing on-device…${stageLabel}${pctLabel} · ${elapsed}s`;
+    };
+    paintPending();
+    const timer = setInterval(() => paintPending(), 500);
+    const onProgress = (pct, stage) => paintPending(stage, pct);
+    this._host.onProgress = onProgress;
 
     try {
       // A missing fingerprint must not collapse different files onto one
@@ -196,6 +205,9 @@ export class AnalysisInsightsUI {
         this.container.dataset.state = 'failed';
         this.container.textContent = 'On-device analysis unavailable for this file.';
       }
+    } finally {
+      clearInterval(timer);
+      if (this._host.onProgress === onProgress) this._host.onProgress = () => {};
     }
   }
 
