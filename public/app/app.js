@@ -1824,11 +1824,6 @@ class VoiceIsolatePro {
     return this._isSliderLocked(sliderId);
   }
 
-  /** @deprecated use toggleSliderLock */
-  _toggleSliderLock(id) {
-    return this.toggleSliderLock(id);
-  }
-
   /**
    * Raw UI params → discipline curves + coupling + soft clamps.
    * Never mutates visible slider positions.
@@ -4754,10 +4749,6 @@ class VoiceIsolatePro {
     if (!decoded || fileSeq !== this._fileSeq) return;
     if (!this.origBuffer && !this.inputBuffer) return;
 
-    if (this.isProcessing) {
-      this.showNotification('Processing already in progress…', 'info');
-      return;
-    }
     this.isProcessing = true;
     this.abortFlag = false;
     // Mirror JobController signal when available (overlay cancel / supersede).
