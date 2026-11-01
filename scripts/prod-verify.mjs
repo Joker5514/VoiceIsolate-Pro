@@ -47,7 +47,16 @@ const includeDesktop = flag('--desktop');
 const failFast = flag('--fail-fast');
 
 const node = (script, ...rest) => [process.execPath, [script, ...rest]];
-const pnpm = (script) => [process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', '--silent', script]];
+// Node cannot spawn a Windows .cmd shim directly (EINVAL, status null).
+// Go through cmd.exe so `pnpm` resolves the same way a developer shell does.
+const pnpm = (script) => {
+  const args = ['run', '--silent', script];
+  if (process.platform === 'win32') {
+    const comspec = process.env.ComSpec || 'cmd.exe';
+    return [comspec, ['/d', '/s', '/c', 'pnpm', ...args]];
+  }
+  return ['pnpm', args];
+};
 
 /** [id, tier, area, command] — order matters: build precedes build-dependent checks. */
 const STEPS = [
@@ -134,7 +143,16 @@ for (const [id, tier, area, [cmd, cmdArgs]] of selected) {
   const run = spawnSync(cmd, cmdArgs, { cwd: root, env, stdio: 'inherit' });
   const status = run.status === 0 ? 'PASS' : 'FAIL';
   const durationMs = Date.now() - started;
-  results.push({ id, tier, area, status, exitCode: run.status, signal: run.signal, durationMs });
+  results.push({
+    id,
+    tier,
+    area,
+    status,
+    exitCode: run.status,
+    signal: run.signal,
+    error: run.error ? String(run.error.message || run.error) : null,
+    durationMs,
+  });
   console.log(`   ${status} ${id} in ${(durationMs / 1000).toFixed(1)} s\n`);
   if (status === 'FAIL' && failFast) { stoppedEarly = true; break; }
 }
