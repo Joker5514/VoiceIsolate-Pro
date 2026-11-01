@@ -1273,6 +1273,10 @@ class VoiceIsolatePro {
         : [
           'section-upload', 'section-presets', 'section-processing',
           'section-gate', 'section-analysis', 'section-separation',
+          'section-cockpit', 'section-signal-canvas', 'engineerCompareToggle',
+          'section-selection', 'section-overlay', 'section-forensic',
+          'section-save', 'section-transport', 'fileLibraryPanel',
+          'ecIntegrityCard', 'ecOutputSafety', 'section-ec-analysis', 'section-ec-diar',
         ],
     );
     if (!narrow && !mobile) defaultOpen.add('vizCard');

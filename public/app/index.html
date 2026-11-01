@@ -350,7 +350,9 @@
   </div>
 
   <section class="engine-cockpit">
-    <div class="card cockpit-card">
+    <details class="card cockpit-card vip-section" id="section-cockpit" open>
+      <summary class="vip-section-summary">Launch Diagnostics</summary>
+      <div class="vip-section-body">
       <div class="cockpit-row">
         <div class="cockpit-copy">
           <span class="cockpit-label">Launch Diagnostics</span>
@@ -376,12 +378,15 @@
         </div>
         <div id="cdnHealthPanel" class="cockpit-health"></div>
       </div>
-    </div>
+      </div>
+    </details>
   </section>
 
   <!-- Unified Signal-First Workspace — Issue #820: Signal Canvas is center -->
   <section class="vip-workstation" id="unifiedSignalWorkspace" aria-label="Signal workspace">
-    <div class="vip-workstation__canvas">
+    <details class="vip-workstation__canvas vip-section" id="section-signal-canvas" open>
+      <summary class="vip-section-summary">Signal Canvas</summary>
+      <div class="vip-section-body">
       <div class="vip-workstation__header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <h2 style="margin:0;font:700 13px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Signal Canvas</h2>
         <span class="vip-ondevice"><span class="vip-ondevice__dot"></span>Raw immutable · 100% local</span>
@@ -406,11 +411,9 @@
           <button type="button" class="vip-context-palette__btn" data-action="preview">Preview</button>
         </div>
       </div>
-      <div class="vip-compare-toggle" id="engineerCompareToggle">
-        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
-          <span style="font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Compare</span>
-          <span style="font:500 10px/1 ui-sans-serif;color:var(--vip-text-dim);">A/B switching · Raw immutable</span>
-        </div>
+      <details class="vip-compare-toggle vip-section" id="engineerCompareToggle" open>
+        <summary class="vip-section-summary">Compare<span class="module-sub">A/B switching · Raw immutable</span></summary>
+        <div class="vip-section-body">
         <div class="vip-compare-toggle__group" role="group" aria-label="Comparison mode">
           <button type="button" class="vip-compare-toggle__btn" data-compare="raw" aria-pressed="true">Raw</button>
           <button type="button" class="vip-compare-toggle__btn" data-compare="processed" aria-pressed="false">Processed</button>
@@ -422,20 +425,25 @@
           <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Whisper Retention</span><span class="vip-live-metrics__value" id="metricWhisperRetention">--</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricWhisperRetentionFill"></div></div></div>
           <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Output dBFS</span><span class="vip-live-metrics__value" id="metricOutputDb">-- dBFS</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricOutputDbFill"></div></div></div>
         </div>
+        </div>
+      </details>
       </div>
-    </div>
+    </details>
     <div class="vip-workstation__inspector" id="engineerInspector">
-      <div class="card" style="padding:12px;">
-        <h3 style="margin:0 0 8px;font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Selection</h3>
+      <details class="card vip-section" id="section-selection" open style="padding:12px;">
+        <summary class="vip-section-summary">Selection</summary>
+        <div class="vip-section-body">
         <p class="hint" id="selectionInfo" style="margin:0;">Drag on waveform to select · drag rectangle on spectrogram · handles to resize · timestamp shown</p>
         <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
           <button type="button" class="btn btn-xs" id="btnZoomToSelection">Zoom to selection</button>
           <button type="button" class="btn btn-xs" id="btnClearSelection">Clear</button>
           <button type="button" class="btn btn-xs" id="btnSelectedPlayback">Play selection</button>
         </div>
-      </div>
-      <div class="card" style="padding:12px;">
-        <h3 style="margin:0 0 8px;font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Analysis Overlay</h3>
+        </div>
+      </details>
+      <details class="card vip-section" id="section-overlay" open style="padding:12px;">
+        <summary class="vip-section-summary">Analysis Overlay</summary>
+        <div class="vip-section-body">
         <div id="analysisOverlayLegend" style="display:flex;flex-wrap:wrap;gap:6px;">
           <span class="vip-chip" style="--chip-color:#22d3ee;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.24);color:#22d3ee;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Speech</span>
           <span class="vip-chip" style="background:rgba(34,211,238,0.10);border:1px solid rgba(34,211,238,0.28);color:#22d3ee;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Whisper</span>
@@ -444,9 +452,11 @@
           <span class="vip-chip" style="background:rgba(245,185,66,0.12);border:1px solid rgba(245,185,66,0.32);color:#f5b942;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Music/bleed</span>
         </div>
         <div id="analysisOverlayList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>
-      </div>
-      <div class="card" style="padding:12px;">
-        <h3 style="margin:0 0 8px;font:600 11px/1 ui-sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#8d9aaa;">Advanced / Forensic</h3>
+        </div>
+      </details>
+      <details class="card vip-section" id="section-forensic" open style="padding:12px;">
+        <summary class="vip-section-summary">Advanced / Forensic</summary>
+        <div class="vip-section-body">
         <details><summary style="cursor:pointer;font:500 12px/1 ui-sans-serif;color:#c5ced6;">Deep metrics</summary>
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font:400 11px/1.4 ui-monospace,monospace;color:#8d9aaa;">
             <span>SNR: <span id="deepSnr">--</span> dB</span>
@@ -457,7 +467,8 @@
             <span>Duration: <span id="deepDuration">--</span></span>
           </div>
         </details>
-      </div>
+        </div>
+      </details>
     </div>
     <div class="vip-workstation__transport" id="engineerTransportHost">
       <!-- Transport reused from existing -->
@@ -503,7 +514,7 @@
           <select id="projectSelect" class="btn btn-outline import-mode-select" aria-label="Project"></select>
           <button id="newProjectBtn" class="btn btn-outline" type="button">New project</button>
         </div>
-        <details class="file-library-panel" id="fileLibraryPanel" open>
+        <details class="file-library-panel vip-section" id="fileLibraryPanel" open>
           <summary class="file-library-summary">
             Library <span id="libraryCountBadge" class="library-count-badge">0</span>
             <span class="file-library-hint">Local OPFS / IndexedDB — never leaves this device</span>
@@ -760,19 +771,24 @@
         </div>
       </details>
 
-      <div class="card save-row">
+      <details class="card save-row vip-section" id="section-save" open>
+        <summary class="vip-section-summary">Save</summary>
+        <div class="vip-section-body">
         <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
         <button id="saveProcBtn" class="btn btn-save-proc" disabled title="Download processed audio (or video with processed audio when the source is a video)">Save Processed</button>
         <button id="openDriveBtn" class="btn btn-outline" type="button" title="Open an audio/video file from your Google Drive (downloads a local copy for on-device processing)">Open from Drive</button>
         <button id="saveDriveBtn" class="btn btn-outline" type="button" disabled title="Upload the processed export to Google Drive (only when you choose — processing stays local)">Save to Drive</button>
         <button id="exportBtn" class="btn btn-save-proc vip-export-alias" type="button" disabled hidden aria-hidden="true">Export WAV</button>
         <p class="hint" style="margin:8px 0 0;font-size:12px;opacity:.75;">Google Drive is optional. Processing never uses Drive — files leave the device only when you tap Save to Drive.</p>
-      </div>
+        </div>
+      </details>
 
     </section>
 
     <section class="col-right">
-      <div class="card transport-card">
+      <details class="card transport-card vip-section" id="section-transport" open>
+        <summary class="vip-section-summary">Transport</summary>
+        <div class="vip-section-body">
         <div class="transport-top">
           <div class="tp-buttons" role="group" aria-label="Playback controls">
             <button id="tpPlay" class="btn btn-tp btn-tp-play" type="button" aria-label="Play (Space)" title="Play (Space)" disabled><span aria-hidden="true">&#9654;</span></button>
@@ -831,7 +847,8 @@
           <div class="tp-seek-rail" aria-hidden="true"><span id="tpSeekFill" class="tp-seek-fill"></span></div>
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
         </div>
-      </div>
+        </div>
+      </details>
 
       <details class="card viz-card vip-section" id="vizCard" open>
         <summary class="vip-section-summary viz-hdr">
@@ -892,11 +909,13 @@
         </div>
       </details>
 
-      <div id="videoCard" class="card video-card" style="display:none">
-        <div class="video-hdr"><span>Video preview</span><span class="video-tag">picture + processed audio</span></div>
+      <details id="videoCard" class="card video-card vip-section" style="display:none" open>
+        <summary class="vip-section-summary video-hdr"><span>Video preview</span><span class="video-tag">picture + processed audio</span></summary>
+        <div class="vip-section-body">
         <video id="videoPlayer" class="video-el" playsinline muted></video>
         <p class="video-note">The video plays muted in sync with the transport above — what you hear is the processed (or A/B original) audio, not the file's own track.</p>
-      </div>
+        </div>
+      </details>
     </section>
   </main>
 

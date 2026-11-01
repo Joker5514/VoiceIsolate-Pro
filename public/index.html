@@ -205,11 +205,11 @@
       <li class="vip-facts__item"><strong>0 bytes</strong><span>audio sent to our servers</span></li>
     </ul>
 
-    <div class="v3-block">
-      <div class="v3-block__head">
+    <details class="v3-block" open>
+      <summary class="v3-block__head">
         <h2 class="v3-h2">Simple on the surface.<br><em>Strict underneath.</em></h2>
         <p class="v3-sub">One forward STFT. In-place spectral work. One inverse STFT. Audio is decoded locally; batch ML never runs from a slider.</p>
-      </div>
+      </summary>
       <ol class="v3-pipeline" aria-label="Processing pipeline">
         <li><span>01</span><h3>Input</h3><p>Upload-only file pick. No microphone.</p></li>
         <li><span>02</span><h3>Decode / resample</h3><p>Local decode to 48 kHz buffers.</p></li>
@@ -219,16 +219,17 @@
         <li><span>06</span><h3>Live-Mix</h3><p>Zero-ML playback graph: gains, EQ, gate, de-esser.</p></li>
         <li><span>07</span><h3>Export</h3><p>Local encode. Optional user-initiated Drive save.</p></li>
       </ol>
-    </div>
+    </details>
 
-    <div class="v3-principles">
+    <details class="v3-principles" open>
+      <summary class="v3-label">Batch ML · Live-Mix · Privacy</summary>
       <div><h3>Batch ML</h3><p>Explicit Process / Separate. ONNX in MLWorker. Sliders do not retrigger it.</p></div>
       <div><h3>Live-Mix</h3><p>AudioParam + Gate/De-Esser worklets on already-separated stems. Immediate, reversible.</p></div>
       <div><h3>Privacy</h3><p>No cloud inference. Optional Drive I/O is user-initiated file transfer only.</p></div>
-    </div>
+    </details>
 
-    <section class="vip-use-cases v3-uses" aria-labelledby="useCasesLabel">
-      <h2 id="useCasesLabel" class="v3-label">Built for</h2>
+    <details class="vip-use-cases v3-uses" open aria-labelledby="useCasesLabel">
+      <summary id="useCasesLabel" class="v3-label">Built for</summary>
       <article class="vip-use-case">
         <h3 class="vip-use-case__title">Meetings</h3>
         <p class="vip-use-case__desc">Isolate voices from background noise, hum, and cross-talk. Automatic speaker detection with confidence.</p>
@@ -245,7 +246,7 @@
         <h3 class="vip-use-case__title">Content Creation</h3>
         <p class="vip-use-case__desc">Clean voice for podcasts and video. Preserve raw as immutable, process non-destructively.</p>
       </article>
-    </section>
+    </details>
   </section>
 
   <!-- 02 · Stems -->
@@ -262,8 +263,8 @@
 
       <main class="main-area v3-workspace" id="workspace" tabindex="-1">
         <!-- Import → automatic local analysis -->
-        <section class="panel vip-card v3-card v3-upload" id="uploadPanel" aria-labelledby="uploadLabel" data-state="empty">
-          <h2 id="uploadLabel" class="v3-label">Import</h2>
+        <details class="panel vip-card v3-card v3-upload" id="uploadPanel" open aria-labelledby="uploadLabel" data-state="empty">
+          <summary id="uploadLabel" class="v3-label">Import</summary>
           <div id="uploadZone" class="upload-zone v3-drop" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
             <svg class="upload-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <p class="upload-title">Drop audio or video here</p>
@@ -310,22 +311,23 @@
           </div>
           <div id="procLoaderMount" hidden></div>
           <p id="landingJobStatus" class="hint" role="status" aria-live="polite" hidden></p>
-        </section>
+        </details>
 
         <!-- Stage column: signal canvas + stems mixer (one grid cell on wide screens) -->
         <div class="v3-ws-stage">
         <!-- Signal canvas: automatic regions, direct selection -->
-        <section class="panel vip-card v3-card" id="signalCanvasSection" aria-labelledby="signalCanvasLabel">
-          <h2 id="signalCanvasLabel" class="v3-label">Signal workspace · select directly on waveform or spectrogram</h2>
+        <details class="panel vip-card v3-card" id="signalCanvasSection" open aria-labelledby="signalCanvasLabel">
+          <summary id="signalCanvasLabel" class="v3-label">Signal workspace · select directly on waveform or spectrogram</summary>
           <div id="unifiedSignalCanvas" class="vip-signal-canvas-host"></div>
-        </section>
+        </details>
 
         <!-- Stems: lanes, transport, compare, export -->
         <div class="v3-tilt-host">
-          <section class="panel vip-card v3-card v3-mixer" id="enhancePanel" aria-labelledby="enhanceLabel">
+          <details class="panel vip-card v3-card v3-mixer" id="enhancePanel" open aria-labelledby="enhanceLabel">
+            <summary id="enhanceLabel" class="v3-label">Stems</summary>
             <div id="stemsTilt" class="v3-tilt">
               <div class="v3-mixer__bar">
-                <h2 id="enhanceLabel" class="v3-mixer__title">Stems</h2>
+                <span class="v3-mixer__title">Stems</span>
                 <span id="signalPreviewState" class="ps-chip" data-state="idle">Idle</span>
                 <span class="v3-mixer__tools">
                   <label for="presetSelect" class="inline-label">Preset</label>
@@ -402,8 +404,8 @@
               </div>
 
               <!-- Raw / Processed / Removed comparison -->
-              <section class="compare-row v3-compare" id="compareRow" aria-labelledby="compareLabel">
-                <h3 id="compareLabel" class="v3-label">Compare · Raw / Processed / Removed</h3>
+              <details class="compare-row v3-compare" id="compareRow" open aria-labelledby="compareLabel">
+                <summary id="compareLabel" class="v3-label">Compare · Raw / Processed / Removed</summary>
                 <div class="compare-row__controls">
                   <div class="compare-row__ab v3-seg" role="group" aria-label="Listen to original or cleaned">
                     <button id="compareOriginalBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Raw</button>
@@ -420,7 +422,7 @@
                 <div id="comparisonToggleMount"></div>
                 <p class="hint">Audition what processing removed so accidental speech destruction is detectable. Raw is immutable.</p>
                 <p id="comparisonStatus" class="hint" role="status" aria-live="polite"></p>
-              </section>
+              </details>
 
               <div id="outputMeterMount" class="output-meter" hidden></div>
 
@@ -464,34 +466,34 @@
                 <div id="advancedMetricsMount" style="padding:12px;"></div>
               </details>
             </div>
-          </section>
+          </details>
         </div>
         </div>
 
         <!-- Analyze: automatic analysis -->
-        <section class="panel vip-card v3-card" id="analyzePanel" aria-labelledby="analyzeLabel">
-          <h2 id="analyzeLabel" class="v3-label">Analyze · Automatic</h2>
+        <details class="panel vip-card v3-card" id="analyzePanel" open aria-labelledby="analyzeLabel">
+          <summary id="analyzeLabel" class="v3-label">Analyze · Automatic</summary>
           <p class="hint">Source separation, VAD, whisper detection, noise classification, mask generation happen automatically behind the scenes as part of local analysis. Overlays: Speech, Whisper, Background Noise, Hum, Music / bleed, Candidate secondary speaker.</p>
           <div id="liveMetricsMount"></div>
           <div id="analysisOverlayStatus" class="hint" role="status">No analysis yet — import audio to see automatic regions with confidence.</div>
-        </section>
+        </details>
 
         <!-- Legacy compatibility: mixPanel id preserved but points to enhancePanel -->
-        <section class="panel vip-card" id="mixPanel" aria-labelledby="mixLabel" hidden>
-          <h2 id="mixLabel" class="section-label">Live Mix (legacy compat)</h2>
-        </section>
+        <details class="panel vip-card" id="mixPanel" open aria-labelledby="mixLabel" hidden>
+          <summary id="mixLabel" class="section-label">Live Mix (legacy compat)</summary>
+        </details>
 
-        <section class="panel vip-card v3-card" id="speakersPanel" aria-labelledby="speakersLabel" hidden>
-          <h2 id="speakersLabel" class="v3-label">Speakers</h2>
+        <details class="panel vip-card v3-card" id="speakersPanel" open aria-labelledby="speakersLabel" hidden>
+          <summary id="speakersLabel" class="v3-label">Speakers</summary>
           <p class="hint">Speakers detected on the isolated voice stem — entirely on your device.</p>
           <div class="status-row"><span id="speakerStatus" role="status" aria-live="polite"></span></div>
           <div id="speakerCardsGrid" class="speaker-grid" aria-label="Per-speaker controls"></div>
-        </section>
+        </details>
 
-        <section class="panel vip-card v3-card" id="targetSpeakerLandingPanel" aria-labelledby="targetSpeakerLandingLabel" hidden>
-          <h2 id="targetSpeakerLandingLabel" class="v3-label">Focus on one voice</h2>
+        <details class="panel vip-card v3-card" id="targetSpeakerLandingPanel" open aria-labelledby="targetSpeakerLandingLabel" hidden>
+          <summary id="targetSpeakerLandingLabel" class="v3-label">Focus on one voice</summary>
           <div id="targetSpeakerPanel" aria-label="Target speaker enrollment and isolation"></div>
-        </section>
+        </details>
       </main>
 
       <p class="v3-aside">Need per-band EQ, dynamics, gate, per-speaker lanes or forensic views? <a href="#engineer">Open the Engineer Console</a>.</p>
@@ -516,8 +518,8 @@
       </a>
     </div>
     <div class="v3-wrap">
-      <section class="ps-modes v3-modes" aria-labelledby="modesLabel">
-        <h2 id="modesLabel" class="v3-label">Open the console in a mode</h2>
+      <details class="ps-modes v3-modes" open aria-labelledby="modesLabel">
+        <summary id="modesLabel" class="v3-label">Open the console in a mode</summary>
         <article class="ps-card">
           <span class="ps-chip ps-chip--ok">Quick</span>
           <h3>Guided cleanup</h3>
@@ -542,15 +544,15 @@
           <p>Spectrogram-first workspace with time-frequency selection and advanced inspector.</p>
           <a class="ps-btn ps-btn--ghost" href="/app/?tier=forensic">Open Forensic</a>
         </article>
-      </section>
+      </details>
     </div>
   </section>
 
   <!-- Trust + settings -->
   <section class="v3-section v3-close" aria-label="Privacy and settings">
     <div class="v3-wrap v3-close__grid">
-      <section class="vip-trust" aria-labelledby="trustLabel" id="trust">
-        <p class="v3-label" id="trustLabel">Trust · Privacy</p>
+      <details class="vip-trust" open aria-labelledby="trustLabel" id="trust">
+        <summary class="v3-label" id="trustLabel">Trust · Privacy</summary>
         <h2 class="v3-h2 v3-h2--sm">Local processing. <em>No cloud upload, no telemetry.</em></h2>
         <p class="hint">100% local processing with WebGPU/WASM. No cloud upload required, no telemetry for audio processing, and you keep control of the original audio. Raw source is immutable; processed and removed are derived views. No fabricated customer counts or quality percentages.</p>
         <div class="v3-badges">
@@ -559,9 +561,9 @@
           <span>Zero Cloud</span>
           <span class="v3-badges__live">Offline after first use</span>
         </div>
-      </section>
-      <section class="privacy-panel" id="settings" aria-labelledby="settingsLabel">
-        <h2 class="v3-label" id="settingsLabel">Settings · Privacy &amp; local processing</h2>
+      </details>
+      <details class="privacy-panel" id="settings" open aria-labelledby="settingsLabel">
+        <summary class="v3-label" id="settingsLabel">Settings · Privacy &amp; local processing</summary>
         <p class="hint">Models run in a Web Worker on your device (WebGPU when available, WASM fallback). No microphone access, no audio upload to our servers, no telemetry.</p>
         <p class="hint" id="backendStatusLine" role="status" aria-live="polite">Backend: detecting…</p>
         <div class="privacy-actions">
@@ -572,7 +574,7 @@
           <a href="#uploadPanel" class="v3-btn v3-btn--primary">Start isolating</a>
           <a href="/download/" class="v3-btn v3-btn--ghost">Get Android / Windows</a>
         </div>
-      </section>
+      </details>
     </div>
   </section>
 

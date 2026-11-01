@@ -50,6 +50,9 @@ describe('Engineer Console skin', () => {
     expect(js).toMatch(/ec-col-stage/);
     expect(js).toMatch(/ec-col-rack/);
     expect(js).toMatch(/ecIntegrityCard|DSP Integrity/);
+    expect(js).toMatch(/section-ec-analysis/);
+    expect(js).toMatch(/section-ec-diar/);
+    expect(js).toMatch(/bindCollapsibleSections/);
     expect(js).toMatch(/ecOutputSafety|Output Safety/);
     expect(js).toMatch(/ecFocusExplain|Focus on one voice/);
   });
