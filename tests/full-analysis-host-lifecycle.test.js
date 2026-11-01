@@ -71,6 +71,35 @@ describe('FullAnalysisHost worker lifecycle', () => {
     return host;
   }
 
+  test('copies a mono channel instead of transferring the caller buffer', async () => {
+    const host = makeHost();
+    const channel = new Float32Array(64);
+    channel[0] = 0.42;
+    const pending = host.analyze([channel], 48000, { skipVad: true });
+    const { call } = await waitForAnalyzePost();
+    expect(call[0].channels[0]).not.toBe(channel);
+    expect(call[0].channels[0][0]).toBeCloseTo(0.42);
+    expect(call[1]).toEqual([call[0].channels[0].buffer]);
+    expect(channel[0]).toBeCloseTo(0.42);
+    const requestId = call[0].requestId;
+    workers.at(-1).dispatch('message', { data: { type: 'result', requestId, analysis: { ok: true } } });
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
+  test('ignores a worker percent that moves backward', async () => {
+    const host = makeHost();
+    const progress = jest.fn();
+    const { pending, call } = await beginAnalysis(host, { onProgress: progress });
+    const requestId = call[0].requestId;
+    const worker = workers.at(-1);
+    worker.dispatch('message', { data: { type: 'progress', requestId, percent: 40, stage: 'features' } });
+    worker.dispatch('message', { data: { type: 'progress', requestId, percent: 5, stage: 'prepare' } });
+    worker.dispatch('message', { data: { type: 'result', requestId, analysis: { ok: true } } });
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(progress).toHaveBeenCalledWith(40, 'features');
+    expect(progress).not.toHaveBeenCalledWith(5, 'prepare');
+  });
+
   test('settles a matching result and ignores stale request ids', async () => {
     const host = makeHost();
     const { pending } = await beginAnalysis(host);
@@ -260,6 +289,10 @@ describe('FullAnalysisHost worker lifecycle', () => {
     workers[0].dispatch('message', { data: { type: 'features', requestId: message.requestId, mono, extraction } });
     const { call: analyzeCall } = await waitForAnalyzePost();
     expect(buildVadHints).toHaveBeenCalledWith(mono, sampleRate, extraction, expect.any(Object));
+    expect(analyzeCall[0].opts.extraction).toBe(extraction);
+    expect(analyzeCall[0].channels).toEqual([mono]);
+    expect(analyzeCall[1]).toEqual([mono.buffer]);
+    expect(channel[0]).toBeCloseTo(0.25);
     workers[0].dispatch('message', { data: { type: 'result', requestId: analyzeCall[0].requestId, analysis: { ok: 1 } } });
     await expect(pending).resolves.toEqual({ ok: 1 });
   });

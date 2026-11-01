@@ -1,12 +1,14 @@
 /**
  * VoiceIsolate Pro — Full Analysis Host (Layer 3: Pipeline)
  *
- * Spawns FullAnalysisWorker, falls back to main-thread analyzeAudio if
- * workers are unavailable. Supports AbortSignal cooperative cancel.
+ * Spawns FullAnalysisWorker. If workers are unavailable, analysis runs
+ * through analyzeAudioCooperative, which yields between feature slices.
+ * Supports AbortSignal cooperative cancel. Timeouts stay at the caller's
+ * featureTimeoutMs (default 120000) and timeoutMs (default 180000).
  */
 'use strict';
 
-import { analyzeAudio } from '../core/FullAnalysis.js';
+import { analyzeAudioCooperative } from '../core/FullAnalysis.js';
 import { extractFrameFeatures, downmixToMono } from '../core/FeatureExtractor.js';
 import { buildVadHints } from './VadAnalysis.js';
 import { debugLog } from '../core/debug.js';
@@ -67,6 +69,7 @@ export class FullAnalysisHost {
     if (!worker) return null;
     const signal = opts.signal;
     const requestId = ++this._requestId;
+    const reportProgress = typeof opts.onProgress === 'function' ? opts.onProgress : this.onProgress;
     const yieldBudget = createYieldBudget();
     const payload = [];
     for (const ch of channels) {
@@ -87,7 +90,7 @@ export class FullAnalysisHost {
         fn();
       };
       const onAbort = () => done(() => {
-        // Feature extraction is one synchronous pass: stop it by recycling.
+        try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* worker may already be gone */ }
         this._recycleWorker(worker);
         reject(new CancellationError('Cancelled'));
       });
@@ -98,7 +101,13 @@ export class FullAnalysisHost {
       const onMessage = (event) => {
         const msg = event?.data;
         if (!msg || msg.requestId !== requestId) return;
+        if (msg.type === 'progress') {
+          const fraction = Number.isFinite(msg.percent) ? Math.max(0, Math.min(100, msg.percent)) / 100 : 0;
+          try { reportProgress(8 + fraction * 6, 'features'); } catch { /* UI callbacks must not stop analysis */ }
+          return;
+        }
         if (msg.type === 'features') done(() => resolve({ mono: msg.mono, extraction: msg.extraction }));
+        else if (msg.type === 'cancelled') done(() => reject(new CancellationError('Cancelled')));
         else if (msg.type === 'error') done(() => reject(new Error(msg.message || 'Feature extraction failed')));
       };
       // cancelActive()/dispose() settle this stage too, not only analyze.
@@ -142,26 +151,31 @@ export class FullAnalysisHost {
       const reportProgress = typeof opts.onProgress === 'function' ? opts.onProgress : this.onProgress;
       try { reportProgress(8, 'vad'); } catch { /* UI callbacks must not stop analysis */ }
       const offloaded = await this._featuresInWorker(channels, sampleRate, opts);
+      const analysisMonoOwned = Boolean(offloaded) || channels.length !== 1;
       const mono = offloaded ? offloaded.mono : downmixToMono(channels);
       const extraction = offloaded ? offloaded.extraction : extractFrameFeatures(mono, sampleRate, {
         frameSec: opts.frameSec,
         hopSec: opts.hopSec,
       });
       throwIfAborted(opts.signal);
+      const prepared = {
+        ...opts,
+        extraction,
+        analysisMono: mono,
+        analysisMonoOwned,
+      };
       if (this._enableMlVad) {
         const hints = await this._buildVadHints(mono, sampleRate, extraction, {
           signal: opts.signal,
           timeoutMs: opts.vadTimeoutMs,
         });
         throwIfAborted(opts.signal);
-        return {
-          ...opts,
-          mlHints: {
-            ...(opts.mlHints || {}),
-            ...hints,
-          },
+        prepared.mlHints = {
+          ...(opts.mlHints || {}),
+          ...hints,
         };
       }
+      return prepared;
     } catch (err) {
       if (err instanceof CancellationError
         || err?.name === 'CancellationError'
@@ -181,29 +195,67 @@ export class FullAnalysisHost {
   async analyze(channels, sampleRate, opts = {}) {
     const signal = opts.signal;
     const generation = ++this._analysisGeneration;
+    this._featureSettlement?.cancel('Superseded by a newer analysis');
     this._cancelWorkerRequest('Superseded by a newer analysis');
     const reportProgress = typeof opts.onProgress === 'function' ? opts.onProgress : this.onProgress;
+    const startedAt = Date.now();
+    const stages = [];
+    let lastPercent = -1;
     const reportProgressSafely = (percent, stage) => {
-      try { reportProgress(percent, stage); } catch { /* UI callbacks must not stop analysis */ }
+      const next = Number.isFinite(percent) ? percent : 0;
+      if (next + 0.001 < lastPercent) return;
+      const name = stage || 'analysis';
+      const elapsedMs = Date.now() - startedAt;
+      const prev = stages[stages.length - 1];
+      if (!prev || prev.stage !== name || next - prev.percent >= 5 || elapsedMs - prev.elapsedMs >= 1000) {
+        stages.push({ stage: name, elapsedMs, percent: Math.round(next) });
+      }
+      lastPercent = next;
+      try { reportProgress(next, stage); } catch { /* UI callbacks must not stop analysis */ }
+    };
+    const attachDiagnostics = (analysis) => {
+      if (!analysis || typeof analysis.diagnostics !== 'object') return analysis;
+      analysis.diagnostics = {
+        ...analysis.diagnostics,
+        requestId: this._activeRequestId,
+        wallMs: Date.now() - startedAt,
+        stages,
+      };
+      return analysis;
     };
     throwIfAborted(signal);
-    const enriched = await this._withVadHints(channels, sampleRate, opts);
+    const enriched = await this._withVadHints(channels, sampleRate, { ...opts, onProgress: reportProgressSafely });
     throwIfAborted(signal);
     if (generation !== this._analysisGeneration) {
       throw new CancellationError('Superseded by a newer analysis');
     }
 
+    const ownedMono = enriched.analysisMonoOwned ? enriched.analysisMono : null;
+    delete enriched.analysisMono;
+    delete enriched.analysisMonoOwned;
+    const sourceChannels = ownedMono ? [ownedMono] : channels;
+
     const worker = this._ensureWorker();
     if (!worker) {
       reportProgressSafely(20, 'features');
-      throwIfAborted(signal);
-      const analysis = analyzeAudio(channels, sampleRate, enriched);
+      const budget = createYieldBudget();
+      const analysis = await analyzeAudioCooperative(sourceChannels, sampleRate, {
+        ...enriched,
+        mono: ownedMono || undefined,
+      }, {
+        yield: () => budget(),
+        shouldStop: () => signal?.aborted || generation !== this._analysisGeneration,
+        onProgress: (done, total) => {
+          const pct = 20 + Math.round((done / Math.max(1, total)) * 70);
+          reportProgressSafely(Math.min(90, pct), 'features');
+        },
+      });
       throwIfAborted(signal);
       if (generation !== this._analysisGeneration) {
         throw new CancellationError('Superseded by a newer analysis');
       }
       reportProgressSafely(100, 'complete');
-      return analysis;
+      return attachDiagnostics(analysis);
     }
 
     // Copy before the request goes live: a synchronous slice() of a long
@@ -221,9 +273,13 @@ export class FullAnalysisHost {
       throwIfStale();
     };
     const payloadChannels = [];
-    for (const ch of channels) {
-      payloadChannels.push(await copyFloat32Channel(ch, { yieldBudget }));
-      throwIfStale();
+    if (ownedMono) {
+      payloadChannels.push(ownedMono);
+    } else {
+      for (const ch of sourceChannels) {
+        payloadChannels.push(await copyFloat32Channel(ch, { yieldBudget }));
+        throwIfStale();
+      }
     }
 
     const requestId = ++this._requestId;
@@ -272,11 +328,10 @@ export class FullAnalysisHost {
         if (msg.type === 'progress' || msg.type === 'heartbeat') {
           lastActivity = Date.now();
           const percent = Number.isFinite(msg.percent) ? Math.max(0, Math.min(100, msg.percent)) : 0;
-          try {
-            reportProgress(percent, msg.stage || (msg.type === 'heartbeat' ? 'working' : 'analysis'));
-          } catch { /* UI callbacks must not strand worker settlement */ }
+          const stage = msg.stage || (msg.type === 'heartbeat' ? 'working' : 'analysis');
+          reportProgressSafely(percent, stage);
         } else if (msg.type === 'result') {
-          settle(() => resolve(msg.analysis));
+          settle(() => resolve(attachDiagnostics(msg.analysis)));
         } else if (msg.type === 'cancelled') {
           failWorker(new CancellationError('Cancelled'));
         } else if (msg.type === 'error') {
