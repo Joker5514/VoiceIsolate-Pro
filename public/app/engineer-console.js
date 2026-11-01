@@ -41,6 +41,7 @@
       installPrecisionStudioShell();
       installWorkstation();
       trackHeaderHeight();
+      bindCollapsibleSections();
       // Defer ticker + summary so reparent paints before any interval work.
       const schedule = globalThis.requestIdleCallback
         ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
@@ -197,6 +198,21 @@
     sum.appendChild(s);
   }
 
+  function bindCollapsibleSections() {
+    const wire = () => {
+      const app = typeof window !== 'undefined' ? window._vipApp : null;
+      if (!app || typeof app._initCollapsibleSections !== 'function') return false;
+      app._initCollapsibleSections();
+      return true;
+    };
+    if (wire()) return;
+    let tries = 0;
+    const poll = setInterval(() => {
+      tries += 1;
+      if (wire() || tries > 40) clearInterval(poll);
+    }, 50);
+  }
+
   function collapseUnlessOpen(sels) {
     for (const s of sels) {
       const d = document.querySelector(s);
@@ -216,27 +232,34 @@
     const session = document.querySelector('.ec-col-session') || document.querySelector('.main-grid');
     if (!session) return;
 
-    const integrity = el('div', 'card ec-integrity-card');
+    const integrity = document.createElement('details');
+    integrity.className = 'card ec-integrity-card vip-section';
     integrity.id = 'ecIntegrityCard';
+    integrity.open = true;
     integrity.innerHTML = `
-      <div class="ec-integrity-head">
-        <h3 class="ec-integrity-title">DSP Integrity</h3>
+      <summary class="vip-section-summary ec-integrity-head">
+        <span class="ec-integrity-title">DSP Integrity</span>
         <span class="ec-status-pill" id="ecIntegrityOverall" data-state="ok">Click-safe</span>
-      </div>
+      </summary>
+      <div class="vip-section-body">
       <div class="ec-pill-row" role="status" aria-label="DSP integrity status">
         <span class="ec-status-pill" id="ecPhasePill" data-state="ok" title="Single-pass STFT/iSTFT">Phase OK</span>
         <span class="ec-status-pill" id="ecSmoothPill" data-state="ok" title="AudioParam ramps / anti-click">Smoothed</span>
         <span class="ec-status-pill" id="ecColaPill" data-state="ok" title="COLA-safe hop geometry">COLA</span>
         <span class="ec-status-pill" id="ecStftPill" data-state="ok" title="Fused spectral single STFT">1× STFT</span>
+      </div>
       </div>`;
 
-    const safety = el('div', 'card ec-output-safety');
+    const safety = document.createElement('details');
+    safety.className = 'card ec-output-safety vip-section';
     safety.id = 'ecOutputSafety';
+    safety.open = true;
     safety.innerHTML = `
-      <div class="ec-safety-head">
-        <h3 class="ec-safety-title">Output Safety</h3>
+      <summary class="vip-section-summary ec-safety-head">
+        <span class="ec-safety-title">Output Safety</span>
         <span class="ec-status-pill" id="ecSafetyPill" data-state="ok">Clean</span>
-      </div>
+      </summary>
+      <div class="vip-section-body">
       <div class="ec-meter-row">
         <div class="ec-meter"><span class="ec-meter-lbl">Peak</span><span class="ec-meter-val" id="ecPeakVal" title="Sample peak copied from the header meter.">—</span></div>
         <div class="ec-meter"><span class="ec-meter-lbl">Sample peak</span><span class="ec-meter-val" id="ecTpVal" title="Sample peak in dBFS. This is not an ITU true-peak reading.">— dBFS</span></div>
@@ -244,7 +267,8 @@
       </div>
       <p class="hint" style="margin:8px 0 0;font-size:0.7rem;opacity:0.75">
         Sample peak is the header meter in dBFS. Limiter is the Limiter Threshold setting. Neither number is an ITU true-peak.
-      </p>`;
+      </p>
+      </div>`;
 
     const processing = document.getElementById('section-processing');
     if (processing?.parentElement) {
@@ -264,21 +288,31 @@
     const grid = el('div', 'ec-summary-grid');
     grid.id = 'ecSummaryGrid';
 
-    const analysis = el('div', 'card ec-summary-card');
+    const analysis = document.createElement('details');
+    analysis.className = 'card ec-summary-card vip-section';
+    analysis.id = 'section-ec-analysis';
+    analysis.open = true;
     analysis.innerHTML = `
-      <h3>Analysis Summary</h3>
+      <summary class="vip-section-summary">Analysis Summary</summary>
+      <div class="vip-section-body">
       <div class="ec-summary-body" id="ecAnalysisSummary">
         Runs automatically after Process. SNR, voice %, and findings appear here.
       </div>
-      <p class="ec-metric-gloss" id="ecMetricGloss">Import a file. Duration, sample rate, and channels come from the decode. Voice, noise, SNR, peak, and level come from Process.</p>`;
+      <p class="ec-metric-gloss" id="ecMetricGloss">Import a file. Duration, sample rate, and channels come from the decode. Voice, noise, SNR, peak, and level come from Process.</p>
+      </div>`;
 
-    const diar = el('div', 'card ec-summary-card');
+    const diar = document.createElement('details');
+    diar.className = 'card ec-summary-card vip-section';
+    diar.id = 'section-ec-diar';
+    diar.open = true;
     diar.innerHTML = `
-      <h3>Diarization · Voice Matrix</h3>
+      <summary class="vip-section-summary">Diarization · Voice Matrix</summary>
+      <div class="vip-section-body">
       <div class="ec-summary-body" id="ecDiarSummary">
         Speakers are found and labeled automatically during Process.
       </div>
-      <div class="ec-voice-matrix" id="ecVoiceMatrix" role="group" aria-label="Detected speakers"></div>`;
+      <div class="ec-voice-matrix" id="ecVoiceMatrix" role="group" aria-label="Detected speakers"></div>
+      </div>`;
 
     grid.append(analysis, diar);
     viz.insertAdjacentElement('afterend', grid);

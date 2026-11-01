@@ -771,3 +771,51 @@ body.v3 .v3-ws-stage { display: contents; }
   body.v3 .v3-facts strong { font-size: 26px; white-space: nowrap; }
   body.v3 .v3-facts span { font-size: 12px; }
 }
+
+/* Every landing block is a disclosure. Closed bodies stay hidden even when a
+   child sets display, which would otherwise beat the browser's details rule. */
+body.v3 details > summary { cursor: pointer; list-style: none; }
+body.v3 details > summary::-webkit-details-marker { display: none; }
+body.v3 details:not([open]) > :not(summary) { display: none !important; }
+body.v3 details > summary.v3-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+body.v3 details > summary.v3-label::after {
+  content: '';
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 5px solid var(--v3-cyan, #2ed5e5);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+body.v3 details[open] > summary.v3-label::after { transform: rotate(90deg); }
+body.v3 details.v3-principles > summary,
+body.v3 details.v3-uses > summary,
+body.v3 details.v3-modes > summary { grid-column: 1 / -1; }
+body.v3 details.v3-block > summary,
+body.v3 details.v3-principles > summary { position: relative; cursor: pointer; }
+body.v3 details.v3-block > summary::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0.85em;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--v3-cyan, #2ed5e5);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+}
+body.v3 details.v3-block[open] > summary::after { transform: rotate(90deg); }
+body.v3 details.v3-mixer > summary.v3-label {
+  margin: 0 0 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--v3-line);
+  border-radius: 10px;
+  background: var(--v3-panel);
+}

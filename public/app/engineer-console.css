@@ -984,8 +984,8 @@ body.eng-console.ws #vipHero.vip-hero { max-width: none; }
 body.eng-console.ec-skin .file-library-toolbar,
 body.eng-console.ec-skin .save-row { flex-wrap: wrap; }
 body.eng-console.ec-skin .file-library-toolbar > .btn,
-body.eng-console.ec-skin .save-row > .btn { flex: 1 1 auto; min-width: max-content; justify-content: center; }
-body.eng-console.ec-skin .save-row > .hint { flex-basis: 100%; }
+body.eng-console.ec-skin .save-row > .vip-section-body > .btn { flex: 1 1 auto; min-width: max-content; justify-content: center; }
+body.eng-console.ec-skin .save-row > .vip-section-body > .hint { flex-basis: 100%; }
 body.eng-console.ec-skin .actions-row { flex-wrap: wrap; }
 body.eng-console.ec-skin .actions-row > .btn { flex: 1 1 auto; min-width: max-content; }
 /* A fixed column count left 75px cells for unbreakable labels ("Phone/Radio"). */
@@ -1054,6 +1054,25 @@ body.eng-console.ws > .transport-card .tp-time {
 }
 body.eng-console.ws > .transport-card .transport-seek { margin: 0; padding: 8px 2px; min-height: 0; }
 body.eng-console.ws > .transport-card .tp-speed label { color: var(--ws-text-3); }
+/* The summary is its own row. The open body keeps the one-row transport grid
+   (buttons · time · scrubber · speed/loop/A-B). display:contents on the details
+   itself dropped the scrubber onto a second row. */
+body.eng-console.ws > details.transport-card {
+  display: flex;
+  flex-direction: column;
+}
+body.eng-console.ws > details.transport-card > .vip-section-summary {
+  margin: 0 0 4px;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+}
+body.eng-console.ws > details.transport-card[open] > .vip-section-body {
+  display: grid;
+  grid-template-columns: auto auto minmax(160px, 1fr) auto;
+  align-items: center;
+  column-gap: 18px;
+}
 
 /* ── Live analyzer card (neon-pulse-visualizer.js) ─────────────────────
    The card's np-* markup had no rules anywhere, so it rendered as raw
