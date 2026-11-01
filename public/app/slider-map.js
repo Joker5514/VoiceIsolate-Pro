@@ -282,7 +282,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'gateAttack', key: 'gateAttack', label: 'Gate Attack',
-    min: 0, max: 100, step: 5, default: 5, unit: 'ms',
+    min: 0, max: 200, step: 5, default: 5, unit: 'ms',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-gate',
     tip: 'How fast the gate opens when signal exceeds the threshold. Lower = snappier.'
   },

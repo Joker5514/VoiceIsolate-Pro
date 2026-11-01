@@ -111,6 +111,7 @@ import {
   readImportOptionsFromUi,
 } from '/src/presentation/FileLibraryUI.js';
 import { persistAppSession, restoreAppSession } from './session-persist.js';
+import { migrateParamSnapshot } from '/src/core/ParamMigration.js';
 import {
   exportVideoWithProcessedAudio,
   triggerBlobDownload,
@@ -613,7 +614,7 @@ const SLIDERS = {
   gate: [
     { id:'gateThresh', label:'Threshold', min:-120, max:0, val:-42, step:5, unit:' dB', rt:true, desc:'Audio quieter than this level is treated as silence and turned down.', example:'Raise toward -30 dB to mute the room tone between sentences in a voice memo; lower toward -60 dB so soft speech is never cut off.' },
     { id:'gateRange', label:'Range', min:-120, max:0, val:-60, step:5, unit:' dB', rt:true, desc:'How far the gated (silent) sections are turned down.', example:'-60 dB fully silences gaps; set -12 dB to just soften background hiss instead of killing it, keeping a natural ambience.' },
-    { id:'gateAttack', label:'Attack', min:0, max:100, val:5, step:5, unit:' ms', rt:true, desc:'How fast the gate opens when speech starts.', example:'Keep at ~5 ms so the start of each word ("Hello") is not clipped; longer values soften hard consonants.' },
+    { id:'gateAttack', label:'Attack', min:0, max:200, val:5, step:5, unit:' ms', rt:true, desc:'How fast the gate opens when speech starts.', example:'Keep at ~5 ms so the start of each word ("Hello") is not clipped; longer values soften hard consonants. Live-Mix applies at most 200 ms.' },
     { id:'gateRelease', label:'Release', min:10, max:2000, val:200, step:50, unit:' ms', rt:true, desc:'How fast the gate closes after sound stops.', example:'~200 ms feels natural for speech; raise to 800 ms so the tail of a sung note or reverb is not chopped off abruptly.' },
     { id:'gateHold', label:'Hold', min:0, max:500, val:20, step:25, unit:' ms', rt:true, desc:'Minimum time the gate stays open after a sound.', example:'Set ~80 ms to stop the gate "chattering" open and shut during a stuttered or breathy phrase.' },
     { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:2, step:1, unit:' ms', rt:true, desc:'Delays the Live-Mix gate path so its detector can open before a sound arrives.', example:'5–10 ms preserves a plosive attack; higher values add the same amount of preview latency.' },
@@ -1108,6 +1109,13 @@ class VoiceIsolatePro {
         this.params = { ...this.params, ...restored.params };
         window.VIP_PARAMS = window.VIP_PARAMS || {};
         Object.assign(window.VIP_PARAMS, restored.params);
+        if (restored.changed?.length) {
+          persistAppSession(this.params, restored.meta || {});
+        }
+        if (restored.warnings?.length) {
+          structuredLog('warn', '[VIP] parameter migration', { warnings: restored.warnings });
+          this.showNotification?.(restored.warnings[0], 'warn', 8000);
+        }
       }
       this._bindCrashSafeFlush();
       this._restoreLibrarySession().catch((err) => {
@@ -3556,12 +3564,25 @@ class VoiceIsolatePro {
     try {
       const row = await getTrackState(fileId);
       if (!row?.params || typeof row.params !== 'object') return;
+      const migrated = migrateParamSnapshot(row.params, {
+        version: row.meta?.paramContractVersion,
+      });
       window.VIP_PARAMS = window.VIP_PARAMS || {};
-      Object.assign(window.VIP_PARAMS, row.params);
-      Object.assign(this.params, row.params);
+      Object.assign(window.VIP_PARAMS, migrated.params);
+      Object.assign(this.params, migrated.params);
+      if (migrated.changed.length && typeof scheduleSaveTrackState === 'function') {
+        scheduleSaveTrackState(fileId, {
+          params: migrated.params,
+          meta: { ...(row.meta || {}), paramContractVersion: migrated.version },
+        });
+      }
+      if (migrated.warnings.length) {
+        structuredLog('warn', '[VIP] track parameter migration', { fileId, warnings: migrated.warnings });
+        this.showNotification?.(migrated.warnings[0], 'warn', 8000);
+      }
       this._programmaticSliderUpdate = true;
       try {
-        for (const [id, val] of Object.entries(row.params)) {
+        for (const [id, val] of Object.entries(migrated.params)) {
           if (typeof val !== 'number' || !Number.isFinite(val)) continue;
           this._setSliderUi?.(id, val, { notify: false, force: true });
         }

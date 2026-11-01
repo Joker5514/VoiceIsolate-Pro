@@ -132,10 +132,11 @@ export function mountFileLibraryUI(app) {
         if (result.fileIds?.[0] && typeof app.openLibraryFile === 'function') {
           await app.openLibraryFile(result.fileIds[0]);
         }
-        app.showNotification?.(
-          `Imported project (${result.fileIds.length} file${result.fileIds.length === 1 ? '' : 's'})`,
-          'info',
-        );
+        const imported = `Imported project (${result.fileIds.length} file${result.fileIds.length === 1 ? '' : 's'})`;
+        app.showNotification?.(imported, 'info');
+        if (result.paramWarnings?.length) {
+          app.showNotification?.(result.paramWarnings[0], 'warn', 8000);
+        }
       } catch (err) {
         app.showNotification?.(err.message || 'Import failed', 'error');
       } finally {

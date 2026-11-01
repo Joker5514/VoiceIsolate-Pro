@@ -45,6 +45,7 @@
 'use strict';
 
 import { effectiveSpeakerGain, SPEAKER_GAIN_RAMP_SEC } from '../core/SpeakerGainEnvelope.js';
+import { PARAMETER_BY_ID } from '../core/ParameterSchema.js';
 
 import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/audio-config.js';
 import { copyChannelsToAudioBuffer } from './ui-yield.js';
@@ -1441,8 +1442,11 @@ export class PlaybackMixer {
   /** Noise-gate range in dB (0 … 120): attenuation depth when closed. 0 = off. */
   setGateRange(db) { this._setGateParam('range', clamp(db, 0, 120)); }
 
-  /** Noise-gate attack in ms (0 … 200). */
-  setGateAttack(ms) { this._setGateParam('attack', clamp(ms, 0, 200)); }
+  /** Noise-gate attack in ms. Bounds come from ParameterSchema (0–200). */
+  setGateAttack(ms) {
+    const spec = PARAMETER_BY_ID.get('gateAttack');
+    this._setGateParam('attack', clamp(ms, spec.min, spec.max));
+  }
 
   /** Noise-gate release in ms (0 … 2000). */
   setGateRelease(ms) { this._setGateParam('release', clamp(ms, 0, 2000)); }
