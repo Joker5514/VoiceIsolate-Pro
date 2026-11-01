@@ -1,6 +1,12 @@
 // session-persist.js — VoiceIsolate Pro
-// Persists 52-slider state, preset name, active tab, bypass state,
+// Persists slider state, preset name, active tab, bypass state,
 // and processing mode across reloads via localStorage + sessionStorage.
+//
+// Loaded snapshots pass through src/core/ParamMigration.js so a legacy
+// gateAttack outside the Live-Mix contract is reported instead of clamped
+// later with no record.
+
+import { migrateParamSnapshot, PARAM_CONTRACT_VERSION } from '/src/core/ParamMigration.js';
 // ZERO_EXTERNAL_CALLS: this file makes no network requests.
 //
 // AUDIT-FIX #9 (2026-05-26): All localStorage / sessionStorage calls are now
@@ -86,7 +92,7 @@ export function saveSession(params, meta) {
     delete canonicalParams.outWidth;
     _lsSet(SESSION_KEY, JSON.stringify({
       params: canonicalParams,
-      meta:    { ...meta   },
+      meta:    { ...meta, paramContractVersion: PARAM_CONTRACT_VERSION },
       savedAt: Date.now(),
     }));
   } catch (err) {
@@ -112,7 +118,20 @@ export function loadSession() {
       parsed.params.stereoWidth = width;
       parsed.params.outWidth = width; // synchronized compatibility view in memory
     }
-    return { params: parsed.params, meta: parsed.meta ?? {} };
+    const meta = parsed.meta ?? {};
+    const migrated = migrateParamSnapshot(parsed.params, {
+      version: meta.paramContractVersion,
+    });
+    if (Number.isFinite(migrated.params.stereoWidth)) {
+      migrated.params.outWidth = migrated.params.stereoWidth;
+    }
+    return {
+      params: migrated.params,
+      meta: { ...meta, paramContractVersion: migrated.version },
+      warnings: migrated.warnings,
+      changed: migrated.changed,
+      version: migrated.version,
+    };
   } catch (err) {
     console.warn('[session-persist] loadSession parse error:', err);
     return null;

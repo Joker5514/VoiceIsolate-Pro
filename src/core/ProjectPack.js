@@ -17,6 +17,7 @@
 import * as FileLibrary from './FileLibrary.js';
 import * as ProjectStore from './ProjectStore.js';
 import { readSourceBlob, blobToFile } from './storage/BlobStore.js';
+import { migrateParamSnapshot } from './ParamMigration.js';
 
 const MAGIC = 0x56505031; // VPP1
 const VERSION = 1;
@@ -76,6 +77,7 @@ export async function exportProjectPack(projectId, opts = {}) {
       name: project.name,
       description: project.description || '',
       savedParams: project.savedParams || {},
+      paramContractVersion: project.paramContractVersion,
       activePreset: project.activePreset || null,
       sourceFileIds: project.sourceFileIds || [],
     },
@@ -216,6 +218,9 @@ export function sanitizePackManifest(manifest, files) {
       if (typeof v === 'number' && Number.isFinite(v)) savedParams[k] = v;
     }
   }
+  const migratedParams = migrateParamSnapshot(savedParams, {
+    version: project.paramContractVersion,
+  });
   const out = list.map((f, i) => {
     if (!f || typeof f !== 'object' || typeof f.path !== 'string' || !f.path) {
       throw new Error(`[VIP][ProjectPack] invalid manifest: files[${i}]`);
@@ -234,7 +239,9 @@ export function sanitizePackManifest(manifest, files) {
   return {
     name: optString(project.name, 200) || 'Imported project',
     description: optString(project.description, 2000),
-    savedParams,
+    savedParams: migratedParams.params,
+    paramWarnings: migratedParams.warnings,
+    paramContractVersion: migratedParams.version,
     activePreset: typeof project.activePreset === 'string' ? project.activePreset.slice(0, 120) : null,
     files: out,
   };
@@ -249,6 +256,8 @@ export async function importProjectPack(input) {
     await ProjectStore.updateProject(proj.projectId, {
       savedParams: pack.savedParams,
       activePreset: pack.activePreset,
+      paramContractVersion: pack.paramContractVersion,
+      ...(pack.paramWarnings?.length ? { paramMigrationWarnings: pack.paramWarnings } : {}),
     });
     for (const f of pack.files) {
       const blob = new Blob([files.get(f.path)], { type: f.mimeType });
@@ -283,7 +292,11 @@ export async function importProjectPack(input) {
     throw err;
   }
 
-  return { projectId: proj.projectId, fileIds };
+  return {
+    projectId: proj.projectId,
+    fileIds,
+    paramWarnings: pack.paramWarnings || [],
+  };
 }
 
 /**

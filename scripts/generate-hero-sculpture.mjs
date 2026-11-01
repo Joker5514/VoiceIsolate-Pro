@@ -175,7 +175,9 @@ const block = [
   END,
 ].map((l) => l.split('\n').map((s) => i(8) + s).join('\n')).join('\n');
 
-const html = fs.readFileSync(INDEX, 'utf8');
+const normalizeNewlines = (s) => s.replace(/\r\n/g, '\n');
+const htmlRaw = fs.readFileSync(INDEX, 'utf8');
+const html = normalizeNewlines(htmlRaw);
 const a = html.indexOf(START), b = html.indexOf(END);
 if (a < 0 || b < a) {
   console.error('[VIP] hero-sculpture markers not found in public/index.html');
@@ -187,7 +189,8 @@ if (process.argv.includes('--check')) {
   if (next !== html) { console.error('[VIP] public/index.html hero sculpture is stale; run node scripts/generate-hero-sculpture.mjs'); process.exit(1); }
   console.log('[VIP] hero sculpture up to date');
 } else {
-  fs.writeFileSync(INDEX, next);
+  const eol = htmlRaw.includes('\r\n') ? '\r\n' : '\n';
+  fs.writeFileSync(INDEX, eol === '\n' ? next : next.replace(/\n/g, '\r\n'));
   console.log(`[VIP] wrote hero sculpture (${block.length} bytes) to public/index.html`);
   const yAt = (x) => r1(xAt(helix, x).p[1]);
   console.log(`[VIP] helix centre y at x=600: ${yAt(600)}, x=900: ${yAt(900)}, x=990: ${yAt(990)}`);

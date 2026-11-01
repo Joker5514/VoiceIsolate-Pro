@@ -448,6 +448,7 @@ Hardening pass only — **not** an architecture rewrite. Scope stays in
 | Module | Contract |
 |---|---|
 | `slider-calibration.js` | Pure `calibrate(id, raw)` + `getEffectiveDspParams(raw)`. UI ranges stay as displayed; **effective** values compress upper ranges (e.g. voiceIso 0–72 identity, 72–100 ease-out cubic → max effective ≈ 86). Coupling caps extreme combos; soft clamps de-risk gargling/pumping without snapping visible sliders. |
+| `src/core/ParamMigration.js` | Versioned restore for saved controls. `gateAttack` is 0–200 ms everywhere it is applied (schema, Engineer registry, landing slider, `PlaybackMixer`). Legacy 201–500 ms values are reported and set to 200 ms; other out-of-range values are reported and reset to 5 ms. Do not silently clamp them in a new call site. |
 | `slider-map.js` `SLIDER_HINTS` | Structured metadata (`purpose`, `bestFor`, `artifactRisk`, `pairedWith`, `modeDefaults`) for separation/whisper families; string hints still valid. |
 | `slider-hint-ui.js` | Augments existing hint panels with expandable details — do not replace inline hints. |
 | Slider lock UI | `data-locked` + SVG padlock; `toggleSliderLock(id)`; persist `vip-slider-locks` in `localStorage`; locked rows block drag, preset overwrite, and full reset (unless user chooses full reset). |
