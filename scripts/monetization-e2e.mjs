@@ -191,11 +191,21 @@ try {
 } catch (err) {
   check('flow ran without throwing', false, err?.stack || String(err));
 } finally {
-  apiServer.close();
-  fakeServer?.close();
+  // Close sockets before exit. Node 25 on Windows aborts with
+  // UV_HANDLE_CLOSING if process.exit races a server that is still closing.
+  const servers = [apiServer, fakeServer].filter(Boolean);
+  for (const server of servers) {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+  }
+  await Promise.all(servers.map((server) => new Promise((resolve) => {
+    server.close(() => resolve());
+  })));
   fs.rmSync(dataDir, { recursive: true, force: true });
 }
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n[monetization-e2e] ${live ? 'Stripe test mode' : 'offline fake Stripe API'}: ${results.length - failed.length}/${results.length} passed`);
-process.exit(failed.length ? 1 : 0);
+// Set the code and return. process.exit() on Node 25 / Windows aborts with
+// UV_HANDLE_CLOSING while libuv is still tearing sockets down, which made a
+// passing run fail the production gate.
+process.exitCode = failed.length ? 1 : 0;
