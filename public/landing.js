@@ -59,6 +59,12 @@ import {
   guardEnhanceOutcome,
   ENHANCE_OUTCOME_ID,
 } from '/src/core/EnhanceGuard.js';
+import {
+  buildProvenanceRecord,
+  provenanceFilenameFor,
+} from '/src/core/Provenance.js';
+import { hashSourceBlob } from '/src/pipeline/SourceHash.js';
+import { INFERENCE_REVISION, modelChainRevision, MODEL_MANIFEST } from '/src/core/ModelManifest.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -787,6 +793,55 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
       result = { blob: await encodeReviewedWav(full, { signal }), filename: `${base}-processed.wav` };
     }
     throwIfAborted(signal);
+    // ── VIP-010/VIP-011: forensic integrity sidecar (.viprovenance.json) ──
+    // Source + output SHA-256, model pins, parameters, and an integrity
+    // digest (an integrity RECORD — not a signature or certification).
+    // Best-effort: a provenance failure never blocks the audio export.
+    let provenanceDownloaded = false;
+    try {
+      setProcStage('export', 85, 'Hashing files for the integrity record…');
+      const [outHash, srcHash, appVersion] = await Promise.all([
+        hashSourceBlob(result.blob, { signal }),
+        sourceFile ? hashSourceBlob(sourceFile, { signal }) : Promise.resolve(null),
+        fetch('/manifest.json').then((r) => r.json()).then((m) => m?.version || null).catch(() => null),
+      ]);
+      const modelIds = [...(processPlan?.modelIds || [])];
+      const record = buildProvenanceRecord({
+        source: sourceFile ? {
+          name: sourceFile.name || null,
+          sizeBytes: sourceFile.size ?? null,
+          mimeType: sourceFile.type || null,
+          sha256: srcHash?.hex || null,
+        } : null,
+        export: {
+          timestamp: new Date().toISOString(),
+          format: result.filename.endsWith('.mp4') ? 'mp4' : 'wav',
+          options: { sampleRate: full.sampleRate, channels: full.numberOfChannels, region: { in: region.in, out: region.out } },
+          output: { filename: result.filename, sizeBytes: result.blob.size, sha256: outHash.hex },
+        },
+        application: {
+          version: appVersion,
+          inferenceRevision: INFERENCE_REVISION,
+          modelChainRevision: modelChainRevision(modelIds),
+          modelIds,
+          models: modelIds.map((id) => ({ id, sha256: MODEL_MANIFEST[id]?.sha256 || null })),
+        },
+        processing: {
+          parameters: null, // Landing has no process-time slider snapshot; null = not applicable
+          operations: [{ id: 'separate', status: 'completed', detail: (processPlan?.label || null) }],
+        },
+      });
+      const sidecarName = provenanceFilenameFor(result.filename);
+      const sidecarBlob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
+      // Drive/desktop artifacts just went to their destination; the sidecar
+      // follows to the local Downloads so the pair is never silently split.
+      triggerBlobDownload(sidecarBlob, sidecarName);
+      provenanceDownloaded = true;
+    } catch (err) {
+      if (isCancellationError(err) || signal.aborted) throw err;
+      console.warn('[VIP][landing] provenance sidecar unavailable (export continues)', err);
+    }
+    throwIfAborted(signal);
     if (drive) {
       const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
       if (!isDriveConfigured()) throw new Error('Google Drive is not configured. Use Export mix as WAV.');
@@ -802,7 +857,8 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
       triggerBlobDownload(result.blob, result.filename);
     }
     throwIfAborted(signal);
-    const message = drive ? `Saved to Drive: ${result.filename}` : `Export prepared: ${result.filename}. Check your downloads or chosen folder.`;
+    const sidecarNote = provenanceDownloaded ? ' Integrity record (.viprovenance.json) included.' : '';
+    const message = drive ? `Saved to Drive: ${result.filename}.${sidecarNote}` : `Export prepared: ${result.filename}. Check your downloads or chosen folder.${sidecarNote}`;
     setDownloadHint(message);
     setStatus(message, 'active');
     quickClean.setState('exported', message);
