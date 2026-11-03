@@ -53,7 +53,7 @@ import {
 // Shared state + automatic analysis + Raw/Processed/Removed
 import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
 import { ComparisonModes } from '/src/ui/tokens/design-tokens.js';
-import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
+import { runCoordinatedAutoAnalysis } from '/src/pipeline/AnalysisCoordinator.js';
 import { ProcessingController } from '/src/core/audio/processing/ProcessingController.js';
 import {
   guardEnhanceOutcome,
@@ -1458,7 +1458,7 @@ async function ingestFrom(file) {
       const analysisAbort = new AbortController();
       autoAnalysisAbort = analysisAbort;
       sessionStore.startAnalysis();
-      const analysis = runAutoAnalysis(rawClone, next.sampleRate, {
+      const analysis = runCoordinatedAutoAnalysis(rawClone, next.sampleRate, {
         signal: analysisAbort.signal,
         maybeYield: createYieldBudget(),
         // VIP-007: real diarization (k-means/ONNX) for the auto-analysis
@@ -1484,14 +1484,14 @@ async function ingestFrom(file) {
           if (analysisAbort.signal.aborted) return;
           sessionStore.setAnalysisResult({
             ...analysisResult,
+            snapshot: analysisResult.snapshot,
             regions: analysisResult.regions,
             snrDb: analysisResult.snrDb,
             speechRatio: analysisResult.speechRatio,
             state: 'ready',
           });
-          // VIP-005: analysis evidence now gates an Enhance Speech selection
-          // made before the analysis finished (not an informed choice yet).
-          enhanceGuard.analysis = analysisResult;
+          // VIP-005 + VIP-032: EnhanceGuard consumes the canonical AnalysisSnapshot.
+          enhanceGuard.analysis = analysisResult.snapshot || analysisResult;
           applyEnhanceGuard();
           // Update metrics
           sessionStore.updateMetrics({
@@ -1500,7 +1500,9 @@ async function ingestFrom(file) {
             outputLevelDb: 20 * Math.log10(Math.max(1e-6, analysisResult.rms || 0.01)),
           });
         } catch (e) {
-          if (e?.name !== 'AbortError') console.warn('[VIP][landing] auto analysis failed (non-fatal)', e);
+          if (e?.name !== 'AbortError' && e?.name !== 'StaleAnalysisError') {
+            console.warn('[VIP][landing] auto analysis failed (non-fatal)', e);
+          }
         }
       })();
     } catch (e) {

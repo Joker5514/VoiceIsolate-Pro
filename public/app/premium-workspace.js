@@ -14,7 +14,7 @@ import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
 import { getUIStore } from '/src/state/uiStore.js';
 import { createPlatformAdapter } from '/src/platform/index.js';
 import { ComparisonModes } from '/src/ui/tokens/design-tokens.js';
-import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
+import { runCoordinatedAutoAnalysis } from '/src/pipeline/AnalysisCoordinator.js';
 import { createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { computeSpectrogramGrid } from '/src/core/EngineerActionContract.js';
 
@@ -712,9 +712,10 @@ async function handleFileImported(detail) {
 
   try {
     sessionStore.startAnalysis();
-    const result = await runAutoAnalysis(channelData, sampleRate, {
+    const result = await runCoordinatedAutoAnalysis(channelData, sampleRate, {
       signal: abort.signal,
       maybeYield: createYieldBudget(),
+      contentFingerprint: window._vipApp?._provenance?.getSourceDescriptor?.()?.sha256 || undefined,
       // VIP-007: existing diarization path for the speaker overlay — loaded
       // lazily so this module's import graph stays light.
       detectSpeakers: (clean, sr, opts) => import('/src/pipeline/SpeakerDetection.js')
@@ -724,10 +725,15 @@ async function handleFileImported(detail) {
       },
     });
     if (abort.signal.aborted) return;
+    if (window._vipApp && result.snapshot) {
+      window._vipApp._lastAnalysisSnapshot = result.snapshot;
+    }
     sessionStore.setAnalysisResult(result);
     drawWaveform($('engineerWaveCanvas'), channelData);
   } catch (e) {
-    if (e?.name !== 'AbortError') console.warn('[VIP][premium] auto analysis failed', e);
+    if (e?.name !== 'AbortError' && e?.name !== 'StaleAnalysisError') {
+      console.warn('[VIP][premium] auto analysis failed', e);
+    }
   }
 }
 

@@ -2,6 +2,12 @@
 'use strict';
 
 import { validateAnalysisSnapshot } from '../core/IntelligenceContracts.js';
+import {
+  adaptAutoAnalysisToSnapshot,
+  snapshotToOverlayModel,
+  AUTO_ANALYSIS_ANALYZER_VERSION,
+} from '../core/AnalysisSnapshotAdapter.js';
+import { runAutoAnalysis } from '../core/audio/analysis/AutoAnalysis.js';
 
 /** Why a coordinator request did not produce a fresh snapshot. */
 export const ANALYSIS_OUTCOMES = Object.freeze({
@@ -169,6 +175,119 @@ export class AnalysisCoordinator {
     this.inflight.clear();
     this.cache.clear();
   }
+}
+
+/**
+ * Deterministic, synchronous content fingerprint over decoded PCM channels so
+ * Landing and Engineer callers can deduplicate & cache `AnalysisSnapshot` runs
+ * before or alongside async source-blob SHA-256 hashing.
+ *
+ * @param {Float32Array[]} channelData
+ * @param {number} sampleRate
+ * @returns {string}
+ */
+export function computeQuickAudioFingerprint(channelData, sampleRate) {
+  if (!Array.isArray(channelData) || channelData.length === 0 || !channelData[0]?.length) {
+    return 'unknown';
+  }
+  const chCount = channelData.length;
+  const len = channelData[0].length;
+  const sr = Math.round(Number(sampleRate) || 0);
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  const mix = (val) => {
+    const v = val | 0;
+    h1 ^= v & 0xffff;
+    h1 = Math.imul(h1, 0x01000193) >>> 0;
+    h2 ^= (v >>> 16) & 0xffff;
+    h2 = Math.imul(h2, 0x01000193) >>> 0;
+  };
+  mix(chCount);
+  mix(sr);
+  mix(len);
+  const stride = Math.max(1, Math.floor(len / 4096));
+  for (let c = 0; c < chCount; c++) {
+    const ch = channelData[c];
+    if (!ch) continue;
+    for (let i = 0; i < ch.length; i += stride) {
+      mix(Math.round((ch[i] || 0) * 32767));
+    }
+    mix(Math.round((ch[ch.length - 1] || 0) * 32767));
+  }
+  return `pcm-fnv-${chCount}ch-${sr}hz-${len}-${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+}
+
+let sharedAutoCoordinator = null;
+
+/**
+ * Shared `AnalysisCoordinator` singleton for automatic import analysis across
+ * Landing (`landing.js`, `landing-premium.js`) and Engineer (`premium-workspace.js`).
+ *
+ * @returns {AnalysisCoordinator}
+ */
+export function getSharedAutoAnalysisCoordinator() {
+  if (!sharedAutoCoordinator) {
+    sharedAutoCoordinator = new AnalysisCoordinator({
+      maxEntries: 8,
+      analyze: async (input, opts) => {
+        const raw = await runAutoAnalysis(input.channelData, input.sampleRate, {
+          signal: opts.signal,
+          maybeYield: input.maybeYield,
+          detectSpeakers: input.detectSpeakers,
+          speakerTimeoutMs: input.speakerTimeoutMs,
+          onProgress: input.onProgress,
+        });
+        return adaptAutoAnalysisToSnapshot(raw, {
+          sessionId: opts.identity?.sessionId,
+          contentFingerprint: opts.identity?.contentFingerprint,
+          analysisVersion: opts.identity?.analysisVersion || '1',
+          analyzerVersion: AUTO_ANALYSIS_ANALYZER_VERSION,
+        });
+      },
+    });
+  }
+  return sharedAutoCoordinator;
+}
+
+/**
+ * Execute automatic import analysis through `AnalysisCoordinator`, returning a
+ * unified overlay model containing the validated canonical `AnalysisSnapshot`
+ * (`result.snapshot`). Concurrent callers for the same audio share one pass.
+ *
+ * @param {Float32Array[]} channelData
+ * @param {number} sampleRate
+ * @param {object} [options]
+ * @returns {Promise<object>}
+ */
+export async function runCoordinatedAutoAnalysis(channelData, sampleRate, options = {}) {
+  const coordinator = options.coordinator || getSharedAutoAnalysisCoordinator();
+  const contentFingerprint = options.contentFingerprint
+    || computeQuickAudioFingerprint(channelData, sampleRate);
+  const identity = {
+    sessionId: options.sessionId || undefined,
+    contentFingerprint,
+    analysisVersion: '1',
+    analyzerVersions: { auto: AUTO_ANALYSIS_ANALYZER_VERSION },
+    configuration: {
+      hasSpeakerHook: typeof options.detectSpeakers === 'function',
+    },
+  };
+  const snapshot = await coordinator.analyze(
+    identity,
+    {
+      channelData,
+      sampleRate,
+      maybeYield: options.maybeYield,
+      detectSpeakers: options.detectSpeakers,
+      speakerTimeoutMs: options.speakerTimeoutMs,
+      onProgress: options.onProgress,
+    },
+    { signal: options.signal },
+  );
+  if (snapshot.freshness === 'cached' && typeof options.onProgress === 'function') {
+    options.onProgress(100, { stage: 'complete', cached: true });
+  }
+  return snapshotToOverlayModel(snapshot);
 }
 
 export default AnalysisCoordinator;

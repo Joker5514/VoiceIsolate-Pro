@@ -5,6 +5,7 @@ import { validateAnalysisSnapshot } from './IntelligenceContracts.js';
 
 export const FULL_ANALYSIS_SNAPSHOT_VERSION = '1';
 export const FULL_ANALYSIS_ANALYZER_VERSION = 'full-analysis-1';
+export const AUTO_ANALYSIS_ANALYZER_VERSION = 'auto-analysis-1';
 
 let localSessionCounter = 0;
 
@@ -94,6 +95,11 @@ function buildEvidenceRegions(rawAnalysis, analyzerVersion) {
       detectionType: 'speech',
       availableActions: ['voiceIso', 'eqPresence'],
       explanation: 'Speech activity was detected in this region by the local full-audio analyzer.',
+    }, analyzerVersion),
+    ...segmentEvidenceRegions(rawAnalysis.whisperSegments || rawAnalysis.whisperCandidates, {
+      detectionType: 'whisper_candidate',
+      availableActions: ['whisperLift', 'voiceTunnel'],
+      explanation: 'Low-amplitude whisper speech candidate was detected in this region.',
     }, analyzerVersion),
     ...segmentEvidenceRegions(rawAnalysis.noiseSegments, {
       detectionType: 'background_noise',
@@ -242,4 +248,266 @@ export function adaptFullAnalysisToSnapshot(rawAnalysis, context = {}) {
   return validateAnalysisSnapshot(snapshot);
 }
 
-export default { adaptFullAnalysisToSnapshot };
+/**
+ * VIP-032: Adapt `runAutoAnalysis()` output to the canonical `AnalysisSnapshot`
+ * contract (`validateAnalysisSnapshot`) so Landing Quick Clean and Engineer
+ * Signal Canvas consume the exact same runtime-validated schema as FullAnalysis.
+ *
+ * @param {object} autoResult Output from `runAutoAnalysis()`.
+ * @param {object} [context]
+ * @returns {object} Runtime-validated `AnalysisSnapshot`.
+ */
+export function adaptAutoAnalysisToSnapshot(autoResult, context = {}) {
+  if (!autoResult || typeof autoResult !== 'object' || Array.isArray(autoResult)) {
+    throw new TypeError('[VIP][AnalysisSnapshotAdapter] autoResult must be an object');
+  }
+  assertRequiredInputMetadata(autoResult);
+
+  const sessionId = context.sessionId || nextLocalSessionId();
+  const analysisVersion = context.analysisVersion || FULL_ANALYSIS_SNAPSHOT_VERSION;
+  const analyzerVersion = context.analyzerVersion || AUTO_ANALYSIS_ANALYZER_VERSION;
+  const contentFingerprint = context.contentFingerprint || `unavailable:${sessionId}`;
+  const warnings = [
+    ...(Array.isArray(autoResult.warnings) ? autoResult.warnings : []),
+    ...(Array.isArray(context.warnings) ? context.warnings : []),
+  ];
+  if (!context.contentFingerprint) {
+    warnings.push('Content fingerprint unavailable; this snapshot is session-scoped and must not be reused as a durable cache identity.');
+  }
+
+  const evidenceRegions = [];
+  const pushRegs = (list, type, actions, explainFn, idSource = 'vip-auto-analysis') => {
+    if (!Array.isArray(list)) return;
+    list.forEach((seg, idx) => {
+      const startTime = safeTime(seg.start, 0);
+      const endTime = Math.max(startTime, safeTime(seg.end, startTime));
+      const conf = Number.isFinite(seg.confidence) ? seg.confidence : 0.6;
+      evidenceRegions.push({
+        id: typeof seg.id === 'string' && seg.id.trim()
+          ? seg.id
+          : regionId(type, idx, startTime, endTime),
+        startTime,
+        endTime,
+        detectionType: type,
+        certainty: certaintyFromConfidence(conf),
+        evidence: {
+          confidence: conf,
+          ...(seg.speakerId ? { speakerId: seg.speakerId } : {}),
+          ...(Number.isFinite(seg.freqHz) ? { freqHz: seg.freqHz } : {}),
+          ...(Number.isFinite(seg.levelDb) ? { levelDb: seg.levelDb } : {}),
+        },
+        responsible: { id: idSource, version: analyzerVersion },
+        availableActions: actions,
+        explanation: explainFn(seg),
+        support: 'supported',
+      });
+    });
+  };
+
+  pushRegs(
+    autoResult.speechSegments,
+    'speech',
+    ['voiceGain', 'eqPresence'],
+    () => 'Local energy/spectral voice activity detector measured speech energy.',
+  );
+  pushRegs(
+    autoResult.whisperCandidates,
+    'whisper_candidate',
+    ['whisperLift', 'voiceTunnel'],
+    () => 'Low-amplitude, unvoiced broadband speech candidate (whisper hazard for aggressive NR).',
+  );
+  pushRegs(
+    autoResult.noiseSegments,
+    'background_noise',
+    ['bgSuppress', 'nrAmount'],
+    () => 'Non-speech stationary or broadband background noise floor segment.',
+  );
+  pushRegs(
+    autoResult.humSegments,
+    'tonal_hum',
+    ['humAmt', 'humFreq'],
+    (seg) => `Narrowband mains hum harmonic energy${Number.isFinite(seg?.freqHz) ? ` near ${Math.round(seg.freqHz)} Hz` : ''}.`,
+  );
+
+  const speakers = Array.isArray(autoResult.speakers) ? autoResult.speakers : [];
+  const speakerOverlays = Array.isArray(autoResult.regions)
+    ? autoResult.regions.filter((r) => r && r.type === 'speaker')
+    : [];
+  pushRegs(
+    speakerOverlays,
+    'speaker_turn',
+    ['voiceGain'],
+    (seg) => `Detected speaker turn (${seg.speakerId || 'speaker'}).`,
+    autoResult.speakerDetection?.method || 'vip-diarization',
+  );
+
+  const detectedSources = [];
+  if ((autoResult.speechSegments || []).length > 0) {
+    detectedSources.push({
+      id: 'speech',
+      type: 'speech',
+      label: 'Speech',
+      confidence: Number.isFinite(autoResult.confidence) ? autoResult.confidence : 0.7,
+    });
+  }
+  if ((autoResult.whisperCandidates || []).length > 0) {
+    detectedSources.push({
+      id: 'whisper',
+      type: 'whisper',
+      label: 'Whisper Candidate',
+      confidence: 0.65,
+    });
+  }
+  if ((autoResult.noiseSegments || []).length > 0) {
+    detectedSources.push({
+      id: 'noise',
+      type: 'noise',
+      label: 'Background Noise',
+      confidence: 0.7,
+    });
+  }
+  if ((autoResult.humSegments || []).length > 0) {
+    detectedSources.push({
+      id: 'hum',
+      type: 'hum',
+      label: 'Mains Hum',
+      confidence: 0.75,
+    });
+  }
+  for (const spk of speakers) {
+    detectedSources.push({
+      id: spk.id || `speaker-${detectedSources.length}`,
+      type: 'speaker',
+      label: spk.label || spk.id || 'Speaker',
+      confidence: Number.isFinite(spk.confidence) ? spk.confidence : 0.6,
+    });
+  }
+
+  const snapshot = {
+    sessionId,
+    contentFingerprint,
+    input: {
+      sampleRate: autoResult.sampleRate,
+      channels: autoResult.channels,
+      durationSeconds: autoResult.duration,
+    },
+    analysisVersion,
+    timestamp: autoResult.timestamp || context.timestamp || new Date().toISOString(),
+    versions: {
+      analyzer: analyzerVersion,
+      rules: 'intelligence-foundation-1',
+      speakerDetection: autoResult.speakerDetection?.method || 'none',
+      ...(context.versions || {}),
+    },
+    capabilities: {
+      localAnalysis: { status: 'ready' },
+      speakerDiarization: {
+        status: speakers.length > 0 ? 'ready' : 'unavailable',
+        method: autoResult.speakerDetection?.method || 'none',
+      },
+      ...(context.capabilities || {}),
+    },
+    measurements: {
+      rms: Number.isFinite(autoResult.rms) ? autoResult.rms : 0,
+      peak: Number.isFinite(autoResult.peak) ? autoResult.peak : 0,
+      snrDb: Number.isFinite(autoResult.snrDb) ? autoResult.snrDb : 0,
+      speechRatio: Number.isFinite(autoResult.speechRatio) ? autoResult.speechRatio : 0,
+      noiseFloor: autoResult.noiseFloor || {},
+      confidence: Number.isFinite(autoResult.confidence) ? autoResult.confidence : 0,
+      speakers,
+    },
+    detectedSources,
+    evidenceRegions,
+    warnings: uniqueStrings(warnings),
+    unsupportedAnalyses: uniqueStrings(context.unsupportedAnalyses || []),
+    freshness: context.freshness || 'fresh',
+  };
+
+  return validateAnalysisSnapshot(snapshot);
+}
+
+/**
+ * Project any canonical `AnalysisSnapshot` (from `AutoAnalysis` OR `FullAnalysis`)
+ * into the Signal Canvas / `audioSessionStore` overlay model while preserving
+ * `snapshot` as the canonical source of truth.
+ *
+ * @param {object} snapshot Validated `AnalysisSnapshot`.
+ * @returns {object}
+ */
+export function snapshotToOverlayModel(snapshot) {
+  validateAnalysisSnapshot(snapshot);
+  const confidenceFromCertainty = { high: 0.9, medium: 0.68, low: 0.38, unknown: 0.5 };
+  const typeMap = {
+    speech: 'speech',
+    whisper: 'whisper',
+    whisper_candidate: 'whisper',
+    background_noise: 'noise',
+    noise: 'noise',
+    tonal_hum: 'hum',
+    hum: 'hum',
+    speaker_turn: 'speaker',
+    music_bed: 'music',
+  };
+
+  const regions = [];
+  const speechSegments = [];
+  const whisperCandidates = [];
+  const noiseSegments = [];
+  const humSegments = [];
+
+  for (const er of snapshot.evidenceRegions) {
+    const uiType = typeMap[er.detectionType] || er.detectionType;
+    const confidence = Number.isFinite(er.evidence?.confidence)
+      ? er.evidence.confidence
+      : (confidenceFromCertainty[er.certainty] ?? 0.5);
+    const item = {
+      id: er.id,
+      type: uiType,
+      start: er.startTime,
+      end: er.endTime,
+      confidence,
+      ...(er.evidence?.speakerId ? { speakerId: er.evidence.speakerId } : {}),
+      ...(Number.isFinite(er.evidence?.freqHz) ? { freqHz: er.evidence.freqHz } : {}),
+    };
+    regions.push(item);
+    if (uiType === 'speech') speechSegments.push(item);
+    else if (uiType === 'whisper') whisperCandidates.push(item);
+    else if (uiType === 'noise') noiseSegments.push(item);
+    else if (uiType === 'hum') humSegments.push(item);
+  }
+
+  regions.sort((a, b) => a.start - b.start);
+  const m = snapshot.measurements || {};
+
+  return {
+    snapshot,
+    sessionId: snapshot.sessionId,
+    contentFingerprint: snapshot.contentFingerprint,
+    freshness: snapshot.freshness,
+    duration: snapshot.input.durationSeconds,
+    sampleRate: snapshot.input.sampleRate,
+    channels: snapshot.input.channels,
+    snrDb: Number.isFinite(m.snrDb) ? m.snrDb : 0,
+    rms: Number.isFinite(m.rms) ? m.rms : 0,
+    peak: Number.isFinite(m.peak) ? m.peak : 0,
+    speechRatio: Number.isFinite(m.speechRatio) ? m.speechRatio : 0,
+    noiseFloor: m.noiseFloor || m.globalNoiseProfile || {},
+    speakers: Array.isArray(m.speakers) ? m.speakers : [],
+    speechSegments,
+    whisperCandidates,
+    noiseSegments,
+    humSegments,
+    regions,
+    warnings: snapshot.warnings,
+    confidence: Number.isFinite(m.confidence)
+      ? m.confidence
+      : (Number.isFinite(m.confidenceScores?.analysisQuality) ? m.confidenceScores.analysisQuality : 0.7),
+    timestamp: snapshot.timestamp,
+  };
+}
+
+export default {
+  adaptFullAnalysisToSnapshot,
+  adaptAutoAnalysisToSnapshot,
+  snapshotToOverlayModel,
+};

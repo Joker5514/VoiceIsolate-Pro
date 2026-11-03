@@ -17,6 +17,8 @@ import { TransportSync } from '/src/presentation/TransportSync.js';
 import { mountModelCapabilityPanel } from '/src/presentation/ModelCapabilityPanel.js';
 import { EngineerProvenanceCoordinator } from '/src/pipeline/EngineerProvenanceCoordinator.js';
 import { mountForensicInspectorUI } from '/src/presentation/ForensicInspectorUI.js';
+import { adaptFullAnalysisToSnapshot } from '/src/core/AnalysisSnapshotAdapter.js';
+import { computeQuickAudioFingerprint } from '/src/pipeline/AnalysisCoordinator.js';
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
 import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
@@ -732,6 +734,30 @@ export function installAnalysisWorkspace(app) {
       }
       // Analyzer → WhisperHunter env fuse (protect voices, suppress horns/music/etc.)
       analysis = collaborateWithHunter(analysis, buf);
+      try {
+        const fp = app._provenance?.getSourceDescriptor?.()?.sha256
+          || computeQuickAudioFingerprint(channels, buf.sampleRate);
+        const snapshot = adaptFullAnalysisToSnapshot(
+          {
+            ...analysis,
+            sampleRate: analysis.sampleRate || buf.sampleRate,
+            channels: analysis.channels || buf.numberOfChannels || channels.length,
+            duration: Number.isFinite(analysis.duration) ? analysis.duration : buf.duration,
+          },
+          {
+            contentFingerprint: fp !== 'unknown' ? fp : undefined,
+          },
+        );
+        app._lastAnalysisSnapshot = snapshot;
+        analysis.snapshot = snapshot;
+        app._provenance?.recordOperation({
+          id: 'analysis-full',
+          status: 'completed',
+          detail: `${snapshot.evidenceRegions.length} evidence regions · ${snapshot.freshness}`,
+        });
+      } catch (snapErr) {
+        console.warn('[VIP] canonical AnalysisSnapshot adaptation warning:', snapErr?.message);
+      }
       if (libId) {
         try {
           const { saveAnalysisDurable } = await import('/src/core/storage/DerivedCache.js');

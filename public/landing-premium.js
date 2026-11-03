@@ -12,7 +12,7 @@ import { SignalCanvas } from '/src/ui/components/SignalCanvas/SignalCanvas.js';
 import { ComparisonToggle } from '/src/ui/components/ComparisonToggle/ComparisonToggle.js';
 import { LiveMeters } from '/src/ui/components/LiveMeters/LiveMeters.js';
 import { OnDeviceBadge } from '/src/ui/components/OnDeviceBadge/OnDeviceBadge.js';
-import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
+import { runCoordinatedAutoAnalysis } from '/src/pipeline/AnalysisCoordinator.js';
 import { createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { Profiles } from '/src/ui/tokens/design-tokens.js';
 
@@ -154,7 +154,7 @@ function initUnifiedWorkspace() {
         result = await analysis;
       } else {
         sessionStore.startAnalysis();
-        result = await runAutoAnalysis(channelData, sampleRate, {
+        result = await runCoordinatedAutoAnalysis(channelData, sampleRate, {
           maybeYield: createYieldBudget(),
           onProgress: (pct, extra) => {
             sessionStore.updateAnalysisProgress(pct, extra);
@@ -162,6 +162,7 @@ function initUnifiedWorkspace() {
         });
         sessionStore.setAnalysisResult({
           ...result,
+          snapshot: result.snapshot,
           regions: result.regions,
           snrDb: result.snrDb,
           speechRatio: result.speechRatio,
@@ -170,7 +171,7 @@ function initUnifiedWorkspace() {
       document.getElementById('analysisOverlayStatus').textContent =
         `Analysis ready — ${result.regions.length} regions detected (Speech ${result.speechSegments.length}, Whisper ${result.whisperCandidates.length}, Noise ${result.noiseSegments.length})`;
     } catch (err) {
-      if (err?.name === 'AbortError') return; // superseded by a newer import
+      if (err?.name === 'AbortError' || err?.name === 'StaleAnalysisError') return; // superseded by a newer import
       console.warn('[Premium] auto analysis failed', err);
       sessionStore.setAnalysisResult({ state: 'error', error: err.message });
     }
