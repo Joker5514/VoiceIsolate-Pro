@@ -17,12 +17,26 @@ There are no browser-facing fallback providers. The model loader only accepts
 same-origin `/app/models/*.onnx` paths, and `src/core/ModelManifest.js` is the
 canonical source for model filenames, sizes, and SHA-256 hashes.
 
-## Why Models Are Not Committed
+## Canonical Registry And Generated Projections
 
-- Binary ONNX weights are large.
-- The repository should stay cloneable without large binary artifacts.
-- Model weights are immutable application assets.
-- The browser verifies model hashes when a manifest hash is available.
+`src/core/ModelManifest.js` is the only hand-maintained model definition. Run
+`pnpm models:manifests` after changing it (or `pnpm worklets:hash`, which also
+regenerates the projections). The deterministic outputs are:
+
+- `public/app/models-manifest.json` — legacy Engineer/CDN compatibility keys;
+- `public/app/models/models-manifest.json` — full packaging inventory;
+- `public/app/model-registry.generated.js` — classic-script/worker compatibility
+  projection used by the legacy Engineer shell.
+
+Do not edit those outputs by hand. `pnpm models:manifests -- --check` and the
+static production gate fail on drift. Android and Windows required-file lists
+derive from the same canonical shipped entries. Historical training/provenance
+notes preserved from the old manifests are in `docs/MODEL_PROVENANCE.md`; they
+are publisher statements, not independently re-audited guarantees.
+
+The currently shipped ONNX files are committed under `public/app/models/` and
+also served through the Vercel rewrite. Optional/unshipped research weights are
+not downloaded, bundled, or redistributed by the generator.
 
 ## Hugging Face model-card status
 
@@ -50,7 +64,11 @@ reference.
 - `src/workers/MLWorker.js` fetches model bytes, verifies hashes, and initializes
   ONNX Runtime Web.
 - `public/app/model-cdn-loader.js` only accepts same-origin model URLs for the
-  legacy Engineer Mode shell.
+  legacy Engineer Mode shell and verifies exact size/SHA-256 before returning
+  fetched or cached bytes.
+- Legacy fetch-cache/worker consumers use the generated compatibility projection;
+  pinned models fail closed on missing/unavailable verification or mismatch.
+  HEAD presence is labelled unverified, never “ML active”.
 - `vercel.json` rewrites `/app/models/:filename` and `/models/:filename` to the
   configured Vercel Blob object route.
 
@@ -67,8 +85,14 @@ reference.
 2. Add or update the matching entry in `src/core/ModelManifest.js`.
 3. Include the expected SHA-256 when the model is required for production.
 4. Keep the browser URL under `/app/models/*.onnx`.
-5. Run `pnpm run validate`, `pnpm run worklets:verify`, and the model-loading
+5. Run `pnpm models:manifests`, `pnpm models:validate`,
+   `pnpm models:validate:urls`, `pnpm worklets:verify`, and the model-loading
    tests before shipping.
+6. For an explicit live-delivery check, run
+   `pnpm models:validate:urls -- --remote` (or `pnpm prod:verify -- --network`).
+   This downloads required bytes and verifies exact size/SHA-256; HEAD or
+   Content-Length alone is never reported as integrity. The default/static gate
+   is offline and does not claim remote delivery passed.
 
 ## AudioWorklet Delivery
 

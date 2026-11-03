@@ -1,14 +1,60 @@
 {
-  "_note": "Model delivery is same-origin only. All ONNX fetches must stay on /app/models/*.onnx so browser-side processing remains fully local.",
+  "_note": "Generated from src/core/ModelManifest.js by pnpm models:manifests. Do not edit model definitions here. All runtime URLs are same-origin; audio never leaves the device.",
   "schemaVersion": 2,
   "models": {
+    "silero_vad": {
+      "modelId": "vad",
+      "filename": "silero_vad.onnx",
+      "sizeBytes": 2327524,
+      "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+      "eager": true,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/silero_vad.onnx"
+        }
+      ]
+    },
+    "vad_int8": {
+      "modelId": "vad_int8",
+      "filename": "silero_vad_int8.onnx",
+      "sizeBytes": 2376297,
+      "sha256": "16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05",
+      "eager": false,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/silero_vad_int8.onnx"
+        }
+      ]
+    },
+    "rnnoise": {
+      "modelId": "rnnoise",
+      "filename": "rnnoise_suppressor.onnx",
+      "sizeBytes": 2027576,
+      "sha256": "0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6",
+      "eager": true,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/rnnoise_suppressor.onnx"
+        }
+      ]
+    },
     "demucs": {
+      "modelId": "demucs",
       "filename": "demucs_v4_quantized.onnx",
-      "sizeBytes": 88080384,
+      "sizeBytes": 148932181,
+      "sha256": "19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2",
       "eager": false,
       "optional": true,
       "shipped": false,
-      "_note": "Optional — not committed by default. Engineer Process uses BSRNN. Place ONNX at /app/models/demucs_v4_quantized.onnx to enable.",
       "sources": [
         {
           "provider": "same-origin",
@@ -17,9 +63,13 @@
       ]
     },
     "bsrnn": {
+      "modelId": "bsrnn_vocals",
       "filename": "bsrnn_vocals.onnx",
       "sizeBytes": 3870554,
+      "sha256": "7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141",
       "eager": false,
+      "optional": false,
+      "shipped": true,
       "sources": [
         {
           "provider": "same-origin",
@@ -27,44 +77,24 @@
         }
       ]
     },
-    "rnnoise": {
-      "filename": "rnnoise_suppressor.onnx",
-      "sizeBytes": 2027576,
-      "eager": true,
+    "bsrnn_vocals_complex": {
+      "modelId": "bsrnn_complex",
+      "filename": "bsrnn_vocals_complex.onnx",
+      "sizeBytes": null,
+      "sha256": null,
+      "eager": false,
+      "optional": true,
+      "shipped": false,
       "sources": [
         {
           "provider": "same-origin",
-          "url": "/app/models/rnnoise_suppressor.onnx"
-        }
-      ]
-    },
-    "silero_vad": {
-      "filename": "silero_vad.onnx",
-      "sizeBytes": 2327524,
-      "eager": true,
-      "sources": [
-        {
-          "provider": "same-origin",
-          "url": "/app/models/silero_vad.onnx"
+          "url": "/app/models/bsrnn_vocals_complex.onnx"
         }
       ]
     }
   },
-  "_sha256_note": "SHA256 last updated: 2026-10-18. Regenerate with: pnpm worklets:hash",
+  "_sha256_note": "Model hashes: pnpm models:manifests. Worklet hashes: pnpm worklets:hash (also regenerates this projection).",
   "worklets": {
-    "dsp_processor": {
-      "filename": "dsp-processor.js",
-      "processorName": "dsp-processor",
-      "role": "legacy-shipped",
-      "contentType": "application/javascript",
-      "sources": [
-        {
-          "provider": "same-origin",
-          "url": "/app/dsp-processor.js",
-          "sha256": "17e59d7aac0bb6504244f6f677a3bca9d9770b28a4a94e86ddf95a09afc3201f"
-        }
-      ]
-    },
     "gate_processor": {
       "filename": "GateProcessor.js",
       "processorName": "vip-gate",
@@ -88,6 +118,19 @@
           "provider": "same-origin",
           "url": "/src/workers/DeEsserProcessor.js",
           "sha256": "508a5787efe40701c500b9a121f35c378240a72a8fe47fca10ec07a8de69296a"
+        }
+      ]
+    },
+    "dsp_processor": {
+      "filename": "dsp-processor.js",
+      "processorName": "dsp-processor",
+      "role": "legacy-shipped",
+      "contentType": "application/javascript",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/dsp-processor.js",
+          "sha256": "17e59d7aac0bb6504244f6f677a3bca9d9770b28a4a94e86ddf95a09afc3201f"
         }
       ]
     }

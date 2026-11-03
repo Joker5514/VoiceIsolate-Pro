@@ -22,24 +22,13 @@ const SRC = fs.readFileSync(
 );
 
 describe('ml-worker-fetch-cache.js — model registry contract', () => {
-  test('declares MODEL_REGISTRY with only relative paths (no http/https)', () => {
-    const m = SRC.match(/const\s+MODEL_REGISTRY\s*=\s*\{([\s\S]*?)\n\}/);
-    expect(m).not.toBeNull();
-    const body = m[1];
-    // Privacy invariant: every model path must be local.
-    expect(body).not.toMatch(/path\s*:\s*['"`]https?:\/\//);
-    // Each entry should declare a sizeBytes field for progress UI fallback.
-    const entries = body.match(/\{\s*path\s*:\s*['"`][^'"`]+['"`]\s*,\s*sizeBytes\s*:\s*[\d_]+/g) || [];
-    expect(entries.length).toBeGreaterThanOrEqual(4);
-  });
-
-  test('every registered model path begins with "models/"', () => {
-    const re = /path\s*:\s*['"`]([^'"`]+)['"`]/g;
-    let m;
-    const paths = [];
-    while ((m = re.exec(SRC)) !== null) paths.push(m[1]);
-    expect(paths.length).toBeGreaterThan(0);
-    for (const p of paths) expect(p).toMatch(/^models\//);
+  test('registry is a generated canonical projection with local paths and pins', () => {
+    expect(SRC).toContain('globalThis.VIPModelRegistry');
+    expect(SRC).toContain('path: `models/${entry.filename}`');
+    expect(SRC).toContain('integrity: entry.sha256');
+    expect(SRC).toContain('verifyModelBuffer(meta, cached)');
+    expect(SRC).toContain('verifyModelBuffer(meta, _concatBuffers');
+    expect(SRC).not.toMatch(/path:\s*['"]https?:\/\//);
   });
 
   test('IDB version is bumpable and constants are present', () => {

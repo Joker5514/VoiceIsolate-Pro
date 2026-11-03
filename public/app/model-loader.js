@@ -11,15 +11,18 @@ const CACHE_NAME = 'vip-models-v1';
  * priority: 'eager'  → fetched at boot (small models)
  * priority: 'lazy'   → deferred until first file drop (large models)
  */
-export const MODEL_REGISTRY = [
-  // Filenames must match public/app/models-manifest.json + shipped /app/models/*
-  // EAGER — small, load immediately
-  { id: 'rnnoise',    filename: 'rnnoise_suppressor.onnx',  priority: 'eager' },
-  { id: 'silero_vad', filename: 'silero_vad.onnx',          priority: 'eager' },
-  // LAZY — large / optional, defer until first audio drop
-  { id: 'bsrnn',      filename: 'bsrnn_vocals.onnx',        priority: 'lazy'  },
-  { id: 'demucs',     filename: 'demucs_v4_quantized.onnx', priority: 'lazy'  },
-];
+let _registryPromise = null;
+export async function getModelRegistry() {
+  if (!_registryPromise) _registryPromise = fetch('/app/models-manifest.json', { credentials: 'omit' })
+    .then((r) => { if (!r.ok) throw new Error(`Model manifest HTTP ${r.status}`); return r.json(); })
+    .then((json) => Object.entries(json.models || {}).map(([id, m]) => ({
+      id, filename: m.filename, sizeBytes: m.sizeBytes, sha256: m.sha256,
+      shipped: m.shipped !== false, optional: m.optional === true,
+      priority: m.eager ? 'eager' : 'lazy',
+    })).filter((m) => m.shipped && !m.optional))
+    .catch((err) => { _registryPromise = null; throw err; });
+  return _registryPromise;
+}
 
 function broadcast(type, model, progress) {
   try {
@@ -29,13 +32,19 @@ function broadcast(type, model, progress) {
   } catch { /* BroadcastChannel unavailable */ }
 }
 
+async function verifyCachedModel(model, bytes) {
+  if (bytes.byteLength !== model.sizeBytes || !/^[a-f0-9]{64}$/i.test(model.sha256 || '') || !globalThis.crypto?.subtle) return false;
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('') === model.sha256;
+}
+
 async function fetchAndCache(model) {
   const url = `${MODEL_BASE_PATH}${model.filename}`;
   broadcast('start', model.id);
   try {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(url);
-    if (cached) {
+    if (cached && await verifyCachedModel(model, await cached.arrayBuffer())) {
       broadcast('cached', model.id, 100);
       return { id: model.id, ok: true, cached: true };
     }
@@ -58,10 +67,12 @@ async function fetchAndCache(model) {
         broadcast('progress', model.id, Math.round((loaded / total) * 100));
       }
       const blob = new Blob(chunks);
+      if (!await verifyCachedModel(model, await blob.arrayBuffer())) throw new Error(`Integrity verification failed for ${model.id}`);
       await cache.put(url, new Response(blob, {
         headers: { 'Content-Type': 'application/octet-stream' },
       }));
     } else {
+      if (!await verifyCachedModel(model, await response.clone().arrayBuffer())) throw new Error(`Integrity verification failed for ${model.id}`);
       await cache.put(url, response.clone());
     }
 
@@ -79,7 +90,7 @@ async function fetchAndCache(model) {
  * Returns { loaded: string[], failed: string[] }
  */
 export async function loadEagerModels() {
-  const eager = MODEL_REGISTRY.filter(m => m.priority === 'eager');
+  const eager = (await getModelRegistry()).filter(m => m.priority === 'eager');
   const results = await Promise.allSettled(eager.map(fetchAndCache));
   const loaded = [];
   const failed = [];
@@ -99,7 +110,7 @@ export async function loadEagerModels() {
  * Returns { loaded: string[], failed: string[] }
  */
 export async function loadLazyModels() {
-  const lazy = MODEL_REGISTRY.filter(m => m.priority === 'lazy');
+  const lazy = (await getModelRegistry()).filter(m => m.priority === 'lazy');
   const results = await Promise.allSettled(lazy.map(fetchAndCache));
   const loaded = [];
   const failed = [];
@@ -120,13 +131,17 @@ export async function loadLazyModels() {
  * @returns {Promise<ArrayBuffer|null>}
  */
 export async function getCachedModelBuffer(modelId) {
-  const model = MODEL_REGISTRY.find(m => m.id === modelId);
+  const model = (await getModelRegistry()).find(m => m.id === modelId);
   if (!model) return null;
   try {
     const cache = await caches.open(CACHE_NAME);
     const response = await cache.match(`${MODEL_BASE_PATH}${model.filename}`);
     if (!response) return null;
-    return await response.arrayBuffer();
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength !== model.sizeBytes || !model.sha256 || !crypto?.subtle) return null;
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const actual = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    return actual === model.sha256 ? bytes : null;
   } catch {
     return null;
   }

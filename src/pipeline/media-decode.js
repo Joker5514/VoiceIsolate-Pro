@@ -175,6 +175,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
     signal = null,
     decodeTimeoutMs: decodeTimeoutOverride,
     readTimeoutMs: readTimeoutOverride,
+    maxCaptureBytes = Infinity,
   } = hooks;
   const kind = inferMediaKind(blob) || 'audio';
   const decodeTimeoutMs = adaptiveTimeout(blob, decodeTimeoutOverride, AUDIO_DATA_DECODE_MIN_TIMEOUT_MS);
@@ -193,7 +194,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
       if (isTerminalOperationError(error)) throw error;
       /* fall through to media-element capture */
     }
-    return _decodeViaMediaElement(blob, kind, onProgress, audioContext, signal);
+    return _decodeViaMediaElement(blob, kind, onProgress, audioContext, signal, { maxCaptureBytes });
   }
 
   let primaryErr = null;
@@ -211,7 +212,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
   try {
     // Must await — otherwise rejections bypass this catch and surface as
     // unhandled rejections, leaving upload UI stuck mid-decode.
-    return await _decodeViaMediaElement(blob, kind, onProgress, audioContext, signal);
+    return await _decodeViaMediaElement(blob, kind, onProgress, audioContext, signal, { maxCaptureBytes });
   } catch (fallbackErr) {
     if (isTerminalOperationError(fallbackErr)) throw fallbackErr;
     throw new Error(
@@ -361,8 +362,18 @@ export async function _decodeLooksTruncated(blob, buffer, signal = null) {
   return buffer.duration + tolerance < containerSec;
 }
 
+/** Metadata-only probe for import planning; does not call decodeAudioData. */
+export async function probeMediaMetadata(blob, signal = null, timeoutMs = METADATA_PROBE_TIMEOUT_MS) {
+  const duration = await probeContainerDuration(blob, signal, timeoutMs);
+  return { duration, channels: null, sampleRate: null, bitDepth: null, source: 'media-metadata', complete: false };
+}
+
 /** Container duration in seconds from a metadata-only media element. */
 async function _probeMediaDuration(blob, signal) {
+  return probeContainerDuration(blob, signal, METADATA_PROBE_TIMEOUT_MS);
+}
+
+async function probeContainerDuration(blob, signal, timeoutMs) {
   const doc = globalThis.document;
   if (!doc?.createElement) return null;
   const kind = inferMediaKind(blob) === 'video' ? 'video' : 'audio';
@@ -373,7 +384,7 @@ async function _probeMediaDuration(blob, signal) {
   try {
     media.src = url;
     await runBounded(() => _waitForMetadata(media, signal), {
-      timeoutMs: METADATA_PROBE_TIMEOUT_MS,
+      timeoutMs,
       timeoutMessage: '[VIP][FileIngestion] metadata probe timeout',
       timeoutCode: 'MEDIA_METADATA_TIMEOUT',
       signal,
@@ -386,8 +397,11 @@ async function _probeMediaDuration(blob, signal) {
 }
 
 /** Incremental channel buffer — grows in chunks instead of one huge upfront alloc. */
-function createGrowingChannel() {
+function createGrowingChannel(shared = { bytes: 0 }, maxBytes = Infinity) {
+  const initialBytes = SPN_BLOCK_SIZE * 32 * 4;
+  if (shared.bytes + initialBytes > maxBytes) { const err = new RangeError('Audio capture exceeded the device memory budget.'); err.code = 'INGESTION_BUDGET_EXCEEDED'; throw err; }
   let buf = new Float32Array(SPN_BLOCK_SIZE * 32);
+  shared.bytes += initialBytes;
   let len = 0;
   return {
     append(src, count) {
@@ -395,7 +409,13 @@ function createGrowingChannel() {
       if (need > buf.length) {
         let cap = buf.length;
         while (cap < need) cap *= 2;
+        const addedBytes = (cap - buf.length) * 4;
+        if (shared.bytes + addedBytes > maxBytes) {
+          const err = new RangeError('Audio capture exceeded the device memory budget; import a shorter excerpt.');
+          err.code = 'INGESTION_BUDGET_EXCEEDED'; throw err;
+        }
         const next = new Float32Array(cap);
+        shared.bytes += addedBytes;
         next.set(buf.subarray(0, len));
         buf = next;
       }
@@ -453,7 +473,7 @@ async function _decodeWithAudioData(blob, onProgress, externalCtx = null, option
 // silence), and the capture is rejected when blocks were dropped or it is
 // shorter than the media.
 // ---------------------------------------------------------------------------
-async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null, signal = null) {
+async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null, signal = null, { maxCaptureBytes = Infinity } = {}) {
   const doc = globalThis.document;
   if (!doc?.createElement || !doc.body) {
     throw new Error('Media element decode requires a browser document.');
@@ -507,7 +527,8 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
       2,
       Math.max(1, media.mozChannels || media.audioTracks?.length || 2),
     );
-    const channels = Array.from({ length: numChannels }, () => createGrowingChannel());
+    const captureMemory = { bytes: 0 };
+    const channels = Array.from({ length: numChannels }, () => createGrowingChannel(captureMemory, maxCaptureBytes));
     let writeOffset = 0;
     /** Frames captured before the element reported 'playing' (pre-roll estimate). */
     let prePlayFrames = 0;

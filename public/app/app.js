@@ -65,6 +65,7 @@ import {
   normalizeSliderValue,
 } from '/src/presentation/DspSlider.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
+import { preflightIngestion, assertDecodedIngestionBudget } from '/src/pipeline/IngestionPreflight.js';
 import {
   runBounded as runBoundedOperation,
   resumeAudioContext,
@@ -4050,7 +4051,15 @@ class VoiceIsolatePro {
         stageStart('decode');
         let decoded;
         try {
+          this._decodeBudget = await preflightIngestion(file, {
+            signal: decodeSignal,
+            onBudget: (estimate) => {
+              if (estimate.decision === 'warn') this.showNotification(
+                `Large recording: estimated ${Math.ceil(estimate.estimatedBytes / 1048576)} MiB working memory (${estimate.tier}). Close other tabs if playback becomes slow.`, 'warn');
+            },
+          });
           decoded = await decodeBlobToAudioBuffer(file, {
+            maxCaptureBytes: this._decodeBudget.budgetBytes,
             audioContext: this.ctx,
             signal: decodeSignal,
             onProgress: (pct) => {
@@ -4066,6 +4075,7 @@ class VoiceIsolatePro {
               }
             },
           });
+          assertDecodedIngestionBudget(decoded, file.size, this._decodeBudget);
         } finally {
           stageEnd('decode');
         }
@@ -4482,7 +4492,9 @@ class VoiceIsolatePro {
 
   /** @deprecated Use decodeBlobToAudioBuffer — kept for legacy patch scripts. */
   async decodeViaVideoElement(file) {
+    const budget = await preflightIngestion(file);
     const decoded = await decodeBlobToAudioBuffer(file);
+    assertDecodedIngestionBudget(decoded, file.size, budget);
     return resampleToCanonical(decoded);
   }
 

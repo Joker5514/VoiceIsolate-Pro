@@ -30,13 +30,17 @@ import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
 import { copyFloat32Channel, createAbortableYield } from './ui-yield.js';
+import { preflightIngestion, assertDecodedIngestionBudget } from './IngestionPreflight.js';
+
+export { preflightIngestion } from './IngestionPreflight.js';
 
 export { isDesktopShell, pickAudioFile } from '../core/DesktopBridge.js';
 
 /** Accepted MIME prefixes. Container formats vary; the decoder is the judge. */
 const ACCEPTED_TYPES = ['audio/', 'video/'];
 
-/** No practical upload size cap — whole files are decoded on-device. */
+/** Actual limits are device-aware and decoded-duration based; see IngestionBudget.js.
+ * This is only an integer/ArrayBuffer safety ceiling, not the product limit. */
 const MAX_FILE_BYTES = Number.MAX_SAFE_INTEGER;
 const RESAMPLE_MIN_TIMEOUT_MS = 30_000;
 const RESAMPLE_MAX_TIMEOUT_MS = 180_000;
@@ -334,6 +338,11 @@ export async function ingestFile(file, hooks = {}) {
     timeoutMs: hooks.validationTimeoutMs,
   });
   throwIfCancelled(signal);
+  const budget = await preflightIngestion(file, {
+    signal, timeoutMs: hooks.metadataTimeoutMs,
+    onBudget: hooks.onBudget || (() => {}),
+  });
+  throwIfCancelled(signal);
 
   onProgress('decoding', 5);
   stageStart('decode');
@@ -341,12 +350,16 @@ export async function ingestFile(file, hooks = {}) {
   try {
     decoded = await decodeBlobToAudioBuffer(file, {
       onProgress: (pct) => onProgress('decoding', pct),
+      maxCaptureBytes: budget.budgetBytes,
       audioContext,
       signal,
       decodeTimeoutMs: hooks.decodeTimeoutMs,
       readTimeoutMs: hooks.readTimeoutMs,
     });
     throwIfCancelled(signal);
+    // Container metadata can be wrong. Refuse before resampling/extraction if
+    // the actual decoded layout exceeds the plan; never truncate/downsample.
+    assertDecodedIngestionBudget(decoded, file.size, budget);
   } finally {
     stageEnd('decode');
   }

@@ -165,6 +165,12 @@ async function runBoundedOperation(operation) {
 async function resumeAudioContext(ctx) {
   if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') await ctx.resume();
 }
+async function preflightIngestion(file, hooks) {
+  const estimate = { known: true, decision: 'allow', budgetBytes: 3072 * 1024 * 1024, tier: 'HIGH', estimatedBytes: 1 };
+  if (hooks && hooks.onBudget) hooks.onBudget(estimate);
+  return estimate;
+}
+function assertDecodedIngestionBudget(_decoded, _fileBytes, estimate) { return estimate; }
 async function decodeBlobToAudioBuffer(file, hooks) {
   const onProgress = (hooks && hooks.onProgress) || (() => {});
   onProgress(50);
