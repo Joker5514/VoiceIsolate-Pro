@@ -437,6 +437,8 @@ function failProcessing(error) {
 let currentJobLabel = 'Separating stems…';
 /** Object URL backing the <video> preview; revoked when a new file loads. */
 let videoUrl = null;
+/** Latest `.viprovenance.json` sidecar generated for the most recent export. */
+let lastProvenance = null;
 
 
 
@@ -727,9 +729,22 @@ function updateDownloadButton() {
     videoButton.hidden = !sourceFile || !isVideoFile(sourceFile);
     videoButton.disabled = !ready || downloadInFlight || processingInFlight;
   }
+  const provButton = $('downloadProvenanceBtn');
+  if (provButton) {
+    const hasProv = ready && Boolean(lastProvenance?.record);
+    provButton.hidden = !hasProv;
+    provButton.disabled = !hasProv || downloadInFlight || processingInFlight;
+  }
   if (ui.saveDriveBtn) {
     ui.saveDriveBtn.disabled = !ready || downloadInFlight || processingInFlight;
   }
+}
+
+function downloadLastProvenance() {
+  if (!lastProvenance?.blob || !lastProvenance?.filename) return false;
+  triggerBlobDownload(lastProvenance.blob, lastProvenance.filename);
+  setDownloadHint(`Integrity record downloaded: ${lastProvenance.filename} (local SHA-256 record only — not legal certification or signature).`);
+  return true;
 }
 
 function setDownloadHint(msg) {
@@ -797,7 +812,8 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
     // Source + output SHA-256, model pins, parameters, and an integrity
     // digest (an integrity RECORD — not a signature or certification).
     // Best-effort: a provenance failure never blocks the audio export.
-    let provenanceDownloaded = false;
+    let provenanceReady = false;
+    let builtProvenance = null;
     try {
       setProcStage('export', 85, 'Hashing files for the integrity record…');
       const [outHash, srcHash, appVersion] = await Promise.all([
@@ -833,15 +849,15 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
       });
       const sidecarName = provenanceFilenameFor(result.filename);
       const sidecarBlob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
-      // Drive/desktop artifacts just went to their destination; the sidecar
-      // follows to the local Downloads so the pair is never silently split.
-      triggerBlobDownload(sidecarBlob, sidecarName);
-      provenanceDownloaded = true;
+      builtProvenance = { record, filename: sidecarName, blob: sidecarBlob };
+      provenanceReady = true;
     } catch (err) {
       if (isCancellationError(err) || signal.aborted) throw err;
       console.warn('[VIP][landing] provenance sidecar unavailable (export continues)', err);
     }
     throwIfAborted(signal);
+    // Primary audio/video artifact is ALWAYS delivered first; if the save is
+    // cancelled or fails, no orphan sidecar is published or downloaded.
     if (drive) {
       const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
       if (!isDriveConfigured()) throw new Error('Google Drive is not configured. Use Export mix as WAV.');
@@ -857,7 +873,13 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
       triggerBlobDownload(result.blob, result.filename);
     }
     throwIfAborted(signal);
-    const sidecarNote = provenanceDownloaded ? ' Integrity record (.viprovenance.json) included.' : '';
+    if (provenanceReady && builtProvenance) {
+      lastProvenance = builtProvenance;
+      if (globalThis.__vipDiagnostics) {
+        globalThis.__vipDiagnostics.lastProvenance = builtProvenance.record;
+      }
+    }
+    const sidecarNote = provenanceReady ? ' Integrity record ready (Integrity Record .json).' : '';
     const message = drive ? `Saved to Drive: ${result.filename}.${sidecarNote}` : `Export prepared: ${result.filename}. Check your downloads or chosen folder.${sidecarNote}`;
     setDownloadHint(message);
     setStatus(message, 'active');
@@ -1351,10 +1373,14 @@ async function ingestFrom(file) {
   for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ...ui.mixSliders]) if (el) el.disabled = true;
   resetTimings();
   clearStemCache();
+  lastProvenance = null;
+  if (globalThis.__vipDiagnostics) globalThis.__vipDiagnostics.lastProvenance = null;
   sourceFile = file;
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   if (ui.downloadBtn) ui.downloadBtn.disabled = true;
+  const provBtn = $('downloadProvenanceBtn');
+  if (provBtn) { provBtn.hidden = true; provBtn.disabled = true; }
   if (ui.exportRow) ui.exportRow.hidden = true;
   const job = beginJob('Decode upload', { kind: 'decode' });
   window.__vipLandingJobId = job.id;
@@ -1581,6 +1607,7 @@ async function onProcess() {
     applyEnhanceGuard();
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
     hasProcessed = false;
+    lastProvenance = null;
     resetComparison();
     updateDownloadButton();
     ui.processBtn.disabled = true;
@@ -2007,6 +2034,7 @@ for (const id of ['muteVoiceBtn', 'muteNoiseBtn', 'presetSelect', 'speakerCardsG
   $(id)?.addEventListener('change', () => scheduleLevelMatch());
 }
 $('downloadVideoBtn')?.addEventListener('click', () => { void onDownloadProcessed({ video: true }); });
+$('downloadProvenanceBtn')?.addEventListener('click', () => { downloadLastProvenance(); });
 ui.cancelProcessBtn?.addEventListener('click', () => { cancelLandingJob(); });
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 ui.downloadBtn?.addEventListener('click', () => { onDownloadProcessed().catch(() => {}); });

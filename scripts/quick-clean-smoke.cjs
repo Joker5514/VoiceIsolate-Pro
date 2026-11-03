@@ -201,6 +201,21 @@ async function startServer() {
     for (let i = 0; i < rendered.length; i++) maxDelta = Math.max(maxDelta, Math.abs(rendered[i] - bytes.readInt16LE(44 + i * 2)));
     assert(maxDelta <= 1, `WAV differs from rendered mix by ${maxDelta} PCM units`);
     check('Exported PCM matches Voice/Background/Output mix', { maxDelta });
+    const provenanceCheck = await page.evaluate(() => {
+      const btn = document.getElementById('downloadProvenanceBtn');
+      const rec = window.__vipDiagnostics?.lastProvenance;
+      return {
+        btnVisible: Boolean(btn && !btn.hidden && !btn.disabled),
+        schema: rec?.schema || null,
+        hasSourceHash: /^[0-9a-f]{64}$/.test(rec?.source?.sha256 || ''),
+        hasOutputHash: /^[0-9a-f]{64}$/.test(rec?.export?.output?.sha256 || ''),
+      };
+    });
+    assert.equal(provenanceCheck.btnVisible, true);
+    assert.equal(provenanceCheck.schema, 'vip-provenance');
+    assert.equal(provenanceCheck.hasSourceHash, true);
+    assert.equal(provenanceCheck.hasOutputHash, true);
+    check('Provenance sidecar ready after primary WAV export', provenanceCheck);
     await context.setOffline(true);
     await page.selectOption('#modelSelect', 'rnnoise');
     await page.waitForFunction(() => document.querySelector('#quickCleanPreflight').textContent.includes('Offline:'));
@@ -217,15 +232,22 @@ async function startServer() {
     await page.waitForFunction(() => ['processed', 'error'].includes(document.querySelector('#uploadPanel').dataset.state), null, { timeout: 180000 });
     assert.equal(await page.locator('#uploadPanel').getAttribute('data-state'), 'processed', await page.locator('#quickCleanStatus').innerText());
     check('Retry completes maximum-isolation chain', true);
-    // DeepFilterNet3 is a composite entry (three part sessions, its own STFT).
+    // VIP-005 EnhanceGuard: the 0 dB SNR hum fixture triggers conservative
+    // fallback to Clean Speech on first selection; a second explicit selection
+    // honors the informed user override and runs composite DeepFilterNet3.
     await page.selectOption('#modelSelect', 'enhance_speech');
+    const guardFallback = await page.locator('#modelSelect').inputValue();
+    assert.equal(guardFallback, 'bsrnn_vocals', 'EnhanceGuard must fall back to Clean Speech on 0 dB SNR hum fixture');
+    check('EnhanceGuard blocks unguarded Enhance Speech on low-SNR fixture', { fallback: guardFallback });
+    await page.selectOption('#modelSelect', 'enhance_speech');
+    assert.equal(await page.locator('#modelSelect').inputValue(), 'enhance_speech');
     await page.waitForFunction(() => !document.querySelector('#processBtn').disabled);
     await page.locator('#processBtn').click();
     await page.waitForFunction(() => ['processed', 'error'].includes(document.querySelector('#uploadPanel').dataset.state), null, { timeout: 180000 });
     assert.equal(await page.locator('#uploadPanel').getAttribute('data-state'), 'processed', await page.locator('#quickCleanStatus').innerText());
     const enhance = await page.evaluate(() => window.__quickCleanMessages.filter((msg) => msg.type === 'process').at(-1));
     assert.deepEqual(enhance.modelIds, ['deepfilternet3']);
-    check('Enhance Speech (DeepFilterNet3) completes in the browser', enhance);
+    check('Enhance Speech (DeepFilterNet3) completes in the browser after explicit override', enhance);
     await page.screenshot({ path: path.join(output, 'landing-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
