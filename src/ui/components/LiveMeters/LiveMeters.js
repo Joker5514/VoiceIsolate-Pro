@@ -132,7 +132,10 @@ export class LiveMeters {
     }
 
     if (this._meterEls.whisperRetention) {
-      const val = m.whisperRetention ?? 85; // default high
+      // Measured quiet-frame energy retention (app.js updateAudioMetrics):
+      // show '--' until a real measurement exists. A fabricated default here
+      // read as "whisper safety" the pipeline never measured (VIP-005).
+      const val = m.whisperRetention ?? null;
       this._setMeter(this._meterEls.whisperRetention, val, '%');
     }
 

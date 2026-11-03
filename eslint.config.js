@@ -285,6 +285,7 @@ export default [
       'src/workers/AudioEncoderWorker.js',
       'src/workers/AudioReviewWorker.js',
       'src/workers/USMWorker.js',
+      'src/workers/SourceHashWorker.js',
       'src/sam3_integration/worker.js',
       'public/app/sam3-worker.js',
     ],

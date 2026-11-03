@@ -30,14 +30,20 @@ import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
 import { copyFloat32Channel, createAbortableYield } from './ui-yield.js';
+import {
+  evaluateUpload,
+  probeWavHeader,
+  assertDecodedWithinBudget,
+  UPLOAD_SEVERITY,
+} from '../core/upload-limits.js';
 
 export { isDesktopShell, pickAudioFile } from '../core/DesktopBridge.js';
 
 /** Accepted MIME prefixes. Container formats vary; the decoder is the judge. */
 const ACCEPTED_TYPES = ['audio/', 'video/'];
 
-/** No practical upload size cap — whole files are decoded on-device. */
-const MAX_FILE_BYTES = Number.MAX_SAFE_INTEGER;
+/** Bytes probed for the WAV header decode-cost estimate (VIP-009). */
+const PROBE_HEAD_BYTES = 512;
 const RESAMPLE_MIN_TIMEOUT_MS = 30_000;
 const RESAMPLE_MAX_TIMEOUT_MS = 180_000;
 
@@ -111,17 +117,23 @@ export function isValidIsolationMode(mode) {
  * Generic MIME types (`application/octet-stream`, empty) are allowed through —
  * Windows often tags valid media this way. The decoder is the final judge.
  *
+ * Size policy (VIP-009): the tier's file-bytes hard cap refuses absurd uploads
+ * before any read/decode work. `options.tier` injects a performance tier
+ * (tests, callers that already detected one); default is feature-detected.
+ *
  * @param {Blob} blob
+ * @param {{tier?: 'HIGH'|'BALANCED'|'CONSTRAINED'}} [options]
  */
-export function assertIngestible(blob) {
+export function assertIngestible(blob, options = {}) {
   if (!(blob instanceof Blob)) {
     throw new TypeError('[VIP][FileIngestion] Expected a File or Blob.');
   }
   if (blob.size === 0) {
     throw new RangeError('[VIP][FileIngestion] File is empty.');
   }
-  if (blob.size > MAX_FILE_BYTES) {
-    throw new RangeError('[VIP][FileIngestion] File exceeds the maximum supported size.');
+  const verdict = evaluateUpload({ sizeBytes: blob.size, tier: options.tier });
+  if (verdict.severity === UPLOAD_SEVERITY.REFUSE) {
+    throw new RangeError(verdict.message);
   }
   const kind = inferMediaKind(blob);
   if (kind === 'midi') {
@@ -132,8 +144,8 @@ export function assertIngestible(blob) {
   // Images must never enter the audio/video decode pipeline.
   if (kind === 'image' || isImageFile(blob)) {
     throw new TypeError(
-      `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ` +
-      `Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`
+      '[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ' +
+      'Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).'
     );
   }
   const type = blob.type || '';
@@ -154,20 +166,42 @@ export function assertIngestible(blob) {
 /**
  * Async validation that also sniffs magic bytes when MIME/extension are useless.
  * Prefer this over assertIngestible for user-facing upload paths.
+ *
+ * VIP-009: also runs the WAV decode-cost probe and the tier size policy. A
+ * soft-warning verdict is reported through `options.onWarning(message)` and
+ * the upload proceeds; a refusal throws before any decode work.
+ *
  * @param {Blob} blob
- * @param {{ signal?: AbortSignal, timeoutMs?: number }} [options]
+ * @param {{ signal?: AbortSignal, timeoutMs?: number, tier?: string,
+ *           onWarning?: (message: string) => void }} [options]
  * @returns {Promise<'audio'|'video'>}
  */
 export async function assertIngestibleAsync(blob, options = {}) {
-  // assertIngestible handles image, MIDI, empty, and explicit non-media MIME.
-  assertIngestible(blob);
+  // assertIngestible handles image, MIDI, empty, and explicit non-media MIME,
+  // and the tier file-bytes hard cap.
+  assertIngestible(blob, { tier: options.tier });
+  // Decode-cost probe: cheap, best-effort, never blocks valid inputs. A WAV
+  // header yields an exact pre-decode PCM estimate; other containers fall
+  // back to the file-size policy and the post-decode budget check.
+  let probe = null;
+  try {
+    const head = await blob.slice(0, PROBE_HEAD_BYTES).arrayBuffer();
+    probe = probeWavHeader(head);
+  } catch { probe = null; }
+  const verdict = evaluateUpload({ sizeBytes: blob.size, probe, tier: options.tier });
+  if (verdict.severity === UPLOAD_SEVERITY.REFUSE) {
+    throw new RangeError(verdict.message);
+  }
+  if (verdict.severity === UPLOAD_SEVERITY.WARN && typeof options.onWarning === 'function') {
+    try { options.onWarning(verdict.message); } catch { /* UI warning is best-effort */ }
+  }
   let kind = inferMediaKind(blob);
   if (kind === 'midi' || kind === 'image') {
     // assertIngestible already threw for these; this is a safety net.
     throw new TypeError(
       kind === 'image'
-        ? `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ` +
-          `Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`
+        ? '[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ' +
+          'Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).'
         : '[VIP][FileIngestion] MIDI files are not supported. Use an audio file (WAV, MP3, etc).'
     );
   }
@@ -176,8 +210,8 @@ export async function assertIngestibleAsync(blob, options = {}) {
   }
   if (kind === 'image') {
     throw new TypeError(
-      `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ` +
-      `Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`
+      '[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. ' +
+      'Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).'
     );
   }
   if (kind !== 'audio' && kind !== 'video') {
@@ -326,12 +360,15 @@ export async function pickAndIngestFile(hooks = {}) {
 }
 
 export async function ingestFile(file, hooks = {}) {
-  const { onProgress = () => {}, isolationMode, signal = null, audioContext = null } = hooks;
+  const { onProgress = () => {}, isolationMode, signal = null, audioContext = null, onWarning = null, tier = null } = hooks;
   throwIfCancelled(signal);
   // Magic-byte sniff for Windows octet-stream / extensionless renames.
+  // VIP-009: tier size policy + WAV decode-cost probe run here, before decode.
   await assertIngestibleAsync(file, {
     signal,
     timeoutMs: hooks.validationTimeoutMs,
+    tier,
+    onWarning,
   });
   throwIfCancelled(signal);
 
@@ -352,6 +389,16 @@ export async function ingestFile(file, hooks = {}) {
   }
   onProgress('decoding', 100);
 
+  // VIP-009 post-decode budget: compressed containers decode to an
+  // unpredictable size — refuse deterministically before resample/copy work
+  // amplifies it. Never truncate: the user gets an actionable error.
+  throwIfCancelled(signal);
+  assertDecodedWithinBudget(
+    (decoded.length || 0) * (decoded.numberOfChannels || 0) * 4,
+    tier,
+    decoded.sampleRate || SAMPLE_RATE,
+  );
+
   onProgress('resampling', 10);
   stageStart('resample');
   let canonical;
@@ -365,6 +412,14 @@ export async function ingestFile(file, hooks = {}) {
     stageEnd('resample');
   }
   onProgress('resampling', 100);
+
+  // Upsampling (e.g. 8 kHz sources) can grow the canonical buffer; the budget
+  // check repeats against the final 48 kHz PCM before channel extraction.
+  assertDecodedWithinBudget(
+    (canonical.length || 0) * (canonical.numberOfChannels || 0) * 4,
+    tier,
+    SAMPLE_RATE,
+  );
 
   const channelData = await extractChannels(canonical, signal);
   throwIfCancelled(signal);

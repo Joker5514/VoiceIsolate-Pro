@@ -632,6 +632,10 @@ async function handleFileImported(detail) {
     const result = await runAutoAnalysis(channelData, sampleRate, {
       signal: abort.signal,
       maybeYield: createYieldBudget(),
+      // VIP-007: existing diarization path for the speaker overlay — loaded
+      // lazily so this module's import graph stays light.
+      detectSpeakers: (clean, sr, opts) => import('/src/pipeline/SpeakerDetection.js')
+        .then((m) => m.detectSpeakers(clean, sr, opts)),
       onProgress: (pct, extra) => {
         if (!abort.signal.aborted) sessionStore.updateAnalysisProgress(pct, extra);
       },
