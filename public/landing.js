@@ -55,6 +55,10 @@ import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
 import { ComparisonModes } from '/src/ui/tokens/design-tokens.js';
 import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
 import { ProcessingController } from '/src/core/audio/processing/ProcessingController.js';
+import {
+  guardEnhanceOutcome,
+  ENHANCE_OUTCOME_ID,
+} from '/src/core/EnhanceGuard.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -210,6 +214,52 @@ const processingController = new ProcessingController(sessionStore);
 try { window.__vipProcessingController = processingController; } catch {}
 // Expose session store for premium module
 try { window.__vipSessionStore = sessionStore; } catch {}
+
+// ── VIP-005: Enhance Speech suitability guard (src/core/EnhanceGuard.js) ──
+// DeepFilterNet3 is measurably catastrophic on whisper-flagged content
+// (pinned quality fixtures: whisper-clean/enhance SI-SDR out −16.5 dB). The
+// default outcome never applies it; this guard keeps it from being applied to
+// unsuitable content without an informed, explicit, reversible user choice.
+const enhanceGuard = { analysis: null, warned: false, overridden: false, suppress: false };
+
+function resetEnhanceGuard() {
+  enhanceGuard.analysis = null;
+  enhanceGuard.warned = false;
+  enhanceGuard.overridden = false;
+}
+
+function noteEnhanceHazard(message) {
+  enhanceGuard.warned = true;
+  setStatus(message, 'active');
+  if (ui.modelSelect) ui.modelSelect.title = message;
+}
+
+/**
+ * Evaluate the selected outcome against the latest analysis. When Enhance
+ * Speech is selected but the analysis matches a reproduced failure class
+ * (whisper-dominant, low SNR, sparse speech), the selection is switched to
+ * the conservative fallback with an explanation — unless the user already
+ * re-selected Enhance Speech after seeing that explanation (explicit
+ * override, honored with an advisory notice).
+ */
+function applyEnhanceGuard() {
+  if (enhanceGuard.suppress) return null;
+  const verdict = guardEnhanceOutcome(ui.modelSelect.value, enhanceGuard.analysis, {
+    explicit: enhanceGuard.overridden,
+  });
+  if (!verdict.verdict) return null;
+  if (verdict.changed) {
+    enhanceGuard.suppress = true; // programmatic .value= never fires 'change', belt anyway
+    ui.modelSelect.value = verdict.outcome;
+    enhanceGuard.suppress = false;
+    enhanceGuard.overridden = false;
+    noteEnhanceHazard(`${verdict.message} Switched to “Clean Speech”. Choose “Enhance Speech” again to apply it anyway.`);
+    void refreshPreflight();
+  } else if (verdict.message) {
+    noteEnhanceHazard(verdict.message);
+  }
+  return verdict.verdict;
+}
 /** Lazy-initialised analysis insights panel (post-stem, non-blocking). */
 let analysisInsights = null;
 function getAnalysisInsights() {
@@ -1211,7 +1261,7 @@ async function ingestFrom(file) {
   if (!file || ingestInFlight || processingInFlight || downloadInFlight) return;
   // Pre-flight: reject images before the pipeline is touched.
   if (isImageFile(file)) {
-    const msg = `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`;
+    const msg = '[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).';
     setStatus(msg, 'error');
     quickClean.setState('error', `Cannot import image "${file.name || 'file'}". Choose an audio or video file.`);
     return;
@@ -1234,6 +1284,8 @@ async function ingestFrom(file) {
     // Not left "analyzing" if the replacement file then fails to decode.
     if (sessionStore.isAnalyzing()) sessionStore.setAnalysisResult({ state: 'idle', regions: [] });
   }
+  // VIP-005: hazard state is per-file — a new import starts clean.
+  resetEnhanceGuard();
   ingested = null;
   hasProcessed = false;
   resetComparison({ dropReference: true });
@@ -1352,6 +1404,10 @@ async function ingestFrom(file) {
             speechRatio: analysisResult.speechRatio,
             state: 'ready',
           });
+          // VIP-005: analysis evidence now gates an Enhance Speech selection
+          // made before the analysis finished (not an informed choice yet).
+          enhanceGuard.analysis = analysisResult;
+          applyEnhanceGuard();
           // Update metrics
           sessionStore.updateMetrics({
             voiceClarity: Math.min(100, Math.max(0, (analysisResult.snrDb + 10) * 3)),
@@ -1460,6 +1516,10 @@ async function onProcess() {
   if (!ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight) return;
   processingInFlight = true;
   try {
+    // VIP-005: last check before the chain is captured — analysis may have
+    // finished after the outcome was chosen. Unsafe enhance selections fall
+    // back to Clean Speech with an explanation and processing continues.
+    applyEnhanceGuard();
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
     hasProcessed = false;
     resetComparison();
@@ -1854,7 +1914,18 @@ window.addEventListener('unhandledrejection', (event) => {
   setStatus(`Upload failed: ${msg}`, 'error');
 });
 ui.processBtn.addEventListener('click', onProcess);
-ui.modelSelect.addEventListener('change', () => { void refreshPreflight(); });
+ui.modelSelect.addEventListener('change', () => {
+  if (ui.modelSelect.value === ENHANCE_OUTCOME_ID && enhanceGuard.warned) {
+    // Informed, explicit override AFTER the hazard notice: honor it, with the
+    // advisory kept visible (reversible — any other outcome is one click away).
+    enhanceGuard.overridden = true;
+    applyEnhanceGuard();
+    void refreshPreflight();
+  } else {
+    applyEnhanceGuard();
+    void refreshPreflight();
+  }
+});
 for (const [lane, id] of Object.entries(COMPARE_BUTTONS)) {
   $(id)?.addEventListener('click', async () => {
     try {
