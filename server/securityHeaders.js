@@ -49,8 +49,11 @@ function buildCsp({ allowLegacyInline }) {
     scriptSrc,
     // Style attribute usage is pervasive in the canvas-driven UI; styles are
     // not a script-execution vector under this script-src.
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    // Fonts are self-hosted under /fonts (Geist, GeistMono, InstrumentSerif —
+    // licenses in public/fonts/). Google Fonts origins were removed (VIP-024,
+    // issue #789): no shipped asset references fonts.googleapis.com/gstatic.
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
     // Dev server: allow Google auth/Drive when testing Drive import/export locally.
