@@ -848,6 +848,7 @@ function fmtTime(s) {
 // WAV encoder (standalone helper)
 // ---------------------------------------------------------------------------
 async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
+  const ditherSeed = arguments.length > 3 ? arguments[3] : undefined;
   const numCh = audioBuffer.numberOfChannels;
   const numSamples = audioBuffer.length;
   const sr = audioBuffer.sampleRate;
@@ -868,6 +869,17 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
   v.setUint32(28, sr * numCh * bps, true); v.setUint16(32, numCh * bps, true);
   v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, dataBytes, true);
   const mode = Math.max(0, Math.min(3, Math.round(Number(ditherMode) || 0)));
+  let rand = Math.random;
+  if (mode > 0 && Number.isFinite(ditherSeed)) {
+    let state = (Number(ditherSeed) >>> 0) || 1;
+    rand = () => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
   const previousNoise = new Float32Array(numCh);
   // One getChannelData() per channel: calling it per sample crossed the Web
   // Audio binding numSamples × numCh times (3.3× slower in Chromium).
@@ -886,7 +898,7 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
           if (mode > 0) {
             // 1 = TPDF, 2 = shaped, 3 = high-pass-shaped. Dither is injected at
             // the 16-bit quantisation boundary only and never mutates playback PCM.
-            const rawNoise = (Math.random() - Math.random()) / 32768;
+            const rawNoise = (rand() - rand()) / 32768;
             const shaped = mode === 1
               ? rawNoise
               : rawNoise - previousNoise[ch] * (mode === 2 ? 0.45 : 0.82);
@@ -904,13 +916,21 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
   return buf;
 }
 
-async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null) {
-  const blob = new Blob([await encodeWavBuffer(audioBuffer, ditherMode, signal)], { type: 'audio/wav' });
+async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null, ditherSeed = undefined) {
+  const blob = new Blob([await encodeWavBuffer(audioBuffer, ditherMode, signal, ditherSeed)], { type: 'audio/wav' });
+  if (isDesktopShell()) {
+    const saved = await saveExportBlob(blob, {
+      defaultName: name,
+      filters: filtersForFilename(name),
+    });
+    return { blob, filename: name, canceled: Boolean(saved?.canceled) };
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return { blob, filename: name, canceled: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -2928,11 +2948,16 @@ class VoiceIsolatePro {
     // Forensic toggle
     bind('forensicToggle', $('forensicToggle'), 'click', () => {
       try {
+        const sec = document.getElementById('section-forensic');
+        if (sec) {
+          sec.open = true;
+          sec.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        }
         if (typeof WorkflowTier?.setTier === 'function') {
           WorkflowTier.setTier('forensic');
-          this.showNotification('Forensic tier active — full engineer panel.', 'ok');
+          this.showNotification('Forensic tier active — deterministic dither seed & SHA-256 provenance inspector ready.', 'ok');
         } else {
-          this.showNotification('Forensic mode: use the Forensic tier pill above.', 'info');
+          this.showNotification('Forensic inspector opened.', 'info');
         }
       } catch {
         this.showNotification('Forensic mode: use the Forensic tier pill above.', 'info');
@@ -3847,6 +3872,11 @@ class VoiceIsolatePro {
     // no PCM decode required until Analyze/Process.
     const isVideoFile = isVideoSource(file);
     this._sourceFile = file;
+    if (!sameSource) {
+      this._ensureProvenance()
+        .then((p) => p?.recordSourceImport(file))
+        .catch(() => {});
+    }
     this.isVideo = isVideoFile;
     this._bridge?.clearComparisonReference?.();
     this.inputBuffer = null;
@@ -4346,13 +4376,25 @@ class VoiceIsolatePro {
     for (let c = 0; c < mixBuf.numberOfChannels; c++) {
       channels.push(mixBuf.getChannelData(c));
     }
-    const ditherAmt = buildMlProcessingConfig(
-      this.getEffectiveParams(window.VIP_PARAMS || {}),
-    ).export.ditherAmt;
-    const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt });
+    const effectiveParams = this.getEffectiveParams(window.VIP_PARAMS || {});
+    const ditherAmt = buildMlProcessingConfig(effectiveParams).export.ditherAmt;
+    const ditherSeed = this._resolveExportDitherSeed(ditherAmt);
+    const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed });
     const filename = `processed-${Date.now()}.wav`;
     this.showNotification('Uploading to Google Drive…', 'info');
     const meta = await saveBlobToDrive({ blob, filename, mimeType: 'audio/wav' });
+    await this._recordExportProvenance({
+      outputBlob: blob,
+      filename: meta?.name || filename,
+      format: 'wav',
+      sampleRate: mixBuf.sampleRate,
+      channels: mixBuf.numberOfChannels,
+      region: { in: cropIn, out: cropOut },
+      ditherAmt,
+      ditherSeed,
+      effectiveParams,
+      destination: 'google-drive',
+    });
     const link = meta?.webViewLink ? ` · ${meta.webViewLink}` : '';
     this.showNotification(`Saved to Drive: ${meta?.name || filename}${link}`, 'ok');
   }
@@ -4417,13 +4459,27 @@ class VoiceIsolatePro {
           });
           if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
           if (isDesktopShell()) {
-            await saveExportBlob(result.blob, {
+            const saved = await saveExportBlob(result.blob, {
               defaultName: result.filename,
               filters: filtersForFilename(result.filename),
             });
+            if (saved?.canceled) {
+              throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
+            }
           } else {
             triggerBlobDownload(result.blob, result.filename);
           }
+          await this._recordExportProvenance({
+            outputBlob: result.blob,
+            filename: result.filename,
+            format: 'mp4',
+            sampleRate: mixBuf.sampleRate,
+            channels: mixBuf.numberOfChannels,
+            region: { in: cropIn, out: cropOut },
+            effectiveParams: this.getEffectiveParams(window.VIP_PARAMS || {}),
+            destination: 'local-download',
+            signal,
+          });
           this.showNotification('Processed video saved: ' + result.filename, 'info');
           if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
           return;
@@ -4453,11 +4509,30 @@ class VoiceIsolatePro {
       if (typeof this.updateProcessingOverlay === 'function') {
         this.updateProcessingOverlay('Writing WAV…', 90, 30, job?.id || null);
       }
-      const ditherAmt = buildMlProcessingConfig(
-        this.getEffectiveParams(window.VIP_PARAMS || {}),
-      ).export.ditherAmt;
-      await downloadWav(buf, 'processed-' + Date.now() + '.wav', ditherAmt, signal);
-      this.showNotification('Processed audio saved', 'info');
+      const effectiveParams = this.getEffectiveParams(window.VIP_PARAMS || {});
+      const ditherAmt = buildMlProcessingConfig(effectiveParams).export.ditherAmt;
+      const ditherSeed = this._resolveExportDitherSeed(ditherAmt);
+      const wavName = 'processed-' + Date.now() + '.wav';
+      const wavSaved = await downloadWav(buf, wavName, ditherAmt, signal, ditherSeed);
+      if (wavSaved?.canceled) {
+        this.showNotification('Export cancelled', 'info');
+        if (job && jobs?.endJob) jobs.endJob(job.id, 'cancelled');
+        return;
+      }
+      await this._recordExportProvenance({
+        outputBlob: wavSaved.blob,
+        filename: wavSaved.filename,
+        format: 'wav',
+        sampleRate: buf.sampleRate,
+        channels: buf.numberOfChannels,
+        region: { in: cropIn, out: cropOut },
+        ditherAmt,
+        ditherSeed,
+        effectiveParams,
+        destination: 'local-download',
+        signal,
+      });
+      this.showNotification('Processed audio saved (integrity record ready in Forensic / Save)', 'info');
       if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
     } catch (err) {
       const cancelled = jobs?.isCancellationError?.(err)
@@ -4964,6 +5039,15 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(32, 'Complete', 100, { force: true });
       this._logProgressDiag('complete');
       this.setStatus('DONE');
+      this._ensureProvenance()
+        .then((p) => p?.recordProcessSnapshot({
+          modelIds: Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
+            ? this.activeModelChain
+            : ['bsrnn_vocals'],
+          processingEngine: viaFallback ? 'dsp-fallback' : 'ml-worker',
+          effectiveParams: this.getEffectiveParams(window.VIP_PARAMS || {}),
+        }))
+        .catch(() => {});
       if (viaFallback) {
         this.showNotification('ML isolation was unavailable, so the classical DSP fallback processed this file.', 'warn');
       }
@@ -5051,12 +5135,18 @@ class VoiceIsolatePro {
         this.showNotification('Processing cancelled', 'info');
         this.updatePipelineProgress(0, 'Cancelled', 0, { force: true });
         this._logProgressDiag('cancelled', { err: err?.message || null });
+        this._ensureProvenance()
+          .then((p) => p?.recordOperation({ id: 'process', status: 'cancelled', detail: 'User cancelled processing' }))
+          .catch(() => {});
       } else {
         structuredLog('error', '[VIP] Pipeline error', { err: err?.message });
         this.setStatus('ERROR');
         this.showNotification('Processing failed: ' + (err?.message || err), 'error');
         this.updatePipelineProgress(0, 'Error', 0, { force: true });
         this._logProgressDiag('error', { err: err?.message || String(err) });
+        this._ensureProvenance()
+          .then((p) => p?.recordOperation({ id: 'process', status: 'failed', detail: err?.message || String(err) }))
+          .catch(() => {});
       }
     } finally {
       // Always unlock the UI — never leave the bar stuck mid-process.
@@ -7925,7 +8015,50 @@ class VoiceIsolatePro {
     return this.showNotification(msg, type, duration);
   }
 
-  // ── Forensic audit ────────────────────────────────────────────────────────
+  // ── Forensic audit & canonical provenance (VIP-020) ───────────────────────
+  async _ensureProvenance() {
+    if (this._provenance) return this._provenance;
+    // Skip dynamic ES module import inside stripped VM unit-test contexts.
+    if (typeof window === 'undefined' || !window.location?.href) return null;
+    if (!this._provenancePromise) {
+      this._provenancePromise = import('/src/pipeline/EngineerProvenanceCoordinator.js')
+        .then(({ EngineerProvenanceCoordinator }) => {
+          this._provenance ||= new EngineerProvenanceCoordinator();
+          return this._provenance;
+        })
+        .catch(() => null);
+    }
+    return this._provenancePromise;
+  }
+
+  _resolveExportDitherSeed(ditherAmt) {
+    if (!(Number(ditherAmt) > 0)) return undefined;
+    const isForensic = typeof document !== 'undefined'
+      && document.body?.dataset?.psMode === 'forensic';
+    if (!isForensic) return undefined;
+    if (this._provenance && typeof this._provenance.getDeterministicDitherSeed === 'function') {
+      return this._provenance.getDeterministicDitherSeed();
+    }
+    return 0x56495031;
+  }
+
+  async _recordExportProvenance(opts = {}) {
+    try {
+      const prov = await this._ensureProvenance();
+      if (!prov || !opts.outputBlob || !opts.filename) return null;
+      return await prov.recordExport({
+        ...opts,
+        modelIds: Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
+          ? this.activeModelChain
+          : ['bsrnn_vocals'],
+        processingEngine: this._processingEngine === 'dsp-fallback' ? 'dsp-fallback' : 'ml-worker',
+      });
+    } catch (err) {
+      structuredLog('warn', '[VIP] export provenance failed', { err: err?.message || String(err) });
+      return null;
+    }
+  }
+
   async addAuditEntry(buf, stageName) {
     if (!buf) return;
     try {
@@ -7939,8 +8072,18 @@ class VoiceIsolatePro {
   }
 
   downloadAuditLog() {
+    const exp = this._provenance?.getLastExport?.();
+    if (exp?.sidecarBlob && exp?.sidecarFilename) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(exp.sidecarBlob);
+      a.download = exp.sidecarFilename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      this.showNotification(`Saved ${exp.sidecarFilename} (local SHA-256 integrity record — not certification or signature)`, 'info');
+      return;
+    }
     if (!this.forensicLog || this.forensicLog.length === 0) {
-      this.showNotification('No forensic entries to download.', 'info');
+      this.showNotification('Save Processed first to generate a .viprovenance.json integrity record.', 'info');
       return;
     }
     const content = JSON.stringify(this.forensicLog, null, 2);
