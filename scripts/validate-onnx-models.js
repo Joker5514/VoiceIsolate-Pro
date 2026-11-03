@@ -65,6 +65,9 @@ const FALLBACK_MODELS = [
     name: 'demucs_v4_quantized.onnx',
     cdn_src: `${BLOB_ROOT}/demucs_v4_quantized.onnx`,
     min_bytes: 10_000_000,
+    // Optional/unshipped research model — never blocks the gate (VIP-003).
+    optional: true,
+    shipped: false,
   },
   {
     name: 'bsrnn_vocals.onnx',
@@ -75,11 +78,17 @@ const FALLBACK_MODELS = [
     name: 'pyannote-segmentation-3.0.onnx',
     cdn_src: `${BLOB_ROOT}/pyannote-segmentation-3.0.onnx`,
     min_bytes: 1_000_000,
+    // Research/optional — never blocks the gate (VIP-003).
+    optional: true,
+    shipped: false,
   },
   {
     name: 'wespeaker-resnet34.onnx',
     cdn_src: `${BLOB_ROOT}/wespeaker-resnet34.onnx`,
     min_bytes: 10_000_000,
+    // Research/optional — never blocks the gate (VIP-003).
+    optional: true,
+    shipped: false,
   },
   {
     name: 'silero-vad.onnx',
@@ -141,8 +150,32 @@ function humanBytes(n) {
   return `${n} B`;
 }
 
+/**
+ * Classify one validation result.
+ *
+ * Required entries (shipped deliverables) fail the run on unreachable,
+ * missing/404, or stub-sized payloads. Optional / unshipped entries (e.g.
+ * demucs, research models) are reported as skips and never block the gate —
+ * an optional model's remote host being unreachable must not fail production
+ * verification (VIP-003, IMPLEMENTATION_READINESS_AUDIT_2026-11-02).
+ *
+ * @returns {'ok'|'stub'|'missing'|'unreachable'|'unverified'|'skipped-optional'}
+ */
+function classifyResult(r) {
+  const optional = r.optional === true || r.shipped === false;
+  if (r.error || r.status === 0) return optional ? 'skipped-optional' : 'unreachable';
+  if (r.status !== 200) return optional ? 'skipped-optional' : 'missing';
+  if (r.contentLength > 0 && r.contentLength < (r.min_bytes || 100_000)) {
+    return optional ? 'skipped-optional' : 'stub';
+  }
+  if (r.contentLength === 0) return 'unverified';
+  return 'ok';
+}
+
+module.exports = { classifyResult };
+
 // ── Main ───────────────────────────────────────────────────────────────────
-(async () => {
+async function main() {
   // Load models list
   let models = FALLBACK_MODELS;
   if (manifestPath && fs.existsSync(manifestPath)) {
@@ -164,6 +197,8 @@ function humanBytes(n) {
             name: entry.filename,
             cdn_src: src ? src.url : null,
             min_bytes: entry.sizeBytes || 100_000,
+            optional: entry.optional === true,
+            shipped: entry.shipped !== false,
           };
         });
       } else if (Array.isArray(raw.models)) {
@@ -198,11 +233,24 @@ function humanBytes(n) {
           name: m.name || m.filename || path.basename(src),
           cdn_src: src,
           min_bytes: m.min_bytes || m.sizeBytes || 100_000,
+          // Required-vs-optional classification (VIP-003). Composite/alias
+          // entries in generated manifests can repeat a filename; flags come
+          // from the canonical registry through the manifest generator.
+          optional: m.optional === true,
+          shipped: m.shipped === false ? false : true,
         };
       }).filter((m) => m.cdn_src);
 
-      if (parsed.length > 0) {
-        models = parsed;
+      // One check per unique filename: legacy alias keys (e.g. `silero_vad`
+      // and `vad`) may map to the same binary.
+      const byName = new Map();
+      for (const m of parsed) {
+        if (!byName.has(m.name)) byName.set(m.name, m);
+      }
+      const deduped = [...byName.values()];
+
+      if (deduped.length > 0) {
+        models = deduped;
         console.log(B(`📄 Using manifest: ${manifestPath} (${models.length} models)\n`));
       } else {
         console.warn(Y('⚠️  Manifest parsed but contained no usable model entries — using fallback list.\n'));
@@ -242,16 +290,20 @@ function humanBytes(n) {
   for (const r of results) {
     const label = r.name.padEnd(30);
     const typeLabel = r.isLocal ? 'LOCAL' : 'CDN  ';
-    if (r.error || r.status === 0) {
+    const kind = classifyResult(r);
+    if (kind === 'unreachable') {
       console.log(R(`❌  ${label}  (${typeLabel}) ERROR: ${r.error || 'no response'}  →  ${r.cdn_src}`));
       failures++;
-    } else if (r.status !== 200) {
+    } else if (kind === 'missing') {
       console.log(R(`❌  ${label}  (${typeLabel}) Missing/404  →  ${r.cdn_src}`));
       failures++;
-    } else if (r.contentLength > 0 && r.contentLength < (r.min_bytes || 100_000)) {
+    } else if (kind === 'stub') {
       console.log(Y(`⚠️   ${label}  (${typeLabel}) STUB (${humanBytes(r.contentLength)} < ${humanBytes(r.min_bytes)})  →  ${r.cdn_src}`));
       failures++;
-    } else if (r.contentLength === 0) {
+    } else if (kind === 'skipped-optional') {
+      const why = r.error ? `unreachable (${r.error})` : r.status !== 200 ? `status ${r.status}` : `stub-sized (${humanBytes(r.contentLength)})`;
+      console.log(Y(`⏭   ${label}  (${typeLabel}) optional/unshipped — ${why}; not claimed as passed  →  ${r.cdn_src}`));
+    } else if (kind === 'unverified') {
       console.log(Y(`⚠️   ${label}  (${typeLabel}) HTTP 200 but Content-Length missing — verify manually  →  ${r.cdn_src}`));
     } else {
       console.log(G(`✅  ${label}  (${typeLabel}) ${humanBytes(r.contentLength)}  →  ${r.cdn_src}`));
@@ -260,16 +312,20 @@ function humanBytes(n) {
 
   console.log('');
   if (failures === 0) {
-    console.log(G('🎉 All models verified as real binaries. ML pipeline is ready.'));
+    console.log(G('🎉 All required models verified as real binaries. ML pipeline is ready.'));
   } else {
-    console.log(R(`💥 ${failures} model(s) are missing or stubs. Run the export + upload scripts before deploying.`));
+    console.log(R(`💥 ${failures} required model(s) are missing or stubs. Run the export + upload scripts before deploying.`));
     console.log(Y('   → python scripts/export_demucs_onnx.py'));
     console.log(Y('   → python scripts/export_bsrnn_onnx.py'));
     console.log(Y('   → python scripts/export_rnnoise_onnx.py'));
     console.log(Y('   → VERCEL_TOKEN=xxx python scripts/upload_models_to_vercel_blob.py --file <path> --name <name>'));
     process.exit(1);
   }
-})().catch((e) => {
-  console.error(R('Fatal error in model validator: ' + e.message));
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(R('Fatal error in model validator: ' + e.message));
+    process.exit(1);
+  });
+}

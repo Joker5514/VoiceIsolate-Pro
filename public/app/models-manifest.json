@@ -2,28 +2,27 @@
   "_note": "Model delivery is same-origin only. All ONNX fetches must stay on /app/models/*.onnx so browser-side processing remains fully local.",
   "schemaVersion": 2,
   "models": {
-    "demucs": {
-      "filename": "demucs_v4_quantized.onnx",
-      "sizeBytes": 88080384,
-      "eager": false,
-      "optional": true,
-      "shipped": false,
-      "_note": "Optional — not committed by default. Engineer Process uses BSRNN. Place ONNX at /app/models/demucs_v4_quantized.onnx to enable.",
+    "vad": {
+      "filename": "silero_vad.onnx",
+      "sizeBytes": 2327524,
+      "eager": true,
+      "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
       "sources": [
         {
           "provider": "same-origin",
-          "url": "/app/models/demucs_v4_quantized.onnx"
+          "url": "/app/models/silero_vad.onnx"
         }
       ]
     },
-    "bsrnn": {
-      "filename": "bsrnn_vocals.onnx",
-      "sizeBytes": 3870554,
+    "vad_int8": {
+      "filename": "silero_vad_int8.onnx",
+      "sizeBytes": 2376297,
       "eager": false,
+      "sha256": "16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05",
       "sources": [
         {
           "provider": "same-origin",
-          "url": "/app/models/bsrnn_vocals.onnx"
+          "url": "/app/models/silero_vad_int8.onnx"
         }
       ]
     },
@@ -31,6 +30,7 @@
       "filename": "rnnoise_suppressor.onnx",
       "sizeBytes": 2027576,
       "eager": true,
+      "sha256": "0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6",
       "sources": [
         {
           "provider": "same-origin",
@@ -38,14 +38,104 @@
         }
       ]
     },
+    "demucs": {
+      "filename": "demucs_v4_quantized.onnx",
+      "sizeBytes": 148932181,
+      "eager": false,
+      "optional": true,
+      "shipped": false,
+      "_note": "Optional — not committed by default. Engineer Process uses BSRNN. Place ONNX at /app/models/demucs_v4_quantized.onnx to enable.",
+      "sha256": "19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/demucs_v4_quantized.onnx"
+        }
+      ]
+    },
+    "bsrnn_vocals": {
+      "filename": "bsrnn_vocals.onnx",
+      "sizeBytes": 3870554,
+      "eager": false,
+      "sha256": "7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/bsrnn_vocals.onnx"
+        }
+      ]
+    },
+    "dfn3_enc": {
+      "filename": "dfn3_enc.onnx",
+      "sizeBytes": 1954042,
+      "eager": false,
+      "sha256": "7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/dfn3_enc.onnx"
+        }
+      ]
+    },
+    "dfn3_erb_dec": {
+      "filename": "dfn3_erb_dec.onnx",
+      "sizeBytes": 3292397,
+      "eager": false,
+      "sha256": "ab669a1d10afe20911728b33053a452071042317a90581092b325da7b2f9d895",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/dfn3_erb_dec.onnx"
+        }
+      ]
+    },
+    "dfn3_df_dec": {
+      "filename": "dfn3_df_dec.onnx",
+      "sizeBytes": 3340803,
+      "eager": false,
+      "sha256": "23114ce3b0f6464b763ee62f7bb8aab6b2a129a21eabd5bcfe59413db05f278a",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/dfn3_df_dec.onnx"
+        }
+      ]
+    },
+    "ecapa_tdnn": {
+      "filename": "ecapa_tdnn.onnx",
+      "sizeBytes": 24861931,
+      "eager": false,
+      "optional": true,
+      "shipped": false,
+      "sha256": "f901ae3571912bad4e11e157744cb8b7d77a0b46923b83c410bdbb6c77d69736",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/ecapa_tdnn.onnx"
+        }
+      ]
+    },
     "silero_vad": {
       "filename": "silero_vad.onnx",
       "sizeBytes": 2327524,
       "eager": true,
+      "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
       "sources": [
         {
           "provider": "same-origin",
           "url": "/app/models/silero_vad.onnx"
+        }
+      ]
+    },
+    "bsrnn": {
+      "filename": "bsrnn_vocals.onnx",
+      "sizeBytes": 3870554,
+      "eager": false,
+      "sha256": "7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/bsrnn_vocals.onnx"
         }
       ]
     }

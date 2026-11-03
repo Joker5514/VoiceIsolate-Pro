@@ -85,6 +85,12 @@ const MODEL_FILES = {
   'rnnoise':          'rnnoise_suppressor.onnx',
   'demucs':           'demucs_v4_quantized.onnx',
   'bsrnn':            'bsrnn_vocals.onnx',
+  // DeepFilterNet3 parts (composite `deepfilternet3`; see src/core/ModelManifest.js).
+  // The legacy real-time path cannot run the composite, but the filenames are
+  // registered so the shipped file set stays aligned across every registry.
+  'dfn3_enc':         'dfn3_enc.onnx',
+  'dfn3_erb_dec':     'dfn3_erb_dec.onnx',
+  'dfn3_df_dec':      'dfn3_df_dec.onnx',
   // 4D complex-spectrogram BSRNN (pretrained crlandsc/bsrnn-vocals).
   // Offline-only: consumed by offline-processor.js. NOT loaded by the
   // real-time worklet path. See scripts/export_bsrnn_onnx.py.
