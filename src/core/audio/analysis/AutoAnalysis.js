@@ -269,6 +269,111 @@ function mergeSegments(segments, gap = 0.1) {
 }
 
 /**
+ * Run the caller-supplied speaker detection hook with the analysis contracts
+ * the overlay/snapshot layers expect (VIP-007):
+ *  - segments are time-ordered, non-overlapping, inside [0, duration];
+ *  - speakerId/label/confidence come from the diarizer verbatim — identities
+ *    are never invented here;
+ *  - every speaker except the dominant one (most talk time) yields a
+ *    'secondary_speaker' overlay region;
+ *  - hook failure ⇒ empty result + warning; cancellation propagates; a hung
+ *    hook is bounded by a timeout so analysis always completes.
+ *
+ * @returns {Promise<{speakers: object[], regions: object[], warnings: string[], method: string}>}
+ */
+async function runSpeakerHook(channelData, sampleRate, { signal = null, hook = null, timeoutMs = 60_000, duration = 0 } = {}) {
+  const empty = { speakers: [], regions: [], warnings: [], method: 'none' };
+  if (typeof hook !== 'function') return empty;
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+  let raw;
+  let timeoutTimer = null;
+  try {
+    const pending = Promise.resolve(hook(channelData, sampleRate, { signal }));
+    raw = await (Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? Promise.race([
+        pending,
+        new Promise((_, reject) => {
+          timeoutTimer = setTimeout(() => reject(new Error('speaker detection timeout')), timeoutMs);
+        }),
+      ])
+      : pending);
+  } catch (err) {
+    if (err?.name === 'AbortError' || signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    console.warn('[AutoAnalysis] speaker detection unavailable:', err?.message || err);
+    return { ...empty, warnings: [`speaker detection unavailable: ${err?.message || err}`], method: 'failed' };
+  } finally {
+    clearTimeout(timeoutTimer);
+  }
+
+  const rawSegments = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.segments)) ? raw.segments : [];
+  const method = (raw && typeof raw === 'object' && raw.method) ? String(raw.method) : 'hook';
+
+  // Normalise: drop malformed, clip to the file, order, and make
+  // non-overlapping (the diarizer's contract; enforced defensively).
+  const cleaned = [];
+  for (const seg of rawSegments) {
+    const start = Number(seg?.start ?? seg?.startTime);
+    const end = Number(seg?.end ?? seg?.endTime);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    const clippedStart = Math.max(0, duration > 0 ? Math.min(start, duration) : start);
+    const clippedEnd = Math.max(0, duration > 0 ? Math.min(end, duration) : end);
+    if (clippedEnd <= clippedStart) continue;
+    const confidence = Number(seg?.confidence);
+    cleaned.push({
+      speakerId: String(seg?.speakerId ?? 'S?'),
+      label: String(seg?.label ?? seg?.speakerId ?? 'Speaker ?'),
+      start: clippedStart,
+      end: clippedEnd,
+      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0,
+    });
+  }
+  cleaned.sort((a, b) => a.start - b.start || a.end - b.end);
+  const segments = [];
+  for (const seg of cleaned) {
+    const prev = segments[segments.length - 1];
+    if (prev && seg.start < prev.end) {
+      // Overlap: keep the earlier segment intact and clip this one's start.
+      if (seg.end > prev.end) segments.push({ ...seg, start: prev.end });
+      continue;
+    }
+    segments.push(seg);
+  }
+
+  // Dominant speaker = most talk time; everyone else is a secondary overlay.
+  const talkTime = new Map();
+  for (const seg of segments) {
+    talkTime.set(seg.speakerId, (talkTime.get(seg.speakerId) || 0) + (seg.end - seg.start));
+  }
+  let dominant = null;
+  for (const [id, time] of talkTime) {
+    if (dominant === null || time > talkTime.get(dominant)) dominant = id;
+  }
+  const regions = segments
+    .filter((seg) => dominant !== null && seg.speakerId !== dominant)
+    .map((seg) => ({
+      type: 'secondary_speaker',
+      start: seg.start,
+      end: seg.end,
+      speakerId: seg.speakerId,
+      label: seg.label,
+      confidence: seg.confidence,
+    }));
+
+  const speakers = segments.map((seg) => ({
+    speakerId: seg.speakerId,
+    label: seg.label,
+    start: seg.start,
+    end: seg.end,
+    confidence: seg.confidence,
+    talkTime: talkTime.get(seg.speakerId) || 0,
+  }));
+  return { speakers, regions, warnings: [], method };
+}
+
+/**
  * Main automatic analysis entry point
  * @param {Float32Array[]} channelData - array of channels
  * @param {number} sampleRate
@@ -315,11 +420,21 @@ export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, opt
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   emit(85, { stage: 'speakers' });
-  // Speaker detection: placeholder for now, will be enriched by diarization worker if available
-  const speakers = [];
-  // Simple energy-based secondary speaker detection: look for overlapping speech with different energy profiles
-  // For now, empty — real implementation would use diarization.js
-  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  // Speaker detection (VIP-007): the caller wires the existing diarization
+  // path (src/pipeline/SpeakerDetection.js → DiarizationWorker →
+  // src/core/diarization.js) through options.detectSpeakers. This core module
+  // stays pure (no Worker/DOM): the hook receives (channelData, sampleRate,
+  // { signal }) and returns the detectSpeakers result ({ segments, speakers,
+  // method }) or a bare segments array. Failures degrade to an empty speaker
+  // list with a warning — they never break the rest of the analysis — except
+  // cancellation, which propagates. Uncertainty is reported, never invented.
+  const speakerResult = await runSpeakerHook(channelData, sampleRate, {
+    signal,
+    hook: options.detectSpeakers,
+    timeoutMs: options.speakerTimeoutMs,
+    duration,
+  });
+  const speakers = speakerResult.speakers;
 
   emit(90, { stage: 'metrics' });
   const { rms, peak } = await computeLevels(primary, maybeYield);
@@ -334,17 +449,21 @@ export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, opt
     ...whisperCandidates.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
     ...noiseSegments.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
     ...humSegments.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
+    ...speakerResult.regions.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
   ].sort((a, b) => a.start - b.start);
 
-  // Deduplicate overlapping same-type regions already merged, but keep different types overlapping
+  // Deduplicate overlapping same-type regions already merged, but keep
+  // different types overlapping. Speaker overlay regions merge per speaker:
+  // two adjacent speakers' segments must never fuse into one region.
   const merged = [];
   const byType = {};
   for (const r of allRegions) {
-    if (!byType[r.type]) byType[r.type] = [];
-    byType[r.type].push(r);
+    const key = `${r.type}:${r.speakerId || ''}`;
+    if (!byType[key]) byType[key] = [];
+    byType[key].push(r);
   }
-  for (const type of Object.keys(byType)) {
-    merged.push(...mergeSegments(byType[type], 0.2));
+  for (const key of Object.keys(byType)) {
+    merged.push(...mergeSegments(byType[key], 0.2));
   }
 
   emit(100, { stage: 'complete' });
@@ -365,6 +484,8 @@ export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, opt
     speakers,
     regions: merged.sort((a, b) => a.start - b.start),
     confidence: Math.min(1, Math.max(0, speechRatio * 0.5 + (snrDb > 10 ? 0.5 : snrDb / 20))),
+    warnings: speakerResult.warnings,
+    speakerDetection: { method: speakerResult.method },
     timestamp: new Date().toISOString(),
   };
 }

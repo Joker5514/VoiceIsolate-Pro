@@ -1379,6 +1379,9 @@ async function ingestFrom(file) {
       const analysis = runAutoAnalysis(rawClone, next.sampleRate, {
         signal: analysisAbort.signal,
         maybeYield: createYieldBudget(),
+        // VIP-007: real diarization (k-means/ONNX) for the auto-analysis
+        // speaker overlay — the existing SpeakerDetection path, injected.
+        detectSpeakers: detectSpeakersPipeline,
         onProgress: (pct, extra) => {
           if (!analysisAbort.signal.aborted) sessionStore.updateAnalysisProgress(pct, extra);
         },
