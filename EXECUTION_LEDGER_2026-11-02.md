@@ -95,9 +95,24 @@ tier (egress restricted), Electron runtime smoke (no binary/display), Android pa
 (no JDK/SDK/signing), `provenance:validate:strict` (still expected to FAIL until native
 artifacts are rebuilt — by design), physical-device testing.
 
-## 5. Final gate result
+## 5. Final gate result — `pnpm prod:verify:static` **PASS** at `426ef99` (run before the ledger commit; tree identical except this doc)
 
-See the commit message of the ledger commit and the PR body for the recorded
-`prod:verify:static` summary at the final SHA. (The gate re-runs the complete Jest
-suite, lint, validate, quality gate, model/worklet integrity, privacy static checks,
-and the production build in one report at `output/prod-verify/report.json`.)
+| Step | Tier | Status |
+|---|---|---|
+| ci-patches / validate / duplicate-keys / version | static | PASS |
+| lint (0 errors) | static | PASS |
+| **test** (complete Jest suite, 246+ suites incl. all new ones) | static | **PASS (266.9 s)** |
+| monetization-e2e | static | PASS |
+| dsp-isolation | static | PASS |
+| audio-quality (pinned SI-SDR gate) | static | PASS (32.0 s) |
+| privacy-static / no-cloud-audio | static | PASS |
+| models (shipped SHA-256 integrity) | static | PASS |
+| worklets / worklets-build / provenance / build / build-sam | static | PASS |
+| **model-delivery** | **network** | **NOT RUN (network tier not enabled)** — hermeticity achieved (VIP-003) |
+| all browser tiers / downloads / electron-security | browser/network/desktop | NOT RUN (no Chromium/egress/Electron in sandbox) |
+| android-package / electron-package | platform | NOT VERIFIED (needs JDK+signing / Windows) |
+
+Report: `output/prod-verify/report.json` tagged with the commit SHA. Combined with
+`pnpm audit --prod` → "No known vulnerabilities found", the static definition of
+"verified" is fully green on this branch for the first time since the audit's D1
+defect made it non-hermetic.
