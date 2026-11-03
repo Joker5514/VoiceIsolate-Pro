@@ -4822,9 +4822,38 @@ class VoiceIsolatePro {
     }
   }
 
+  /**
+   * VIP-021: Return effective, schema-clamped parameter report for the current
+   * Engineer session (raw UI state, clamped values, calibrated DSP params, ML
+   * worker config, and lock/touch sets).
+   */
+  getEffectiveParameterReport() {
+    const raw = { ...(window.VIP_PARAMS || {}) };
+    const clamped = {};
+    for (const s of SLIDER_REGISTRY) {
+      const v = Number(raw[s.id]);
+      const base = Number.isFinite(v) ? v : s.default;
+      clamped[s.id] = Math.max(s.min, Math.min(s.max, base));
+    }
+    const dspEffective = typeof getEffectiveDspParams === 'function'
+      ? getEffectiveDspParams(clamped)
+      : clamped;
+    const mlConfig = typeof buildMlProcessingConfig === 'function'
+      ? buildMlProcessingConfig(clamped)
+      : {};
+    return {
+      clamped,
+      dspEffective,
+      mlConfig,
+      lockedIds: Array.from(this._lockedSliders || []),
+      touchedIds: Array.from(this._touchedSliders || []),
+    };
+  }
+
   /** Cooperative cancel for Process / Analyze / MOPE (JobController + workers). */
   cancelActiveJobs() {
     this.abortFlag = true;
+    try { window.__vipStopSelectionPreview?.(); } catch { /* ignore */ }
     try { this._decodeAbortController?.abort('user'); } catch { /* ignore */ }
     this._logProgressDiag('cancel-requested', { abortReason: 'user', end: true });
     try {
@@ -7384,6 +7413,7 @@ class VoiceIsolatePro {
   }
 
   pause() {
+    try { window.__vipStopSelectionPreview?.(); } catch { /* ignore */ }
     if (!this.isPlaying) return;
     if (typeof this._getTransportPosition === 'function') {
       this.playOffset = this._getTransportPosition();
@@ -7400,6 +7430,7 @@ class VoiceIsolatePro {
   }
 
   stop() {
+    try { window.__vipStopSelectionPreview?.(); } catch { /* ignore */ }
     if (typeof this._stopTransportClock === 'function') this._stopTransportClock();
     this.teardownChain();
     if (this._bridge && typeof this._bridge.stop === 'function') {

@@ -13,10 +13,10 @@
 import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
 import { getUIStore } from '/src/state/uiStore.js';
 import { createPlatformAdapter } from '/src/platform/index.js';
-import { ComparisonModes, Profiles } from '/src/ui/tokens/design-tokens.js';
+import { ComparisonModes } from '/src/ui/tokens/design-tokens.js';
 import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
-import { ProcessingController } from '/src/core/audio/processing/ProcessingController.js';
 import { createYieldBudget } from '/src/pipeline/ui-yield.js';
+import { computeSpectrogramGrid } from '/src/core/EngineerActionContract.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -28,26 +28,56 @@ const state = {
   channelData: null,
   sampleRate: 48000,
   duration: 0,
-  selection: null, // { start: 0..1, end: 0..1 }
+  selection: null, // { start: 0..1, end: 0..1 } in full-file normalized coordinates
+  zoom: { start: 0, end: 1 }, // visible viewport in full-file normalized coordinates
   isDragging: false,
   dragStart: 0,
   spectrogramDrag: null, // { x0,y0,x1,y1 }
 };
 
+function normToViewX(norm, w) {
+  const span = Math.max(1e-6, state.zoom.end - state.zoom.start);
+  return ((norm - state.zoom.start) / span) * w;
+}
+
+function viewFracToNorm(frac) {
+  const clamped = Math.max(0, Math.min(1, frac));
+  return state.zoom.start + clamped * (state.zoom.end - state.zoom.start);
+}
+
+function updateZoomButtonState() {
+  const btn = $('btnZoomToSelection');
+  if (!btn) return;
+  const isZoomed = state.zoom.start > 0.0005 || state.zoom.end < 0.9995;
+  btn.setAttribute('aria-pressed', String(isZoomed));
+  btn.textContent = isZoomed ? 'Reset zoom' : 'Zoom to selection';
+}
+
 // ── Waveform / Spectrogram rendering (decoupled, no alloc in loop) ────────
-/** Per-pixel min/max for the current file and canvas width. */
-let wavePeaks = { channel: null, w: 0, ready: false, mins: null, maxs: null };
+/** Per-pixel min/max for the current file, zoom window, and canvas width. */
+let wavePeaks = { channel: null, w: 0, zStart: 0, zEnd: 1, ready: false, mins: null, maxs: null };
 
 /** Fill wavePeaks in time-budgeted slices, then redraw if still current. */
-async function computeWavePeaks(canvas, channel, w) {
-  const entry = { channel, w, ready: false, mins: new Float32Array(w), maxs: new Float32Array(w) };
+async function computeWavePeaks(canvas, channel, w, zStart = 0, zEnd = 1) {
+  const entry = {
+    channel,
+    w,
+    zStart,
+    zEnd,
+    ready: false,
+    mins: new Float32Array(w),
+    maxs: new Float32Array(w),
+  };
   wavePeaks = entry;
-  const samplesPerPx = Math.max(1, Math.floor(channel.length / w));
+  const sampleOffset = Math.max(0, Math.min(channel.length - 1, Math.floor(zStart * channel.length)));
+  const sampleLimit = Math.max(sampleOffset + 1, Math.min(channel.length, Math.ceil(zEnd * channel.length)));
+  const visibleLen = sampleLimit - sampleOffset;
+  const samplesPerPx = Math.max(1, visibleLen / w);
   const maybeYield = createYieldBudget();
   const SLICE = 1 << 16;
   for (let x = 0; x < w; x++) {
-    const start = x * samplesPerPx;
-    const end = Math.min(channel.length, start + samplesPerPx);
+    const start = sampleOffset + Math.floor(x * samplesPerPx);
+    const end = Math.min(sampleLimit, Math.max(start + 1, sampleOffset + Math.floor((x + 1) * samplesPerPx)));
     let min = 1, max = -1;
     // Sliced by samples, not columns: a narrow (or hidden) canvas has few
     // columns, each covering a large share of the file.
@@ -105,10 +135,15 @@ function drawWaveform(canvas, data) {
   // input path. Rescanning the whole file here twice per call made every
   // selection pointermove a full-file pass (~1.5 s on a phone at 5 min).
   const channel = data[0];
-  const peaks = wavePeaks.channel === channel && wavePeaks.w === w ? wavePeaks : null;
+  const peaks = wavePeaks.channel === channel
+    && wavePeaks.w === w
+    && wavePeaks.zStart === state.zoom.start
+    && wavePeaks.zEnd === state.zoom.end
+    ? wavePeaks
+    : null;
   const mid = h / 2;
   if (!peaks || !peaks.ready) {
-    if (!peaks) void computeWavePeaks(canvas, channel, w);
+    if (!peaks) void computeWavePeaks(canvas, channel, w, state.zoom.start, state.zoom.end);
     ctx.fillStyle = '#1d2a34';
     ctx.fillRect(0, h / 2 - 1, w, 2);
   } else {
@@ -138,10 +173,10 @@ function drawWavePeaks(ctx, peaks, w, mid) {
 
 /** Selection and analysis regions: drawn even while peaks are computing. */
 function drawWaveOverlays(ctx, w, h) {
-  // Selection overlay
+  // Selection overlay (mapped through state.zoom)
   if (state.selection) {
-    const x0 = Math.floor(state.selection.start * w);
-    const x1 = Math.floor(state.selection.end * w);
+    const x0 = Math.floor(normToViewX(state.selection.start, w));
+    const x1 = Math.floor(normToViewX(state.selection.end, w));
     ctx.fillStyle = 'rgba(155,108,255,0.14)';
     ctx.fillRect(x0, 0, Math.max(2, x1 - x0), h);
     ctx.strokeStyle = '#9b6cff';
@@ -154,12 +189,12 @@ function drawWaveOverlays(ctx, w, h) {
   }
 
   // Analysis regions overlay (speech/whisper/noise/hum)
-  // Regions live at the top level of the session (see audioSessionStore)
   const regions = sessionStore.getState().regions;
-  if (regions && regions.length) {
+  if (regions && regions.length && state.duration > 0) {
     for (const r of regions) {
-      const x0 = Math.floor((r.start / state.duration) * w);
-      const x1 = Math.floor((r.end / state.duration) * w);
+      const x0 = Math.floor(normToViewX(r.start / state.duration, w));
+      const x1 = Math.floor(normToViewX(r.end / state.duration, w));
+      if (x1 < 0 || x0 > w) continue;
       let color = 'rgba(46,213,229,0.08)';
       if (r.type === 'whisper') color = 'rgba(155,108,255,0.10)';
       else if (r.type === 'noise' || r.type === 'background_noise') color = 'rgba(139,154,168,0.08)';
@@ -195,49 +230,66 @@ function drawSpectrogram(canvas) {
   ctx.fillStyle = '#0a0f16';
   ctx.fillRect(0, 0, w, h);
 
-  // Fake spectrogram for demo — real would be from analysis
-  if (!state.channelData) {
+  if (!state.channelData || !state.channelData[0]?.length) {
     ctx.fillStyle = '#121a23';
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#1d2a34';
+    ctx.fillStyle = '#64748b';
     ctx.font = '11px ui-monospace, monospace';
     ctx.fillText('Import audio to see spectrogram · 100% on-device', 12, h / 2);
     return;
   }
 
-  // Simple gradient noise + voice band. The base image depends only on the
-  // canvas size and file, so selection drags reuse it.
-  if (specBase.w === w && specBase.h === h && specBase.channel === state.channelData[0]) {
+  // Real STFT spectrogram computed from state.channelData[0] over [zoom.start, zoom.end].
+  if (
+    specBase.w === w
+    && specBase.h === h
+    && specBase.channel === state.channelData[0]
+    && specBase.zStart === state.zoom.start
+    && specBase.zEnd === state.zoom.end
+  ) {
     ctx.putImageData(specBase.img, 0, 0);
     drawSpectrogramSelection(ctx, w, h);
     return;
   }
+
+  const gridCols = Math.min(w, 256);
+  const gridRows = Math.min(h, 96);
+  const grid = computeSpectrogramGrid(state.channelData[0], gridCols, gridRows, {
+    startNorm: state.zoom.start,
+    endNorm: state.zoom.end,
+  });
+
   const imageData = ctx.createImageData(w, h);
   const data = imageData.data;
   for (let y = 0; y < h; y++) {
-    const freqNorm = 1 - y / h; // low at bottom, high at top
+    const gy = Math.min(gridRows - 1, Math.floor((y / Math.max(1, h)) * gridRows));
+    const freqNorm = 1 - y / Math.max(1, h);
     for (let x = 0; x < w; x++) {
+      const gx = Math.min(gridCols - 1, Math.floor((x / Math.max(1, w)) * gridCols));
+      const intensity = grid[gy * gridCols + gx];
       const idx = (y * w + x) * 4;
-      // Voice energy in mid frequencies
-      const voice = Math.exp(-Math.pow(freqNorm - 0.5, 2) / 0.08) * 0.8;
-      const noise = Math.random() * 0.15;
-      const intensity = Math.min(1, voice + noise);
-      // Map to graphite/navy -> cyan
-      const r = Math.floor(10 + intensity * 20 + freqNorm * 10);
-      const g = Math.floor(15 + intensity * 60 + freqNorm * 20);
-      const b = Math.floor(22 + intensity * 120);
-      data[idx] = r;
-      data[idx + 1] = g;
-      data[idx + 2] = b;
+      const r = Math.floor(10 + intensity * 48 + freqNorm * 8);
+      const g = Math.floor(15 + intensity * 145 + freqNorm * 14);
+      const b = Math.floor(22 + intensity * 210);
+      data[idx] = Math.min(255, r);
+      data[idx + 1] = Math.min(255, g);
+      data[idx + 2] = Math.min(255, b);
       data[idx + 3] = 255;
     }
   }
   ctx.putImageData(imageData, 0, 0);
-  specBase = { w, h, channel: state.channelData[0], img: imageData };
+  specBase = {
+    w,
+    h,
+    channel: state.channelData[0],
+    zStart: state.zoom.start,
+    zEnd: state.zoom.end,
+    img: imageData,
+  };
   drawSpectrogramSelection(ctx, w, h);
 }
 
-let specBase = { w: 0, h: 0, channel: null, img: null };
+let specBase = { w: 0, h: 0, channel: null, zStart: 0, zEnd: 1, img: null };
 
 function drawSpectrogramSelection(ctx, w, h) {
   // Spectrogram rectangle selection
@@ -254,10 +306,10 @@ function drawSpectrogramSelection(ctx, w, h) {
     ctx.strokeRect(left, top, width, height);
   }
 
-  // Selection vertical overlay (linked to waveform selection)
+  // Selection vertical overlay (linked to waveform selection, mapped through state.zoom)
   if (state.selection) {
-    const x0 = Math.floor(state.selection.start * w);
-    const x1 = Math.floor(state.selection.end * w);
+    const x0 = Math.floor(normToViewX(state.selection.start, w));
+    const x1 = Math.floor(normToViewX(state.selection.end, w));
     ctx.fillStyle = 'rgba(155,108,255,0.12)';
     ctx.fillRect(x0, 0, Math.max(2, x1 - x0), h);
   }
@@ -266,8 +318,8 @@ function drawSpectrogramSelection(ctx, w, h) {
 // ── Selection handling (pointer events, <100ms feedback) ──────────────────
 function getNormX(event, canvas) {
   const rect = canvas.getBoundingClientRect();
-  const x = (event.clientX - rect.left) / rect.width;
-  return Math.max(0, Math.min(1, x));
+  const frac = (event.clientX - rect.left) / Math.max(1, rect.width);
+  return viewFracToNorm(frac);
 }
 
 function updateSelectionInfo() {
@@ -320,10 +372,11 @@ function setSelection(start, end) {
     const canvas = $('engineerWaveCanvas');
     if (canvas) {
       const rect = canvas.getBoundingClientRect();
-      const centerX = rect.left + ((state.selection.start + state.selection.end) / 2) * rect.width;
+      const midViewFrac = Math.max(0, Math.min(1, normToViewX((state.selection.start + state.selection.end) / 2, 1)));
+      const centerX = rect.left + midViewFrac * rect.width;
       const centerY = rect.top + rect.height / 2;
       // Position palette near selection but inside viewport
-      showContextPalette(Math.min(window.innerWidth - 320, centerX - 100), centerY + 20);
+      showContextPalette(Math.max(8, Math.min(window.innerWidth - 320, centerX - 100)), centerY + 20);
     }
   }
 }
@@ -377,9 +430,9 @@ function wireSelection() {
       const y = ((e.clientY - rect.top) / rect.height) * specCanvas.height;
       state.spectrogramDrag.x1 = x;
       state.spectrogramDrag.y1 = y;
-      // Also update waveform selection from spectrogram X
-      const startNorm = Math.min(state.spectrogramDrag.x0, state.spectrogramDrag.x1) / specCanvas.width;
-      const endNorm = Math.max(state.spectrogramDrag.x0, state.spectrogramDrag.x1) / specCanvas.width;
+      // Also update waveform selection from spectrogram X (mapped through zoom)
+      const startNorm = viewFracToNorm(Math.min(state.spectrogramDrag.x0, state.spectrogramDrag.x1) / Math.max(1, specCanvas.width));
+      const endNorm = viewFracToNorm(Math.max(state.spectrogramDrag.x0, state.spectrogramDrag.x1) / Math.max(1, specCanvas.width));
       state.selection = { start: startNorm, end: endNorm };
       scheduleSelectionDraw(waveCanvas, specCanvas);
     });
@@ -388,8 +441,8 @@ function wireSelection() {
       if (!state.spectrogramDrag) return;
       const drag = state.spectrogramDrag;
       state.spectrogramDrag = null;
-      const startNorm = Math.min(drag.x0, drag.x1) / specCanvas.width;
-      const endNorm = Math.max(drag.x0, drag.x1) / specCanvas.width;
+      const startNorm = viewFracToNorm(Math.min(drag.x0, drag.x1) / Math.max(1, specCanvas.width));
+      const endNorm = viewFracToNorm(Math.max(drag.x0, drag.x1) / Math.max(1, specCanvas.width));
       setSelection(startNorm, endNorm);
       try { specCanvas.releasePointerCapture(e.pointerId); } catch {}
     });
@@ -580,15 +633,34 @@ function wireLiveMetrics() {
 // ── Zoom / Clear / Playback ───────────────────────────────────────────────
 function wireInspectorActions() {
   $('btnZoomToSelection')?.addEventListener('click', () => {
-    if (!state.selection) return;
-    // Zoom: for now just redraw with zoomed view — in real app would set zoom state
-    console.log('[VIP][premium] zoom to selection', state.selection);
-    uiStore.setZoom?.(state.selection);
+    const isZoomed = state.zoom.start > 0.0005 || state.zoom.end < 0.9995;
+    if (isZoomed && (!state.selection || (
+      Math.abs(state.selection.start - state.zoom.start) < 0.001
+      && Math.abs(state.selection.end - state.zoom.end) < 0.001
+    ))) {
+      state.zoom = { start: 0, end: 1 };
+    } else if (state.selection && state.selection.end - state.selection.start >= 0.005) {
+      state.zoom = {
+        start: Math.max(0, Math.min(1, state.selection.start)),
+        end: Math.max(0, Math.min(1, state.selection.end)),
+      };
+    } else {
+      window._vipApp?.showNotification?.('Drag a region on the waveform first to zoom.', 'info');
+      return;
+    }
+    uiStore.setZoom?.(state.zoom);
+    updateZoomButtonState();
+    drawWaveform($('engineerWaveCanvas'), state.channelData);
+    drawSpectrogram($('engineerSpecCanvas'));
   });
 
   $('btnClearSelection')?.addEventListener('click', () => {
     state.selection = null;
     state.spectrogramDrag = null;
+    state.zoom = { start: 0, end: 1 };
+    window.__vipStopSelectionPreview?.();
+    uiStore.setZoom?.(state.zoom);
+    updateZoomButtonState();
     hideContextPalette();
     drawWaveform($('engineerWaveCanvas'), state.channelData);
     drawSpectrogram($('engineerSpecCanvas'));
@@ -596,13 +668,19 @@ function wireInspectorActions() {
   });
 
   $('btnSelectedPlayback')?.addEventListener('click', () => {
-    if (!state.selection) return;
+    if (!state.selection || !(state.duration > 0)) {
+      window._vipApp?.showNotification?.(
+        state.duration > 0
+          ? 'Drag a region on the waveform first to play selection.'
+          : 'Import an audio file first to play selection.',
+        'info',
+      );
+      return;
+    }
     const startSec = state.selection.start * state.duration;
     const endSec = state.selection.end * state.duration;
     if (window.__vipPlaySelection) {
       window.__vipPlaySelection(startSec, endSec);
-    } else {
-      console.log('[VIP][premium] play selection', startSec, endSec);
     }
   });
 }
@@ -623,6 +701,11 @@ async function handleFileImported(detail) {
   state.channelData = channelData;
   state.sampleRate = sampleRate;
   state.duration = duration || (channelData[0]?.length / sampleRate) || 0;
+  state.selection = null;
+  state.spectrogramDrag = null;
+  state.zoom = { start: 0, end: 1 };
+  updateZoomButtonState();
+  updateSelectionInfo();
 
   drawWaveform($('engineerWaveCanvas'), channelData);
   drawSpectrogram($('engineerSpecCanvas'));

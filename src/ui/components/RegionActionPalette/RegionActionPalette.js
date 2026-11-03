@@ -5,12 +5,13 @@
  */
 
 import { getUIStore } from '../../../state/uiStore.js';
+import { normalizeEngineerAction } from '../../../core/EngineerActionContract.js';
 
 export const Actions = Object.freeze({
   ISOLATE: 'isolate',
-  ENHANCE_VOICE: 'enhance_voice',
-  REDUCE_NOISE: 'reduce_noise',
-  BOOST_WHISPER: 'boost_whisper',
+  ENHANCE_VOICE: 'enhance',
+  REDUCE_NOISE: 'reduce-noise',
+  BOOST_WHISPER: 'boost-whisper',
   PREVIEW: 'preview',
   ZOOM: 'zoom',
   CLEAR: 'clear',
@@ -21,8 +22,11 @@ export const Actions = Object.freeze({
 const ActionLabels = Object.freeze({
   [Actions.ISOLATE]: 'Isolate',
   [Actions.ENHANCE_VOICE]: 'Enhance Voice',
+  enhance_voice: 'Enhance Voice',
   [Actions.REDUCE_NOISE]: 'Reduce Noise',
+  reduce_noise: 'Reduce Noise',
   [Actions.BOOST_WHISPER]: 'Boost Whisper',
+  boost_whisper: 'Boost Whisper',
   [Actions.PREVIEW]: 'Preview',
   [Actions.ZOOM]: 'Zoom to Selection',
   [Actions.CLEAR]: 'Clear',
@@ -33,8 +37,11 @@ const ActionLabels = Object.freeze({
 const ActionIcons = Object.freeze({
   [Actions.ISOLATE]: '◉',
   [Actions.ENHANCE_VOICE]: '♪',
+  enhance_voice: '♪',
   [Actions.REDUCE_NOISE]: '◍',
+  reduce_noise: '◍',
   [Actions.BOOST_WHISPER]: '✧',
+  boost_whisper: '✧',
   [Actions.PREVIEW]: '▶',
   [Actions.ZOOM]: '⛶',
   [Actions.CLEAR]: '✕',
@@ -148,15 +155,25 @@ export class RegionActionPalette {
     fragMobile.appendChild(header);
 
     for (const action of actions) {
-      const label = ActionLabels[action] || action;
-      const icon = ActionIcons[action] || '•';
+      const canonical = normalizeEngineerAction(action) || action;
+      const label = ActionLabels[action] || ActionLabels[canonical] || action;
+      const icon = ActionIcons[action] || ActionIcons[canonical] || '•';
+      const isUnsupported = canonical === Actions.EXPORT_SELECTION && !this.options.allowExportSelection;
+      const disabledReason = isUnsupported
+        ? 'Selection-only export is disabled; set Crop In/Out on Transport and Save Processed.'
+        : '';
 
       // Desktop button
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.dataset.action = action;
+      btn.dataset.action = canonical;
       btn.className = 'vip-action-btn';
       btn.setAttribute('aria-label', label);
+      if (isUnsupported) {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        btn.title = disabledReason;
+      }
       btn.style.cssText = `
         display: inline-flex;
         align-items: center;
@@ -165,33 +182,41 @@ export class RegionActionPalette {
         padding: 6px 12px;
         font: 500 12px/1 ui-sans-serif;
         color: #c5ced6;
-        background: ${action === Actions.ISOLATE ? '#9b6cff' : '#121a23'};
-        border: 1px solid ${action === Actions.ISOLATE ? '#9b6cff' : '#26323d'};
+        background: ${canonical === Actions.ISOLATE ? '#9b6cff' : '#121a23'};
+        border: 1px solid ${canonical === Actions.ISOLATE ? '#9b6cff' : '#26323d'};
         border-radius: 6px;
-        cursor: pointer;
+        cursor: ${isUnsupported ? 'not-allowed' : 'pointer'};
+        opacity: ${isUnsupported ? '0.5' : '1'};
         white-space: nowrap;
         transition: all 0.12s ease;
       `;
-      if (action === Actions.ISOLATE) {
+      if (canonical === Actions.ISOLATE) {
         btn.style.color = 'white';
         btn.style.fontWeight = '600';
       }
       btn.innerHTML = `<span aria-hidden="true">${icon}</span> ${label}`;
-      btn.addEventListener('click', () => this._handleAction(action));
-      btn.addEventListener('mouseenter', () => {
-        btn.style.borderColor = '#9b6cff';
-        btn.style.color = '#f4f7fa';
-      });
-      btn.addEventListener('mouseleave', () => {
-        btn.style.borderColor = action === Actions.ISOLATE ? '#9b6cff' : '#26323d';
-        btn.style.color = action === Actions.ISOLATE ? 'white' : '#c5ced6';
-      });
+      if (!isUnsupported) {
+        btn.addEventListener('click', () => this._handleAction(canonical));
+        btn.addEventListener('mouseenter', () => {
+          btn.style.borderColor = '#9b6cff';
+          btn.style.color = '#f4f7fa';
+        });
+        btn.addEventListener('mouseleave', () => {
+          btn.style.borderColor = canonical === Actions.ISOLATE ? '#9b6cff' : '#26323d';
+          btn.style.color = canonical === Actions.ISOLATE ? 'white' : '#c5ced6';
+        });
+      }
       fragDesktop.appendChild(btn);
 
       // Mobile button
       const mBtn = document.createElement('button');
       mBtn.type = 'button';
-      mBtn.dataset.action = action;
+      mBtn.dataset.action = canonical;
+      if (isUnsupported) {
+        mBtn.disabled = true;
+        mBtn.setAttribute('aria-disabled', 'true');
+        mBtn.title = disabledReason;
+      }
       mBtn.style.cssText = `
         display: flex;
         align-items: center;
@@ -201,14 +226,17 @@ export class RegionActionPalette {
         padding: 12px 16px;
         font: 500 14px/1 ui-sans-serif;
         color: #f4f7fa;
-        background: ${action === Actions.ISOLATE ? '#9b6cff' : '#121a23'};
-        border: 1px solid ${action === Actions.ISOLATE ? '#9b6cff' : '#1d2a34'};
+        background: ${canonical === Actions.ISOLATE ? '#9b6cff' : '#121a23'};
+        border: 1px solid ${canonical === Actions.ISOLATE ? '#9b6cff' : '#1d2a34'};
         border-radius: 10px;
-        cursor: pointer;
+        cursor: ${isUnsupported ? 'not-allowed' : 'pointer'};
+        opacity: ${isUnsupported ? '0.5' : '1'};
         text-align: left;
       `;
       mBtn.innerHTML = `<span style="width:28px; height:28px; display:grid; place-items:center; border-radius:6px; background:rgba(255,255,255,0.08);">${icon}</span> ${label}`;
-      mBtn.addEventListener('click', () => this._handleAction(action));
+      if (!isUnsupported) {
+        mBtn.addEventListener('click', () => this._handleAction(canonical));
+      }
       fragMobile.appendChild(mBtn);
     }
 
