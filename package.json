@@ -66,6 +66,8 @@
     "test:shell-qa": "node scripts/shell-qa-smoke.cjs",
     "test:privacy-runtime": "node scripts/privacy-runtime-smoke.cjs",
     "pretest:privacy-runtime": "playwright install chromium",
+    "test:csp-runtime": "node scripts/csp-runtime-smoke.cjs",
+    "pretest:csp-runtime": "playwright install chromium",
     "test:tier-picker": "node scripts/tier-picker-smoke.cjs",
     "pretest:tier-picker": "playwright install chromium",
     "test:electron-security": "node scripts/electron-security-smoke.cjs",

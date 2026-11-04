@@ -33,7 +33,9 @@ environment.
 |---|---|---|
 | VIP-006 (6 boxes) | complete | 36 licensed clips, 8 classes, dataset 2026-11-03.v1, checksum + license gate |
 | VIP-004 (6 boxes) | partial, blocked in part | Baseline corpus eval DONE (144 runs, 36 clips × 4 chains; report in PR #888 / issue #886 comments for commit 27fdc37a+1); listening comparisons still need a human listener (owner) — 32 blinded pairs + rubric prepared |
-| VIP-034 (5 boxes) | partial | Thresholds doc written BEFORE the eval; benchmark report done and repeatable (rerun reproduced identical means); box 2 still open (device classes beyond this VM class + long files belong to VIP-029/device work); nothing promoted — no chain meets all bars |
+| VIP-034 (5 boxes) | partial | Thresholds doc written BEFORE the eval; benchmark report done and repeatable (rerun reproduced identical means); box 2 still open in part (device classes beyond this VM class belong to device-matrix work; long-file leg DONE via VIP-029); nothing promoted — no chain meets all bars |
+| VIP-029 (5 boxes) | complete | Stress sweep DONE (60/300/900 s, 15 runs, 0 failures; cancel + error recovery verified; tier guards unit-tested). Caveat: processing sweep is one VM class; tier policies for all three classes are unit-tested, other-class processing is device-matrix work |
+| VIP-024 (4 boxes) | complete | Browser CSP verified in real Chromium on the current head (11/11 browser steps PASS incl. new csp-runtime smoke: strict landing CSP, scoped legacy /app exception, inline blocked, blob worker allowed, third-party connect refused; privacy-runtime confirms no egress). Caveat: Chromium only here; Vercel production CSP (extended origins) is statically pinned, not served locally; Firefox/WebKit not run in this VM |
 
 ## Phase 3 — speaker intelligence
 
