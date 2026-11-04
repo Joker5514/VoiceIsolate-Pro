@@ -97,6 +97,7 @@ const STEPS = [
   ['downloads', 'network', 'provenance', node('scripts/validate-download-links.mjs')],
   // Needs the Electron binary and a display (xvfb-run on Linux).
   ['electron-security', 'desktop', 'security', node('scripts/electron-security-smoke.cjs')],
+  ['electron-csp-runtime', 'desktop', 'security', node('scripts/electron-csp-runtime-smoke.cjs')],
 ];
 
 const NOT_RUN_HERE = [
