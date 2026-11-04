@@ -312,6 +312,23 @@ explicit architecture change.
   `invalidate()`/`clear()` orphan in-flight runs, whose waiters reject with
   `StaleAnalysisError` (`code: 'STALE'`). Requests without a content
   fingerprint are never cached or shared — never key analysis by filename.
+- The coordinator cache identity is `contentFingerprint`, `analysisVersion`,
+  `analyzerVersions`, `modelVersions`, `configuration`, `runtime`
+  (`AnalysisCoordinator.cacheKey`). Snapshot `freshness` is one of
+  `fresh` / `cached` / `stale` / `unsupported` / `failed`; evidence regions
+  carry per-region `certainty` (`high` / `medium` / `low` / `unknown`) and a
+  `responsible` `{ id, version }` pin. Cancellation and failure are
+  outcomes (`CANCELLED` / `STALE` / `FAILED`, plus the host's
+  `CancellationError`), never fabricated snapshots.
+- Two engines, one contract: quick `AutoAnalysis` (shared via the
+  coordinator) and deep `FullAnalysis` (via `FullAnalysisHost`, worker or
+  cooperative) both end at a validated `AnalysisSnapshot` through the core
+  adapters (`adaptAutoAnalysisToSnapshot`, `adaptFullAnalysisToSnapshot`).
+  The Analysis workspace keeps the raw `FullAnalysis` result beside the
+  snapshot for audition/timeline rendering only; cross-surface exchange
+  (overlay, provenance, EnhanceGuard) uses the snapshot. Entry-point map
+  and routing pins: `docs/guides/ANALYSIS_CONTRACTS.md`,
+  `tests/vip032-analysis-routing.test.js`.
 - A `ProcessingPlan` carries the `sessionId` and `contentFingerprint` it was
   derived from; `planToControlPatch(plan, controls, { sessionId, contentFingerprint })`
   rejects a plan for another session/input (`StalePlanError`).
