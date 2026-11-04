@@ -52,6 +52,12 @@ import {
   buildMlProcessingConfig,
   LIVE_MIX_PARAM_IDS,
 } from '/src/core/ParameterSchema.js';
+import {
+  buildCustomPresetValues,
+  loadCustomPresets,
+  persistCustomPresets,
+  upsertPresetOption,
+} from '/src/core/CustomPresets.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import {
   calibrate,
@@ -795,6 +801,18 @@ const PRESETS = (() => {
         preset[s.id] = Math.min(s.max, Math.max(s.min, Number(preset[s.id])));
       }
     }
+  }
+  // Merge user custom presets (localStorage, VIP-021). Custom names cannot
+  // collide with built-ins — the modal refuses those — so this merge is safe.
+  try {
+    const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+    const customs = loadCustomPresets(storage);
+    const specs = Object.values(SLIDER_BY_ID);
+    for (const [name, values] of Object.entries(customs)) {
+      out[name] = buildCustomPresetValues(values, specs);
+    }
+  } catch {
+    /* custom presets are best-effort; built-ins still work */
   }
   return out;
 })();
@@ -2932,18 +2950,62 @@ class VoiceIsolatePro {
       }
     });
 
-    // Also remove the keydown listener when save is clicked (assuming save handles its own close/hide logic if any, but since we are handling keydown, we should also intercept save button directly to remove listener)
+    // Save Custom: persist the current slider state as a named preset
+    // (VIP-021 box 3 — this button previously did nothing but focus
+    // management; there was no save path anywhere in the app).
     bind('saveCustomPresetBtn', $('saveCustomPresetBtn'), 'click', () => {
       document.removeEventListener('keydown', _handlePresetModalKeydown);
-      // Wait a tick then return focus to the trigger if modal is closed (in case save logic closes it)
+      const input = $('customPresetName');
+      const name = (input?.value || '').trim();
+      if (!name) {
+        this.showNotification('Enter a preset name first', 'warn');
+        input?.focus();
+        return;
+      }
+      const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+      const customs = loadCustomPresets(storage);
+      const builtIns = new Set([
+        ...Object.keys(getCalibratedPresets()),
+        ...Object.keys(CALIBRATED_PRESET_REDIRECTS || {}),
+      ]);
+      if (builtIns.has(name) && !Object.prototype.hasOwnProperty.call(customs, name)) {
+        this.showNotification('A built-in preset already uses that name — choose another', 'warn');
+        input?.focus();
+        return;
+      }
+      const values = buildCustomPresetValues(
+        typeof window !== 'undefined' ? window.VIP_PARAMS || {} : {},
+        Object.values(SLIDER_BY_ID),
+      );
+      customs[name] = values;
+      PRESETS[name] = values;
+      if (!persistCustomPresets(storage, customs)) {
+        this.showNotification('Could not save preset (storage unavailable)', 'error');
+        return;
+      }
+      upsertPresetOption(d.presetSel, name);
+      const modal = $('customPresetModal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+      }
+      this.showNotification('Custom preset saved: ' + name, 'info');
       setTimeout(() => {
-        const modal = $('customPresetModal');
-        if (modal && modal.style.display === 'none') {
-          const trigger = $('openPresetModalBtn');
-          if (trigger) trigger.focus();
-        }
+        const trigger = $('openPresetModalBtn');
+        if (trigger) trigger.focus();
       }, 50);
     });
+
+    // Boot: surface previously saved custom presets in the preset dropdown
+    // without changing the current selection.
+    try {
+      const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+      for (const name of Object.keys(loadCustomPresets(storage))) {
+        upsertPresetOption(d.presetSel, name, { select: false });
+      }
+    } catch {
+      /* custom presets are best-effort */
+    }
 
     // Forensic toggle
     bind('forensicToggle', $('forensicToggle'), 'click', () => {
