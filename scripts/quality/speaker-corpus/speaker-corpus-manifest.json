@@ -1,0 +1,137 @@
+{
+  "schema": "vip-speaker-corpus",
+  "schemaVersion": 1,
+  "datasetVersion": "2026-11-03.v1",
+  "utteranceSpeakers": [
+    "librispeech_spk1",
+    "librispeech_spk2",
+    "mssnsd_spkA",
+    "mssnsd_spkB"
+  ],
+  "diarizationConversations": [
+    {
+      "id": "conv_clean_alternating_01",
+      "path": "audio/conversations/conv_clean_alternating_01.wav",
+      "sha256": "affb030e6f5b1eebefa37cf4ce062f769c87ba34e9f03bff80854b0abfaf3744",
+      "sampleRate": 16000,
+      "durationSec": 10.6,
+      "hasOverlap": false,
+      "noiseCondition": "clean",
+      "groundTruthTurns": [
+        {
+          "speakerId": "spk1",
+          "start": 0.2,
+          "end": 3
+        },
+        {
+          "speakerId": "spk2",
+          "start": 3.3,
+          "end": 5.3
+        },
+        {
+          "speakerId": "spk1",
+          "start": 5.6,
+          "end": 8.6
+        },
+        {
+          "speakerId": "spk2",
+          "start": 8.9,
+          "end": 10.5999375
+        }
+      ]
+    },
+    {
+      "id": "conv_clean_alternating_02",
+      "path": "audio/conversations/conv_clean_alternating_02.wav",
+      "sha256": "a1d5cb155194e81f4ab41415632e6973e82297ba1c86e993a4f7b6a84e78a4bf",
+      "sampleRate": 16000,
+      "durationSec": 10.1,
+      "hasOverlap": false,
+      "noiseCondition": "clean",
+      "groundTruthTurns": [
+        {
+          "speakerId": "spk2",
+          "start": 0.2,
+          "end": 2
+        },
+        {
+          "speakerId": "spk1",
+          "start": 2.3,
+          "end": 5
+        },
+        {
+          "speakerId": "spk2",
+          "start": 5.3,
+          "end": 7.3
+        },
+        {
+          "speakerId": "spk1",
+          "start": 7.6,
+          "end": 10.1
+        }
+      ]
+    },
+    {
+      "id": "conv_noisy_hvac_03",
+      "path": "audio/conversations/conv_noisy_hvac_03.wav",
+      "sha256": "b2fcb5eee1b70dbc69de2fb4366eadb411e662297a04fbeb03473daa28896a7c",
+      "sampleRate": 16000,
+      "durationSec": 9.6,
+      "hasOverlap": false,
+      "noiseCondition": "hvac1@10dB",
+      "groundTruthTurns": [
+        {
+          "speakerId": "spk1",
+          "start": 0.2,
+          "end": 2.7999375
+        },
+        {
+          "speakerId": "spk2",
+          "start": 3.1,
+          "end": 5
+        },
+        {
+          "speakerId": "spk1",
+          "start": 5.3,
+          "end": 7.5
+        },
+        {
+          "speakerId": "spk2",
+          "start": 7.8,
+          "end": 9.5999375
+        }
+      ]
+    },
+    {
+      "id": "conv_overlap_turns_04",
+      "path": "audio/conversations/conv_overlap_turns_04.wav",
+      "sha256": "938524258f3486976e23b4de9160df8d12fe1aab9614dd6563ea9d53b0357a6c",
+      "sampleRate": 16000,
+      "durationSec": 8.6,
+      "hasOverlap": true,
+      "noiseCondition": "clean",
+      "groundTruthTurns": [
+        {
+          "speakerId": "spk1",
+          "start": 0.2,
+          "end": 3
+        },
+        {
+          "speakerId": "spk2",
+          "start": 2.2,
+          "end": 4.2
+        },
+        {
+          "speakerId": "spk1",
+          "start": 4.5,
+          "end": 7.2
+        },
+        {
+          "speakerId": "spk2",
+          "start": 6.6,
+          "end": 8.6
+        }
+      ]
+    }
+  ]
+}
