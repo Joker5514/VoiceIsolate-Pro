@@ -207,10 +207,15 @@ await page.click('[data-hero-tier="creator"]', { timeout: 3000 });
       );
     }
 
+    // Import through the real integration event, not a direct workspace call:
+    // the event path runs store.importSource (so the session holds the
+    // duration the palette's bounds check validates against), exactly as a
+    // real file import does. A direct workspace call skips that import and
+    // leaves the palette's actions gated on a zero duration.
     await page.evaluate(() => {
       const sr = 48000; const ch = new Float32Array(sr * 4);
       for (let i = 0; i < ch.length; i++) ch[i] = Math.sin(2 * Math.PI * 220 * i / sr) * 0.3;
-      window.__vipPremiumWorkspace.handleFileImported({ channelData: [ch], sampleRate: sr, duration: 4 });
+      window.dispatchEvent(new CustomEvent('vip:engineerFileImported', { detail: { channelData: [ch], sampleRate: sr, duration: 4 } }));
     });
     const wave = page.locator('#engineerWaveCanvas');
     await wave.scrollIntoViewIfNeeded();

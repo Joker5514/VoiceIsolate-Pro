@@ -34,6 +34,22 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
     } catch {}
   }
 
+  // Duration resolution for selection bounds: the transport clock wins when
+  // it knows a duration, but a present-yet-zero transport value must NOT
+  // short-circuit the fallbacks — before any decode it is 0 while the
+  // session store already holds the imported duration. The store keeps its
+  // duration under transport.duration (importSource), not top-level duration.
+  function resolveDuration(appInstance) {
+    const transport = typeof appInstance._getTransportDuration === 'function'
+      ? appInstance._getTransportDuration()
+      : 0;
+    if (Number.isFinite(transport) && transport > 0) return transport;
+    const buf = (appInstance.outputBuffer || appInstance.inputBuffer || appInstance.origBuffer)?.duration || 0;
+    if (buf > 0) return buf;
+    const session = store.getState?.();
+    return session?.transport?.duration || session?.duration || 0;
+  }
+
   function handleFileImported(e) {
     const d = e.detail || {};
     const channelData = d.channelData || [];
@@ -149,11 +165,7 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
         return { ok: false, reason: msg };
       }
 
-      const dur = typeof appInstance._getTransportDuration === 'function'
-        ? appInstance._getTransportDuration()
-        : (appInstance.outputBuffer || appInstance.inputBuffer || appInstance.origBuffer)?.duration
-          || store.getState?.()?.duration
-          || 0;
+      const dur = resolveDuration(appInstance);
       const bounds = validateSelectionBounds(startSec, endSec, dur);
       if (!bounds.ok) {
         appInstance.showNotification?.(bounds.reason || 'Invalid selection bounds.', 'warn');
@@ -220,11 +232,7 @@ export function createSignalCanvasIntegration({ app, sessionStore, processingCon
       }
       const action = plan.action;
 
-      const dur = typeof appInstance._getTransportDuration === 'function'
-        ? appInstance._getTransportDuration()
-        : (appInstance.outputBuffer || appInstance.inputBuffer || appInstance.origBuffer)?.duration
-          || store.getState?.()?.duration
-          || 0;
+      const dur = resolveDuration(appInstance);
       const resolvedStart = Number.isFinite(Number(startSec))
         ? Number(startSec)
         : Number(startNorm || 0) * dur;

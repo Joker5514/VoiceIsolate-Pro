@@ -263,4 +263,60 @@ describe('VIP-021 — Signal Canvas Integration: preview, locks, comparison mode
     expect(sandboxCtx.window.__vipSetComparisonMode('processed')).toBe(true);
     expect(bridgeMode).toBe('processed');
   });
+
+  test('palette parameter actions fall back to the session duration when transport is zero, and still refuse when no duration is known', async () => {
+    const mod = await loadBrowserModule('public/app/lib/signal-canvas-integration.js', sandboxCtx);
+    const { createSignalCanvasIntegration } = mod.namespace;
+    const sliderValues = { whisperLift: 0, voiceTunnel: 0 };
+
+    // No decoded buffers and a zero transport clock, exactly the state after
+    // a workspace import that has not been decoded by the app: the session
+    // store (importSource) holds the duration under transport.duration.
+    const mockApp = {
+      _getTransportDuration: () => 0,
+      _isSliderLocked: () => false,
+      _setSliderUi: (id, val) => { sliderValues[id] = val; },
+      _syncBridgeParams: jest.fn(),
+      showNotification: jest.fn(),
+      _provenance: { recordOperation: jest.fn() },
+    };
+    sandboxCtx.window._vipApp = mockApp;
+
+    const integration = createSignalCanvasIntegration({
+      app: mockApp,
+      sessionStore: { getState: () => ({ transport: { duration: 4 } }), subscribe: () => () => {} },
+    });
+    integration.bind();
+
+    const out = sandboxCtx.window.__vipEngineerProcessSelection({
+      action: 'enhance',
+      startSec: 0.8,
+      endSec: 2.0,
+    });
+    expect(out.ok).toBe(true);
+    expect(out.applied).toEqual({ whisperLift: 6, voiceTunnel: 60 });
+    expect(sliderValues.whisperLift).toBe(6);
+    expect(sliderValues.voiceTunnel).toBe(60);
+
+    // Guard preserved: with no duration anywhere, the action still refuses
+    // instead of applying parameters against unknown bounds.
+    const mockAppNoAudio = {
+      ...mockApp,
+      _setSliderUi: jest.fn(),
+    };
+    sandboxCtx.window._vipApp = mockAppNoAudio;
+    const integrationNoAudio = createSignalCanvasIntegration({
+      app: mockAppNoAudio,
+      sessionStore: { getState: () => ({ transport: { duration: 0 } }), subscribe: () => () => {} },
+    });
+    integrationNoAudio.bind();
+    const refused = sandboxCtx.window.__vipEngineerProcessSelection({
+      action: 'enhance',
+      startSec: 0.8,
+      endSec: 2.0,
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.reason).toMatch(/Import and decode/);
+    expect(mockAppNoAudio._setSliderUi).not.toHaveBeenCalled();
+  });
 });
