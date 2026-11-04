@@ -3875,9 +3875,12 @@ class VoiceIsolatePro {
     if (!sameSource) {
       // Optional-chained: stripped/partial contexts (VM unit-test mocks) may
       // not carry _ensureProvenance; the chain short-circuits to undefined
-      // instead of throwing before .then/.catch.
+      // instead of throwing before .then/.catch. That silence is diagnosed,
+      // not hidden: a missing method (or a null coordinator) logs a warning
+      // so a forensic gap is visible instead of silently unrecorded.
+      if (typeof this._ensureProvenance !== 'function') structuredLog('warn', '[VIP] provenance unavailable; source import not recorded', { site: 'handleFile' });
       this._ensureProvenance?.()
-        .then((p) => p?.recordSourceImport(file))
+        .then((p) => { if (!p) structuredLog('warn', '[VIP] provenance unavailable; source import not recorded', { site: 'handleFile' }); return p?.recordSourceImport(file); })
         .catch(() => {});
     }
     this.isVideo = isVideoFile;
@@ -5071,14 +5074,15 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(32, 'Complete', 100, { force: true });
       this._logProgressDiag('complete');
       this.setStatus('DONE');
+      if (typeof this._ensureProvenance !== 'function') structuredLog('warn', '[VIP] provenance unavailable; process snapshot not recorded', { site: 'processComplete' });
       this._ensureProvenance?.()
-        .then((p) => p?.recordProcessSnapshot({
+        .then((p) => { if (!p) structuredLog('warn', '[VIP] provenance unavailable; process snapshot not recorded', { site: 'processComplete' }); return p?.recordProcessSnapshot({
           modelIds: Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
             ? this.activeModelChain
             : ['bsrnn_vocals'],
           processingEngine: viaFallback ? 'dsp-fallback' : 'ml-worker',
           effectiveParams: this.getEffectiveParams(window.VIP_PARAMS || {}),
-        }))
+        }); })
         .catch(() => {});
       if (viaFallback) {
         this.showNotification('ML isolation was unavailable, so the classical DSP fallback processed this file.', 'warn');
@@ -5167,8 +5171,9 @@ class VoiceIsolatePro {
         this.showNotification('Processing cancelled', 'info');
         this.updatePipelineProgress(0, 'Cancelled', 0, { force: true });
         this._logProgressDiag('cancelled', { err: err?.message || null });
+        if (typeof this._ensureProvenance !== 'function') structuredLog('warn', '[VIP] provenance unavailable; cancelled operation not recorded', { site: 'processCancelled' });
         this._ensureProvenance?.()
-          .then((p) => p?.recordOperation({ id: 'process', status: 'cancelled', detail: 'User cancelled processing' }))
+          .then((p) => { if (!p) structuredLog('warn', '[VIP] provenance unavailable; cancelled operation not recorded', { site: 'processCancelled' }); return p?.recordOperation({ id: 'process', status: 'cancelled', detail: 'User cancelled processing' }); })
           .catch(() => {});
       } else {
         structuredLog('error', '[VIP] Pipeline error', { err: err?.message });
@@ -5176,8 +5181,9 @@ class VoiceIsolatePro {
         this.showNotification('Processing failed: ' + (err?.message || err), 'error');
         this.updatePipelineProgress(0, 'Error', 0, { force: true });
         this._logProgressDiag('error', { err: err?.message || String(err) });
+        if (typeof this._ensureProvenance !== 'function') structuredLog('warn', '[VIP] provenance unavailable; failed operation not recorded', { site: 'processFailed' });
         this._ensureProvenance?.()
-          .then((p) => p?.recordOperation({ id: 'process', status: 'failed', detail: err?.message || String(err) }))
+          .then((p) => { if (!p) structuredLog('warn', '[VIP] provenance unavailable; failed operation not recorded', { site: 'processFailed' }); return p?.recordOperation({ id: 'process', status: 'failed', detail: err?.message || String(err) }); })
           .catch(() => {});
       }
     } finally {
