@@ -39,46 +39,18 @@ const fs = require('fs');
 const path = require('path');
 const { createDiarizationWorker } = require('./lib/diarization-node.cjs');
 const S = require('./lib/signals.cjs');
+// Shared harness helpers (VIP-036 dedup): corpus-eval's WAV reader and
+// linear upsampler produce byte-identical output to the local copies
+// this file used to carry (verified: same chunk walk, same /32768
+// scaling; the general upsampler at ratio 3 reproduces the old exact-3x
+// values index-for-index, including the tail fill). corpus-eval.cjs is
+// require-safe: its main() runs only under `require.main === module`.
+const { readWav, upsampleLinear } = require('./corpus-eval.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
 const OUT_DIR = path.join(ROOT, 'output', 'diarization-eval');
 const SR = 48000;
 const FRAME = 0.1; // 100 ms frames for DER
-
-function upsampleLinear(x) {
-  const out = new Float32Array(x.length * 3);
-  for (let i = 0; i < x.length; i++) {
-    const base = i * 3;
-    out[base] = x[i];
-    if (i + 1 < x.length) {
-      out[base + 1] = (2 * x[i] + x[i + 1]) / 3;
-      out[base + 2] = (x[i] + 2 * x[i + 1]) / 3;
-    } else {
-      out[base + 1] = x[i];
-      out[base + 2] = x[i];
-    }
-  }
-  return out;
-}
-
-function readWav16(file) {
-  const b = fs.readFileSync(file);
-  let off = 12;
-  let fmt = null;
-  while (off + 8 <= b.length) {
-    const id = b.toString('ascii', off, off + 4);
-    const size = b.readUInt32LE(off + 4);
-    if (id === 'fmt ') fmt = { format: b.readUInt16LE(off + 8), ch: b.readUInt16LE(off + 10), bits: b.readUInt16LE(off + 22) };
-    if (id === 'data') {
-      if (!fmt || fmt.format !== 1 || fmt.bits !== 16 || fmt.ch !== 1) throw new Error(`${file}: need 16-bit mono PCM`);
-      const x = new Float32Array(size / 2);
-      for (let i = 0; i < x.length; i++) x[i] = b.readInt16LE(off + 8 + 2 * i) / 32768;
-      return x;
-    }
-    off += 8 + size + (size & 1);
-  }
-  throw new Error(`${file}: no data chunk`);
-}
 
 /** Expand segments to per-frame labels (null = no segment covers the frame). */
 function frameLabels(segments, durationSec) {
@@ -277,8 +249,8 @@ async function main() {
   console.log('[diarization] corpus leg…');
   const corpusRows = [];
   for (const clip of manifest.clips) {
-    const x16 = readWav16(path.join(ROOT, 'scripts/quality/corpus', clip.path));
-    const x48 = upsampleLinear(x16);
+    const { samples: x16 } = readWav(path.join(ROOT, 'scripts/quality/corpus', clip.path));
+    const x48 = upsampleLinear(x16, clip.sampleRate, SR);
     const r = await worker.diarize(x48, SR);
     const segs = r.segments;
     const row = {

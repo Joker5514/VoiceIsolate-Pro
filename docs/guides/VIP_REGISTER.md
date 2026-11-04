@@ -40,6 +40,11 @@ environment.
 | VIP-031 (4 boxes) | partial | Diarization baseline DONE (36 clips; 50% false-split on known single-speaker; synthetic DER 0.42–0.68; silence perfect). OPEN: uncertainty visibility (box 4 — energy-confidence is not identity certainty; no weak-evidence indicator in UI) |
 | VIP-016 (5 boxes) | partial | Overlap research + baseline + trade-offs DONE; integration correctly withheld (no chain meets Phase 2 acceptance on overlap). OPEN: runnable prototype behind a flag (box 2) |
 | VIP-038 (5 boxes) | partial | Generator + fail-closed verifier DONE; web build sidecar generated + verified (commit 937e9626, vip-app-e14e27c53124); signed/attestable documented (nothing signed by the project). OPEN: Android/desktop artifact sidecars (no such builds producible here) + deployed-artifact instances |
+| VIP-013/014/017/018 (deferred models) | research only | DEFERRED_MODELS.md: SCNet name ambiguity (three models; MSST variant is the plausible one), BS-RoFormer license/size analysis (viperx ambiguous, KimberleyJSN MIT-declared, 350–700 MB), AudioSep (QueryNet+ResUNet, 32 kHz, needs product decision), CLAP (routing only, not separation). NO benchmark run for any — no artifact, license clearance, export, or adapter — boxes stay open |
+| VIP-022 (1 box) | complete | RESOURCE_ADAPTATION.md + performance-tier.test.js: tier boundaries pinned (HIGH/BALANCED/CONSTRAINED), upload tiers, adaptive hop, cancel/recovery, stress numbers. Thermal-state sensing NOT implemented (no web API) — recorded, not claimed |
+| VIP-035 (1 box) | complete | LEGACY_INVENTORY.md: dual workers, dual diarization, unwired RegionActionPalette component, legacy CSP exception, unused-export scan warning (134 naive hits, all sampled ones false positives — no bulk removal) |
+| VIP-036 (1 box) | complete | Focused cleanup: diarization-eval.cjs deduped onto corpus-eval's shared readWav/upsampleLinear (byte-identical rerun report proves no behavior change); no speculative removals |
+| VIP-037 (1 box) | complete | VERIFICATION_STATE.md refresh (published vs PR-branch, platform matrix + ECAPA row, model availability, privacy, limits, troubleshooting, release instructions) + docs/README index of all new guides + DSP_SLIDERS cross-link. Published-release docs untouched (their verdict stands) |
 
 ## Phase 3 — speaker intelligence
 
