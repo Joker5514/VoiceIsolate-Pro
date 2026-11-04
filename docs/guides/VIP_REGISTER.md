@@ -36,6 +36,10 @@ environment.
 | VIP-034 (5 boxes) | partial | Thresholds doc written BEFORE the eval; benchmark report done and repeatable (rerun reproduced identical means); box 2 still open in part (device classes beyond this VM class belong to device-matrix work; long-file leg DONE via VIP-029); nothing promoted — no chain meets all bars |
 | VIP-029 (5 boxes) | complete | Stress sweep DONE (60/300/900 s, 15 runs, 0 failures; cancel + error recovery verified; tier guards unit-tested). Caveat: processing sweep is one VM class; tier policies for all three classes are unit-tested, other-class processing is device-matrix work |
 | VIP-024 (4 boxes) | complete | Browser CSP verified in real Chromium on the current head (11/11 browser steps PASS incl. new csp-runtime smoke: strict landing CSP, scoped legacy /app exception, inline blocked, blob worker allowed, third-party connect refused; privacy-runtime confirms no egress). Caveat: Chromium only here; Vercel production CSP (extended origins) is statically pinned, not served locally; Firefox/WebKit not run in this VM |
+| VIP-015 (5 boxes) | partial | ECAPA probe DONE (same-source 0.669 vs cross median 0.085; mel useless at 0.904 vs 0.867); fusion spec written; fallback verified (ECAPA absent → 'unavailable', mel still works). OPEN: labeled multi-speaker eval (boxes 3–4 need speaker labels that do not exist in the corpus) |
+| VIP-031 (4 boxes) | partial | Diarization baseline DONE (36 clips; 50% false-split on known single-speaker; synthetic DER 0.42–0.68; silence perfect). OPEN: uncertainty visibility (box 4 — energy-confidence is not identity certainty; no weak-evidence indicator in UI) |
+| VIP-016 (5 boxes) | partial | Overlap research + baseline + trade-offs DONE; integration correctly withheld (no chain meets Phase 2 acceptance on overlap). OPEN: runnable prototype behind a flag (box 2) |
+| VIP-038 (5 boxes) | partial | Generator + fail-closed verifier DONE; web build sidecar generated + verified (commit 937e9626, vip-app-e14e27c53124); signed/attestable documented (nothing signed by the project). OPEN: Android/desktop artifact sidecars (no such builds producible here) + deployed-artifact instances |
 
 ## Phase 3 — speaker intelligence
 
@@ -77,11 +81,13 @@ to exact source commits (needs VIP-038 builds).
 
 ## Next in order
 
-1. VIP-029 long-file/resource stress tests (node-runnable, no devices;
-   also completes VIP-034 box 2's long-file leg).
-2. VIP-024 browser-tier CSP evidence on the current branch head.
-3. Phase 3 deferred evaluations against the corpus harness (VIP-015 /
-   031 / 016 need labeled ground truth + the harness protocol).
+1. Labeled speaker data (owner/external): unlocks VIP-015 boxes 3–4
+   (identification accuracy, false attribution, calibrated
+   thresholds) and VIP-031 box 4 (calibrated uncertainty UI).
+2. Overlap-separation candidate model + flagged prototype (VIP-016
+   box 2) — integrate only on Phase 2 acceptance.
+3. Android/desktop builds for VIP-038 boxes 1/4 (needs SDKs/packaging
+   outside this VM) + VIP-025 packaged-runtime verification.
 4. Owner inputs, in dependency order: CI billing → Stripe test-mode →
    signing secrets → device matrix → listening evaluation (32 blinded
    pairs + rubric ready) → auth/export decisions.
