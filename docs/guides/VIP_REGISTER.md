@@ -32,8 +32,8 @@ environment.
 | VIP | Status | Note |
 |---|---|---|
 | VIP-006 (6 boxes) | complete | 36 licensed clips, 8 classes, dataset 2026-11-03.v1, checksum + license gate |
-| VIP-004 (6 boxes) | partial, blocked in part | No corpus-based evaluation runner exists yet (quality matrix is synthetic-only by design); listening comparisons need a human listener (owner) |
-| VIP-034 (5 boxes) | partial | Thresholds/benchmarks depend on the VIP-004 harness; nothing promoted on synthetic results alone |
+| VIP-004 (6 boxes) | partial, blocked in part | Baseline corpus eval DONE (144 runs, 36 clips × 4 chains; report in PR #888 / issue #886 comments for commit 27fdc37a+1); listening comparisons still need a human listener (owner) — 32 blinded pairs + rubric prepared |
+| VIP-034 (5 boxes) | partial | Thresholds doc written BEFORE the eval; benchmark report done and repeatable (rerun reproduced identical means); box 2 still open (device classes beyond this VM class + long files belong to VIP-029/device work); nothing promoted — no chain meets all bars |
 
 ## Phase 3 — speaker intelligence
 
@@ -75,10 +75,11 @@ to exact source commits (needs VIP-038 builds).
 
 ## Next in order
 
-1. VIP-004/034 corpus evaluation harness (unlocks Phase 2, Phase 3
-   deferred evaluations, and the quality cross-cutting boxes).
-2. VIP-029 long-file/resource stress tests (node-runnable, no devices).
-3. VIP-024 browser-tier CSP evidence on the current branch head.
+1. VIP-029 long-file/resource stress tests (node-runnable, no devices;
+   also completes VIP-034 box 2's long-file leg).
+2. VIP-024 browser-tier CSP evidence on the current branch head.
+3. Phase 3 deferred evaluations against the corpus harness (VIP-015 /
+   031 / 016 need labeled ground truth + the harness protocol).
 4. Owner inputs, in dependency order: CI billing → Stripe test-mode →
-   signing secrets → device matrix → listening evaluation → auth/export
-   decisions.
+   signing secrets → device matrix → listening evaluation (32 blinded
+   pairs + rubric ready) → auth/export decisions.
