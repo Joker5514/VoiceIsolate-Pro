@@ -126,9 +126,15 @@ describe('quality corpus loader (VIP-006)', () => {
     expect(r.out).toMatch(/unknown schema|clips/);
   });
 
-  test('the schema document exists and states the honest missing dependency', () => {
+  test('the schema document exists and states the honest corpus status', () => {
+    // VIP-006 (PR #888): the corpus is no longer "not assembled" — the v1
+    // manifest is committed and the provisioner is delivered, while binary
+    // audio stays git-ignored/external. The pin now asserts that honest
+    // status (manifest + provisioner + external audio), not the old one.
     const readme = fs.readFileSync(path.join(ROOT, 'scripts', 'quality', 'corpus', 'README.md'), 'utf8');
-    expect(readme).toMatch(/NOT been assembled/);
+    expect(readme).toMatch(/manifest committed/);
+    expect(readme).toMatch(/provisioner delivered/);
+    expect(readme).toMatch(/git-ignored/);
     expect(readme).toMatch(/sha256/i);
     expect(readme).toMatch(/license/i);
   });

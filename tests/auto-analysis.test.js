@@ -82,9 +82,16 @@ describe('runAutoAnalysis on a synthetic signal', () => {
     expect(regions.length).toBeGreaterThanOrEqual(3);
 
     const allowedTypes = new Set(Object.values(AnalysisOverlays));
+    const seenIds = new Set();
     for (const region of regions) {
       expect(typeof region.id).toBe('string');
-      expect(region.id).toMatch(/^r-/);
+      // VIP-032: IDs are deterministic `type-index-startMs-endMs` (no
+      // Math.random), so identical audio yields identical IDs and snapshot
+      // cache identity holds. Uniqueness is pinned instead of the old `r-`
+      // random prefix; overlays consume id as an opaque key.
+      expect(region.id).toMatch(/^(speech|whisper|noise|hum|speaker-.+)-\d+-\d+-\d+$/);
+      expect(seenIds.has(region.id)).toBe(false);
+      seenIds.add(region.id);
       expect(allowedTypes.has(region.type)).toBe(true);
       expect(Number.isFinite(region.start)).toBe(true);
       expect(Number.isFinite(region.end)).toBe(true);

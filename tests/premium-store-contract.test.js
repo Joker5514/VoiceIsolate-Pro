@@ -126,6 +126,9 @@ describe('Engineer profiles apply real presets', () => {
   });
 
   test('the profile map is the one __vipApplyProfile uses', () => {
-    expect(src()).toMatch(/window\.__vipApplyProfile = window\.__vipApplyProfile \|\| \(\(profile\) => \{[\s\S]{0,400}const presets = \{/);
+    // VIP-021: assignment form changed (bind() now guards rebinding, so the
+    // `||` fallback is gone) but the pin stays: __vipApplyProfile must be
+    // defined from a function whose body declares the presets map it applies.
+    expect(src()).toMatch(/window\.__vipApplyProfile = (?:window\.__vipApplyProfile \|\| )?\(?\(profile\) => \{[\s\S]{0,400}const presets = \{/);
   });
 });

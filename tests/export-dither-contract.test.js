@@ -14,15 +14,20 @@ const exportSource = fs.readFileSync(path.join(ROOT, 'src/pipeline/ExportManager
 
 describe('processed WAV dither contract', () => {
   test('Save Processed snapshots dither at the 16-bit encoder boundary', () => {
-    expect(appSource).toContain("async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null)");
-    expect(appSource).toContain('await downloadWav(buf, \'processed-\' + Date.now() + \'.wav\', ditherAmt, signal);');
-    expect(appSource).toContain('encodeWav(channels, mixBuf.sampleRate, { ditherAmt });');
+    // VIP-020: downloadWav gained an optional 5th ditherSeed (forensic
+    // deterministic dither); the signature stays backward compatible and
+    // Save Processed still routes ditherAmt through it.
+    expect(appSource).toContain("async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null, ditherSeed = undefined)");
+    expect(appSource).toMatch(/const wavName = 'processed-' \+ Date\.now\(\) \+ '\.wav';[\s\S]{0,200}await downloadWav\(buf, wavName, ditherAmt, signal, ditherSeed\);/);
+    expect(appSource).toContain('encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed });');
   });
 
   test('Analysis Workspace Export uses the same canonical dither snapshot', () => {
     expect(analysisSource).toContain("import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';");
     expect(analysisSource).toContain('const ditherAmt = buildMlProcessingConfig(params).export.ditherAmt;');
-    expect(analysisSource).toContain('exportAudioBuffer(buf, name, { ditherAmt });');
+    // VIP-020: workspace export passes the same ditherAmt plus the optional
+    // forensic seed; ditherAmt must still flow to the shared encoder.
+    expect(analysisSource).toContain('exportAudioBuffer(buf, name, { ditherAmt, ditherSeed });');
   });
 
   test('the shared WAV encoder alone adds quantisation dither', () => {

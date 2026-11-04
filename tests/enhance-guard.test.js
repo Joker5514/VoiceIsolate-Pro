@@ -173,7 +173,11 @@ describe('Landing wiring (VIP-005 regression pin)', () => {
 
   test('landing applies the guard at analysis completion, at outcome change, and before Process', () => {
     expect(src).toMatch(/from '\/src\/core\/EnhanceGuard\.js'/);
-    expect(src).toMatch(/enhanceGuard\.analysis = analysisResult;[\s\S]{0,120}applyEnhanceGuard\(\)/);
+    // VIP-032: EnhanceGuard now consumes the canonical AnalysisSnapshot, so
+    // landing assigns `analysisResult.snapshot || analysisResult` — the pin
+    // stays strict: an assignment to enhanceGuard.analysis immediately
+    // followed (within 120 chars) by applyEnhanceGuard().
+    expect(src).toMatch(/enhanceGuard\.analysis = analysisResult(?:\.snapshot \|\| analysisResult)?;[\s\S]{0,120}applyEnhanceGuard\(\)/);
     expect(src).toMatch(/applyEnhanceGuard\(\);\s*processPlan = quickClean\.plan\(\)/);
     expect(src).toMatch(/resetEnhanceGuard\(\)/);
   });

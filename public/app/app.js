@@ -3873,7 +3873,10 @@ class VoiceIsolatePro {
     const isVideoFile = isVideoSource(file);
     this._sourceFile = file;
     if (!sameSource) {
-      this._ensureProvenance()
+      // Optional-chained: stripped/partial contexts (VM unit-test mocks) may
+      // not carry _ensureProvenance; the chain short-circuits to undefined
+      // instead of throwing before .then/.catch.
+      this._ensureProvenance?.()
         .then((p) => p?.recordSourceImport(file))
         .catch(() => {});
     }
@@ -5068,7 +5071,7 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(32, 'Complete', 100, { force: true });
       this._logProgressDiag('complete');
       this.setStatus('DONE');
-      this._ensureProvenance()
+      this._ensureProvenance?.()
         .then((p) => p?.recordProcessSnapshot({
           modelIds: Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
             ? this.activeModelChain
@@ -5164,7 +5167,7 @@ class VoiceIsolatePro {
         this.showNotification('Processing cancelled', 'info');
         this.updatePipelineProgress(0, 'Cancelled', 0, { force: true });
         this._logProgressDiag('cancelled', { err: err?.message || null });
-        this._ensureProvenance()
+        this._ensureProvenance?.()
           .then((p) => p?.recordOperation({ id: 'process', status: 'cancelled', detail: 'User cancelled processing' }))
           .catch(() => {});
       } else {
@@ -5173,7 +5176,7 @@ class VoiceIsolatePro {
         this.showNotification('Processing failed: ' + (err?.message || err), 'error');
         this.updatePipelineProgress(0, 'Error', 0, { force: true });
         this._logProgressDiag('error', { err: err?.message || String(err) });
-        this._ensureProvenance()
+        this._ensureProvenance?.()
           .then((p) => p?.recordOperation({ id: 'process', status: 'failed', detail: err?.message || String(err) }))
           .catch(() => {});
       }
