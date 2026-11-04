@@ -68,6 +68,7 @@ This index separates **current implementation/release truth** from historical au
 | [`guides/RESOURCE_ADAPTATION.md`](guides/RESOURCE_ADAPTATION.md) | Resource-aware adaptation evaluation (VIP-022); thermal leg not implemented |
 | [`guides/DEFERRED_MODELS.md`](guides/DEFERRED_MODELS.md) | Deferred model research (SCNet / BS-RoFormer / AudioSep / CLAP); benchmark not run |
 | [`guides/LEGACY_INVENTORY.md`](guides/LEGACY_INVENTORY.md) | Legacy inventory (VIP-035): usage mapping, removal rules |
+| [`guides/DEVICE_TEST_MATRIX.md`](guides/DEVICE_TEST_MATRIX.md) | Supported-device test matrix (VIP-028 box 1): tiers, representative devices, run scope, record format — defined, not tested |
 | [`SAM3_TECHNICAL_DOCUMENTATION.md`](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM 3 vision/video sidecar status; not core voice isolation |
 
 ## Releases
