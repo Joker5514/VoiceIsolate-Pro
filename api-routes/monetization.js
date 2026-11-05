@@ -66,7 +66,7 @@ async function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
   const { default: Stripe } = await import('stripe');
-  return new Stripe(key, { apiVersion: '2023-10-16', ...stripeApiBase() });
+  return new Stripe(key, { apiVersion: '2026-09-30.endive', ...stripeApiBase() });
 }
 
 /**
@@ -226,7 +226,7 @@ router.post('/checkout', requireStore, async (req, res) => {
     const customerEmail = payload?.email || normalizeCheckoutEmail(email);
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      payment_method_types: ['card'],
+      allowed_payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       ...(customerEmail ? { customer_email: customerEmail } : {}),
       success_url: safeSuccess,
