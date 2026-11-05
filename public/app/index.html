@@ -99,6 +99,7 @@
   <!-- Studio console skin (layout/visual only — preserves IDs) -->
   <link rel="stylesheet" href="engineer-console.css" />
   <link rel="stylesheet" href="workstation-premium.css" />
+  <link rel="stylesheet" href="/vip-workstation.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -745,6 +746,16 @@
       <details class="card pipeline-box vip-section" id="section-processing" open>
         <summary class="vip-section-summary">Processing Pipeline</summary>
         <div class="vip-section-body">
+        <div class="vip-memory-row">
+          <label for="memoryProfile" class="inline-label">Memory</label>
+          <select id="memoryProfile" aria-label="Memory profile">
+            <option value="AUTO" selected>AUTO</option>
+            <option value="LOW">LOW</option>
+            <option value="BALANCED">BALANCED</option>
+            <option value="HIGH">HIGH</option>
+          </select>
+        </div>
+        <div id="audioOptimization" class="vip-optimization" hidden role="status" aria-live="polite"></div>
         <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
           <span class="vip-pb-dot" aria-hidden="true"></span>
           <span class="vip-pb-label">Ready — drop a file or browse to begin</span>

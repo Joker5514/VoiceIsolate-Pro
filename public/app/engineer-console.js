@@ -40,6 +40,8 @@
       wireFocusExplain();
       installPrecisionStudioShell();
       installWorkstation();
+      pinEngineerDock();
+      installExplainBullets();
       trackHeaderHeight();
       bindCollapsibleSections();
       // Defer ticker + summary so reparent paints before any interval work.
@@ -424,6 +426,7 @@
     if (!on) {
       document.body.classList.remove('ws');
       wsRestore();
+      pinEngineerDock();
     } else if (!wsMoves.length) {
       const stage = document.querySelector('.ec-col-stage');
       const session = document.querySelector('.ec-col-session');
@@ -441,6 +444,41 @@
     }
     // Canvases size from their boxes; let the visualizers re-measure.
     try { window.dispatchEvent(new Event('resize')); } catch { /* cosmetic */ }
+  }
+
+  function pinEngineerDock() {
+    const card = document.querySelector('.transport-card');
+    const bar = document.getElementById('mobileActionBar');
+    if (card && card.parentElement !== document.body) {
+      document.body.insertBefore(card, bar || null);
+    }
+    if (card) card.open = true;
+    const body = card?.querySelector('.vip-section-body') || card;
+    const btn = document.getElementById('processBtn');
+    if (!body || !btn || btn.closest('.transport-card')) return;
+    let slot = body.querySelector('.vip-dock-process');
+    if (!slot) {
+      slot = document.createElement('div');
+      slot.className = 'vip-dock-process';
+      body.append(slot);
+    }
+    slot.append(btn);
+    document.getElementById('memoryProfile')?.addEventListener('change', (event) => {
+      const app = window._vipApp;
+      if (app && typeof app._recomputeChunkPlan === 'function') app._recomputeChunkPlan(event.target.value);
+    });
+  }
+
+  function installExplainBullets() {
+    import('/src/presentation/ExplainBullets.js').then((mod) => {
+      document.querySelectorAll('p.group-desc').forEach((node, index) => {
+        mod.foldParagraph(node, 'How does this stage work?', `group-desc-${index}`);
+      });
+      const chain = document.getElementById('vipSignalChain');
+      if (chain) mod.foldParagraph(chain, 'How does the processing pipeline work?', 'pipeline-explain');
+      const host = document.getElementById('section-processing')?.querySelector('.vip-section-body');
+      if (host) mod.mountExplainBullets(host, mod.INGESTION_EXPLAINS);
+    }).catch(() => { /* explanations are secondary to the controls */ });
   }
 
   function installWorkstation() {

@@ -46,6 +46,45 @@ test('malformed WAV and pre-aborted imports fail without decode', async () => {
   const controller = new AbortController(); controller.abort();
   await expect(preflight.preflightIngestion(bad, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
 });
+test('the reported 7922 MiB file is a full-file plan, and a chunk still fits BALANCED', () => {
+  const balanced = budget.ingestionBudget({ deviceMemory: 4 }, 'BALANCED');
+  expect(balanced.workingBytes).toBe(768 * 1024 * 1024);
+  const meta = { duration: 3605, channels: 2, sampleRate: 48000, source: 'media-metadata' };
+  const plan = budget.resolveIngestionPlan(meta, 546816, balanced, { profile: 'BALANCED', modelId: 'bsrnn_vocals' });
+  expect(plan.decision).toBe('refuse');
+  expect(plan.strategy).toBe('chunked');
+  expect(Math.ceil(plan.estimatedBytes / (1024 * 1024))).toBe(7922);
+  expect(plan.measurements.processingPeakBytes).toBe(plan.estimatedBytes);
+  expect(plan.chunk.peakBytes).toBeLessThanOrEqual(balanced.workingBytes);
+  expect(plan.chunk.coreFrames).toBe(Math.floor((20 * 48000) / 1024) * 1024);
+  const text = budget.formatIngestionPlan(plan, 'this.m4a');
+  expect(text).toMatch(/AUDIO OPTIMIZATION/);
+  expect(text).toMatch(/Chunked processing/);
+  expect(text).not.toMatch(/WebGPU/);
+  expect(text).toMatch(/not downsampled or truncated/);
+});
+
+test('memory profiles change chunk length inside the same device budget', () => {
+  const balanced = budget.ingestionBudget({}, 'BALANCED');
+  const meta = { duration: 3605, channels: 2, sampleRate: 48000, source: 'media-metadata' };
+  const low = budget.resolveIngestionPlan(meta, 546816, balanced, { profile: 'LOW' });
+  const high = budget.resolveIngestionPlan(meta, 546816, balanced, { profile: 'HIGH' });
+  expect(low.strategy).toBe('chunked');
+  expect(high.strategy).toBe('chunked');
+  expect(low.chunk.coreFrames).toBeLessThan(high.chunk.coreFrames);
+  expect(low.chunk.peakBytes).toBeLessThanOrEqual(balanced.workingBytes);
+});
+
+test('a recurrent model is not described as chunked when the full file does not fit', () => {
+  const balanced = budget.ingestionBudget({}, 'BALANCED');
+  const meta = { duration: 3605, channels: 2, sampleRate: 48000, source: 'media-metadata' };
+  const contract = budget.chainChunkContract(['deepfilternet3']);
+  expect(contract.chunkable).toBe(false);
+  const plan = budget.resolveIngestionPlan(meta, 546816, balanced, { contract, profile: 'AUTO' });
+  expect(plan.strategy).toBe('refuse');
+  expect(budget.formatIngestionPlan(plan, 'this.m4a')).toMatch(/not split into windows/);
+});
+
 test('post-decode check catches a container that understated channels', () => {
   const estimate = { budgetBytes: 256 * 1024 * 1024, tier: 'CONSTRAINED' };
   expect(() => preflight.assertDecodedIngestionBudget({ duration: 300, numberOfChannels: 6, sampleRate: 48000 }, 1, estimate))

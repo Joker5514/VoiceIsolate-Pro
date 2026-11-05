@@ -36,6 +36,7 @@ import {
   probeWavHeader,
   assertDecodedWithinBudget,
   UPLOAD_SEVERITY,
+  UPLOAD_CODES,
 } from '../core/upload-limits.js';
 
 export { preflightIngestion } from './IngestionPreflight.js';
@@ -192,7 +193,9 @@ export async function assertIngestibleAsync(blob, options = {}) {
     probe = probeWavHeader(head);
   } catch { probe = null; }
   const verdict = evaluateUpload({ sizeBytes: blob.size, probe, tier: options.tier });
-  if (verdict.severity === UPLOAD_SEVERITY.REFUSE) {
+  // A WAV whose full PCM exceeds the tier cap can still be windowed. File-byte
+  // refusals stay hard. The ingestion plan decides full vs chunked vs refuse.
+  if (verdict.severity === UPLOAD_SEVERITY.REFUSE && verdict.code !== UPLOAD_CODES.REFUSE_DECODED_PCM) {
     throw new RangeError(verdict.message);
   }
   if (verdict.severity === UPLOAD_SEVERITY.WARN && typeof options.onWarning === 'function') {
@@ -364,6 +367,7 @@ export async function pickAndIngestFile(hooks = {}) {
 
 export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode, signal = null, audioContext = null, onWarning = null, tier = null } = hooks;
+  const modelIds = hooks.modelIds?.length ? hooks.modelIds : getModelIdsForMode(isolationMode);
   throwIfCancelled(signal);
   // Magic-byte sniff for Windows octet-stream / extensionless renames.
   // VIP-009: tier size policy + WAV decode-cost probe run here, before decode.
@@ -377,8 +381,26 @@ export async function ingestFile(file, hooks = {}) {
   const budget = await preflightIngestion(file, {
     signal, timeoutMs: hooks.metadataTimeoutMs,
     onBudget: hooks.onBudget || (() => {}),
+    profile: hooks.profile || 'AUTO',
+    modelIds,
   });
   throwIfCancelled(signal);
+
+  if (budget.strategy === 'chunked') {
+    onProgress('done', 100);
+    return {
+      strategy: 'chunked',
+      channelData: [],
+      sampleRate: SAMPLE_RATE,
+      duration: budget.duration,
+      numberOfChannels: budget.outputChannels,
+      sourceName: file.name || 'untitled',
+      modelIds,
+      isolationMode: isolationMode || DEFAULT_ISOLATION_MODE,
+      ingestionPlan: budget,
+      sourceFile: file,
+    };
+  }
 
   onProgress('decoding', 5);
   stageStart('decode');
@@ -438,8 +460,6 @@ export async function ingestFile(file, hooks = {}) {
   onProgress('done', 100);
   
   // Get model IDs for the selected isolation mode
-  const modelIds = getModelIdsForMode(isolationMode);
-  
   return {
     channelData,
     sampleRate: SAMPLE_RATE,
