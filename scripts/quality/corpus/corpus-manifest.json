@@ -1,0 +1,776 @@
+{
+  "schema": "vip-quality-corpus",
+  "schemaVersion": 1,
+  "datasetVersion": "2026-11-03.v1",
+  "licensePolicy": "CC0-1.0-or-CC-BY-4.0-with-pinned-git-blob-sha1-and-sha256",
+  "provenanceSources": [
+    {
+      "repo": "microsoft/MS-SNSD",
+      "commit": "fe61c4ba0d9ac8dd7e23d719cc79f8947e1dc742",
+      "license": "MIT (code/recipes) + CC BY 4.0 / CC0-1.0 (recordings)"
+    },
+    {
+      "repo": "speechbrain/speechbrain",
+      "commit": "c0241278f93ef02cd5191f03caf4e5f8e1292bf6",
+      "license": "Apache-2.0 (repo) + CC BY 4.0 (LibriSpeech test samples)"
+    }
+  ],
+  "clips": [
+    {
+      "id": "ms-snsd-clean-001",
+      "path": "audio/ms-snsd-clean-001.wav",
+      "sha256": "e0447379b7bcd8418dcd9fbaa32ec10efff262a6ab352aca7d239335cb475a34",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clean_test/clnsp0.wav",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (Reddy et al., INTERSPEECH 2019) / Edinburgh DataShare clean speech",
+      "redistribution": "allowed",
+      "category": "clean-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 5,
+      "levelDbfs": -31.6,
+      "reference": {
+        "alignedTargetPath": "audio/ms-snsd-clean-001.wav",
+        "alignedTargetSha256": "e0447379b7bcd8418dcd9fbaa32ec10efff262a6ab352aca7d239335cb475a34",
+        "alignment": "sample-accurate"
+      },
+      "notes": "5.0 s real 16 kHz studio human speech; self-aligned clean preservation target."
+    },
+    {
+      "id": "ms-snsd-clean-002",
+      "path": "audio/ms-snsd-clean-002.wav",
+      "sha256": "71b777920a88f5264a4a10fe101e8ef4efaee89703e476d9946d74eb8c7c4ddb",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clean_test/clnsp1.wav",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (Reddy et al., INTERSPEECH 2019) / Edinburgh DataShare clean speech",
+      "redistribution": "allowed",
+      "category": "clean-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 5,
+      "levelDbfs": -27.4,
+      "reference": {
+        "alignedTargetPath": "audio/ms-snsd-clean-002.wav",
+        "alignedTargetSha256": "71b777920a88f5264a4a10fe101e8ef4efaee89703e476d9946d74eb8c7c4ddb",
+        "alignment": "sample-accurate"
+      },
+      "notes": "5.0 s real 16 kHz studio human speech; self-aligned clean preservation target."
+    },
+    {
+      "id": "ms-snsd-clean-003",
+      "path": "audio/ms-snsd-clean-003.wav",
+      "sha256": "bb9e0aefd7998ecd14db94b3e07025bcdb57e32ed7fa2f3cae79052c9a4ee9d1",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clean_test/clnsp10.wav",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (Reddy et al., INTERSPEECH 2019) / Edinburgh DataShare clean speech",
+      "redistribution": "allowed",
+      "category": "clean-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 5,
+      "levelDbfs": -28.9,
+      "reference": {
+        "alignedTargetPath": "audio/ms-snsd-clean-003.wav",
+        "alignedTargetSha256": "bb9e0aefd7998ecd14db94b3e07025bcdb57e32ed7fa2f3cae79052c9a4ee9d1",
+        "alignment": "sample-accurate"
+      },
+      "notes": "5.0 s real 16 kHz studio human speech; self-aligned clean preservation target."
+    },
+    {
+      "id": "ms-snsd-clean-004",
+      "path": "audio/ms-snsd-clean-004.wav",
+      "sha256": "e95e23869857e49050ca9cbf6b50681b1874ffce42cbf80046699fc2709e1d71",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clean_test/clnsp100.wav",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (Reddy et al., INTERSPEECH 2019) / Edinburgh DataShare clean speech",
+      "redistribution": "allowed",
+      "category": "clean-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 5,
+      "levelDbfs": -25,
+      "reference": {
+        "alignedTargetPath": "audio/ms-snsd-clean-004.wav",
+        "alignedTargetSha256": "e95e23869857e49050ca9cbf6b50681b1874ffce42cbf80046699fc2709e1d71",
+        "alignment": "sample-accurate"
+      },
+      "notes": "5.0 s real 16 kHz studio human speech; self-aligned clean preservation target."
+    },
+    {
+      "id": "librispeech-clean-001",
+      "path": "audio/librispeech-clean-001.wav",
+      "sha256": "2f7315ccf543b6368528b098cd895098c154f222cd55ff7b5f66b50feb383c56",
+      "source": "speechbrain/speechbrain@c0241278f93e:tests/samples/ASR/spk1_1.wav",
+      "license": "CC BY 4.0",
+      "attribution": "LibriSpeech (Panayotov et al., ICASSP 2015) via SpeechBrain test samples",
+      "redistribution": "allowed",
+      "category": "clean-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 2.87,
+      "levelDbfs": -32.8,
+      "reference": {
+        "alignedTargetPath": "audio/librispeech-clean-001.wav",
+        "alignedTargetSha256": "2f7315ccf543b6368528b098cd895098c154f222cd55ff7b5f66b50feb383c56",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Unmodified real LibriSpeech 16 kHz utterance; self-aligned clean preservation target."
+    },
+    {
+      "id": "librispeech-clean-002",
+      "path": "audio/librispeech-clean-002.wav",
+      "sha256": "5f3f534ba99f159358c6ee2e4fb5e42b3b9399f37f4e290651405c76095f26f0",
+      "source": "speechbrain/speechbrain@c0241278f93e:tests/samples/ASR/spk2_1.wav",
+      "license": "CC BY 4.0",
+      "attribution": "LibriSpeech (Panayotov et al., ICASSP 2015) via SpeechBrain test samples",
+      "redistribution": "allowed",
+      "category": "clean-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 2.01,
+      "levelDbfs": -23.6,
+      "reference": {
+        "alignedTargetPath": "audio/librispeech-clean-002.wav",
+        "alignedTargetSha256": "5f3f534ba99f159358c6ee2e4fb5e42b3b9399f37f4e290651405c76095f26f0",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Unmodified real LibriSpeech 16 kHz utterance; self-aligned clean preservation target."
+    },
+    {
+      "id": "real-quiet-speech-001",
+      "path": "audio/real-quiet-speech-001.wav",
+      "sha256": "a73fd02a144abe59e390bad66cdf59d255f3dffc9d2e86ad371372dc3d73405b",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clnsp1000",
+      "license": "CC BY 4.0",
+      "attribution": "Real human speech attenuated to low level (-34..-38 dBFS)",
+      "redistribution": "allowed",
+      "category": "quiet-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -34,
+      "reference": {
+        "alignedTargetPath": "audio/real-quiet-speech-001.wav",
+        "alignedTargetSha256": "a73fd02a144abe59e390bad66cdf59d255f3dffc9d2e86ad371372dc3d73405b",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Calibrated to -34 dBFS RMS to test low-level voice gate/mask retention."
+    },
+    {
+      "id": "real-quiet-speech-002",
+      "path": "audio/real-quiet-speech-002.wav",
+      "sha256": "cc5e96e7e88184e21852b40fa5853e49d595895af171615b8993dfa424ab6421",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clnsp1001",
+      "license": "CC BY 4.0",
+      "attribution": "Real human speech attenuated to low level (-34..-38 dBFS)",
+      "redistribution": "allowed",
+      "category": "quiet-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -36,
+      "reference": {
+        "alignedTargetPath": "audio/real-quiet-speech-002.wav",
+        "alignedTargetSha256": "cc5e96e7e88184e21852b40fa5853e49d595895af171615b8993dfa424ab6421",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Calibrated to -36 dBFS RMS to test low-level voice gate/mask retention."
+    },
+    {
+      "id": "real-quiet-speech-003",
+      "path": "audio/real-quiet-speech-003.wav",
+      "sha256": "8c8b191d27fc20001eb8bd0ab98b5b49de9bd4f048fce49a17dde58a99d04de8",
+      "source": "speechbrain/speechbrain@c0241278f93e:spk1_2",
+      "license": "CC BY 4.0",
+      "attribution": "Real human speech attenuated to low level (-34..-38 dBFS)",
+      "redistribution": "allowed",
+      "category": "quiet-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 3.15,
+      "levelDbfs": -35,
+      "reference": {
+        "alignedTargetPath": "audio/real-quiet-speech-003.wav",
+        "alignedTargetSha256": "8c8b191d27fc20001eb8bd0ab98b5b49de9bd4f048fce49a17dde58a99d04de8",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Calibrated to -35 dBFS RMS to test low-level voice gate/mask retention."
+    },
+    {
+      "id": "real-quiet-speech-004",
+      "path": "audio/real-quiet-speech-004.wav",
+      "sha256": "d14c5cbed23fdce8176bad58ae70e8c28e36c4e6d6f41c691658b405356529fa",
+      "source": "speechbrain/speechbrain@c0241278f93e:spk2_2",
+      "license": "CC BY 4.0",
+      "attribution": "Real human speech attenuated to low level (-34..-38 dBFS)",
+      "redistribution": "allowed",
+      "category": "quiet-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 1.76,
+      "levelDbfs": -38,
+      "reference": {
+        "alignedTargetPath": "audio/real-quiet-speech-004.wav",
+        "alignedTargetSha256": "d14c5cbed23fdce8176bad58ae70e8c28e36c4e6d6f41c691658b405356529fa",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Calibrated to -38 dBFS RMS to test low-level voice gate/mask retention."
+    },
+    {
+      "id": "real-soft-whisperlike-001",
+      "path": "audio/real-soft-whisperlike-001.wav",
+      "sha256": "0e2f507937cba8a2d0f1c589fc25162d41495f7f6de5ef961bed9d1dccf3dc37",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clnsp1002",
+      "license": "CC BY 4.0",
+      "attribution": "Pre-emphasized low-amplitude real speech stressing unvoiced consonant/whisper retention",
+      "redistribution": "allowed",
+      "category": "whispered-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -34,
+      "reference": {
+        "alignedTargetPath": "audio/real-soft-whisperlike-001.wav",
+        "alignedTargetSha256": "0e2f507937cba8a2d0f1c589fc25162d41495f7f6de5ef961bed9d1dccf3dc37",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Pre-emphasized real human speech at -34 dBFS RMS to measure soft/whisper suppression risk."
+    },
+    {
+      "id": "real-soft-whisperlike-002",
+      "path": "audio/real-soft-whisperlike-002.wav",
+      "sha256": "f6b12571160ece17c4c0db9c3a94e454c6bbf09cd86ee66622d3c06be6662399",
+      "source": "microsoft/MS-SNSD@fe61c4ba0d9a:clnsp1003",
+      "license": "CC BY 4.0",
+      "attribution": "Pre-emphasized low-amplitude real speech stressing unvoiced consonant/whisper retention",
+      "redistribution": "allowed",
+      "category": "whispered-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -36,
+      "reference": {
+        "alignedTargetPath": "audio/real-soft-whisperlike-002.wav",
+        "alignedTargetSha256": "f6b12571160ece17c4c0db9c3a94e454c6bbf09cd86ee66622d3c06be6662399",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Pre-emphasized real human speech at -36 dBFS RMS to measure soft/whisper suppression risk."
+    },
+    {
+      "id": "real-soft-whisperlike-003",
+      "path": "audio/real-soft-whisperlike-003.wav",
+      "sha256": "d4450e9c9ed7aaccd72f3815a23b171f8739911b341ef07022c14b0aaaff27a8",
+      "source": "speechbrain/speechbrain@c0241278f93e:spk1_3",
+      "license": "CC BY 4.0",
+      "attribution": "Pre-emphasized low-amplitude real speech stressing unvoiced consonant/whisper retention",
+      "redistribution": "allowed",
+      "category": "whispered-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 2.72,
+      "levelDbfs": -35,
+      "reference": {
+        "alignedTargetPath": "audio/real-soft-whisperlike-003.wav",
+        "alignedTargetSha256": "d4450e9c9ed7aaccd72f3815a23b171f8739911b341ef07022c14b0aaaff27a8",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Pre-emphasized real human speech at -35 dBFS RMS to measure soft/whisper suppression risk."
+    },
+    {
+      "id": "real-soft-whisperlike-004",
+      "path": "audio/real-soft-whisperlike-004.wav",
+      "sha256": "e0030189d98ccaa15c0856671de5969f262982460e188bcf6ad8bb4938784489",
+      "source": "speechbrain/speechbrain@c0241278f93e:spk2_3",
+      "license": "CC BY 4.0",
+      "attribution": "Pre-emphasized low-amplitude real speech stressing unvoiced consonant/whisper retention",
+      "redistribution": "allowed",
+      "category": "whispered-speech",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 1.88,
+      "levelDbfs": -37,
+      "reference": {
+        "alignedTargetPath": "audio/real-soft-whisperlike-004.wav",
+        "alignedTargetSha256": "e0030189d98ccaa15c0856671de5969f262982460e188bcf6ad8bb4938784489",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Pre-emphasized real human speech at -37 dBFS RMS to measure soft/whisper suppression risk."
+    },
+    {
+      "id": "real-noisy-hvac-001",
+      "path": "audio/real-noisy-hvac-001.wav",
+      "sha256": "9bb24fbd6889f5398cc301cd0112df05506abe19f9d5d7ac041ab91c1e8749c0",
+      "source": "MS-SNSD/LibriSpeech clnsp0 + MS-SNSD noise_test/AirConditioner_1.wav @ 0 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/hvac",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -29.1,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-hvac-001-target.wav",
+        "alignedTargetSha256": "512ef78024071133214cb44e40210fb2b1edda547ef53b4157c1c61a03582b81",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real air-conditioner noise at 0 dB SNR."
+    },
+    {
+      "id": "real-noisy-hvac-002",
+      "path": "audio/real-noisy-hvac-002.wav",
+      "sha256": "e29fe63d3db6610c04e7ef49ed95b30fc4c323c23fe70fcb0f7d32b450ee416e",
+      "source": "MS-SNSD/LibriSpeech clnsp1 + MS-SNSD noise_test/AirConditioner_1.wav @ 5 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/hvac",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -26.2,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-hvac-002-target.wav",
+        "alignedTargetSha256": "7a70d61b565c127281f1a57deebfe8a67106b382d87d5d8aeca1bfdb198d9a2b",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real air-conditioner noise at 5 dB SNR."
+    },
+    {
+      "id": "real-noisy-hvac-003",
+      "path": "audio/real-noisy-hvac-003.wav",
+      "sha256": "3e8199893299f4a9c5e1b20f5138e3cd0055bc38da5279088687492651171e79",
+      "source": "MS-SNSD/LibriSpeech clnsp10 + MS-SNSD noise_test/AirConditioner_2.wav @ 10 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/hvac",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -28.3,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-hvac-003-target.wav",
+        "alignedTargetSha256": "cb216033ecfbea03fc4dc013e93a5e28325e02dc548175c62b39798df842e010",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real air-conditioner noise at 10 dB SNR."
+    },
+    {
+      "id": "real-noisy-hvac-004",
+      "path": "audio/real-noisy-hvac-004.wav",
+      "sha256": "58c832787d421357ef1aa549f21b7c233dad718c9118a6070ebe0048616c9c48",
+      "source": "MS-SNSD/LibriSpeech spk1_4 + MS-SNSD noise_test/AirConditioner_2.wav @ 3 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/hvac",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 2.53,
+      "levelDbfs": -31,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-hvac-004-target.wav",
+        "alignedTargetSha256": "719e441a93a3ec220dfc4337c30944aa1774847739ae9d461c3280b612cf869d",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real air-conditioner noise at 3 dB SNR."
+    },
+    {
+      "id": "real-noisy-hvac-005",
+      "path": "audio/real-noisy-hvac-005.wav",
+      "sha256": "d597a8587c79116ce2e6377af8b60442a56b63c336eb21a1a22972b22f2ebfdd",
+      "source": "MS-SNSD/LibriSpeech spk2_4 + MS-SNSD noise_test/AirConditioner_1.wav @ 8 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/hvac",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 2.04,
+      "levelDbfs": -26.1,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-hvac-005-target.wav",
+        "alignedTargetSha256": "6dfc7295435a97f2b50c5e95e895fe223b56c61d64a4e0bcb3a663e45f893f4f",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real air-conditioner noise at 8 dB SNR."
+    },
+    {
+      "id": "real-noisy-babble-001",
+      "path": "audio/real-noisy-babble-001.wav",
+      "sha256": "fb469c5fb65ff310df9468457ff253ccacea393bde9a80c948f31744ef7fc44c",
+      "source": "MS-SNSD/LibriSpeech clnsp100 + MS-SNSD noise_test/Babble_1.wav @ 0 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/babble",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -21.8,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-babble-001-target.wav",
+        "alignedTargetSha256": "8682877db6a5b312e01dc16f22db646f7bb5e8c7c643a6f651be45f538e43f88",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real multi-talker babble at 0 dB SNR."
+    },
+    {
+      "id": "real-noisy-babble-002",
+      "path": "audio/real-noisy-babble-002.wav",
+      "sha256": "8229ec41876c6085402775744fdcbb52060420c3125216c1f57ef12fa62815d2",
+      "source": "MS-SNSD/LibriSpeech clnsp1000 + MS-SNSD noise_test/Babble_1.wav @ 5 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/babble",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -26.4,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-babble-002-target.wav",
+        "alignedTargetSha256": "df7098e1ec09af69cc719d121e1e6787c0ff19a972aa6d65fcb2ae91aabcb3e6",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real multi-talker babble at 5 dB SNR."
+    },
+    {
+      "id": "real-noisy-babble-003",
+      "path": "audio/real-noisy-babble-003.wav",
+      "sha256": "cf1036e9b9060b2f0edcb073a6427970419bc82a85f5ae5e93e9f3f3f95eeaa8",
+      "source": "MS-SNSD/LibriSpeech clnsp1001 + MS-SNSD noise_test/Babble_2.wav @ 10 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/babble",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -24.5,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-babble-003-target.wav",
+        "alignedTargetSha256": "86c6a76e7a5c07fe873e95c9c2be0ccb5fe9c5022ca14a8f8a07414766258bc2",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real multi-talker babble at 10 dB SNR."
+    },
+    {
+      "id": "real-noisy-babble-004",
+      "path": "audio/real-noisy-babble-004.wav",
+      "sha256": "b036c3905113149aa8ea27635361b983482d9f29a3b940d331bb351614635956",
+      "source": "MS-SNSD/LibriSpeech spk1_5 + MS-SNSD noise_test/Babble_2.wav @ 3 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/babble",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 2.6,
+      "levelDbfs": -32,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-babble-004-target.wav",
+        "alignedTargetSha256": "6972d80554dfb14e5ad23c7b355a870e9beb18ab2331fbd4b12ff1777e6ed277",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real multi-talker babble at 3 dB SNR."
+    },
+    {
+      "id": "real-noisy-babble-005",
+      "path": "audio/real-noisy-babble-005.wav",
+      "sha256": "215e8de12341442454641d1cc0ac47f0ae2d6408fb4d51a9e72e3cbaec7755d4",
+      "source": "MS-SNSD/LibriSpeech spk2_5 + MS-SNSD noise_test/Babble_1.wav @ 8 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/babble",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 1.98,
+      "levelDbfs": -26.7,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-babble-005-target.wav",
+        "alignedTargetSha256": "cf312453d454a3e006ac84ef84bd5880452b57e1a8d717f7e37dae65ceec8044",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real multi-talker babble at 8 dB SNR."
+    },
+    {
+      "id": "real-noisy-street-001",
+      "path": "audio/real-noisy-street-001.wav",
+      "sha256": "c2cde89a8ac320063b7aa4779b3dd9ce885902f121e9f00ba0c45d31955642a3",
+      "source": "MS-SNSD/LibriSpeech clnsp1002 + MS-SNSD noise_test/AirportAnnouncements_2.wav @ 0 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/street",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -22.4,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-street-001-target.wav",
+        "alignedTargetSha256": "50e332981f4db46ff9313b6b31fb6b7f68f9ad902875ac6149b5b503de7e6b60",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real public-space/ambient noise at 0 dB SNR."
+    },
+    {
+      "id": "real-noisy-street-002",
+      "path": "audio/real-noisy-street-002.wav",
+      "sha256": "3d491d2dc9f35ef16945f641476f645c51fdc6249b20f2732f0634ca1faa6df1",
+      "source": "MS-SNSD/LibriSpeech clnsp1003 + MS-SNSD noise_test/AirportAnnouncements_2.wav @ 5 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/street",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -27.2,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-street-002-target.wav",
+        "alignedTargetSha256": "ecfe6610970f7cfbda8dd79ef476de56b592dd9509029b6dac611b7cef3a7531",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real public-space/ambient noise at 5 dB SNR."
+    },
+    {
+      "id": "real-noisy-street-003",
+      "path": "audio/real-noisy-street-003.wav",
+      "sha256": "64852f9c8516d2d445f8fc8fc458909d8ce03cb2f0c75688119da3cbf39f22a3",
+      "source": "MS-SNSD/LibriSpeech clnsp0 + MS-SNSD noise_test/Neighbor_2.wav @ 10 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/street",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -31.7,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-street-003-target.wav",
+        "alignedTargetSha256": "512ef78024071133214cb44e40210fb2b1edda547ef53b4157c1c61a03582b81",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real public-space/ambient noise at 10 dB SNR."
+    },
+    {
+      "id": "real-noisy-street-004",
+      "path": "audio/real-noisy-street-004.wav",
+      "sha256": "b706006a5510970e3322b82a193dbc7d71f4bca744e4e3ec186988572beae0d7",
+      "source": "MS-SNSD/LibriSpeech spk1_6 + MS-SNSD noise_test/AirportAnnouncements_2.wav @ 4 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/street",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 2.29,
+      "levelDbfs": -30.1,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-street-004-target.wav",
+        "alignedTargetSha256": "8811bcbdb867c887cdb036aadd97fa2a8023e90610b314c9913f79f712eb7b6c",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real public-space/ambient noise at 4 dB SNR."
+    },
+    {
+      "id": "real-noisy-street-005",
+      "path": "audio/real-noisy-street-005.wav",
+      "sha256": "54610a7beef128f3d31614e15ead70a9f545b6af9610d165b0b5880c080a02ee",
+      "source": "MS-SNSD/LibriSpeech spk2_6 + MS-SNSD noise_test/Neighbor_2.wav @ 8 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + LibriSpeech/Edinburgh (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "noisy-speech/street",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 1.8,
+      "levelDbfs": -26.3,
+      "reference": {
+        "alignedTargetPath": "audio/real-noisy-street-005-target.wav",
+        "alignedTargetSha256": "cdec920cdcbbb0b38110b958f6e90a4726c87be8d9d3f9d3a0834a1cc950cf6d",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Sample-accurate mixture of real speech and real public-space/ambient noise at 8 dB SNR."
+    },
+    {
+      "id": "librispeech-overlap-001",
+      "path": "audio/librispeech-overlap-001.wav",
+      "sha256": "548be37977de226ee4d411479c45d74506c3923348e10cb80489cfe400bb92e5",
+      "source": "speechbrain/speechbrain@c0241278f93e:separation_processed_16k/mixture_0_peak_0.5.wav",
+      "license": "CC BY 4.0",
+      "attribution": "Libri2Mix / LibriSpeech via SpeechBrain separation_processed_16k",
+      "redistribution": "allowed",
+      "category": "overlapping-speakers",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.03,
+      "levelDbfs": -10.9,
+      "reference": {
+        "alignedTargetPath": "audio/librispeech-overlap-001-target.wav",
+        "alignedTargetSha256": "88f716b1c419970d921d6457c53af2a3f5f51f2ba79077185202d42bf75b324e",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Real 2-speaker overlapping speech mixture with sample-accurate primary speaker reference (source1)."
+    },
+    {
+      "id": "librispeech-overlap-002",
+      "path": "audio/librispeech-overlap-002.wav",
+      "sha256": "0c04f9916e115b2aa75b1165054a07105afe866145c7c314d67ae7676cddd3cc",
+      "source": "speechbrain/speechbrain@c0241278f93e:separation_processed_16k/mixture_1_peak_0.5.wav",
+      "license": "CC BY 4.0",
+      "attribution": "Libri2Mix / LibriSpeech via SpeechBrain separation_processed_16k",
+      "redistribution": "allowed",
+      "category": "overlapping-speakers",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 3.98,
+      "levelDbfs": -11,
+      "reference": {
+        "alignedTargetPath": "audio/librispeech-overlap-002-target.wav",
+        "alignedTargetSha256": "f5f91702d54fc794cb6eb648ef91489b566c9b95ecc8d2cbb84ba62004e6f121",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Real 2-speaker overlapping speech mixture with sample-accurate primary speaker reference (source1)."
+    },
+    {
+      "id": "librispeech-overlap-003",
+      "path": "audio/librispeech-overlap-003.wav",
+      "sha256": "ca106d4c251b24597b4e66557a289f6629e4c384718a20dc871ffdd356804fa2",
+      "source": "speechbrain/speechbrain@c0241278f93e:separation_processed_16k/mixture_2_peak_0.5.wav",
+      "license": "CC BY 4.0",
+      "attribution": "Libri2Mix / LibriSpeech via SpeechBrain separation_processed_16k",
+      "redistribution": "allowed",
+      "category": "overlapping-speakers",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 7.21,
+      "levelDbfs": -11,
+      "reference": {
+        "alignedTargetPath": "audio/librispeech-overlap-003-target.wav",
+        "alignedTargetSha256": "c4bb177b2c13a00c2775d04b20bc15a0c55344cb7ce7ae1c45a075081ff209e3",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Real 2-speaker overlapping speech mixture with sample-accurate primary speaker reference (source1)."
+    },
+    {
+      "id": "librispeech-overlap-004",
+      "path": "audio/librispeech-overlap-004.wav",
+      "sha256": "864082cabcb6f4049e672a7d6dda81fadf57d463dfafe556e7d6c1674c9b5add",
+      "source": "speechbrain/speechbrain@c0241278f93e:separation_processed_16k/mixture_3_peak_0.5.wav",
+      "license": "CC BY 4.0",
+      "attribution": "Libri2Mix / LibriSpeech via SpeechBrain separation_processed_16k",
+      "redistribution": "allowed",
+      "category": "overlapping-speakers",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 7.05,
+      "levelDbfs": -10.8,
+      "reference": {
+        "alignedTargetPath": "audio/librispeech-overlap-004-target.wav",
+        "alignedTargetSha256": "35eeaf1f08cf8b52b16d8ec50fcc8f6af5240ba55fea80d12d6e85310cbd9f4a",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Real 2-speaker overlapping speech mixture with sample-accurate primary speaker reference (source1)."
+    },
+    {
+      "id": "real-field-office-001",
+      "path": "audio/real-field-office-001.wav",
+      "sha256": "ba24cd5f54ed29339ad26faac7131d201fd48b7d85826d51a4c901c78c3ede3b",
+      "source": "MS-SNSD clnsp1 + noise_test/VacuumCleaner_1.wav @ 2 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + Edinburgh DataShare (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "field-recording",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -25.2,
+      "reference": {
+        "alignedTargetPath": "audio/real-field-office-001-target.wav",
+        "alignedTargetSha256": "7a70d61b565c127281f1a57deebfe8a67106b382d87d5d8aeca1bfdb198d9a2b",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Real speech mixed with real noise_test/VacuumCleaner_1.wav mechanical/transient environment at 2 dB SNR."
+    },
+    {
+      "id": "real-field-office-002",
+      "path": "audio/real-field-office-002.wav",
+      "sha256": "422d3981c0a94a0456df931639c18e6c8173e97338b8efa841f1211c48941e79",
+      "source": "MS-SNSD clnsp10 + noise_test/CopyMachine_1.wav @ 6 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + Edinburgh DataShare (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "field-recording",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -27.8,
+      "reference": {
+        "alignedTargetPath": "audio/real-field-office-002-target.wav",
+        "alignedTargetSha256": "cb216033ecfbea03fc4dc013e93a5e28325e02dc548175c62b39798df842e010",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Real speech mixed with real noise_test/CopyMachine_1.wav mechanical/transient environment at 6 dB SNR."
+    },
+    {
+      "id": "real-field-office-003",
+      "path": "audio/real-field-office-003.wav",
+      "sha256": "e5c44ce0fc3250a6454bc231f0816ad359c179230cc08cd803bc4de0d1cd9e06",
+      "source": "MS-SNSD clnsp100 + noise_test/ShuttingDoor_1.wav @ 8 dB SNR",
+      "license": "CC BY 4.0",
+      "attribution": "MS-SNSD (MIT/CC0) + Edinburgh DataShare (CC BY 4.0)",
+      "redistribution": "allowed",
+      "category": "field-recording",
+      "language": "en",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSec": 4.5,
+      "levelDbfs": -24.1,
+      "reference": {
+        "alignedTargetPath": "audio/real-field-office-003-target.wav",
+        "alignedTargetSha256": "8682877db6a5b312e01dc16f22db646f7bb5e8c7c643a6f651be45f538e43f88",
+        "alignment": "sample-accurate"
+      },
+      "notes": "Real speech mixed with real noise_test/ShuttingDoor_1.wav mechanical/transient environment at 8 dB SNR."
+    }
+  ]
+}

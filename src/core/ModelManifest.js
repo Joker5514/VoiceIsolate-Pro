@@ -50,6 +50,9 @@ export const MODEL_MANIFEST = Object.freeze({
     sha256: '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
     strategy: 'vad',
     sampleRate: 16000, // Silero VAD operates at 16kHz
+    license: 'MIT',
+    backend: 'onnxruntime-web (webgpu -> wasm)',
+    fallback: 'SoftVad energy + zero-crossing classical detector',
     io: Object.freeze({
       input: 'input',
       output: 'output',
@@ -66,6 +69,9 @@ export const MODEL_MANIFEST = Object.freeze({
     sha256: '16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
     strategy: 'vad',
     sampleRate: 16000,
+    license: 'MIT',
+    backend: 'onnxruntime-web (wasm-int8)',
+    fallback: 'vad (fp32) or SoftVad classical detector',
     io: Object.freeze({
       input: 'input',
       output: 'output',
@@ -88,6 +94,9 @@ export const MODEL_MANIFEST = Object.freeze({
     bins: 2049,
     maxBatchFrames: 96,
     sampleRate: 48000,
+    license: 'BSD-3-Clause-Derived (first-party spectral export)',
+    backend: 'onnxruntime-web (webgpu -> wasm)',
+    fallback: 'SpectralCleanup minimum-statistics classical noise reduction',
     /**
      * Inference calibration, measured by scripts/quality (docs/guides/AUDIO_QUALITY.md):
      * inputNormalization — the network was trained on magnitude frames scaled
@@ -129,6 +138,9 @@ export const MODEL_MANIFEST = Object.freeze({
     strategy: 'waveform',
     sampleRate: 44100,
     segmentSamples: 344520,
+    license: 'MIT',
+    backend: 'onnxruntime-web (webgpu -> wasm)',
+    fallback: 'bsrnn_vocals (shipped Band-Split RNN vocal separator)',
     io: Object.freeze({
       input: 'input',
       output: 'output',
@@ -151,6 +163,9 @@ export const MODEL_MANIFEST = Object.freeze({
     // Larger base batches cut session.run overhead (effectiveBatchFrames multiplies further).
     maxBatchFrames: 128,
     sampleRate: 48000,
+    license: 'First-Party-Weights (Band-Split RNN spectral export)',
+    backend: 'onnxruntime-web (webgpu -> wasm)',
+    fallback: 'Engineer DSP fallback (dsp-worker.js spectral subtraction)',
     /**
      * Inference calibration, measured by scripts/quality (docs/guides/AUDIO_QUALITY.md):
      * inputNormalization — the network was trained on magnitude frames scaled
@@ -191,6 +206,9 @@ export const MODEL_MANIFEST = Object.freeze({
     hopSize: 1024,
     bins: 1025,
     sampleRate: 44100,
+    license: 'MIT (unshipped)',
+    backend: 'onnxruntime-web (offline-only)',
+    fallback: 'bsrnn_vocals (4096-point shipped spectral-mask model)',
     io: Object.freeze({
       input: 'input',   // 4D complex spectrogram tensor
       output: 'output', // 4D complex spectrogram tensor
@@ -256,6 +274,8 @@ export const MODEL_MANIFEST = Object.freeze({
     hopSize: 480,
     sampleRate: 48000,
     license: 'MIT OR Apache-2.0',
+    backend: 'onnxruntime-web (3-session composite, wasm/webgpu)',
+    fallback: 'bsrnn_vocals spectral-mask chain (via EnhanceGuard)',
   }),
 
   // ── Speaker embedding (optional ECAPA) ────────────────────────────────
@@ -276,6 +296,8 @@ export const MODEL_MANIFEST = Object.freeze({
     shipped: false,
     sha256: 'f901ae3571912bad4e11e157744cb8b7d77a0b46923b83c410bdbb6c77d69736',
     license: 'Apache-2.0',
+    backend: 'onnxruntime-web (SpeakerEmbeddingWorker, wasm)',
+    fallback: '24-D mel voiceprint (TargetSpeaker.js)',
     source: Object.freeze({
       repo: 'Wespeaker/wespeaker-voxceleb-ecapa-tdnn512',
       revision: '89426e111abc9ffcc40279baf808e087693c6e9b',
@@ -309,6 +331,9 @@ export const MODEL_MANIFEST = Object.freeze({
     sha256: null,
     strategy: 'sam-audio-onnx',
     sampleRate: 48000,
+    license: 'SAM-License (unshipped)',
+    backend: 'onnxruntime-web (or Electron Python SAM worker)',
+    fallback: 'USM classical NMF + language-prior masks (UniversalSourceMatrix.js)',
     io: Object.freeze({
       input: 'input',
       output: 'output',
@@ -327,6 +352,8 @@ export const MODEL_MANIFEST = Object.freeze({
     sizeBytes: null,
     quantization: 'fp32',
     delivery: 'optional',
+    optional: true,
+    shipped: false,
     sha256: null,
     strategy: 'universal-query',
     fftSize: 4096,
@@ -334,6 +361,9 @@ export const MODEL_MANIFEST = Object.freeze({
     bins: 2049,
     maxBatchFrames: 64,
     sampleRate: 48000,
+    license: 'Apache-2.0 (unshipped)',
+    backend: 'onnxruntime-web (USMWorker, wasm)',
+    fallback: 'USM classical NMF + language-prior masks (UniversalSourceMatrix.js)',
     io: Object.freeze({
       // Expected when a real AudioSep-class ONNX is provided:
       //   audio  float32 [1, T]  and/or  mag [batch, 2049]
@@ -421,6 +451,133 @@ export function isValidEntry(entry) {
     (entry.sha256 === null || /^[0-9a-f]{64}$/.test(entry.sha256)) &&
     entry.io && typeof entry.io.input === 'string' && typeof entry.io.output === 'string'
   );
+}
+
+/**
+ * Canonical optional-model predicate shared by integrity validators and
+ * runtime capability displays (VIP-019).
+ * @param {object} entry
+ * @returns {boolean}
+ */
+export function isOptionalModelEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (entry.shipped === false) return true;
+  if (entry.optional === true && entry.shipped !== true) return true;
+  if (entry.delivery === 'optional' && entry.shipped !== true) return true;
+  return false;
+}
+
+/**
+ * True when an entry is a composite model backed by `entry.parts`.
+ * @param {object} entry
+ * @returns {boolean}
+ */
+export function isCompositeModelEntry(entry) {
+  return Boolean(entry && typeof entry === 'object' && entry.composite === true);
+}
+
+/**
+ * True when an entry is an internal sub-graph part of a composite model
+ * (e.g. `dfn3_enc`, `dfn3_erb_dec`, `dfn3_df_dec`).
+ * @param {object} entry
+ * @returns {boolean}
+ */
+export function isInternalPartEntry(entry) {
+  return Boolean(entry && typeof entry === 'object' && String(entry.task || '').endsWith('-part'));
+}
+
+/**
+ * Compute approximate byte size for a manifest entry (summing parts for
+ * composite entries; returning null when size is unknown/unshipped).
+ * @param {string} id
+ * @param {object} [manifest]
+ * @returns {number|null}
+ */
+export function effectiveModelSizeBytes(id, manifest = MODEL_MANIFEST) {
+  const entry = manifest?.[id];
+  if (!entry) return null;
+  if (isCompositeModelEntry(entry)) {
+    const partIds = Object.values(entry.parts || {});
+    if (partIds.length === 0) return null;
+    let sum = 0;
+    for (const pid of partIds) {
+      const p = manifest?.[pid];
+      if (!p || !Number.isInteger(p.sizeBytes) || p.sizeBytes <= 0) return null;
+      sum += p.sizeBytes;
+    }
+    return sum;
+  }
+  return Number.isInteger(entry.sizeBytes) && entry.sizeBytes > 0 ? entry.sizeBytes : null;
+}
+
+/**
+ * Enumerate required file assets for a model entry (resolving composite parts).
+ * @param {string} id
+ * @param {object} [manifest]
+ * @returns {Array<{id: string, url: string, sizeBytes: number|null, sha256: string|null, sha256Pinned: boolean}>}
+ */
+export function requiredAssetsForModel(id, manifest = MODEL_MANIFEST) {
+  const entry = manifest?.[id];
+  if (!entry) return [];
+  if (isCompositeModelEntry(entry)) {
+    return Object.values(entry.parts || {}).map((pid) => {
+      const p = manifest?.[pid];
+      if (!p) return { id: pid, url: '', sizeBytes: null, sha256: null, sha256Pinned: false };
+      return {
+        id: pid,
+        url: p.url || '',
+        sizeBytes: Number.isInteger(p.sizeBytes) && p.sizeBytes > 0 ? p.sizeBytes : null,
+        sha256: p.sha256 || null,
+        sha256Pinned: typeof p.sha256 === 'string' && /^[0-9a-f]{64}$/.test(p.sha256),
+      };
+    });
+  }
+  return [{
+    id: entry.id || id,
+    url: entry.url || '',
+    sizeBytes: Number.isInteger(entry.sizeBytes) && entry.sizeBytes > 0 ? entry.sizeBytes : null,
+    sha256: entry.sha256 || null,
+    sha256Pinned: typeof entry.sha256 === 'string' && /^[0-9a-f]{64}$/.test(entry.sha256),
+  }];
+}
+
+/**
+ * Structured input constraints for a manifest entry (VIP-019).
+ * @param {string} id
+ * @param {object} [manifest]
+ * @returns {{sampleRateHz: number|null, channels: string, framing: string, quantization: string|null, summary: string}}
+ */
+export function describeModelConstraints(id, manifest = MODEL_MANIFEST) {
+  const entry = manifest?.[id];
+  if (!entry) {
+    return { sampleRateHz: null, channels: 'unknown', framing: 'unknown', quantization: null, summary: 'Unknown model' };
+  }
+  const sr = Number.isFinite(entry.sampleRate) ? entry.sampleRate : null;
+  const channels = entry.strategy === 'waveform-4stem'
+    ? 'stereo (2 ch)'
+    : 'mono per-channel (1–2 ch decoupled)';
+  let framing = entry.strategy || 'custom';
+  if (entry.fftSize && entry.hopSize) {
+    framing = `STFT ${entry.fftSize} / hop ${entry.hopSize}${entry.bins ? ` (${entry.bins} bins)` : ''}`;
+  } else if (entry.segmentSamples && sr) {
+    framing = `${entry.segmentSamples} samples (~${(entry.segmentSamples / sr).toFixed(1)} s chunks)`;
+  } else if (entry.features) {
+    framing = `${entry.features}${entry.embeddingDims ? ` → ${entry.embeddingDims}-D` : ''}`;
+  } else if (entry.strategy === 'vad-chunked') {
+    framing = '512-sample recurrent chunks';
+  }
+  const parts = [];
+  if (sr) parts.push(`${(sr / 1000).toFixed(sr % 1000 === 0 ? 0 : 1)} kHz`);
+  parts.push(channels);
+  parts.push(framing);
+  if (entry.quantization) parts.push(entry.quantization.toUpperCase());
+  return {
+    sampleRateHz: sr,
+    channels,
+    framing,
+    quantization: entry.quantization || null,
+    summary: parts.join(' · '),
+  };
 }
 
 export default MODEL_MANIFEST;

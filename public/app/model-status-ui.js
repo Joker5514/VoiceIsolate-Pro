@@ -172,7 +172,9 @@ export class ModelStatusUI {
           const provider = match.headers.get('X-VIP-Provider') || 'cache';
           this.setStatus(key, 'cached', undefined, provider);
         } else if (manifestModels && manifestModels[key]) {
-          if (manifestModels[key].eager || manifestModels[key].load_priority === 'eager') {
+          if (manifestModels[key].optional || manifestModels[key].shipped === false) {
+            this.setStatus(key, 'optional');
+          } else if (manifestModels[key].eager || manifestModels[key].load_priority === 'eager') {
             this.setStatus(key, 'loading');
             hasLoading = true;
           } else {

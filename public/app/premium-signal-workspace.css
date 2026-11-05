@@ -66,6 +66,14 @@
   gap: 12px;
 }
 
+/* VIP-021 box 8: selection canvases own the touch gesture. Without this,
+   touch-action defaults to auto and the browser claims a touch drag for
+   scrolling, so pointermove never forms a selection on touch devices. */
+#engineerWaveCanvas,
+#engineerSpecCanvas {
+  touch-action: none;
+}
+
 .vip-workstation__inspector {
   grid-area: inspector;
   display: flex;

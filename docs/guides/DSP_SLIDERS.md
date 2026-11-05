@@ -2,6 +2,11 @@
 
 Canonical guide for the **Engineer Console** control rack on Web, Desktop (Electron), and Android (same `public/app` shell).
 
+> Registry truth: the mechanically verified 67-slider registry and
+> 100 interactive ids live in [`ENGINEER_CONTROLS.md`](ENGINEER_CONTROLS.md).
+> This document covers interaction rules; the registry document is
+> the inventory.
+
 ## Architecture
 
 | Piece | Role |

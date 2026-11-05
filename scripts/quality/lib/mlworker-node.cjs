@@ -110,13 +110,28 @@ async function createMlWorker({ patchSource } = {}) {
   const { backend } = first;
 
   let seq = 0;
+  let lastRequestId = null;
+  /**
+   * Send the worker's cooperative cancel for the most recent separate()
+   * call (VIP-029 stress testing). The worker unwinds at its next
+   * cancellation point and the in-flight separate() rejects; later jobs
+   * are unaffected (request-scoped cancellation).
+   */
+  function cancelLast() {
+    if (lastRequestId == null) return;
+    void self.onmessage({ data: { type: 'cancel', requestId: lastRequestId } });
+  }
   /**
    * @param {Float32Array[]} channelData
    * @param {{ modelIds?: string[], processingConfig?: object, sampleRate?: number }} opts
    */
   async function separate(channelData, opts = {}) {
     const requestId = `q-${++seq}`;
-    const done = waitFor((m) => m.requestId === requestId && (m.type === 'stems' || m.type === 'error'));
+    lastRequestId = requestId;
+    // 'cancelled' must settle the promise too: the worker posts it (not
+    // 'error') when a running request unwinds at a cancellation point.
+    // Without this, a cancelled separate() hangs forever.
+    const done = waitFor((m) => m.requestId === requestId && (m.type === 'stems' || m.type === 'error' || m.type === 'cancelled'));
     const t0 = performance.now();
     // Copy: the real host transfers, the harness keeps the reference intact.
     void self.onmessage({ data: {
@@ -129,10 +144,11 @@ async function createMlWorker({ patchSource } = {}) {
     } });
     const msg = await done;
     if (msg.type === 'error') throw new Error(msg.message);
+    if (msg.type === 'cancelled') throw new Error(`[VIP][MLWorker] request ${requestId} cancelled`);
     return { ...msg, elapsedMs: performance.now() - t0 };
   }
 
-  return { separate, backend, manifest };
+  return { separate, cancelLast, backend, manifest };
 }
 
 module.exports = { createMlWorker, ROOT };

@@ -4,6 +4,7 @@
 |------------|---------|---------------------|------------------|
 | Shared renderer (`public/app` + `src`) | ✅ | ✅ WebView | ✅ |
 | Local ONNX (BSRNN/RNNoise/VAD) | ✅ | ✅ (device-dependent) | ✅ |
+| ECAPA-TDNN speaker embedding (optional) | ✅ if model fetched (`pnpm models:fetch-ecapa`, SHA-verified); absent → `unavailable` + mel fallback | ✅ same (WebView build) | ✅ if assets present |
 | Live-Mix worklets (gate/de-ess) | ✅ | ✅ if WebAudio OK | ✅ |
 | Live microphone capture | ❌ by design | ❌ by design | ❌ by design |
 | Prompted Isolation (USM query) | ✅ offline | ✅ offline | ✅ offline |
@@ -16,6 +17,16 @@
 | Single-pass STFT budget | ✅ | ✅ | ✅ |
 
 **SAM 3 vs SAM-Audio:** SAM 3 = optional **vision/video** tracking (not audio separation). Enable with `VIP_SAM3_ENABLED=1`. See [SAM3_TECHNICAL_DOCUMENTATION.md](../SAM3_TECHNICAL_DOCUMENTATION.md).
+
+## Verification state (2026-11-04, PR #888 branch — not published state)
+
+Browser tier 11/11 in Chromium on the PR branch (incl. CSP +
+privacy smokes); corpus baseline, stress sweep, diarization and
+ECAPA evals measured on the same branch. Firefox/WebKit not run
+here; Android/desktop artifacts not built here. Full refresh:
+[`VERIFICATION_STATE.md`](VERIFICATION_STATE.md). The published
+`v25.0.3` artifacts predate current source and are not
+synchronized with it (`releases/PLATFORM_SYNC.md`).
 
 ## Android notes
 

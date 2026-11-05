@@ -40,6 +40,37 @@ function isLegacyInlinePath(pathname) {
   );
 }
 
+/**
+ * Normalize a URL pathname for the legacy-scope decision (VIP-025).
+ *
+ * `new URL()` already resolves literal and %2e dot segments, but it
+ * does NOT treat an encoded separator as a separator: the pathname of
+ * `vip://app/app/..%2findex.html` is still `/app/..%2findex.html`,
+ * which starts with `/app/` and used to earn the legacy exception —
+ * while `resolveVipPath` in main.cjs decodes it to `/app/../index.html`
+ * and serves the LANDING page. Landing content with `unsafe-inline`
+ * is exactly the "exception weakens the main policy" hole this scope
+ * must not have. So decode once, then resolve `.`/`..` segments over
+ * both `/` and `\` (the packaged app runs on Windows, where `\` is a
+ * separator too), and decide the scope from the normalized path —
+ * the same file the handler actually serves.
+ */
+function normalizeScopePath(pathname) {
+  let decoded = pathname;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    decoded = pathname;
+  }
+  const parts = [];
+  for (const seg of decoded.split(/[\\/]+/)) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return `/${parts.join('/')}`;
+}
+
 function buildVipCsp({ allowLegacyInline }) {
   return [
     "default-src 'self'",
@@ -72,6 +103,9 @@ function vipSecurityHeaders(requestUrl = '') {
   } catch {
     pathname = '/';
   }
+  // Scope from the normalized path — the file actually served — not
+  // the raw URL spelling (see normalizeScopePath).
+  pathname = normalizeScopePath(pathname);
   return {
     'Content-Security-Policy': buildVipCsp({ allowLegacyInline: isLegacyInlinePath(pathname) }),
     // COOP/COEP required for SharedArrayBuffer (worklets / OLA).
@@ -82,4 +116,4 @@ function vipSecurityHeaders(requestUrl = '') {
   };
 }
 
-module.exports = { VIP_CSP, vipSecurityHeaders, isLegacyInlinePath, buildVipCsp };
+module.exports = { VIP_CSP, vipSecurityHeaders, isLegacyInlinePath, buildVipCsp, normalizeScopePath };

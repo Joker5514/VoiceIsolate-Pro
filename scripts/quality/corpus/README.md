@@ -1,8 +1,6 @@
 # Real-recording quality corpus (VIP-006) — schema & loader
 
-**Status:** framework delivered; corpus audio **not provisioned** (licensing +
-sandbox egress). This directory defines how real recordings enter the quality
-program without ever committing copyrighted audio to git.
+**Status:** Corpus v1 (`datasetVersion: "2026-11-03.v1"`) manifest committed and reproducible provisioner delivered (`pnpm quality:provision-corpus`). Binary `.wav` files live under git-ignored `audio/` so copyrighted or large binary audio never enters git history.
 
 ## Why a manifest + external storage
 
@@ -102,8 +100,13 @@ node scripts/quality/load-corpus.mjs --root <corpus-root> [--json out.json]
 5. `node scripts/quality/load-corpus.mjs --root <dir>` must exit 0.
 6. Keep `audio/` out of git (git-ignored by convention).
 
-**Missing dependency (honest):** ≥30 real clips across ≥4 noise classes with
-verified redistribution rights have NOT been assembled in this environment
-(no network egress to dataset hosts, no licensed recordings available). The
-`test:quality:real` command will wrap `load-corpus.mjs` + the metrics above as
-soon as a corpus root passes the loader.
+## Deterministic Provisioning (`VIP-006`)
+
+Run:
+
+```bash
+pnpm quality:provision-corpus
+pnpm quality:validate-corpus
+```
+
+`scripts/quality/provision-corpus.mjs` fetches 38 pinned Git blobs from `microsoft/MS-SNSD@fe61c4ba0d9a` (`MIT` / `CC BY 4.0` / `CC0-1.0`) and `speechbrain/speechbrain@c0241278f93e` (`Apache-2.0` / LibriSpeech `CC BY 4.0`), verifies every blob's Git SHA-1 (`blob <len>\0<bytes>`), materializes 36 real-audio clips + sample-accurate ground-truth targets across 8 categories (`clean-speech`, `quiet-speech`, `whispered-speech`, `noisy-speech/hvac`, `noisy-speech/babble`, `noisy-speech/street`, `overlapping-speakers`, `field-recording`) into `scripts/quality/corpus/audio/` (git-ignored), and verifies SHA-256 byte integrity via `load-corpus.mjs`.

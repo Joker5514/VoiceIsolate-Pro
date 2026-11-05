@@ -23,6 +23,21 @@ function siSdr(est, ref, mask) {
   return db(s / Math.max(e, 1e-20));
 }
 
+/** Plain SDR (not scale-invariant), dB. Complements siSdr: SI-SDR forgives
+ *  overall gain, SDR does not, so a chain that merely attenuates scores
+ *  worse here. Returns NaN when the reference is silent. */
+function sdr(est, ref, mask) {
+  let rr = 0; let e = 0;
+  for (let i = 0; i < ref.length; i++) {
+    if (mask && !mask[i]) continue;
+    rr += ref[i] * ref[i];
+    const d = est[i] - ref[i];
+    e += d * d;
+  }
+  if (rr === 0) return NaN;
+  return db(rr / Math.max(e, 1e-20));
+}
+
 function rmsDb(x, mask) {
   let s = 0; let c = 0;
   for (let i = 0; i < x.length; i++) if (!mask || mask[i]) { s += x[i] * x[i]; c++; }
@@ -101,4 +116,4 @@ function bandEnergyDb(x, lo, hi, sr = 48000, frame = 2048, mask = null) {
   return db(total / Math.max(1, frames));
 }
 
-module.exports = { fft, siSdr, rmsDb, peak, nonFinite, dcOffset, bandEnergyDb, db };
+module.exports = { fft, siSdr, sdr, rmsDb, peak, nonFinite, dcOffset, bandEnergyDb, db };

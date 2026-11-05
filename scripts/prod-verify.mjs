@@ -93,10 +93,12 @@ const STEPS = [
   ['e2e-quick-clean', 'browser', 'landing E2E', node('scripts/quick-clean-smoke.cjs')],
   ['e2e-shell-qa', 'browser', 'browser E2E', node('scripts/shell-qa-smoke.cjs')],
   ['privacy-runtime', 'browser', 'privacy', node('scripts/privacy-runtime-smoke.cjs')],
+  ['csp-runtime', 'browser', 'privacy', node('scripts/csp-runtime-smoke.cjs')],
   ['model-delivery-remote', 'network', 'model integrity', node('scripts/validate-onnx-models.js', '--remote')],
   ['downloads', 'network', 'provenance', node('scripts/validate-download-links.mjs')],
   // Needs the Electron binary and a display (xvfb-run on Linux).
   ['electron-security', 'desktop', 'security', node('scripts/electron-security-smoke.cjs')],
+  ['electron-csp-runtime', 'desktop', 'security', node('scripts/electron-csp-runtime-smoke.cjs')],
 ];
 
 const NOT_RUN_HERE = [

@@ -66,6 +66,22 @@ describe('vip:// Content Security Policy (VIP-025)', () => {
     expect(csp.isLegacyInlinePath('/')).toBe(false);
   });
 
+  test('encoded traversal cannot smuggle the legacy exception onto strict content', () => {
+    // The handler decodes %2f before resolving the file, so the scope
+    // decision must be made on the normalized path, not the URL spelling:
+    // vip://app/app/..%2findex.html serves the LANDING page and must get
+    // the strict policy, not the /app exception. Same for the Windows
+    // backslash variant (the packaged app runs on Windows).
+    const scriptSrc = (url) => directives(csp.vipSecurityHeaders(url)['Content-Security-Policy'])['script-src'];
+    expect(scriptSrc('vip://app/app/..%2findex.html')).not.toContain("'unsafe-inline'");
+    expect(scriptSrc('vip://app/app/..%5cindex.html')).not.toContain("'unsafe-inline'");
+    expect(scriptSrc('vip://app/app/%2e%2e/index.html')).not.toContain("'unsafe-inline'");
+    // Genuine legacy content reached through a normalized legacy path
+    // keeps the exception.
+    expect(scriptSrc('vip://app/%2e%2e/app/index.html')).toContain("'unsafe-inline'");
+    expect(scriptSrc('vip://app/app/%2e/index.html')).toContain("'unsafe-inline'");
+  });
+
   test('legacy scope grants the same temporary exception the web grants', () => {
     const legacy = directives(csp.vipSecurityHeaders('vip://app/app/index.html')['Content-Security-Policy']);
     const strict = directives(csp.vipSecurityHeaders('vip://app/index.html')['Content-Security-Policy']);

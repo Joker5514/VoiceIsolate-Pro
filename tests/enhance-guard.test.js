@@ -173,7 +173,12 @@ describe('Landing wiring (VIP-005 regression pin)', () => {
 
   test('landing applies the guard at analysis completion, at outcome change, and before Process', () => {
     expect(src).toMatch(/from '\/src\/core\/EnhanceGuard\.js'/);
-    expect(src).toMatch(/enhanceGuard\.analysis = analysisResult;[\s\S]{0,120}applyEnhanceGuard\(\)/);
+    // VIP-032 + Arena follow-up: EnhanceGuard must consume the canonical
+    // AnalysisSnapshot, so the pin requires the snapshot form — a bare
+    // `analysisResult` assignment no longer passes. The `|| analysisResult`
+    // fallback in landing itself stays (legacy results still degrade
+    // gracefully), but the test no longer blesses the old form.
+    expect(src).toMatch(/enhanceGuard\.analysis = analysisResult\.snapshot \|\| analysisResult;[\s\S]{0,120}applyEnhanceGuard\(\)/);
     expect(src).toMatch(/applyEnhanceGuard\(\);\s*processPlan = quickClean\.plan\(\)/);
     expect(src).toMatch(/resetEnhanceGuard\(\)/);
   });

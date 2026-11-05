@@ -53,6 +53,22 @@ This index separates **current implementation/release truth** from historical au
 | [`guides/TARGET_SPEAKER.md`](guides/TARGET_SPEAKER.md) | Target-speaker enrollment: optional ECAPA, mel fallback, measurements |
 | [`guides/SAM_SETUP.md`](guides/SAM_SETUP.md) | SAM-Audio real weights: gated access, `pnpm sam:pin`, integrity pins |
 | [`guides/PLATFORM_CAPABILITY_MATRIX.md`](guides/PLATFORM_CAPABILITY_MATRIX.md) | Web / Android / Desktop capability matrix |
+| [`guides/ENGINEER_CONTROLS.md`](guides/ENGINEER_CONTROLS.md) | Engineer control inventory: 67-slider registry + 100 interactive ids, mechanically verified |
+| [`guides/ANALYSIS_CONTRACTS.md`](guides/ANALYSIS_CONTRACTS.md) | Analysis snapshot contract, coordinator routing, freshness |
+| [`guides/PHASE0_BASELINE.md`](guides/PHASE0_BASELINE.md) | Phase 0 baseline: PR #885 facts, main-branch verification |
+| [`guides/VIP_REGISTER.md`](guides/VIP_REGISTER.md) | VIP item status with evidence pointers |
+| [`guides/CORPUS_THRESHOLDS.md`](guides/CORPUS_THRESHOLDS.md) | Corpus evaluation bars (written before the eval) |
+| [`guides/CORPUS_EVALUATION.md`](guides/CORPUS_EVALUATION.md) | Corpus evaluation results: no chain meets all bars |
+| [`guides/LISTENING_RUBRIC.md`](guides/LISTENING_RUBRIC.md) | Blinded listening pairs: dimensions + win rule |
+| [`guides/LONG_FILE_LIMITS.md`](guides/LONG_FILE_LIMITS.md) | Long-file stress results + upload tier limits |
+| [`guides/SPEAKER_FUSION.md`](guides/SPEAKER_FUSION.md) | ECAPA fusion spec: unknown-on-weak-margin, calibrated confidence |
+| [`guides/OVERLAP_SEPARATION.md`](guides/OVERLAP_SEPARATION.md) | Overlap research, baseline, trade-offs, integration gate |
+| [`guides/RELEASE_PROVENANCE.md`](guides/RELEASE_PROVENANCE.md) | Per-artifact provenance: what is/is not signed |
+| [`guides/VERIFICATION_STATE.md`](guides/VERIFICATION_STATE.md) | Current verification state: published vs PR-branch, models, privacy, limits, troubleshooting |
+| [`guides/RESOURCE_ADAPTATION.md`](guides/RESOURCE_ADAPTATION.md) | Resource-aware adaptation evaluation (VIP-022); thermal leg not implemented |
+| [`guides/DEFERRED_MODELS.md`](guides/DEFERRED_MODELS.md) | Deferred model research (SCNet / BS-RoFormer / AudioSep / CLAP); benchmark not run |
+| [`guides/LEGACY_INVENTORY.md`](guides/LEGACY_INVENTORY.md) | Legacy inventory (VIP-035): usage mapping, removal rules |
+| [`guides/DEVICE_TEST_MATRIX.md`](guides/DEVICE_TEST_MATRIX.md) | Supported-device test matrix (VIP-028 box 1): tiers, representative devices, run scope, record format — defined, not tested |
 | [`SAM3_TECHNICAL_DOCUMENTATION.md`](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM 3 vision/video sidecar status; not core voice isolation |
 
 ## Releases

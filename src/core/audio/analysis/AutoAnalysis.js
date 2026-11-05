@@ -443,13 +443,16 @@ export async function runAutoAnalysis(channelData, sampleRate = SAMPLE_RATE, opt
   const speechRatio = speechSegments.reduce((sum, s) => sum + (s.end - s.start), 0) / Math.max(0.001, duration);
 
   emit(95, { stage: 'regions' });
-  // Build unified regions list
+  // Build unified deterministic regions list (no Math.random so identical audio
+  // yields identical region IDs and canonical AnalysisSnapshot output).
+  const makeId = (prefix, idx, r) =>
+    `${prefix}-${idx}-${Math.round((Number(r.start) || 0) * 1000)}-${Math.round((Number(r.end) || 0) * 1000)}`;
   const allRegions = [
-    ...speechSegments.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
-    ...whisperCandidates.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
-    ...noiseSegments.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
-    ...humSegments.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
-    ...speakerResult.regions.map((r) => ({ ...r, id: `r-${Math.random().toString(36).slice(2, 8)}` })),
+    ...speechSegments.map((r, i) => ({ ...r, id: makeId('speech', i, r) })),
+    ...whisperCandidates.map((r, i) => ({ ...r, id: makeId('whisper', i, r) })),
+    ...noiseSegments.map((r, i) => ({ ...r, id: makeId('noise', i, r) })),
+    ...humSegments.map((r, i) => ({ ...r, id: makeId('hum', i, r) })),
+    ...speakerResult.regions.map((r, i) => ({ ...r, id: makeId(`speaker-${r.speakerId || i}`, i, r) })),
   ].sort((a, b) => a.start - b.start);
 
   // Deduplicate overlapping same-type regions already merged, but keep

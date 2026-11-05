@@ -372,7 +372,13 @@ describe('listener and pipeline duplication guards', () => {
 
   test('Landing runs one import analysis and shares it with listeners', () => {
     const landing = read('public/landing.js');
-    expect(landing.match(/runAutoAnalysis\(/g)).toHaveLength(1);
+    // VIP-032: the single import pass now goes through the shared
+    // AnalysisCoordinator (runCoordinatedAutoAnalysis), which itself calls
+    // runAutoAnalysis exactly once per fresh identity and dedupes/shares
+    // concurrent callers — the one-pass guarantee is preserved, not removed.
+    expect(landing.match(/runCoordinatedAutoAnalysis\(/g)).toHaveLength(1);
+    expect(landing.match(/runAutoAnalysis\(/g)).toBeNull();
+    expect(read('src/pipeline/AnalysisCoordinator.js').match(/runAutoAnalysis\(/g)).toHaveLength(1);
     expect(landing).toMatch(/analysis,\n\s*\},\n\s*\}\)\);/);
     expect(read('public/landing-premium.js')).toMatch(/if \(analysis\) \{/);
   });

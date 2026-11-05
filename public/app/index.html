@@ -460,7 +460,7 @@
         <summary class="vip-section-summary">Advanced / Forensic</summary>
         <div class="vip-section-body">
         <details><summary style="cursor:pointer;font:500 12px/1 ui-sans-serif;color:#c5ced6;">Deep metrics</summary>
-          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font:400 11px/1.4 ui-monospace,monospace;color:#8d9aaa;">
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font:400 11px/1.4 ui-monospace,monospace;color:#cbd5e1;">
             <span>SNR: <span id="deepSnr">--</span> dB</span>
             <span>RMS: <span id="deepRms">--</span></span>
             <span>Peak: <span id="deepPeak">--</span></span>
@@ -469,6 +469,7 @@
             <span>Duration: <span id="deepDuration">--</span></span>
           </div>
         </details>
+        <div id="forensicInspectorMount" style="margin-top:10px;"></div>
         </div>
       </details>
     </div>
@@ -778,6 +779,7 @@
         <div class="vip-section-body">
         <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
         <button id="saveProcBtn" class="btn btn-save-proc" disabled title="Download processed audio (or video with processed audio when the source is a video)">Save Processed</button>
+        <button id="saveProvenanceBtn" class="btn btn-outline" type="button" disabled title="Download local SHA-256 provenance sidecar (.viprovenance.json) — integrity metadata only, not legal certification or signature">Save Integrity (.json)</button>
         <button id="openDriveBtn" class="btn btn-outline" type="button" title="Open an audio/video file from your Google Drive (downloads a local copy for on-device processing)">Open from Drive</button>
         <button id="saveDriveBtn" class="btn btn-outline" type="button" disabled title="Upload the processed export to Google Drive (only when you choose — processing stays local)">Save to Drive</button>
         <button id="exportBtn" class="btn btn-save-proc vip-export-alias" type="button" disabled hidden aria-hidden="true">Export WAV</button>

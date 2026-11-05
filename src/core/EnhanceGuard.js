@@ -132,10 +132,15 @@ export function evaluateEnhanceSuitability(analysis, options = {}) {
       ? analysis.evidenceRegions.filter((r) => /whisper/i.test(String(r?.detectionType)))
       : []),
   ];
-  const speechRegions = Array.isArray(analysis.speechSegments) ? analysis.speechSegments : [];
+  const speechRegions = [
+    ...(Array.isArray(analysis.speechSegments) ? analysis.speechSegments : []),
+    ...(Array.isArray(analysis.evidenceRegions)
+      ? analysis.evidenceRegions.filter((r) => r?.detectionType === 'speech')
+      : []),
+  ];
   const duration = Number(options.durationSec)
     || durationOf(speechRegions) + durationOf(whisperRegions)
-    || Number(analysis.duration) || 0;
+    || Number(analysis.duration ?? analysis.input?.durationSeconds) || 0;
 
   const whisperSec = durationOf(whisperRegions);
   const speechSec = durationOf(speechRegions) || Math.max(whisperSec, 0);
@@ -143,9 +148,14 @@ export function evaluateEnhanceSuitability(analysis, options = {}) {
   const whisperRatio = speechSec > 0 ? Math.min(1, whisperSec / speechSec)
     : (duration > 0 ? Math.min(1, whisperSec / duration) : 0);
   signals.whisperRatio = whisperRatio;
-  // "Confident" needs a real confidence value at or above the threshold —
-  // malformed or confidence-less regions never block the expert path.
-  signals.whisperConfident = whisperRegions.some((r) => Number(r?.confidence) >= t.whisperConfidenceMin);
+  // "Confident" needs a real confidence value at or above the threshold (or
+  // canonical EvidenceRegion certainty of medium/high) — malformed or
+  // confidence-less regions never block the expert path.
+  signals.whisperConfident = whisperRegions.some((r) => {
+    const c = Number(r?.confidence ?? r?.evidence?.confidence);
+    if (Number.isFinite(c)) return c >= t.whisperConfidenceMin;
+    return r?.certainty === 'high' || r?.certainty === 'medium';
+  });
 
   // ── Uncertainty signals (both shapes) ────────────────────────────────────
   const snrDb = Number(analysis.snrDb ?? analysis.measurements?.snrDb);

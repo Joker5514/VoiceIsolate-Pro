@@ -114,6 +114,9 @@ services/sam-audio/.python-path
 .tools/
 
 
-services/sam-audio/.ffmpeg-bin
-sam-prod-err.log
+# Externally provisioned real-recording quality & speaker corpora (VIP-006 / VIP-034)
+scripts/quality/corpus/audio/
+scripts/quality/speaker-corpus/audio/
+scripts/quality/.raw-cache/
+
 

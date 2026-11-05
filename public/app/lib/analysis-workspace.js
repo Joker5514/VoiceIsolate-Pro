@@ -14,7 +14,11 @@ import { FullAnalysisHost } from '/src/pipeline/FullAnalysisHost.js';
 import { SourceAuditionEngine } from '/src/pipeline/SourceAuditionEngine.js';
 import { TimelineRenderer } from '/src/presentation/TimelineRenderer.js';
 import { TransportSync } from '/src/presentation/TransportSync.js';
-import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityChecker.js';
+import { mountModelCapabilityPanel } from '/src/presentation/ModelCapabilityPanel.js';
+import { EngineerProvenanceCoordinator } from '/src/pipeline/EngineerProvenanceCoordinator.js';
+import { mountForensicInspectorUI } from '/src/presentation/ForensicInspectorUI.js';
+import { adaptFullAnalysisToSnapshot } from '/src/core/AnalysisSnapshotAdapter.js';
+import { computeQuickAudioFingerprint } from '/src/pipeline/AnalysisCoordinator.js';
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
 import { buildMlProcessingConfig, snapshotParams } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
@@ -444,34 +448,14 @@ export function installAnalysisWorkspace(app) {
       <p class="collab-meta">Protect ${plan.protectRegions?.length || 0} · Suppress ${plan.suppressRegions?.length || 0} · Preset <strong>${escapeHtml(plan.recommendedPreset || '—')}</strong></p>`;
   }
 
+  let capController = null;
   function renderCapability() {
     if (!els.capPanel) return;
-    const report = checkCapabilities({
-      models: {
-        demucs: true,
-        rnnoise: true,
-        bsrnn: true,
-        vad: true,
-      },
-      worklets: {
-        gate: true,
-        deesser: true,
-      },
-    });
-    app._capabilityReport = report;
-    const lines = formatCapabilityLines(report);
-    const summary = report.summary;
-    els.capPanel.innerHTML = `
-      <div class="cap-summary">
-        <span class="cap-pill ${summary.ready ? 'ok' : 'bad'}">Ready</span>
-        <span class="cap-pill ${summary.liveMix ? 'ok' : 'bad'}">Live-Mix</span>
-        <span class="cap-pill ${summary.offlineMl ? 'ok' : 'warn'}">Offline ML</span>
-        <span class="cap-pill ${summary.sab ? 'ok' : 'warn'}">SAB</span>
-        <span class="cap-pill ${summary.webgpu ? 'ok' : 'warn'}">WebGPU</span>
-      </div>
-      <details class="cap-details"><summary>Capability details</summary>
-        <pre class="cap-pre">${lines.map((l) => escapeHtml(l)).join('\n')}</pre>
-      </details>`;
+    if (!capController) {
+      capController = mountModelCapabilityPanel(els.capPanel, { app });
+    } else {
+      void capController.refresh();
+    }
   }
 
   function escapeHtml(s) {
@@ -751,6 +735,30 @@ export function installAnalysisWorkspace(app) {
       }
       // Analyzer → WhisperHunter env fuse (protect voices, suppress horns/music/etc.)
       analysis = collaborateWithHunter(analysis, buf);
+      try {
+        const fp = app._provenance?.getSourceDescriptor?.()?.sha256
+          || computeQuickAudioFingerprint(channels, buf.sampleRate);
+        const snapshot = adaptFullAnalysisToSnapshot(
+          {
+            ...analysis,
+            sampleRate: analysis.sampleRate || buf.sampleRate,
+            channels: analysis.channels || buf.numberOfChannels || channels.length,
+            duration: Number.isFinite(analysis.duration) ? analysis.duration : buf.duration,
+          },
+          {
+            contentFingerprint: fp !== 'unknown' ? fp : undefined,
+          },
+        );
+        app._lastAnalysisSnapshot = snapshot;
+        analysis.snapshot = snapshot;
+        app._provenance?.recordOperation({
+          id: 'analysis-full',
+          status: 'completed',
+          detail: `${snapshot.evidenceRegions.length} evidence regions · ${snapshot.freshness}`,
+        });
+      } catch (snapErr) {
+        console.warn('[VIP] canonical AnalysisSnapshot adaptation warning:', snapErr?.message);
+      }
       if (libId) {
         try {
           const { saveAnalysisDurable } = await import('/src/core/storage/DerivedCache.js');
@@ -1063,13 +1071,30 @@ export function installAnalysisWorkspace(app) {
       : rawParams;
     const ditherAmt = buildMlProcessingConfig(params).export.ditherAmt;
     const meta = {};
-    if (ditherAmt > 0) meta.ditherSeed = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
+    const forensicSeed = typeof app._resolveExportDitherSeed === 'function'
+      ? app._resolveExportDitherSeed(ditherAmt)
+      : undefined;
+    if (Number.isFinite(forensicSeed)) meta.ditherSeed = forensicSeed;
+    else if (ditherAmt > 0) meta.ditherSeed = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
     const result = await exportAudioBuffer(buf, name, { ditherAmt, ditherSeed: meta.ditherSeed });
     if (!result.ok) {
       showError(result.error || 'Export failed');
       return;
     }
     let sidecarNote = '';
+    if (result.blob && typeof app._recordExportProvenance === 'function') {
+      await app._recordExportProvenance({
+        outputBlob: result.blob,
+        filename: result.filename,
+        format: 'wav',
+        sampleRate: buf.sampleRate,
+        channels: buf.numberOfChannels,
+        ditherAmt,
+        ditherSeed: meta.ditherSeed,
+        effectiveParams: params,
+        destination: 'analysis-export',
+      });
+    }
     if (result.blob) {
       try {
         const prov = await publishExportProvenance({
@@ -1146,6 +1171,20 @@ export function installAnalysisWorkspace(app) {
 
   renderCapability();
 
+  // VIP-020: Install canonical Engineer provenance coordinator + Forensic Inspector UI
+  const provenanceCoordinator = app._provenance || new EngineerProvenanceCoordinator();
+  app._provenance = provenanceCoordinator;
+  if (app._sourceFile && !provenanceCoordinator.getState().source) {
+    provenanceCoordinator.recordSourceImport(app._sourceFile).catch(() => {});
+  }
+  const forensicMount = document.getElementById('forensicInspectorMount');
+  const forensicUi = mountForensicInspectorUI(forensicMount, provenanceCoordinator, {
+    onNotify: (msg, type) => app.showNotification?.(msg, type || 'info'),
+  });
+  if (typeof window !== 'undefined') {
+    window.__vipForensic = { coordinator: provenanceCoordinator, ui: forensicUi };
+  }
+
   const api = {
     runAnalysis,
     applyRecommendations,
@@ -1158,6 +1197,8 @@ export function installAnalysisWorkspace(app) {
     audition,
     host,
     usmNode,
+    provenance: provenanceCoordinator,
+    forensicUi,
     /** Backend API */
     runUsmBackend,
     getSourceStems: () => usmNode.getSourceStems(),
