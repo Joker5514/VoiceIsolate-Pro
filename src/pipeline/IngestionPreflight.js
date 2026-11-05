@@ -1,9 +1,13 @@
 /** Shared by Landing FileIngestion and the Engineer's deferred decode path. */
 import { readDeviceSignals, selectPerformanceTier } from '../core/PerformanceTier.js';
-import { budgetError, estimateIngestionMemory, ingestionBudget, parseWavMetadata } from '../core/IngestionBudget.js';
+import {
+  budgetError, chainChunkContract, estimateIngestionMemory, ingestionBudget, parseWavMetadata, resolveIngestionPlan,
+} from '../core/IngestionBudget.js';
 import { probeMediaMetadata, runBounded } from './media-decode.js';
 
-export async function preflightIngestion(file, { signal, timeoutMs = 15000, onBudget = () => {} } = {}) {
+export async function preflightIngestion(file, {
+  signal, timeoutMs = 15000, onBudget = () => {}, profile = 'AUTO', modelIds = null,
+} = {}) {
   if (signal?.aborted) throw new DOMException('Ingestion cancelled', 'AbortError');
   // Bounded header read, never blob.arrayBuffer() before the budget decision.
   const header = await runBounded(() => file.slice(0, 1024 * 1024).arrayBuffer(), {
@@ -25,9 +29,14 @@ export async function preflightIngestion(file, { signal, timeoutMs = 15000, onBu
     }
   }
   const signals = readDeviceSignals();
-  const budget = ingestionBudget(signals, selectPerformanceTier(signals));
-  const estimate = estimateIngestionMemory(metadata, file.size, budget);
-  if (estimate.decision === 'refuse') throw budgetError(estimate, file.name);
+  const tier = selectPerformanceTier(signals);
+  const budget = ingestionBudget(signals, tier);
+  const contract = modelIds?.length ? chainChunkContract(modelIds) : undefined;
+  const estimate = resolveIngestionPlan(metadata, file.size, budget, {
+    profile, contract, modelId: modelIds?.[0],
+  });
+  // Full-file `decision: refuse` is not a dead end when a chunk window fits.
+  if (estimate.strategy === 'refuse') throw budgetError(estimate, file.name);
   onBudget(estimate);
   return estimate;
 }

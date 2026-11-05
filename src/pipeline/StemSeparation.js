@@ -225,15 +225,21 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   // Engineer spectral controls alter the reconstructed stems, so the result
   // cache must be keyed by their Process-time snapshot. Slider drags do not
   // reach this path; the key changes only when the user presses Process.
-  const cacheKey = await stemCacheKeyAsync(
-    channelData,
-    sampleRate,
-    modelIds,
-    options.sourceName,
-    processingRevision,
-    { signal: options.signal || null },
-  );
-  const cached = getCachedStems(cacheKey);
+  // Chunk windows must not be hashed or retained: each one is a slice of a
+  // recording that may not fit in memory, and the cache holds full stems.
+  let cacheKey = null;
+  let cached = null;
+  if (!options.skipCache) {
+    cacheKey = await stemCacheKeyAsync(
+      channelData,
+      sampleRate,
+      modelIds,
+      options.sourceName,
+      processingRevision,
+      { signal: options.signal || null },
+    );
+    cached = getCachedStems(cacheKey);
+  }
   if (cached) {
     options.onProgress?.({ type: 'stage', stage: 'separate', percent: 100, label: 'Using cached stems…' });
     const copyChannel = budgetedChannelCopy(options.signal || null);
@@ -357,7 +363,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
             backend: m.backend || null,
             appliedProcessingConfigRevision: m.appliedProcessingConfigRevision || null,
           };
-          if (out.passthrough) {
+          if (out.passthrough || options.skipCache) {
             resolve(out);
             return;
           }

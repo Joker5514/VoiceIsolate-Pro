@@ -74,6 +74,7 @@ import {
 } from '/src/presentation/DspSlider.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { preflightIngestion, assertDecodedIngestionBudget } from '/src/pipeline/IngestionPreflight.js';
+import { formatIngestionPlan, resolveIngestionPlan } from '/src/core/IngestionBudget.js';
 import {
   runBounded as runBoundedOperation,
   resumeAudioContext,
@@ -1321,17 +1322,12 @@ class VoiceIsolatePro {
     // Mobile/Android: keep rack closed except upload+process — fewer DOM mounts, less freeze.
     const defaultOpen = new Set(
       mobile
-        ? ['section-upload', 'section-processing']
+        ? ['section-upload', 'section-processing', 'section-transport', 'vizCard', 'section-signal-canvas']
         : [
-          'section-upload', 'section-presets', 'section-processing',
-          'section-gate', 'section-analysis', 'section-separation',
-          'section-cockpit', 'section-signal-canvas', 'engineerCompareToggle',
-          'section-selection', 'section-overlay', 'section-forensic',
-          'section-save', 'section-transport', 'fileLibraryPanel',
-          'ecIntegrityCard', 'ecOutputSafety', 'section-ec-analysis', 'section-ec-diar',
+          'section-upload', 'section-processing', 'section-separation',
+          'section-signal-canvas', 'engineerCompareToggle', 'section-transport', 'vizCard',
         ],
     );
-    if (!narrow && !mobile) defaultOpen.add('vizCard');
 
     const syncActive = (el) => {
       el.classList.toggle('active', !!el.open);
@@ -1362,15 +1358,13 @@ class VoiceIsolatePro {
         el.dataset.vipSectionKey = `vip-section-anon-${i}`;
       }
       const storeKey = id || el.dataset.vipSectionKey;
-      if (storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)) {
-        el.open = !!stored[storeKey];
-      } else if (defaultOpen.has(id) || el.classList.contains('active')) {
+      // The transport is the persistent dock. A stored collapse must not hide Play or Process.
+      if (id === 'section-transport') {
         el.open = true;
-      } else if (narrow || id === 'vizCard' || el.classList.contains('slider-group')) {
-        if (id === 'vizCard') el.open = !narrow;
-        else if (el.classList.contains('slider-group') && !el.classList.contains('active') && !el.hasAttribute('open')) {
-          el.open = false;
-        }
+      } else if (storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)) {
+        el.open = !!stored[storeKey];
+      } else {
+        el.open = defaultOpen.has(id);
       }
       syncActive(el);
       // Persist user toggles only — never re-run DSP on collapse/expand.
@@ -3875,6 +3869,10 @@ class VoiceIsolatePro {
     this._speakerDetection?.reset();
     this._decodePromise = null;
     this._decodeReady = false;
+    this._chunkSession = null;
+    this._chunkResult = null;
+    this._transportViaMedia = false;
+    try { this._mediaTransport?.close(); } catch { /* ignore */ }
     this._resetCollaborationState?.();
     this.stop();
     if (this.isProcessing) {
@@ -4118,6 +4116,7 @@ class VoiceIsolatePro {
       this.showNotification?.('Load an audio or video file first', 'warn');
       return null;
     }
+    if (this._chunkSession && fileSeq === this._fileSeq && !(this.origBuffer || this.inputBuffer)) return null;
     if (this._decodePromise) return this._decodePromise;
 
     this._decodePromise = (async () => {
@@ -4164,11 +4163,21 @@ class VoiceIsolatePro {
         try {
           this._decodeBudget = await preflightIngestion(file, {
             signal: decodeSignal,
+            profile: document.getElementById('memoryProfile')?.value || 'AUTO',
+            modelIds: DEFAULT_ML_CHAIN,
             onBudget: (estimate) => {
               if (estimate.decision === 'warn') this.showNotification(
                 `Large recording: estimated ${Math.ceil(estimate.estimatedBytes / 1048576)} MiB working memory (${estimate.tier}). Close other tabs if playback becomes slow.`, 'warn');
             },
           });
+          if (this._decodeBudget?.strategy === 'chunked') {
+            this._chunkSession = { file, plan: this._decodeBudget };
+            this._showChunkPlan(this._decodeBudget, file.name);
+            if (decodeJob) jobs.endJob(decodeJob.id, 'completed');
+            this._updateProcessButtonsState?.();
+            this._updateTransportUI?.();
+            return null;
+          }
           decoded = await decodeBlobToAudioBuffer(file, {
             maxCaptureBytes: this._decodeBudget.budgetBytes,
             audioContext: this.ctx,
@@ -4893,6 +4902,10 @@ class VoiceIsolatePro {
     this._stemProcessingRevision = null;
     this._decodePromise = null;
     this._decodeReady = false;
+    this._chunkSession = null;
+    this._chunkResult = null;
+    this._transportViaMedia = false;
+    try { this._mediaTransport?.close(); } catch { /* ignore */ }
     this._resetCollaborationState?.();
     this._transportRegionWired = false;
     this._syncTransportRegion = null;
@@ -5058,6 +5071,7 @@ class VoiceIsolatePro {
     this.abortFlag = true;
     try { window.__vipStopSelectionPreview?.(); } catch { /* ignore */ }
     try { this._decodeAbortController?.abort('user'); } catch { /* ignore */ }
+    try { this._chunkAbort?.abort(); } catch { /* ignore */ }
     this._logProgressDiag('cancel-requested', { abortReason: 'user', end: true });
     try {
       const jobs = globalThis.__VIP_JOBS__;
@@ -5066,6 +5080,135 @@ class VoiceIsolatePro {
     // If ML was loaded, its host owns the cancel grace timer and worker recycle.
     // Never start a dynamic import from cancellation: it can resolve after page/test teardown.
     try { this._stemSeparationModule?.cancelStemSeparation?.(); } catch { /* ignore */ }
+  }
+
+  _showChunkPlan(plan, name) {
+    const panel = document.getElementById('audioOptimization');
+    const text = formatIngestionPlan(plan, name || 'recording');
+    if (panel) {
+      panel.hidden = !text;
+      panel.dataset.kind = plan?.strategy === 'chunked' ? 'chunked' : 'limit';
+      panel.textContent = text;
+      const provider = document.getElementById('ortProviderHint')?.textContent || '';
+      if (plan?.strategy === 'chunked' && /webgpu/i.test(provider)) panel.textContent += '\nExecution: WebGPU';
+    }
+    this.showNotification?.('Chunked processing selected. The source file is unchanged.', 'info');
+    this.setStatus?.('READY');
+  }
+
+  _recomputeChunkPlan(profile) {
+    const prev = this._chunkSession?.plan;
+    if (!prev?.known || this.isProcessing) return;
+    const next = resolveIngestionPlan({
+      duration: prev.duration,
+      channels: prev.channels,
+      sampleRate: prev.sampleRate,
+      source: prev.wav ? 'wav-header' : prev.metadataSource,
+      ...(prev.wav || {}),
+    }, prev.compressedBytes ?? prev.measurements?.compressedBytes ?? 0, {
+      workingBytes: prev.budgetBytes,
+      tier: prev.tier,
+    }, { profile: profile || 'AUTO', contract: prev.contract });
+    this._chunkSession.plan = next;
+    this._showChunkPlan(next, this._chunkSession.file?.name);
+  }
+
+  async _runChunkedPipeline(fileSeq = this._fileSeq) {
+    const session = this._chunkSession;
+    if (!session?.plan?.chunk?.viable || !session.file) {
+      const text = formatIngestionPlan(session?.plan, session?.file?.name || 'recording');
+      this.showNotification?.(text, 'error');
+      return;
+    }
+    if (this.isProcessing) return;
+    this.isProcessing = true;
+    this._updateProcessButtonsState?.();
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    this._chunkAbort = ctrl;
+    try {
+      if (this.isPlaying) this.pause();
+      const { runChunkedExtraction } = await import('/src/pipeline/ChunkedExtraction.js');
+      const stemMod = await this._loadStemSeparationModule();
+      const result = await runChunkedExtraction(session.file, session.plan, {
+        signal: ctrl?.signal,
+        processWindow: async (input, sampleRate, info) => {
+          const stems = await stemMod.separateStems(input, sampleRate, {
+            modelIds: [...DEFAULT_ML_CHAIN],
+            transferOwned: true,
+            skipCache: true,
+            signal: info.signal,
+            sourceName: session.file.name,
+          });
+          if (!stems?.clean?.[0] || stems.clean[0].length !== input[0].length) {
+            throw new Error('The local model did not return a full window. The partial output was discarded.');
+          }
+          return stems.clean;
+        },
+        onProgress: (frac) => {
+          const pct = Math.round(frac * 100);
+          this.updatePipelineProgress?.(Math.max(1, Math.round(frac * 32)), 'Chunked extraction', pct);
+        },
+      });
+      if (fileSeq !== this._fileSeq) return;
+      this._chunkResult = result;
+      if (result.kind === 'pcm' && result.clean && this.ctx?.createBuffer) {
+        const buf = this.ctx.createBuffer(result.channels, result.frames, result.sampleRate);
+        await copyChannelsToAudioBuffer(buf, result.clean);
+        this.outputBuffer = buf;
+        this.procBuffer = buf;
+        this._cleanStemChannels = result.clean;
+        this._noiseStemChannels = result.noise;
+        this._stemSampleRate = result.sampleRate;
+      }
+      const panel = document.getElementById('audioOptimization');
+      if (panel) {
+        panel.hidden = false;
+        panel.textContent += `\nOutput: ${result.frames} frames, ${result.sampleRate} Hz, ${result.channels} ch.\nRemoved stem: ${result.noise ? 'held with the clean stem' : 'not held'}.`;
+      }
+      this.showNotification?.(`Extraction finished. ${result.frames} frames at ${result.sampleRate} Hz.`, 'info');
+      this._updateTransportUI?.();
+    } catch (err) {
+      if (fileSeq !== this._fileSeq) return;
+      this.setStatus?.('ERROR');
+      this.showNotification?.(err?.message || 'Chunked extraction failed. The partial output was discarded.', 'error');
+    } finally {
+      this.isProcessing = false;
+      this._chunkAbort = null;
+      this._updateProcessButtonsState?.();
+    }
+  }
+
+  async _playChunkedMedia() {
+    if (!this._mediaTransport) {
+      const { createMediaTransport } = await import('/src/presentation/MediaTransport.js');
+      this._mediaTransport = createMediaTransport({
+        onEnded: () => {
+          this.isPlaying = false;
+          this.playOffset = 0;
+          this._updateTransportUI?.();
+          this._dispatchPlayStopped?.();
+        },
+      });
+    }
+    if (this._bridge?.isPlaying?.()) {
+      try { this._bridge.pause(); } catch { /* one player */ }
+    }
+    const processedReady = Boolean(this._chunkResult?.file);
+    if (this.abMode === 'processed' && !processedReady && !(this.outputBuffer || this.procBuffer)) {
+      this.showNotification?.('Processed audio is not ready. Press Process.', 'warn');
+      this.abMode = 'original';
+      this._paintABState?.();
+    }
+    const src = this.abMode === 'processed' && processedReady ? this._chunkResult.file : this._chunkSession.file;
+    if (!src) return;
+    await this._mediaTransport.use(src, this.abMode === 'processed' ? 'processed' : 'original');
+    if (this.playOffset) this._mediaTransport.seek(this.playOffset);
+    await this._mediaTransport.play();
+    this.isPlaying = true;
+    this._transportViaMedia = true;
+    this._startTransportClock?.();
+    this._updateTransportUI?.();
+    this._dispatchPlayStarted?.({ media: true });
   }
 
   // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
@@ -5078,6 +5221,10 @@ class VoiceIsolatePro {
 
     // Decode only when processing starts (not at upload).
     const decoded = await this.ensureDecoded(fileSeq);
+    if (this._chunkSession && !this.origBuffer && !this.inputBuffer) {
+      await this._runChunkedPipeline(fileSeq);
+      return;
+    }
     if (!decoded || fileSeq !== this._fileSeq) return;
     if (!this.origBuffer && !this.inputBuffer) return;
 
@@ -7244,6 +7391,10 @@ class VoiceIsolatePro {
   }
 
   _getTransportDuration() {
+    if (this._transportViaMedia && this._mediaTransport?.duration()) return this._mediaTransport.duration();
+    if (this._chunkSession && !(this.inputBuffer || this.origBuffer)) {
+      return this._chunkSession.plan?.duration || this._chunkResult?.duration || 0;
+    }
     const bridgeDur = this._bridge?.duration?.();
     if (Number.isFinite(bridgeDur) && bridgeDur > 0) return bridgeDur;
     const buf = this._getPlaybackBuffer();
@@ -7251,6 +7402,7 @@ class VoiceIsolatePro {
   }
 
   _getTransportPosition() {
+    if (this._transportViaMedia && this._mediaTransport) return this._mediaTransport.currentTime();
     const bridge = this._bridge;
     // Bridge clock is authoritative whenever it drives transport — including
     // the brief seek gap where mixer.isPlaying() is false but app.isPlaying is true.
@@ -7403,6 +7555,16 @@ class VoiceIsolatePro {
     // Never block listening on ML — decode only, then play original if process still running.
     if (!(this.inputBuffer || this.origBuffer) && (this._sourceFile || this._libraryFileId)) {
       await this.ensureDecoded();
+    }
+    if (this._chunkSession && !(this.inputBuffer || this.origBuffer)
+      && !(this.abMode === 'processed' && (this.outputBuffer || this.procBuffer))) {
+      this._mediaTransport?.pause?.();
+      await this._playChunkedMedia();
+      return;
+    }
+    if (this._transportViaMedia) {
+      this._mediaTransport?.pause();
+      this._transportViaMedia = false;
     }
     // While isolating, force original so user can audition immediately.
     const wantProcessed = this.abMode === 'processed' && !this.isProcessing;
@@ -7622,6 +7784,14 @@ class VoiceIsolatePro {
 
   pause() {
     try { window.__vipStopSelectionPreview?.(); } catch { /* ignore */ }
+    if (this._transportViaMedia && this._mediaTransport) {
+      this.playOffset = this._mediaTransport.currentTime();
+      this._mediaTransport.pause();
+      this.isPlaying = false;
+      if (typeof this._stopTransportClock === 'function') this._stopTransportClock();
+      this._dispatchPlayStopped();
+      return;
+    }
     if (!this.isPlaying) return;
     if (typeof this._getTransportPosition === 'function') {
       this.playOffset = this._getTransportPosition();
@@ -7639,6 +7809,12 @@ class VoiceIsolatePro {
 
   stop() {
     try { window.__vipStopSelectionPreview?.(); } catch { /* ignore */ }
+    if (this._transportViaMedia && this._mediaTransport) {
+      this._mediaTransport.stop();
+      this._transportViaMedia = false;
+      this.isPlaying = false;
+      this.playOffset = 0;
+    }
     if (typeof this._stopTransportClock === 'function') this._stopTransportClock();
     this.teardownChain();
     if (this._bridge && typeof this._bridge.stop === 'function') {
@@ -7716,6 +7892,15 @@ class VoiceIsolatePro {
   }
 
   seekTo(frac) {
+    if ((this._transportViaMedia || (this._chunkSession && !(this.inputBuffer || this.origBuffer))) && !(this.outputBuffer && this.abMode === 'processed' && !this._transportViaMedia)) {
+      const dur = this._getTransportDuration();
+      if (!dur) return;
+      const target = Math.round(Math.max(0, Math.min(1, frac)) * dur * 1000) / 1000;
+      this.playOffset = target;
+      this._mediaTransport?.seek(target);
+      if (typeof this._paintTransport === 'function') this._paintTransport(target, dur);
+      return;
+    }
     const buf = typeof this._getPlaybackBuffer === 'function'
       ? this._getPlaybackBuffer()
       : (this.inputBuffer || this.origBuffer);
@@ -7753,6 +7938,17 @@ class VoiceIsolatePro {
    * vip-fixes may own this path when _fixABPatched is set.
    */
   toggleAB() {
+    if (this._chunkSession && !(this.inputBuffer || this.origBuffer)) {
+      if (!this._chunkResult && !(this.outputBuffer || this.procBuffer)) {
+        this.showNotification?.('Processed audio is not ready. Press Process.', 'warn');
+        return;
+      }
+      if (this.isPlaying && this._transportViaMedia) this.playOffset = this._mediaTransport?.currentTime() || this.playOffset;
+      this.abMode = this.abMode === 'processed' ? 'original' : 'processed';
+      this._paintABState();
+      if (this.isPlaying) void this.play();
+      return;
+    }
     if (this._fixABPatched) return;
     const buf = this.outputBuffer || this.procBuffer;
     if (!buf) return;
@@ -8400,7 +8596,7 @@ class VoiceIsolatePro {
     const buf = this._getPlaybackBuffer() || this.inputBuffer || this.origBuffer;
     const dur = this._getTransportDuration() || (buf ? buf.duration : 0);
     if (this.dom.tpDur) this.dom.tpDur.textContent = fmtTime(dur);
-    const enabled = Boolean(buf);
+    const enabled = Boolean(buf) || Boolean(this._chunkSession);
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew,
      this.dom.tpFwd, this.dom.tpSeek,
      this.dom.tpLoop, this.dom.tpCropIn, this.dom.tpCropOut, this.dom.tpCropClear].forEach(b => {
@@ -8408,7 +8604,7 @@ class VoiceIsolatePro {
     });
     // A/B compares against processed audio, so it is live exactly when that exists.
     const ab = typeof this._liveABButton === 'function' ? this._liveABButton() : this.dom.tpAB;
-    if (ab) ab.disabled = !(this.outputBuffer || this.procBuffer) || Boolean(this.isProcessing);
+    if (ab) ab.disabled = !(this.outputBuffer || this.procBuffer || this._chunkResult) || Boolean(this.isProcessing);
     if (enabled) {
       this._ensureTransportRegionWiring();
       if (!this.isPlaying) this._paintTransport(this.playOffset || 0, dur);
