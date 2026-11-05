@@ -40,37 +40,14 @@ const envSamPort = Number(process.env.SAM_AUDIO_PORT);
 let samWorkerPort = isValidWorkerPort(envSamPort) ? envSamPort : 8765;
 const samProxy = createSamProxy({ port: () => samWorkerPort });
 
-/** Essential ONNX assets for offline isolation (DEFAULT_ML_CHAIN + common fallbacks). */
-const OFFLINE_MODELS = Object.freeze([
-  {
-    file: 'bsrnn_vocals.onnx',
-    cacheKey: 'bsrnn_vocals:7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
-  },
-  {
-    file: 'rnnoise_suppressor.onnx',
-    cacheKey: 'rnnoise:0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
-  },
-  {
-    file: 'silero_vad.onnx',
-    cacheKey: 'vad:1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
-  },
-  {
-    file: 'silero_vad_int8.onnx',
-    cacheKey: 'vad_int8:16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
-  },
-  {
-    file: 'dfn3_enc.onnx',
-    cacheKey: 'dfn3_enc:7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916',
-  },
-  {
-    file: 'dfn3_erb_dec.onnx',
-    cacheKey: 'dfn3_erb_dec:ab669a1d10afe20911728b33053a452071042317a90581092b325da7b2f9d895',
-  },
-  {
-    file: 'dfn3_df_dec.onnx',
-    cacheKey: 'dfn3_df_dec:23114ce3b0f6464b763ee62f7bb8aab6b2a129a21eabd5bcfe59413db05f278a',
-  },
-]);
+/** Essential offline assets projected from the generated canonical inventory.
+ * Read lazily: a dev checkout may not have run the static build yet. */
+function offlineModels() {
+  const inventory = JSON.parse(fsSync.readFileSync(path.join(getStaticRoot(), 'app', 'models', 'models-manifest.json'), 'utf8'));
+  return inventory.models.filter((m) => m.shipped && !m.optional).map((m) => ({
+    file: m.filename, cacheKey: `${m.modelId || m.id}:${m.sha256}`, sha256: m.sha256, sizeBytes: m.sizeBytes,
+  }));
+}
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -156,7 +133,7 @@ async function seedBundledModels() {
   const cacheDir = await ensureModelCacheDir();
   let seeded = 0;
   let skipped = 0;
-  for (const entry of OFFLINE_MODELS) {
+  for (const entry of offlineModels()) {
     const src = path.join(modelsSrc, entry.file);
     if (!fsSync.existsSync(src)) {
       console.warn('[electron] Offline model not bundled:', entry.file);
@@ -165,7 +142,8 @@ async function seedBundledModels() {
     const safe = entry.cacheKey.replace(/[^a-zA-Z0-9._-]/g, '_');
     const dest = path.join(cacheDir, `${safe}.onnx`);
     try {
-      if (fsSync.existsSync(dest) && fsSync.statSync(dest).size > 0) {
+      if (fsSync.existsSync(dest) && fsSync.statSync(dest).size === entry.sizeBytes
+        && require('crypto').createHash('sha256').update(fsSync.readFileSync(dest)).digest('hex') === entry.sha256) {
         skipped += 1;
         continue;
       }

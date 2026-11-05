@@ -40,14 +40,13 @@ describe('ml-worker-models-patch.js — manifest', () => {
       PATCH_SRC,
       /const\s+MODEL_MANIFEST\s*=\s*\{([\s\S]*?)\n\};/
     );
-    const registryKeys = extractKeys(
-      FETCH_SRC,
-      /const\s+MODEL_REGISTRY\s*=\s*\{([\s\S]*?)\n\}/
-    );
+    const generated = fs.readFileSync(path.join(__dirname, '../public/app/model-registry.generated.js'), 'utf8');
+    const compat = JSON.parse(generated.match(/root\.VIPModelRegistry=(.*);}\)/)[1]);
+    const registryKeys = Object.keys(compat.models);
     expect(manifestKeys.length).toBeGreaterThan(0);
     expect(registryKeys.length).toBeGreaterThan(0);
 
-    const missing = manifestKeys.filter((k) => !registryKeys.includes(k));
+    const missing = manifestKeys.filter((k) => !registryKeys.includes(compat.aliases[k] || k));
     // Drift here means the patch references a model the cache cannot fetch.
     expect(missing).toEqual([]);
   });

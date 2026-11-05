@@ -35,7 +35,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TARGET = path.join(ROOT, 'public', 'app', 'models-manifest.json');
@@ -110,7 +110,8 @@ function sameModels(a, b) {
 
 async function main() {
   const check = process.argv.includes('--check');
-  const { MODEL_MANIFEST } = await import(CANONICAL);
+  // Windows absolute paths are not valid import specifiers (protocol "c:").
+  const { MODEL_MANIFEST } = await import(pathToFileURL(CANONICAL).href);
   const current = JSON.parse(fs.readFileSync(TARGET, 'utf8'));
   const next = buildModelsSection(MODEL_MANIFEST, current.models || {});
 

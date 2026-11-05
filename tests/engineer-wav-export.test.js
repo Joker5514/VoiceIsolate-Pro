@@ -79,4 +79,15 @@ describe('Engineer encodeWavBuffer', () => {
     const huge = { numberOfChannels: 2, length: 2 ** 30, sampleRate: 48000, getChannelData() { throw new Error('unreachable'); } };
     await expect(encodeWavBuffer(huge, 0)).rejects.toThrow(/4 GB/);
   });
+
+  test('a recorded dither seed matches ExportManager byte for byte', async () => {
+    const { encodeWav } = await import('../src/pipeline/ExportManager.js');
+    const samples = Float32Array.from({ length: 128 }, (_, i) => Math.sin(i / 5) * 0.25);
+    const meta = { ditherSeed: 42 };
+    const pcm = await encodeWavBuffer(fakeBuffer([samples], 48000), 2, null, meta);
+    const blob = encodeWav([samples], 48000, { ditherAmt: 2, ditherSeed: 42 });
+    const other = new Uint8Array(await blob.arrayBuffer());
+    expect(meta.ditherSeed).toBe(42);
+    expect(new Uint8Array(pcm)).toEqual(other);
+  });
 });

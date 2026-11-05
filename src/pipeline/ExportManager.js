@@ -150,8 +150,8 @@ export async function exportAudioBuffer(audioBuffer, filename = 'voiceisolate-ex
     channels.push(audioBuffer.getChannelData(c));
   }
   const blob = encodeWav(channels, audioBuffer.sampleRate, options);
-  const res = await downloadBlob(blob, filename);
-  return { ...res, blob };
+  const delivered = await downloadBlob(blob, filename);
+  return delivered.ok ? { ...delivered, blob } : delivered;
 }
 
 export default {

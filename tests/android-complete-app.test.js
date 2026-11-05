@@ -23,9 +23,8 @@ describe('Android complete app pipeline', () => {
     expect(prepare).toContain('landing.css');
     expect(prepare).toContain('offline landing');
     expect(prepare).toContain('fonts.googleapis.com');
-    expect(prepare).toContain('bsrnn_vocals.onnx');
-    expect(prepare).toContain('rnnoise_suppressor.onnx');
-    expect(prepare).toContain('silero_vad.onnx');
+    expect(prepare).toContain("import { androidModelFiles } from './generate-model-manifests.mjs'");
+    expect(prepare).toContain('const REQUIRED_MODELS = androidModelFiles()');
     expect(prepare).toContain('demucs_v4_fp32.onnx');
     expect(prepare).toMatch(/EXCLUDE_MODELS/);
     // Studio console skin required offline (same as web/Electron)
@@ -78,7 +77,8 @@ describe('Android complete app pipeline', () => {
     expect(verify).toContain('landing.js');
     expect(verify).toContain('uploadZone');
     expect(verify).toContain('fonts.googleapis.com');
-    expect(verify).toContain('bsrnn_vocals.onnx');
+    expect(verify).toContain("import { androidModelFiles } from './generate-model-manifests.mjs'");
+    expect(verify).toContain('...androidModelFiles()');
     expect(verify).toContain('demucs_v4_fp32.onnx');
     expect(verify).toContain('app/engineer-console.css');
     expect(verify).toContain('app/engineer-console.js');

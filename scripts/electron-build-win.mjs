@@ -8,6 +8,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { requiredModelFiles } from './generate-model-manifests.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWin = process.platform === 'win32';
@@ -21,15 +22,7 @@ const env = {
   CSC_LINK: '',
 };
 
-/** Models required for 100% offline isolation (bsrnn + denoise + VAD + DeepFilterNet3). */
-const REQUIRED_OFFLINE_MODELS = [
-  'bsrnn_vocals.onnx',
-  'rnnoise_suppressor.onnx',
-  'silero_vad.onnx',
-  'dfn3_enc.onnx',
-  'dfn3_erb_dec.onnx',
-  'dfn3_df_dec.onnx',
-];
+const REQUIRED_OFFLINE_MODELS = requiredModelFiles().map((m) => m.url.split('/').pop());
 
 function run(cmd, args) {
   const result = spawnSync(cmd, args, {

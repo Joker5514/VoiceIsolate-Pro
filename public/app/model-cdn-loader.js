@@ -66,6 +66,18 @@
   // Service Worker cache name — must match sw-register.js
   const CACHE_NAME = 'vip-models-v1';
 
+  async function verifyModelBytes(entry, bytes) {
+    if (!/^[a-f0-9]{64}$/i.test(entry.sha256 || '') || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes <= 0) {
+      throw new Error(`Model ${entry.modelId || entry.filename} has no valid size/SHA-256 pin`);
+    }
+    if (bytes.byteLength !== entry.sizeBytes) throw new Error(`Model ${entry.filename} size mismatch: ${bytes.byteLength} != ${entry.sizeBytes}`);
+    if (!globalThis.crypto?.subtle) throw new Error('SHA-256 verification requires a secure browser context');
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const actual = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    if (actual !== entry.sha256.toLowerCase()) throw new Error(`Model ${entry.filename} SHA-256 mismatch`);
+    return bytes;
+  }
+
   /**
    * fetchWithFallback — tries each source URL in priority order.
    * On network error or non-2xx, marks that provider degraded and tries next.
@@ -103,7 +115,7 @@
     for (const source of sorted) {
       try {
         console.log(`[ModelCDN] Trying ${source.provider} for ${modelKey}: ${source.url}`);
-        const ab = await fetchWithProgress(source.url, entry.sizeBytes, onProgress);
+        const ab = await verifyModelBytes(entry, await fetchWithProgress(source.url, entry.sizeBytes, onProgress));
         providerHealth[source.provider] = true;
         modelProviderMap[modelKey] = source.provider;
         console.log(`[ModelCDN] ✓ ${modelKey} loaded from ${source.provider}`);
@@ -128,22 +140,28 @@
     const resp = await fetch(url, { credentials: 'omit' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
 
-    if (!resp.body || !onProgress) {
-      return resp.arrayBuffer();
+    if (!resp.body) {
+      const bytes = await resp.arrayBuffer();
+      if (Number.isSafeInteger(expectedBytes) && bytes.byteLength !== expectedBytes) throw new Error(`Model size mismatch: ${url}`);
+      return bytes;
     }
 
     const reader = resp.body.getReader();
     const chunks = [];
     let received = 0;
-    const total = parseInt(resp.headers.get('content-length') || expectedBytes, 10);
+    const total = Number.isSafeInteger(expectedBytes) && expectedBytes > 0 ? expectedBytes : parseInt(resp.headers.get('content-length') || '0', 10);
+    const declared = resp.headers.get('content-length');
+    if (declared !== null && Number(declared) !== total) throw new Error(`Content-Length mismatch for ${url}`);
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (received + value.length > total) { await reader.cancel(); throw new Error(`Model exceeds expected size: ${url}`); }
       chunks.push(value);
       received += value.length;
-      onProgress(received / total, received, total);
+      onProgress(Math.min(1, received / total), received, total);
     }
+    if (received !== total) throw new Error(`Truncated model: ${url}`);
 
     const merged = new Uint8Array(received);
     let offset = 0;
@@ -166,11 +184,17 @@
         const cache = await cacheStorage.open(CACHE_NAME);
         const cachedResp = await cache.match(`/vip-model-cache/${modelKey}`);
         if (cachedResp) {
-          console.log(`[ModelCDN] ${modelKey} served from SW cache`);
-          if (onProgress) onProgress(1, 1, 1);
-          const provider = cachedResp.headers.get('X-VIP-Provider') || 'cache';
-          modelProviderMap[modelKey] = provider;
-          return await cachedResp.arrayBuffer();
+          try {
+            const bytes = await verifyModelBytes(manifest.models[modelKey], await cachedResp.arrayBuffer());
+            console.log(`[ModelCDN] ${modelKey} served from SW cache (SHA-256 verified)`);
+            if (onProgress) onProgress(1, 1, 1);
+            const provider = cachedResp.headers.get('X-VIP-Provider') || 'cache';
+            modelProviderMap[modelKey] = provider;
+            return bytes;
+          } catch (err) {
+            console.warn(`[ModelCDN] Discarding corrupt cached ${modelKey}: ${err.message}`);
+            await cache.delete(`/vip-model-cache/${modelKey}`);
+          }
         }
       } catch (e) { /* SW cache unavailable, fall through */ }
     }
@@ -243,7 +267,9 @@
           _manifest = {
             ...json,
             models: Object.fromEntries(json.models.map((entry) => [entry.id, {
-              filename: entry.filename,
+              filename: entry.filename, modelId: entry.modelId || entry.id,
+              sizeBytes: entry.sizeBytes, sha256: entry.sha256,
+              shipped: entry.shipped !== false, optional: entry.optional === true,
               eager: entry.load_priority === 'eager' || entry.eager === true,
               sources: [{ provider: 'same-origin', url: entry.path || `/app/models/${entry.filename}` }],
             }])),
