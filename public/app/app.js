@@ -33,7 +33,8 @@
  *   Playback / A-B  →  Transport + toggleAB() swaps original vs processed
  *                      sample-accurate (playhead retained); no re-decode
  *        ↓
- *   Export  →  Save Original / Save Processed (local download only)
+ *   Export  →  Save Original / Save Processed (local download). Processed
+ *              exports also download a .viprovenance.json integrity record.
  *
  * Non-blocking contracts:
  *   - Analysis does not freeze slider interaction (worker + yield).
@@ -51,6 +52,7 @@ import {
 import {
   buildMlProcessingConfig,
   LIVE_MIX_PARAM_IDS,
+  snapshotParams,
 } from '/src/core/ParameterSchema.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import {
@@ -116,6 +118,7 @@ import {
   exportVideoWithProcessedAudio,
   triggerBlobDownload,
 } from '/src/pipeline/video-export.js';
+import { publishExportProvenance } from '/src/pipeline/export-provenance.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture, fixUploadTouchTargets, resetFileInput } from '/src/presentation/UploadWiring.js';
 import { startWorkletStatusDriver } from '/src/presentation/WorkletStatus.js';
 import {
@@ -847,7 +850,7 @@ function fmtTime(s) {
 // ---------------------------------------------------------------------------
 // WAV encoder (standalone helper)
 // ---------------------------------------------------------------------------
-async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
+async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null, outMeta = null) {
   const numCh = audioBuffer.numberOfChannels;
   const numSamples = audioBuffer.length;
   const sr = audioBuffer.sampleRate;
@@ -869,6 +872,23 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
   v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, dataBytes, true);
   const mode = Math.max(0, Math.min(3, Math.round(Number(ditherMode) || 0)));
   const previousNoise = new Float32Array(numCh);
+  // Same mulberry32 TPDF as ExportManager.encodeWav. A recorded seed makes a
+  // dithered 16-bit export bit-reproducible. Mode 0 never draws noise.
+  let rand = Math.random;
+  if (mode > 0) {
+    const requested = outMeta && Number.isFinite(Number(outMeta.ditherSeed))
+      ? (Number(outMeta.ditherSeed) >>> 0) || 1
+      : (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
+    if (outMeta && typeof outMeta === 'object') outMeta.ditherSeed = requested;
+    let state = requested;
+    rand = () => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
   // One getChannelData() per channel: calling it per sample crossed the Web
   // Audio binding numSamples × numCh times (3.3× slower in Chromium).
   const data = Array.from({ length: numCh }, (_, ch) => audioBuffer.getChannelData(ch));
@@ -886,7 +906,7 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
           if (mode > 0) {
             // 1 = TPDF, 2 = shaped, 3 = high-pass-shaped. Dither is injected at
             // the 16-bit quantisation boundary only and never mutates playback PCM.
-            const rawNoise = (Math.random() - Math.random()) / 32768;
+            const rawNoise = (rand() - rand()) / 32768;
             const shaped = mode === 1
               ? rawNoise
               : rawNoise - previousNoise[ch] * (mode === 2 ? 0.45 : 0.82);
@@ -904,13 +924,14 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null) {
   return buf;
 }
 
-async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null) {
-  const blob = new Blob([await encodeWavBuffer(audioBuffer, ditherMode, signal)], { type: 'audio/wav' });
+async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null, outMeta = null) {
+  const blob = new Blob([await encodeWavBuffer(audioBuffer, ditherMode, signal, outMeta)], { type: 'audio/wav' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return blob;
 }
 
 // ---------------------------------------------------------------------------
@@ -4316,6 +4337,42 @@ class VoiceIsolatePro {
     return { cropIn: 0, cropOut: fullDuration };
   }
 
+  /** Model ids that actually produced this session, or none for the DSP fallback. */
+  _exportModelIds() {
+    return this._processingEngine === 'ml' ? [...DEFAULT_ML_CHAIN] : [];
+  }
+
+  /**
+   * Download the integrity sidecar for an export that is about to leave the
+   * device. Best-effort: cancellation aborts the export; any other failure
+   * returns { ok: false } and the caller still saves the audio.
+   * The record is not a certification.
+   */
+  async _attachExportProvenance({ blob, filename, format, signal, options, detail }) {
+    let parameters = null;
+    try {
+      parameters = snapshotParams(this.getEffectiveParams(window.VIP_PARAMS || this.params || {}));
+    } catch { /* parameters stay null — not measured */ }
+    let sourceFile = this._sourceFile || null;
+    if (!sourceFile && this._libraryFileId) {
+      try { sourceFile = await this._ensureSourceFileFromLibrary(); } catch { sourceFile = null; }
+    }
+    const engine = this._processingEngine === 'dsp-fallback'
+      ? 'dsp-fallback'
+      : this._processingEngine === 'ml' ? 'ml' : 'export';
+    return publishExportProvenance({
+      outputBlob: blob,
+      filename,
+      format,
+      sourceFile,
+      signal,
+      options,
+      parameters,
+      modelIds: this._exportModelIds(),
+      operations: [{ id: engine, status: 'completed', detail: detail || null }],
+    });
+  }
+
   /**
    * User-initiated: upload processed WAV to Google Drive (VoiceIsolate Pro folder).
    * Never runs automatically after Process.
@@ -4349,12 +4406,38 @@ class VoiceIsolatePro {
     const ditherAmt = buildMlProcessingConfig(
       this.getEffectiveParams(window.VIP_PARAMS || {}),
     ).export.ditherAmt;
-    const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt });
+    const meta = {};
+    if (ditherAmt > 0) meta.ditherSeed = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
+    const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed: meta.ditherSeed });
     const filename = `processed-${Date.now()}.wav`;
+    let prov = { ok: false };
+    try {
+      prov = await this._attachExportProvenance({
+        blob,
+        filename,
+        format: 'wav',
+        options: {
+          sampleRate: mixBuf.sampleRate,
+          channels: mixBuf.numberOfChannels,
+          ditherAmt,
+          ditherSeed: meta.ditherSeed ?? null,
+          region: { in: cropIn, out: cropOut },
+        },
+        detail: 'Engineer Live-Mix uploaded to Google Drive. The integrity record stays on this device.',
+      });
+    } catch (err) {
+      const cancelled = /cancell?ed|aborted/i.test(String(err?.message || err)) || err?.name === 'AbortError';
+      if (cancelled) {
+        this.showNotification('Export cancelled', 'info');
+        return;
+      }
+      throw err;
+    }
     this.showNotification('Uploading to Google Drive…', 'info');
-    const meta = await saveBlobToDrive({ blob, filename, mimeType: 'audio/wav' });
-    const link = meta?.webViewLink ? ` · ${meta.webViewLink}` : '';
-    this.showNotification(`Saved to Drive: ${meta?.name || filename}${link}`, 'ok');
+    const saved = await saveBlobToDrive({ blob, filename, mimeType: 'audio/wav' });
+    const link = saved?.webViewLink ? ` · ${saved.webViewLink}` : '';
+    const sidecarNote = prov?.ok ? ' Integrity record downloaded locally.' : '';
+    this.showNotification(`Saved to Drive: ${saved?.name || filename}${link}${sidecarNote}`, 'ok');
   }
 
   /**
@@ -4416,6 +4499,22 @@ class VoiceIsolatePro {
             },
           });
           if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
+          if (typeof this.updateProcessingOverlay === 'function') {
+            this.updateProcessingOverlay('Writing integrity record…', 92, 30, job?.id || null);
+          }
+          const prov = await this._attachExportProvenance({
+            blob: result.blob,
+            filename: result.filename,
+            format: /\.mp4$/i.test(result.filename) ? 'mp4' : 'wav',
+            signal,
+            options: {
+              sampleRate: mixBuf.sampleRate,
+              channels: mixBuf.numberOfChannels,
+              region: { in: cropIn, out: cropOut },
+            },
+            detail: 'Processed audio remuxed into the source video',
+          });
+          if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
           if (isDesktopShell()) {
             await saveExportBlob(result.blob, {
               defaultName: result.filename,
@@ -4424,7 +4523,8 @@ class VoiceIsolatePro {
           } else {
             triggerBlobDownload(result.blob, result.filename);
           }
-          this.showNotification('Processed video saved: ' + result.filename, 'info');
+          const sidecarNote = prov?.ok ? ' Integrity record included.' : '';
+          this.showNotification('Processed video saved: ' + result.filename + sidecarNote, 'info');
           if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
           return;
         } catch (err) {
@@ -4456,8 +4556,31 @@ class VoiceIsolatePro {
       const ditherAmt = buildMlProcessingConfig(
         this.getEffectiveParams(window.VIP_PARAMS || {}),
       ).export.ditherAmt;
-      await downloadWav(buf, 'processed-' + Date.now() + '.wav', ditherAmt, signal);
-      this.showNotification('Processed audio saved', 'info');
+      const meta = {};
+      const filename = 'processed-' + Date.now() + '.wav';
+      const pcm = await encodeWavBuffer(buf, ditherAmt, signal, meta);
+      const blob = new Blob([pcm], { type: 'audio/wav' });
+      if (typeof this.updateProcessingOverlay === 'function') {
+        this.updateProcessingOverlay('Writing integrity record…', 96, 30, job?.id || null);
+      }
+      const prov = await this._attachExportProvenance({
+        blob,
+        filename,
+        format: 'wav',
+        signal,
+        options: {
+          sampleRate: buf.sampleRate,
+          channels: buf.numberOfChannels,
+          ditherAmt,
+          ditherSeed: meta.ditherSeed ?? null,
+          region: { in: cropIn, out: cropOut },
+        },
+        detail: 'Engineer Live-Mix rendered to 16-bit WAV',
+      });
+      if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
+      triggerBlobDownload(blob, filename);
+      const sidecarNote = prov?.ok ? ' Integrity record (.viprovenance.json) included.' : '';
+      this.showNotification('Processed audio saved.' + sidecarNote, 'info');
       if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
     } catch (err) {
       const cancelled = jobs?.isCancellationError?.(err)

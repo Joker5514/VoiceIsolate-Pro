@@ -16,8 +16,9 @@ import { TimelineRenderer } from '/src/presentation/TimelineRenderer.js';
 import { TransportSync } from '/src/presentation/TransportSync.js';
 import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityChecker.js';
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
-import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';
+import { buildMlProcessingConfig, snapshotParams } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
+import { publishExportProvenance } from '/src/pipeline/export-provenance.js';
 import {
   anySignal,
   copyFloat32Channel,
@@ -1061,9 +1062,46 @@ export function installAnalysisWorkspace(app) {
       ? app.getEffectiveParams(rawParams)
       : rawParams;
     const ditherAmt = buildMlProcessingConfig(params).export.ditherAmt;
-    const result = await exportAudioBuffer(buf, name, { ditherAmt });
-    if (!result.ok) showError(result.error || 'Export failed');
-    else if (typeof app.setStatus === 'function') app.setStatus(`Exported ${result.filename}`);
+    const meta = {};
+    if (ditherAmt > 0) meta.ditherSeed = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
+    const result = await exportAudioBuffer(buf, name, { ditherAmt, ditherSeed: meta.ditherSeed });
+    if (!result.ok) {
+      showError(result.error || 'Export failed');
+      return;
+    }
+    let sidecarNote = '';
+    if (result.blob) {
+      try {
+        const prov = await publishExportProvenance({
+          outputBlob: result.blob,
+          filename: result.filename,
+          format: 'wav',
+          sourceFile: app._sourceFile || null,
+          options: {
+            sampleRate: buf.sampleRate,
+            channels: buf.numberOfChannels,
+            ditherAmt,
+            ditherSeed: meta.ditherSeed ?? null,
+          },
+          parameters: snapshotParams(params),
+          modelIds: typeof app._exportModelIds === 'function' ? app._exportModelIds() : [],
+          operations: [{
+            id: 'analysis-export',
+            status: 'completed',
+            detail: (app.procBuffer || app.outputBuffer)
+              ? 'Analysis workspace Live-Mix export'
+              : 'Analysis workspace original export',
+          }],
+        });
+        if (prov.ok) sidecarNote = ' Integrity record included.';
+      } catch (err) {
+        if (err?.name === 'AbortError' || err?.code === 'CANCELLED') {
+          showError('Export cancelled');
+          return;
+        }
+      }
+    }
+    if (typeof app.setStatus === 'function') app.setStatus(`Exported ${result.filename}${sidecarNote}`);
   });
 
   // USM is backend-only: hide legacy Separate/Query buttons if still in DOM.

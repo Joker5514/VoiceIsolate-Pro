@@ -14,15 +14,16 @@ const exportSource = fs.readFileSync(path.join(ROOT, 'src/pipeline/ExportManager
 
 describe('processed WAV dither contract', () => {
   test('Save Processed snapshots dither at the 16-bit encoder boundary', () => {
-    expect(appSource).toContain("async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null)");
-    expect(appSource).toContain('await downloadWav(buf, \'processed-\' + Date.now() + \'.wav\', ditherAmt, signal);');
-    expect(appSource).toContain('encodeWav(channels, mixBuf.sampleRate, { ditherAmt });');
+    expect(appSource).toContain("async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null, outMeta = null)");
+    expect(appSource).toContain('encodeWavBuffer(buf, ditherAmt, signal, meta)');
+    expect(appSource).toContain('ditherSeed: meta.ditherSeed ?? null');
+    expect(appSource).toContain('encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed: meta.ditherSeed })');
   });
 
   test('Analysis Workspace Export uses the same canonical dither snapshot', () => {
-    expect(analysisSource).toContain("import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';");
+    expect(analysisSource).toContain("import { buildMlProcessingConfig, snapshotParams } from '/src/core/ParameterSchema.js';");
     expect(analysisSource).toContain('const ditherAmt = buildMlProcessingConfig(params).export.ditherAmt;');
-    expect(analysisSource).toContain('exportAudioBuffer(buf, name, { ditherAmt });');
+    expect(analysisSource).toContain('exportAudioBuffer(buf, name, { ditherAmt, ditherSeed: meta.ditherSeed });');
   });
 
   test('the shared WAV encoder alone adds quantisation dither', () => {
