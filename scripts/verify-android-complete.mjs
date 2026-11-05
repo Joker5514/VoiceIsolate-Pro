@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { androidModelFiles } from './generate-model-manifests.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ASSETS = path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
@@ -32,12 +33,6 @@ const REQUIRED = [
   'fonts/Geist-Variable.woff2',
   'fonts/GeistMono-Variable.woff2',
   'fonts/instrument-serif-latin-400-italic.woff2',
-  'app/models/bsrnn_vocals.onnx',
-  'app/models/rnnoise_suppressor.onnx',
-  'app/models/silero_vad.onnx',
-  'app/models/dfn3_enc.onnx',
-  'app/models/dfn3_erb_dec.onnx',
-  'app/models/dfn3_df_dec.onnx',
   'lib/ort.min.js',
   'lib/ort-wasm-simd-threaded.wasm',
   'src/workers/MLWorker.js',
@@ -49,6 +44,7 @@ const REQUIRED = [
   'src/workers/GateProcessor.js',
   'src/workers/DeEsserProcessor.js',
   'src/presentation/DspSlider.js',
+  ...androidModelFiles().map((m) => m.url.replace(/^\//, '')),
 ];
 
 const FORBIDDEN = [

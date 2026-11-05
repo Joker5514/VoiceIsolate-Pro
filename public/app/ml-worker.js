@@ -73,37 +73,19 @@ let runtimeParams = {
 // Demucs is optional / not shipped by default — do not block warmup on it.
 const DEFAULT_MODELS = ['vad', 'rnnoise', 'bsrnn'];
 
-// ── Model filename registry ───────────────────────────────────────────────────
-// Aliases → canonical .onnx filenames. MUST match public/app/model-loader.js
-// MODEL_REGISTRY and public/app/models/models-manifest.json. Drift breaks
-// the SW Cache lookup because the worker fetches a filename that was never
-// populated by model-loader.js.
-const MODEL_FILES = {
-  // canonical aliases used by pipeline-orchestrator init
-  'vad':              'silero_vad.onnx',
-  'vad_int8':         'silero_vad_int8.onnx',
-  'rnnoise':          'rnnoise_suppressor.onnx',
-  'demucs':           'demucs_v4_quantized.onnx',
-  'bsrnn':            'bsrnn_vocals.onnx',
-  // DeepFilterNet3 parts (composite `deepfilternet3`; see src/core/ModelManifest.js).
-  // The legacy real-time path cannot run the composite, but the filenames are
-  // registered so the shipped file set stays aligned across every registry.
-  'dfn3_enc':         'dfn3_enc.onnx',
-  'dfn3_erb_dec':     'dfn3_erb_dec.onnx',
-  'dfn3_df_dec':      'dfn3_df_dec.onnx',
-  // 4D complex-spectrogram BSRNN (pretrained crlandsc/bsrnn-vocals).
-  // Offline-only: consumed by offline-processor.js. NOT loaded by the
-  // real-time worklet path. See scripts/export_bsrnn_onnx.py.
-  'bsrnn_complex':         'bsrnn_vocals_complex.onnx',
-  'bsrnn_vocals_complex':  'bsrnn_vocals_complex.onnx',
-  // long-form aliases (kept for back-compat with auth/tier code)
-  'silero-vad':       'silero_vad.onnx',
-  'silero_vad':       'silero_vad.onnx',
-  'silero_vad_int8':  'silero_vad_int8.onnx',
-  'demucs-v4':        'demucs_v4_quantized.onnx',
-  'demucs_v4':        'demucs_v4_quantized.onnx',
-  'bsrnn_vocals':     'bsrnn_vocals.onnx',
-};
+// Compatibility aliases and pins are generated from src/core/ModelManifest.js.
+// initialize() loads model-registry.generated.js; no hand-maintained model table.
+function modelRegistry() {
+  const registry = self.VIPModelRegistry;
+  if (!registry?.models || !registry?.aliases) throw new Error('Generated model registry unavailable');
+  return registry;
+}
+function resolveModelEntry(modelId) {
+  const registry = modelRegistry();
+  const key = registry.aliases[modelId] || modelId;
+  const entry = registry.models[key];
+  return entry && entry.shipped !== false && entry.optional !== true ? entry : null;
+}
 
 // Optional Object-URL overrides keyed by canonical alias. Set by the
 // 'cacheModelPaths' message from pipeline-orchestrator.js when the IDB
@@ -113,27 +95,14 @@ const MODEL_FILES = {
 // zero additional network or SW round-trip.
 const MODEL_URL_OVERRIDES = {};
 
-// ── SHA-256 expected hashes per model file ────────────────────────────────────
-// Populated by scripts/upload_models_to_vercel_blob.py after each upload.
-// Leave as empty string '' to skip integrity check for that model.
-const MODEL_SHA256 = {
-  'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
-  'silero_vad_int8.onnx':       '16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
-  'rnnoise_suppressor.onnx':    '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
-  'demucs_v4_quantized.onnx':   '19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2',
-  'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
-  // bsrnn_vocals_complex.onnx is produced by scripts/export_bsrnn_onnx.py
-  // and is not committed to the repo — leave empty to skip integrity check
-  // until an authoritative SHA is recorded post-upload.
-  'bsrnn_vocals_complex.onnx':  '',
-};
-
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
 // Called at the start of every message handler that needs ORT.
 // If self.ort is already populated (e.g. by a prior importScripts call or
 // injected in tests), it is reused; otherwise importScripts loads the local
 // vendored file (copied by scripts/setup-ort.js postinstall).
 function initialize() {
+  if (!self.VIPModelRegistry) importScripts('/app/model-registry.generated.js');
+  modelRegistry();
   if (self.ort) {
     ort = self.ort;
   } else {
@@ -907,8 +876,8 @@ async function loadModels(basePath, providers, modelList) {
   const modelStatus = {};
 
   for (const modelId of modelList) {
-    const file = MODEL_FILES[modelId];
-    if (!file) {
+    const entry = resolveModelEntry(modelId);
+    if (!entry) {
       modelStatus[modelId] = false;
       continue;
     }
@@ -916,10 +885,11 @@ async function loadModels(basePath, providers, modelList) {
     // Prefer an in-memory blob: URL from the local fetch-cache when available —
     // this skips both network and SW Cache. Otherwise load the same-origin
     // /app/models/<file> URL only.
+    const file = entry.filename;
     const overrideUrl = MODEL_URL_OVERRIDES[modelId] || MODEL_URL_OVERRIDES[file];
     const modelUrl    = overrideUrl || (basePath + file);
     const eps         = await resolveProviders(providers);
-    const expectedSha256 = MODEL_SHA256[file] || '';
+    const expectedSha256 = entry.sha256 || '';
 
     try {
       const { session, provider } = await createSessionWithFallback(modelUrl, expectedSha256, eps);
@@ -959,46 +929,20 @@ async function resolveProviders(providers) {
 }
 
 async function createSessionWithFallback(modelUrl, expectedSha256, executionProviders = ['webgpu', 'wasm']) {
-  // ── SHA-256 integrity check ─────────────────────────────────────────────
-  // If an expected hash is provided and fetch/SubtleCrypto are available,
-  // fetch the model, verify its SHA-256, then create the ONNX session from
-  // the verified ArrayBuffer. This prevents loading tampered or corrupt model
-  // files. The check is skipped when expectedSha256 is empty/undefined or
-  // when fetch/crypto.subtle are unavailable.
-  // Infrastructure errors (network, URL parsing) are non-fatal: we fall back
-  // to URL-based loading. Only a confirmed hash mismatch is a hard failure.
+  // A pinned model is never compiled from an unverified URL. Infrastructure
+  // failure is a load failure (optional-stage fallback), not an integrity bypass.
   let modelData = null;
-  if (
-    expectedSha256 &&
-    typeof fetch !== 'undefined' &&
-    typeof crypto !== 'undefined' &&
-    typeof crypto.subtle !== 'undefined'
-  ) {
-    try {
-      const resp = await fetch(modelUrl);
-      if (resp.ok) {
-        const buffer = await resp.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-        const actual = Array.from(new Uint8Array(hashBuffer))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-        if (actual !== expectedSha256.toLowerCase()) {
-          throw new Error(
-            `SHA-256 mismatch for ${modelUrl}: expected ${expectedSha256}, got ${actual}`
-          );
-        }
-        modelData = buffer;
-        console.info(`[ml-worker] SHA-256 verified for ${modelUrl}`);
-      } else {
-        console.warn(`[ml-worker] SHA-256 check: HTTP ${resp.status} for ${modelUrl} — skipping integrity check`);
-      }
-    } catch (err) {
-      // Re-throw confirmed integrity failures; absorb infrastructure errors
-      const errMsg = err?.message || String(err);
-      if (errMsg.includes('SHA-256 mismatch')) throw err;
-      console.warn(`[ml-worker] SHA-256 check skipped (${errMsg}) — loading from URL`);
-    }
+  if (!/^[a-f0-9]{64}$/i.test(expectedSha256)) throw new Error(`No SHA-256 pin for ${modelUrl}`);
+  if (typeof fetch === 'undefined' || typeof crypto === 'undefined' || !crypto.subtle) {
+    throw new Error(`SHA-256 verification unavailable for ${modelUrl}`);
   }
+  const resp = await fetch(modelUrl);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${modelUrl}`);
+  const buffer = await resp.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const actual = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  if (actual !== expectedSha256.toLowerCase()) throw new Error(`SHA-256 mismatch for ${modelUrl}: expected ${expectedSha256}, got ${actual}`);
+  modelData = buffer;
 
   const source = modelData !== null ? modelData : modelUrl;
   const canUseWebGpu = Array.isArray(executionProviders) && executionProviders.includes('webgpu');

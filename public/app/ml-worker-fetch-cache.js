@@ -43,33 +43,21 @@ const VIP_IDB_NAME    = 'vip-model-cache';
 const VIP_IDB_VERSION = 3;   // v3: unified key-value store (no keyPath); rebuilds from v2
 const VIP_IDB_STORE   = 'models';
 
-/**
- * Model file registry — single source of truth for paths + expected sizes.
- * Sizes used for progress calculation when Content-Length header is absent.
- * @type {Record<string, { path: string, sizeBytes: number, integrity?: string }>}
- */
-// Filenames here MUST match public/app/model-loader.js MODEL_REGISTRY and
-// public/app/models/models-manifest.json. Drift causes the SW Cache (keyed
-// on /app/models/<filename>) and this IDB cache to diverge — i.e. two
-// downloads of the same model under two different names. Keep this aligned.
-//
-// Paths are relative-from-page (resolved by the browser to /app/models/<file>),
-// which means the same fetch hits the SW interceptor and gets served from the
-// vip-models-v1 Cache API entry that model-loader.js populated. Both caches
-// converge.
-const MODEL_REGISTRY = {
-  silero_vad:      { path: 'models/silero_vad.onnx',            sizeBytes:  2_327_524 },
-  silero_vad_int8: { path: 'models/silero_vad_int8.onnx',       sizeBytes:  2_376_297 },
-  rnnoise:         { path: 'models/rnnoise_suppressor.onnx',     sizeBytes:  2_027_576 },
-  demucs_v4:       { path: 'models/demucs_v4_quantized.onnx',    sizeBytes: 87_031_808 },
-  bsrnn_vocals:    { path: 'models/bsrnn_vocals.onnx',           sizeBytes:  3_870_554 },
-  bsrnn_vocals_complex: { path: 'models/bsrnn_vocals_complex.onnx', sizeBytes: 3_870_554 },
-  // DeepFilterNet3 parts (composite `deepfilternet3`) — shipped files kept in
-  // the registry so cache/preload sets stay aligned with models-manifest.json.
-  dfn3_enc:        { path: 'models/dfn3_enc.onnx',              sizeBytes:  1_954_042 },
-  dfn3_erb_dec:    { path: 'models/dfn3_erb_dec.onnx',          sizeBytes:  3_292_397 },
-  dfn3_df_dec:     { path: 'models/dfn3_df_dec.onnx',           sizeBytes:  3_340_803 },
-};
+// Generated compatibility projection of src/core/ModelManifest.js. The HTML
+// shell loads model-registry.generated.js before this script. Optional/unshipped
+// entries remain visible for diagnostics but are never preloaded or fetched.
+const MODEL_REGISTRY = Object.fromEntries(Object.entries(globalThis.VIPModelRegistry?.models || {}).map(([key, entry]) => [key, {
+  path: `models/${entry.filename}`, sizeBytes: entry.sizeBytes, integrity: entry.sha256,
+  shipped: entry.shipped !== false, optional: entry.optional === true,
+}]));
+async function verifyModelBuffer(meta, buffer) {
+  if (!meta.integrity || !/^[a-f0-9]{64}$/i.test(meta.integrity) || buffer.byteLength !== meta.sizeBytes) throw new Error('Model size/SHA-256 pin mismatch');
+  if (!globalThis.crypto?.subtle) throw new Error('SHA-256 requires a secure context');
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  const actual = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  if (actual !== meta.integrity.toLowerCase()) throw new Error('Model SHA-256 mismatch');
+  return buffer;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  INDEXEDDB HELPERS
@@ -204,18 +192,21 @@ async function fetchModelWithProgress(key, opts = {}) {
   const { forceRefresh = false } = opts;
   const meta = MODEL_REGISTRY[key];
   if (!meta) throw new Error(`Unknown model key: "${key}"`);
+  if (!meta.shipped || meta.optional) throw new Error(`Optional/unshipped model "${key}" is not downloaded automatically`);
 
   // ── 1. Try IDB cache first
   if (!forceRefresh) {
     try {
       const cached = await idbGet(key);
       if (cached && cached.byteLength > 0) {
+        await verifyModelBuffer(meta, cached);
         _emitProgress(key, cached.byteLength, cached.byteLength, 100);
         _emitComplete(key, cached, true);
         return cached;
       }
     } catch (e) {
-      console.warn(`[VIP cache] IDB read failed for "${key}", re-fetching:`, e.message);
+      console.warn(`[VIP cache] IDB read/verification failed for "${key}", re-fetching:`, e.message);
+      await idbDelete(key).catch(() => {});
     }
   }
 
@@ -257,6 +248,7 @@ async function fetchModelWithProgress(key, opts = {}) {
     }
 
     if (done) break;
+    if (loaded + value.byteLength > meta.sizeBytes) { await reader.cancel(); throw new Error(`Model exceeds expected size: ${key}`); }
 
     chunks.push(value);
     loaded += value.byteLength;
@@ -265,7 +257,7 @@ async function fetchModelWithProgress(key, opts = {}) {
   }
 
   // ── 3. Assemble ArrayBuffer
-  const buffer = _concatBuffers(chunks, loaded);
+  const buffer = await verifyModelBuffer(meta, _concatBuffers(chunks, loaded));
 
   // ── 4. Persist to IDB (non-blocking — don't await to avoid blocking caller)
   idbPut(key, buffer).catch(e =>
@@ -332,7 +324,7 @@ function revokeAllModelURLs() {
  */
 window._vipPreloadModels = async function preloadModels(keys = null, opts = {}) {
   const { forceRefresh = false, onProgress } = opts;
-  const targets = keys ?? Object.keys(MODEL_REGISTRY);
+  const targets = keys ?? Object.keys(MODEL_REGISTRY).filter((key) => MODEL_REGISTRY[key].shipped && !MODEL_REGISTRY[key].optional);
   const modelPaths = {};
   const results    = { ok: [], failed: [] };
 
@@ -831,7 +823,7 @@ function _ensureBanner(absentModels) {
 
 /**
  * Stamp all stage badges based on manifest status.
- * @param {Record<string, 'present'|'absent'>} manifest  key → status
+ * @param {Record<string, 'present'|'present-unverified'|'absent'>} manifest  key → status
  */
 window._stampPipelineStages = function stampPipelineStages(manifest) {
   // Validate: warn on unmapped manifest keys
@@ -846,6 +838,7 @@ window._stampPipelineStages = function stampPipelineStages(manifest) {
   Object.entries(MODEL_MANIFEST).forEach(([modelKey, meta]) => {
     const status   = manifest[modelKey] || manifest[_normalizeKey(modelKey)] || 'absent';
     const isAbsent = status === 'absent';
+    const isUnverified = status === 'present-unverified';
 
     // Try multiple selector strategies
     const selectors = [
@@ -866,12 +859,13 @@ window._stampPipelineStages = function stampPipelineStages(manifest) {
     const badge = document.createElement('span');
     badge.className    = 'vip-stage-ml-status';
     badge.style.cssText =
-      `color:${isAbsent ? '#f59e0b' : '#34d399'};` +
+      `color:${isAbsent ? '#f59e0b' : isUnverified ? '#94a3b8' : '#34d399'};` +
       'font-size:10px;font-weight:700;margin-left:4px;' +
       'cursor:help;vertical-align:middle;';
-    badge.textContent  = isAbsent ? '⚠ DSP' : '● ML';
+    badge.textContent  = isAbsent ? '⚠ DSP' : isUnverified ? '? Unverified' : '● ML';
     badge.title = isAbsent
       ? `${meta.stageName}: model absent (${meta.filename})\nDSP passthrough active.`
+      : isUnverified ? `${meta.stageName}: file present, bytes not yet SHA-256 verified (${meta.filename})`
       : `${meta.stageName}: ML inference active (${meta.filename})`;
 
     const label =
@@ -883,8 +877,8 @@ window._stampPipelineStages = function stampPipelineStages(manifest) {
 // ── MODEL FILE PRESENCE CHECK (HEAD requests — fast, no download) ─────────────
 
 /**
- * HEAD-check all model files. Returns map of key → 'present'|'absent'.
- * @returns {Promise<Record<string, 'present'|'absent'>>}
+ * HEAD-check all model files. Returns map of key → 'present-unverified'|'absent'; HEAD is not integrity.
+ * @returns {Promise<Record<string, 'present-unverified'|'absent'>>}
  */
 window._checkModelFiles = async function checkModelFiles() {
   const results = {};
@@ -892,7 +886,7 @@ window._checkModelFiles = async function checkModelFiles() {
     Object.entries(MODEL_MANIFEST).map(async ([key, meta]) => {
       try {
         const r = await fetch(`models/${meta.filename}`, { method: 'HEAD' });
-        results[key] = r.ok ? 'present' : 'absent';
+        results[key] = r.ok ? 'present-unverified' : 'absent';
       } catch {
         results[key] = 'absent';
       }

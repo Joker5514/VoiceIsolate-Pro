@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
+const generatedRegistry = fs.readFileSync(path.join(__dirname, '../public/app/model-registry.generated.js'), 'utf8');
 const workerCode = fs.readFileSync(path.join(__dirname, '../public/app/ml-worker.js'), 'utf8');
 
 describe('ml-worker.js', () => {
@@ -28,9 +29,14 @@ describe('ml-worker.js', () => {
       }
     };
 
+    const registryContext = {};
+    new Function('globalThis', generatedRegistry)(registryContext);
     workerGlobal = {
+      VIPModelRegistry: registryContext.VIPModelRegistry,
+      crypto: { subtle: { digest: jest.fn(async () => new Uint8Array(32)) } },
       importScripts: jest.fn(),
       self: {
+        VIPModelRegistry: registryContext.VIPModelRegistry,
         postMessage: jest.fn((msg) => postedMessages.push(msg)),
         onmessage: null,
         ort: mockOrt  // ort available via self.ort after importScripts
@@ -43,7 +49,12 @@ describe('ml-worker.js', () => {
       // in createSessionWithFallback fails fast (non-mismatch error) instead of
       // attempting real network requests to external Vercel Blob URLs, which
       // would exceed the 5 s Jest timeout.
-      fetch: jest.fn(() => Promise.reject(new Error('network unavailable in test env'))),
+      fetch: jest.fn(async (url) => {
+        const entry = Object.values(registryContext.VIPModelRegistry.models).find((m) => String(url).endsWith(m.filename));
+        const hash = entry?.sha256 || '0'.repeat(64);
+        workerGlobal.crypto.subtle.digest.mockResolvedValueOnce(Uint8Array.from(hash.match(/../g), (h) => parseInt(h, 16)).buffer);
+        return { ok: true, arrayBuffer: async () => ({ byteLength: entry?.sizeBytes || 0, __modelUrl: String(url) }) };
+      }),
     };
 
     // Evaluate the worker code in the mock global context
@@ -54,6 +65,8 @@ describe('ml-worker.js', () => {
     const fn = new Function(...argNames, workerCode);
     fn(...argValues);
   });
+
+  afterEach(async () => { await workerGlobal.self.onmessage({ data: { type: 'unload' } }); });
 
   it('should handle loadModel message by running initialization and posting ready', async () => {
     workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({});
@@ -97,7 +110,7 @@ describe('ml-worker.js', () => {
   it('should handle Silero VAD loading error path', async () => {
     // Mock the InferenceSession.create to throw an error specifically for silero_vad.onnx
     workerGlobal.self.ort.InferenceSession.create.mockImplementation((modelPath) => {
-      if (modelPath.includes('silero_vad.onnx')) {
+      if (String(modelPath.__modelUrl || modelPath).includes('silero_vad.onnx')) {
         return Promise.reject(new Error('Simulated VAD load error'));
       }
       return Promise.resolve({}); // Mock success for other models
@@ -198,6 +211,10 @@ describe('ml-worker.js', () => {
     });
     workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: demucsRun });
 
+    // Simulate an explicitly installed optional asset; the production registry
+    // keeps Demucs unshipped and the worker refuses to fetch it by default.
+    workerGlobal.self.VIPModelRegistry.models.demucs.shipped = true;
+    workerGlobal.self.VIPModelRegistry.models.demucs.optional = false;
     const chunkSize = 333;
     const inputBytes = Int32Array.BYTES_PER_ELEMENT * 5 + Float32Array.BYTES_PER_ELEMENT * (chunkSize * 2 + 1024);
     const outputBytes = Int32Array.BYTES_PER_ELEMENT * 5 + Float32Array.BYTES_PER_ELEMENT * chunkSize;
@@ -285,9 +302,14 @@ describe('ml-worker — isolation config + sound mute handlers', () => {
 
   beforeEach(() => {
     postedMessages = [];
+    const registryContext = {};
+    new Function('globalThis', generatedRegistry)(registryContext);
     workerGlobal = {
+      VIPModelRegistry: registryContext.VIPModelRegistry,
+      crypto: { subtle: { digest: jest.fn(async () => new Uint8Array(32)) } },
       importScripts: jest.fn(),
       self: {
+        VIPModelRegistry: registryContext.VIPModelRegistry,
         postMessage: jest.fn((msg) => postedMessages.push(msg)),
         onmessage: null,
         ort: {
@@ -305,6 +327,8 @@ describe('ml-worker — isolation config + sound mute handlers', () => {
     const argValues = argNames.map((n) => workerGlobal[n]);
     new Function(...argNames, workerCode)(...argValues);
   });
+
+  afterEach(async () => { await workerGlobal.self.onmessage({ data: { type: 'unload' } }); });
 
   it('stores isolation config fields on self (background volume, mask refine, method, threshold)', async () => {
     await workerGlobal.self.onmessage({

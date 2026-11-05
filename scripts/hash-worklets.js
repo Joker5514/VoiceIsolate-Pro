@@ -9,6 +9,7 @@
  */
 
 const crypto = require('crypto');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,8 +30,7 @@ function sha256(absPath) {
 }
 
 const registry = JSON.parse(fs.readFileSync(REGISTRY, 'utf8'));
-const modelsDoc = JSON.parse(fs.readFileSync(MODELS_MANIFEST, 'utf8'));
-if (!modelsDoc.worklets) modelsDoc.worklets = {};
+
 
 console.log('🔊 Worklet SHA-256 hashes\n');
 
@@ -49,17 +49,15 @@ for (const entry of registry.worklets) {
   console.log(`  sha256: ${hash}`);
   console.log(`  bytes:  ${fs.statSync(abs).size}\n`);
 
-  modelsDoc.worklets[key] = {
-    filename,
-    processorName: entry.processorName,
-    role: entry.role,
-    contentType: 'application/javascript',
-    sources: [
-      { provider: 'same-origin', url: entry.url, sha256: hash },
-    ],
-  };
+
 }
 
-modelsDoc._sha256_note = `SHA256 last updated: ${new Date().toISOString().slice(0, 10)}. Regenerate with: pnpm worklets:hash`;
-fs.writeFileSync(MODELS_MANIFEST, `${JSON.stringify(modelsDoc, null, 2)}\n`, 'utf8');
-console.log(`Updated ${path.relative(ROOT, MODELS_MANIFEST)}`);
+// Regenerate packaging projections from the canonical model registry.
+// CommonJS CLI invokes the ESM generator synchronously (no top-level await).
+const generated = spawnSync(process.execPath, [path.join(__dirname, 'generate-model-manifests.mjs')], {
+  cwd: ROOT, stdio: 'inherit',
+});
+if (generated.error || generated.status !== 0) {
+  console.error(generated.error?.message || 'Model manifest generation failed');
+  process.exit(generated.status || 1);
+}

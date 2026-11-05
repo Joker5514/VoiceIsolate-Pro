@@ -1377,6 +1377,10 @@ async function ingestFrom(file) {
     setStatus(`Decoding “${file.name}”…`, 'warn');
     const next = await ingestFile(file, {
       signal: job.controller.signal,
+      onBudget: (estimate) => {
+        if (estimate.decision === 'warn') setStatus(
+          `Large recording: estimated ${Math.ceil(estimate.estimatedBytes / 1048576)} MiB working memory on this ${estimate.tier.toLowerCase()} device. Keep this tab foregrounded; shorter excerpts use less memory.`, 'warn');
+      },
       onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
         if (stage === 'decoding') {

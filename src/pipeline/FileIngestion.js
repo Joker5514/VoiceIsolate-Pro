@@ -30,12 +30,15 @@ import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
 import { copyFloat32Channel, createAbortableYield } from './ui-yield.js';
+import { preflightIngestion, assertDecodedIngestionBudget } from './IngestionPreflight.js';
 import {
   evaluateUpload,
   probeWavHeader,
   assertDecodedWithinBudget,
   UPLOAD_SEVERITY,
 } from '../core/upload-limits.js';
+
+export { preflightIngestion } from './IngestionPreflight.js';
 
 export { isDesktopShell, pickAudioFile } from '../core/DesktopBridge.js';
 
@@ -371,6 +374,11 @@ export async function ingestFile(file, hooks = {}) {
     onWarning,
   });
   throwIfCancelled(signal);
+  const budget = await preflightIngestion(file, {
+    signal, timeoutMs: hooks.metadataTimeoutMs,
+    onBudget: hooks.onBudget || (() => {}),
+  });
+  throwIfCancelled(signal);
 
   onProgress('decoding', 5);
   stageStart('decode');
@@ -378,12 +386,16 @@ export async function ingestFile(file, hooks = {}) {
   try {
     decoded = await decodeBlobToAudioBuffer(file, {
       onProgress: (pct) => onProgress('decoding', pct),
+      maxCaptureBytes: budget.budgetBytes,
       audioContext,
       signal,
       decodeTimeoutMs: hooks.decodeTimeoutMs,
       readTimeoutMs: hooks.readTimeoutMs,
     });
     throwIfCancelled(signal);
+    // Container metadata can be wrong. Refuse before resampling/extraction if
+    // the actual decoded layout exceeds the plan; never truncate/downsample.
+    assertDecodedIngestionBudget(decoded, file.size, budget);
   } finally {
     stageEnd('decode');
   }

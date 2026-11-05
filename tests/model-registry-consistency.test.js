@@ -1,164 +1,56 @@
-/**
- * tests/model-registry-consistency.test.js
- *
- * Cross-verifies the three model registries that must agree on canonical
- * .onnx filenames. Drift between them silently breaks the ML worker:
- *   - models-manifest.json says one set of files ships
- *   - ml-worker.js MODEL_FILES references files to load by inference key
- *   - ml-worker-fetch-cache.js MODEL_REGISTRY caches a third set
- *
- * If any canonical filename appears in one registry but not the others,
- * inference can request a file the cache does not know about, or the
- * manifest can advertise a file no code path uses. This test fails loudly
- * with a per-registry diff so the discrepancy is unambiguous.
- *
- * If a registry block cannot be parsed, the test fails with a clear
- * "registry unparseable" message rather than skipping.
- */
-
-const fs   = require('fs');
+'use strict';
+const fs = require('fs');
 const path = require('path');
+const ROOT = path.resolve(__dirname, '..');
+let generator, canonical;
+beforeAll(async () => {
+  generator = await import('../scripts/generate-model-manifests.mjs');
+  canonical = await import('../src/core/ModelManifest.js');
+});
 
-const ROOT             = path.resolve(__dirname, '..');
-const MANIFEST_PATH    = path.join(ROOT, 'public', 'app', 'models', 'models-manifest.json');
-const ML_WORKER_PATH   = path.join(ROOT, 'public', 'app', 'ml-worker.js');
-const FETCH_CACHE_PATH = path.join(ROOT, 'public', 'app', 'ml-worker-fetch-cache.js');
-
-// ─── Parse manifest ──────────────────────────────────────────────────────────
-function readManifestFilenames() {
-  const raw = fs.readFileSync(MANIFEST_PATH, 'utf8');
-  const json = JSON.parse(raw);
-  if (!json || !Array.isArray(json.models)) {
-    throw new Error(
-      `models-manifest.json unparseable: expected top-level "models" array at ${MANIFEST_PATH}`
-    );
+test('packaging projections are deterministic, complete and strict (no warning-only drift mode)', () => {
+  expect(generator.checkModelManifests(ROOT)).toEqual([]);
+  const first = generator.generateModelManifests(ROOT);
+  expect(generator.generateModelManifests(ROOT)).toEqual(first);
+  const delivery = JSON.parse(first.find(([p]) => p === generator.MODEL_MANIFEST_PATH)[1]);
+  const inventory = JSON.parse(first.find(([p]) => p === generator.MODEL_INVENTORY_PATH)[1]);
+  const files = Object.values(canonical.MODEL_MANIFEST).filter((m) => !m.composite);
+  expect(inventory.models).toHaveLength(files.length);
+  for (const m of files) {
+    const row = inventory.models.find((x) => x.modelId === m.id);
+    expect(row).toMatchObject({ filename: path.basename(m.url), sizeBytes: m.sizeBytes, sha256: m.sha256, shipped: m.shipped !== false, optional: m.optional === true });
   }
-  const names = json.models.map((m, i) => {
-    if (!m || typeof m.filename !== 'string' || !m.filename.endsWith('.onnx')) {
-      throw new Error(
-        `models-manifest.json entry ${i} has no .onnx "filename" field (got ${JSON.stringify(m && m.filename)})`
-      );
-    }
-    return m.filename;
-  });
-  return new Set(names);
-}
-
-// ─── Parse ml-worker.js MODEL_FILES ──────────────────────────────────────────
-function readMlWorkerFilenames() {
-  const src = fs.readFileSync(ML_WORKER_PATH, 'utf8');
-  const blockMatch = src.match(/const\s+MODEL_FILES\s*=\s*\{([\s\S]*?)\};/);
-  if (!blockMatch) {
-    throw new Error(
-      `ml-worker.js MODEL_FILES registry unparseable at ${ML_WORKER_PATH}: ` +
-      'expected "const MODEL_FILES = { ... };" block. Drift cannot be checked.'
-    );
+  for (const m of Object.values(delivery.models)) {
+    expect(canonical.MODEL_MANIFEST[m.modelId]).toMatchObject({ sizeBytes: m.sizeBytes, sha256: m.sha256 });
   }
-  const body = blockMatch[1];
-  const names = new Set();
-  const lineRe = /['"]([^'"]+)['"]\s*:\s*['"]([^'"]+\.onnx)['"]/g;
-  let m;
-  while ((m = lineRe.exec(body)) !== null) names.add(m[2]);
-  if (names.size === 0) {
-    throw new Error(
-      `ml-worker.js MODEL_FILES contained no .onnx values — registry unparseable or empty`
-    );
+  expect(delivery.models.demucs).toMatchObject({ shipped: false, optional: true });
+  expect(delivery.models.bsrnn_vocals_complex).toMatchObject({ shipped: false, optional: true });
+});
+
+test('legacy aliases resolve to generated entries, never to a second pin table', () => {
+  const text = fs.readFileSync(path.join(ROOT, generator.MODEL_COMPAT_PATH), 'utf8');
+  const registry = JSON.parse(text.match(/root\.VIPModelRegistry=(.*);}\)/)[1]);
+  for (const [alias, key] of Object.entries(registry.aliases)) {
+    expect(registry.models[key]).toBeDefined();
+    if (registry.models[key].shipped) expect(registry.models[key].sha256).toMatch(/^[a-f0-9]{64}$/);
+    else expect(registry.models[key].optional).toBe(true);
+    expect(alias).toBeTruthy();
   }
-  return names;
-}
+  const worker = fs.readFileSync(path.join(ROOT, 'public/app/ml-worker.js'), 'utf8');
+  const cache = fs.readFileSync(path.join(ROOT, 'public/app/ml-worker-fetch-cache.js'), 'utf8');
+  expect(worker).toContain('self.VIPModelRegistry');
+  expect(cache).toContain('globalThis.VIPModelRegistry');
+  expect(worker).not.toMatch(/const MODEL_SHA256\s*=/);
+  expect(cache).not.toMatch(/sizeBytes:\s*\d/);
+});
 
-// ─── Parse ml-worker-fetch-cache.js MODEL_REGISTRY ───────────────────────────
-function readFetchCacheFilenames() {
-  const src = fs.readFileSync(FETCH_CACHE_PATH, 'utf8');
-  const blockMatch = src.match(/const\s+MODEL_REGISTRY\s*=\s*\{([\s\S]*?)\n\s*\};/);
-  if (!blockMatch) {
-    throw new Error(
-      `ml-worker-fetch-cache.js MODEL_REGISTRY unparseable at ${FETCH_CACHE_PATH}: ` +
-      'expected "const MODEL_REGISTRY = { ... };" block. Drift cannot be checked.'
-    );
-  }
-  const body = blockMatch[1];
-  const names = new Set();
-  const pathRe = /path\s*:\s*['"]([^'"]+\.onnx)['"]/g;
-  let m;
-  while ((m = pathRe.exec(body)) !== null) {
-    const p = m[1];
-    const filename = path.basename(p);
-    names.add(filename);
-  }
-  if (names.size === 0) {
-    throw new Error(
-      `ml-worker-fetch-cache.js MODEL_REGISTRY contained no .onnx paths — registry unparseable or empty`
-    );
-  }
-  return names;
-}
-
-function diff(setA, setB) {
-  return [...setA].filter(x => !setB.has(x)).sort();
-}
-
-describe('model registry consistency', () => {
-  let manifest, mlWorker, fetchCache;
-
-  beforeAll(() => {
-    manifest   = readManifestFilenames();
-    mlWorker   = readMlWorkerFilenames();
-    fetchCache = readFetchCacheFilenames();
-  });
-
-  test('all three registries parse to non-empty filename sets', () => {
-    expect(manifest.size).toBeGreaterThan(0);
-    expect(mlWorker.size).toBeGreaterThan(0);
-    expect(fetchCache.size).toBeGreaterThan(0);
-  });
-
-  test('canonical .onnx filenames are aligned across manifest, ml-worker, and fetch-cache', () => {
-    const onlyInManifest    = diff(manifest,   new Set([...mlWorker, ...fetchCache]));
-    const onlyInMlWorker    = diff(mlWorker,   new Set([...manifest, ...fetchCache]));
-    const onlyInFetchCache  = diff(fetchCache, new Set([...manifest, ...mlWorker]));
-
-    const missingFromManifest   = diff(new Set([...mlWorker, ...fetchCache]), manifest);
-    const missingFromMlWorker   = diff(new Set([...manifest, ...fetchCache]), mlWorker);
-    const missingFromFetchCache = diff(new Set([...manifest, ...mlWorker]),   fetchCache);
-
-    const drift =
-      missingFromManifest.length   > 0 ||
-      missingFromMlWorker.length   > 0 ||
-      missingFromFetchCache.length > 0;
-
-    // Strict mode: set VIP_STRICT_REGISTRY_CHECK=1 to hard-fail CI on drift.
-    // By default the assertion is a non-blocking diagnostic (console.warn) so
-    // CI stays green until a follow-up PR reconciles the three registries.
-    const strictMode = process.env.VIP_STRICT_REGISTRY_CHECK === '1';
-
-    if (drift) {
-      const lines = [
-        'Model registry drift detected. Each canonical .onnx filename must appear in all three registries.',
-        '',
-        `manifest          (${MANIFEST_PATH.replace(ROOT + '/', '')}): ${[...manifest].sort().join(', ')}`,
-        `ml-worker.js      MODEL_FILES values: ${[...mlWorker].sort().join(', ')}`,
-        `fetch-cache       MODEL_REGISTRY paths: ${[...fetchCache].sort().join(', ')}`,
-        '',
-        `only in manifest:        ${onlyInManifest.join(', ')   || '(none)'}`,
-        `only in ml-worker.js:    ${onlyInMlWorker.join(', ')   || '(none)'}`,
-        `only in fetch-cache:     ${onlyInFetchCache.join(', ') || '(none)'}`,
-        '',
-        `missing from manifest:        ${missingFromManifest.join(', ')   || '(none)'}`,
-        `missing from ml-worker.js:    ${missingFromMlWorker.join(', ')   || '(none)'}`,
-        `missing from fetch-cache:     ${missingFromFetchCache.join(', ') || '(none)'}`,
-      ];
-      const message = lines.join('\n');
-      if (strictMode) {
-        throw new Error(message);
-      } else {
-        console.warn('[model-registry-consistency] ' + message);
-      }
-    }
-
-    if (strictMode) {
-      expect(drift).toBe(false);
-    }
-    // In non-strict mode the test always passes; drift is surfaced via console.warn above.
-  });
+test('Android and desktop required lists come from canonical shipped files', () => {
+  const required = generator.requiredModelFiles().map((m) => path.basename(m.url));
+  expect(required).toEqual(expect.arrayContaining(['bsrnn_vocals.onnx', 'rnnoise_suppressor.onnx', 'silero_vad.onnx', 'dfn3_enc.onnx', 'dfn3_erb_dec.onnx', 'dfn3_df_dec.onnx']));
+  expect(required).not.toContain('demucs_v4_quantized.onnx');
+  expect(generator.androidModelFiles().map((m) => m.id)).not.toContain('vad_int8');
+  const android = fs.readFileSync(path.join(ROOT, 'scripts/prepare-android-complete.mjs'), 'utf8');
+  const desktop = fs.readFileSync(path.join(ROOT, 'scripts/electron-build-win.mjs'), 'utf8');
+  expect(android).toContain('androidModelFiles()');
+  expect(desktop).toContain('requiredModelFiles()');
 });

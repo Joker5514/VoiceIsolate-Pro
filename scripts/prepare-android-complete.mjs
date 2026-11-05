@@ -15,6 +15,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { androidModelFiles } from './generate-model-manifests.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, 'build');
@@ -22,15 +23,7 @@ const PACKAGE_VERSION = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'),
 ).version;
 
-/** Models required for a complete offline isolation app (default + denoise + VAD + Enhance Speech). */
-const REQUIRED_MODELS = [
-  'bsrnn_vocals.onnx',
-  'rnnoise_suppressor.onnx',
-  'silero_vad.onnx',
-  'dfn3_enc.onnx',
-  'dfn3_erb_dec.onnx',
-  'dfn3_df_dec.onnx',
-];
+const REQUIRED_MODELS = androidModelFiles().map((m) => m.url.split('/').pop());
 
 /** Optional but useful if present (still keep APK lean). */
 const OPTIONAL_MODELS = [
