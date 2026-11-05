@@ -184,13 +184,14 @@ describe('vercel.json — Content-Security-Policy header', () => {
 
   // ── Directive source values ───────────────────────────────────────────────
 
-  test("style-src includes 'unsafe-inline' and fonts.googleapis.com", () => {
+  test("style-src includes 'unsafe-inline' and never loads Google Fonts (VIP-024: fonts self-hosted in public/fonts/)", () => {
     expect(directives['style-src']).toContain("'unsafe-inline'");
-    expect(directives['style-src']).toContain('https://fonts.googleapis.com');
+    expect(directives['style-src']).not.toContain('fonts.googleapis.com');
   });
 
-  test('font-src includes fonts.gstatic.com', () => {
-    expect(directives['font-src']).toContain('https://fonts.gstatic.com');
+  test('font-src allows self-hosted fonts only (never fonts.gstatic.com)', () => {
+    expect(directives['font-src']).toContain("'self'");
+    expect(directives['font-src']).not.toContain('fonts.gstatic.com');
   });
 
   test('img-src allows data: and blob: for canvas/thumbnail use', () => {
@@ -434,13 +435,14 @@ describe('deploy/render.yaml — Content-Security-Policy header', () => {
 
   // ── Directive source values ───────────────────────────────────────────────
 
-  test("style-src includes 'unsafe-inline' and fonts.googleapis.com", () => {
+  test("style-src includes 'unsafe-inline' and never loads Google Fonts (VIP-024: fonts self-hosted in public/fonts/)", () => {
     expect(directives['style-src']).toContain("'unsafe-inline'");
-    expect(directives['style-src']).toContain('https://fonts.googleapis.com');
+    expect(directives['style-src']).not.toContain('fonts.googleapis.com');
   });
 
-  test('font-src includes fonts.gstatic.com', () => {
-    expect(directives['font-src']).toContain('https://fonts.gstatic.com');
+  test('font-src allows self-hosted fonts only (never fonts.gstatic.com)', () => {
+    expect(directives['font-src']).toContain("'self'");
+    expect(directives['font-src']).not.toContain('fonts.gstatic.com');
   });
 
   test('img-src allows data: and blob:', () => {

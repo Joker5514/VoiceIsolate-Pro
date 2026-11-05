@@ -55,6 +55,16 @@ import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
 import { ComparisonModes } from '/src/ui/tokens/design-tokens.js';
 import { runAutoAnalysis } from '/src/core/audio/analysis/AutoAnalysis.js';
 import { ProcessingController } from '/src/core/audio/processing/ProcessingController.js';
+import {
+  guardEnhanceOutcome,
+  ENHANCE_OUTCOME_ID,
+} from '/src/core/EnhanceGuard.js';
+import {
+  buildProvenanceRecord,
+  provenanceFilenameFor,
+} from '/src/core/Provenance.js';
+import { hashSourceBlob } from '/src/pipeline/SourceHash.js';
+import { INFERENCE_REVISION, modelChainRevision, MODEL_MANIFEST } from '/src/core/ModelManifest.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -210,6 +220,52 @@ const processingController = new ProcessingController(sessionStore);
 try { window.__vipProcessingController = processingController; } catch {}
 // Expose session store for premium module
 try { window.__vipSessionStore = sessionStore; } catch {}
+
+// ── VIP-005: Enhance Speech suitability guard (src/core/EnhanceGuard.js) ──
+// DeepFilterNet3 is measurably catastrophic on whisper-flagged content
+// (pinned quality fixtures: whisper-clean/enhance SI-SDR out −16.5 dB). The
+// default outcome never applies it; this guard keeps it from being applied to
+// unsuitable content without an informed, explicit, reversible user choice.
+const enhanceGuard = { analysis: null, warned: false, overridden: false, suppress: false };
+
+function resetEnhanceGuard() {
+  enhanceGuard.analysis = null;
+  enhanceGuard.warned = false;
+  enhanceGuard.overridden = false;
+}
+
+function noteEnhanceHazard(message) {
+  enhanceGuard.warned = true;
+  setStatus(message, 'active');
+  if (ui.modelSelect) ui.modelSelect.title = message;
+}
+
+/**
+ * Evaluate the selected outcome against the latest analysis. When Enhance
+ * Speech is selected but the analysis matches a reproduced failure class
+ * (whisper-dominant, low SNR, sparse speech), the selection is switched to
+ * the conservative fallback with an explanation — unless the user already
+ * re-selected Enhance Speech after seeing that explanation (explicit
+ * override, honored with an advisory notice).
+ */
+function applyEnhanceGuard() {
+  if (enhanceGuard.suppress) return null;
+  const verdict = guardEnhanceOutcome(ui.modelSelect.value, enhanceGuard.analysis, {
+    explicit: enhanceGuard.overridden,
+  });
+  if (!verdict.verdict) return null;
+  if (verdict.changed) {
+    enhanceGuard.suppress = true; // programmatic .value= never fires 'change', belt anyway
+    ui.modelSelect.value = verdict.outcome;
+    enhanceGuard.suppress = false;
+    enhanceGuard.overridden = false;
+    noteEnhanceHazard(`${verdict.message} Switched to “Clean Speech”. Choose “Enhance Speech” again to apply it anyway.`);
+    void refreshPreflight();
+  } else if (verdict.message) {
+    noteEnhanceHazard(verdict.message);
+  }
+  return verdict.verdict;
+}
 /** Lazy-initialised analysis insights panel (post-stem, non-blocking). */
 let analysisInsights = null;
 function getAnalysisInsights() {
@@ -737,6 +793,55 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
       result = { blob: await encodeReviewedWav(full, { signal }), filename: `${base}-processed.wav` };
     }
     throwIfAborted(signal);
+    // ── VIP-010/VIP-011: forensic integrity sidecar (.viprovenance.json) ──
+    // Source + output SHA-256, model pins, parameters, and an integrity
+    // digest (an integrity RECORD — not a signature or certification).
+    // Best-effort: a provenance failure never blocks the audio export.
+    let provenanceDownloaded = false;
+    try {
+      setProcStage('export', 85, 'Hashing files for the integrity record…');
+      const [outHash, srcHash, appVersion] = await Promise.all([
+        hashSourceBlob(result.blob, { signal }),
+        sourceFile ? hashSourceBlob(sourceFile, { signal }) : Promise.resolve(null),
+        fetch('/manifest.json').then((r) => r.json()).then((m) => m?.version || null).catch(() => null),
+      ]);
+      const modelIds = [...(processPlan?.modelIds || [])];
+      const record = buildProvenanceRecord({
+        source: sourceFile ? {
+          name: sourceFile.name || null,
+          sizeBytes: sourceFile.size ?? null,
+          mimeType: sourceFile.type || null,
+          sha256: srcHash?.hex || null,
+        } : null,
+        export: {
+          timestamp: new Date().toISOString(),
+          format: result.filename.endsWith('.mp4') ? 'mp4' : 'wav',
+          options: { sampleRate: full.sampleRate, channels: full.numberOfChannels, region: { in: region.in, out: region.out } },
+          output: { filename: result.filename, sizeBytes: result.blob.size, sha256: outHash.hex },
+        },
+        application: {
+          version: appVersion,
+          inferenceRevision: INFERENCE_REVISION,
+          modelChainRevision: modelChainRevision(modelIds),
+          modelIds,
+          models: modelIds.map((id) => ({ id, sha256: MODEL_MANIFEST[id]?.sha256 || null })),
+        },
+        processing: {
+          parameters: null, // Landing has no process-time slider snapshot; null = not applicable
+          operations: [{ id: 'separate', status: 'completed', detail: (processPlan?.label || null) }],
+        },
+      });
+      const sidecarName = provenanceFilenameFor(result.filename);
+      const sidecarBlob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
+      // Drive/desktop artifacts just went to their destination; the sidecar
+      // follows to the local Downloads so the pair is never silently split.
+      triggerBlobDownload(sidecarBlob, sidecarName);
+      provenanceDownloaded = true;
+    } catch (err) {
+      if (isCancellationError(err) || signal.aborted) throw err;
+      console.warn('[VIP][landing] provenance sidecar unavailable (export continues)', err);
+    }
+    throwIfAborted(signal);
     if (drive) {
       const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
       if (!isDriveConfigured()) throw new Error('Google Drive is not configured. Use Export mix as WAV.');
@@ -752,7 +857,8 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
       triggerBlobDownload(result.blob, result.filename);
     }
     throwIfAborted(signal);
-    const message = drive ? `Saved to Drive: ${result.filename}` : `Export prepared: ${result.filename}. Check your downloads or chosen folder.`;
+    const sidecarNote = provenanceDownloaded ? ' Integrity record (.viprovenance.json) included.' : '';
+    const message = drive ? `Saved to Drive: ${result.filename}.${sidecarNote}` : `Export prepared: ${result.filename}. Check your downloads or chosen folder.${sidecarNote}`;
     setDownloadHint(message);
     setStatus(message, 'active');
     quickClean.setState('exported', message);
@@ -1211,7 +1317,7 @@ async function ingestFrom(file) {
   if (!file || ingestInFlight || processingInFlight || downloadInFlight) return;
   // Pre-flight: reject images before the pipeline is touched.
   if (isImageFile(file)) {
-    const msg = `[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).`;
+    const msg = '[VIP][FileIngestion] UNSUPPORTED_MEDIA_TYPE: Images cannot be processed as audio or video. Select an audio or video file (WAV, MP3, M4A, FLAC, MP4, etc).';
     setStatus(msg, 'error');
     quickClean.setState('error', `Cannot import image "${file.name || 'file'}". Choose an audio or video file.`);
     return;
@@ -1234,6 +1340,8 @@ async function ingestFrom(file) {
     // Not left "analyzing" if the replacement file then fails to decode.
     if (sessionStore.isAnalyzing()) sessionStore.setAnalysisResult({ state: 'idle', regions: [] });
   }
+  // VIP-005: hazard state is per-file — a new import starts clean.
+  resetEnhanceGuard();
   ingested = null;
   hasProcessed = false;
   resetComparison({ dropReference: true });
@@ -1331,6 +1439,9 @@ async function ingestFrom(file) {
       const analysis = runAutoAnalysis(rawClone, next.sampleRate, {
         signal: analysisAbort.signal,
         maybeYield: createYieldBudget(),
+        // VIP-007: real diarization (k-means/ONNX) for the auto-analysis
+        // speaker overlay — the existing SpeakerDetection path, injected.
+        detectSpeakers: detectSpeakersPipeline,
         onProgress: (pct, extra) => {
           if (!analysisAbort.signal.aborted) sessionStore.updateAnalysisProgress(pct, extra);
         },
@@ -1356,6 +1467,10 @@ async function ingestFrom(file) {
             speechRatio: analysisResult.speechRatio,
             state: 'ready',
           });
+          // VIP-005: analysis evidence now gates an Enhance Speech selection
+          // made before the analysis finished (not an informed choice yet).
+          enhanceGuard.analysis = analysisResult;
+          applyEnhanceGuard();
           // Update metrics
           sessionStore.updateMetrics({
             voiceClarity: Math.min(100, Math.max(0, (analysisResult.snrDb + 10) * 3)),
@@ -1464,6 +1579,10 @@ async function onProcess() {
   if (!ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight) return;
   processingInFlight = true;
   try {
+    // VIP-005: last check before the chain is captured — analysis may have
+    // finished after the outcome was chosen. Unsafe enhance selections fall
+    // back to Clean Speech with an explanation and processing continues.
+    applyEnhanceGuard();
     processPlan = quickClean.plan(); // immutable outcome + shipped model chain captured on this click
     hasProcessed = false;
     resetComparison();
@@ -1858,7 +1977,18 @@ window.addEventListener('unhandledrejection', (event) => {
   setStatus(`Upload failed: ${msg}`, 'error');
 });
 ui.processBtn.addEventListener('click', onProcess);
-ui.modelSelect.addEventListener('change', () => { void refreshPreflight(); });
+ui.modelSelect.addEventListener('change', () => {
+  if (ui.modelSelect.value === ENHANCE_OUTCOME_ID && enhanceGuard.warned) {
+    // Informed, explicit override AFTER the hazard notice: honor it, with the
+    // advisory kept visible (reversible — any other outcome is one click away).
+    enhanceGuard.overridden = true;
+    applyEnhanceGuard();
+    void refreshPreflight();
+  } else {
+    applyEnhanceGuard();
+    void refreshPreflight();
+  }
+});
 for (const [lane, id] of Object.entries(COMPARE_BUTTONS)) {
   $(id)?.addEventListener('click', async () => {
     try {

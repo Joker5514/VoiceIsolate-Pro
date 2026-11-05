@@ -61,6 +61,14 @@ reference.
 ## Runtime Responsibilities
 
 - `src/core/ModelManifest.js` defines canonical model URLs and expected hashes.
+- `public/app/models-manifest.json` is a **generated packaging registry** — its
+  `models` section is rebuilt from `ModelManifest.js` by
+  `node scripts/sync-model-manifests.mjs` (verify with `--check`, enforced by
+  `tests/model-manifest-sync.test.js`). Do not hand-edit the `models` section;
+  the `worklets` section remains owned by `pnpm worklets:hash`.
+- `public/app/models/models-manifest.json` is a hand-maintained **model-card
+  document** (I/O tensors, training notes, licenses) kept filename-consistent
+  with the canonical registry by the same test.
 - `src/workers/MLWorker.js` fetches model bytes, verifies hashes, and initializes
   ONNX Runtime Web.
 - `public/app/model-cdn-loader.js` only accepts same-origin model URLs for the
@@ -70,7 +78,11 @@ reference.
   pinned models fail closed on missing/unavailable verification or mismatch.
   HEAD presence is labelled unverified, never “ML active”.
 - `vercel.json` rewrites `/app/models/:filename` and `/models/:filename` to the
-  configured Vercel Blob object route.
+  configured Vercel Blob object route. Remote delivery liveness is checked only
+  in the `--network` tier of `pnpm prod:verify` (`model-delivery`); the static
+  tier verifies shipped bytes locally against `ModelManifest.js` hashes.
+  Optional/unshipped entries (demucs, ecapa_tdnn, research models) never block
+  the gate and are never claimed as passed.
 
 ## Privacy Boundary
 

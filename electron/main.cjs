@@ -206,6 +206,7 @@ function contentTypeFor(filePath) {
 }
 
 function registerVipProtocol() {
+  const { vipSecurityHeaders } = require('./vip-csp.cjs');
   protocol.handle('vip', async (request) => {
     const filePath = resolveVipPath(request.url);
     if (!filePath) {
@@ -221,11 +222,12 @@ function registerVipProtocol() {
     const res = await net.fetch(fileUrl, { method: request.method });
     const headers = new Headers(res.headers);
     headers.set('Content-Type', contentTypeFor(filePath));
-    // COOP/COEP required for SharedArrayBuffer (worklets / OLA).
-    headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-    headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
-    headers.set('Cross-Origin-Resource-Policy', 'same-origin');
-    headers.set('X-Content-Type-Options', 'nosniff');
+    // VIP-025: CSP for the custom protocol (strict for landing/new surfaces,
+    // web-parity legacy exception scoped to /app, /blueprint, /docs), plus
+    // COOP/COEP (SharedArrayBuffer for worklets / OLA) and hardening headers.
+    for (const [name, value] of Object.entries(vipSecurityHeaders(request.url))) {
+      headers.set(name, value);
+    }
     // Cache models/wasm aggressively offline; keep HTML/JS fresher for updates.
     if (/\.(onnx|wasm)$/i.test(filePath)) {
       headers.set('Cache-Control', 'public, max-age=31536000, immutable');
