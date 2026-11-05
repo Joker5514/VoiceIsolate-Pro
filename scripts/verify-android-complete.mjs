@@ -28,6 +28,10 @@ const REQUIRED = [
   'app/sw.js',
   'app/engineer-console.css',
   'app/engineer-console.js',
+  'app/workstation-premium.css',
+  'fonts/Geist-Variable.woff2',
+  'fonts/GeistMono-Variable.woff2',
+  'fonts/instrument-serif-latin-400-italic.woff2',
   'app/models/bsrnn_vocals.onnx',
   'app/models/rnnoise_suppressor.onnx',
   'app/models/silero_vad.onnx',
@@ -115,6 +119,13 @@ if (!engineerApp.includes('Mount the complete 67-control rack')) {
 }
 if (!engineerHtml.includes('section-eq') || !engineerHtml.includes('tab-extreme')) {
   errors.push('Engineer HTML missing EQ or Whisper/Extreme panels');
+}
+if (!engineerHtml.includes('workstation-premium.css') || !engineerHtml.includes('id="vipMetricGuide"') || !engineerHtml.includes('id="vipStemPath"')) {
+  errors.push('Engineer HTML missing the shared workflow shell (skin, metric guide, or stems path)');
+}
+const engineerConsole = fs.readFileSync(path.join(ASSETS, 'app/engineer-console.js'), 'utf8');
+for (const id of ["id: 'stems'", "id: 'advanced'", "id: 'engineer'", "id: 'forensic'"]) {
+  if (!engineerConsole.includes(id)) errors.push(`Engineer console missing workflow ${id}`);
 }
 if (!workflowTier.includes("defaultFilterMode: 'all'")) {
   errors.push('Engineer workflow does not default to the full control rack');

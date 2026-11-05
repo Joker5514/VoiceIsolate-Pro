@@ -11,9 +11,18 @@ import { debugLog } from '../core/debug.js';
 
 /**
  * Encode Float32 channels to 16-bit PCM WAV.
+ *
+ * Dither (VIP-040): `ditherAmt` 0-3 selects off / TPDF / + two noise-shaped
+ * variants (two-tap predictors 0.45 / 0.82). With `ditherSeed` set (any
+ * finite number) the TPDF noise comes from a seeded mulberry32 stream instead
+ * of Math.random(), so the export is bit-reproducible for forensic reruns —
+ * the seed is recorded in the export's `.viprovenance.json` options. Without
+ * a seed the dither is standard random TPDF (±1 LSB at 16-bit); that export
+ * is intentionally not bit-reproducible. ditherAmt 0 is always deterministic.
+ *
  * @param {Float32Array[]} channels
  * @param {number} sampleRate
- * @param {{ ditherAmt?: number }} [options]
+ * @param {{ ditherAmt?: number, ditherSeed?: number }} [options]
  * @returns {Blob}
  */
 export function encodeWav(channels, sampleRate, options = {}) {
@@ -45,12 +54,24 @@ export function encodeWav(channels, sampleRate, options = {}) {
 
   let offset = 44;
   const ditherMode = Math.max(0, Math.min(3, Math.round(Number(options.ditherAmt) || 0)));
+  // Seeded (reproducible) TPDF noise when ditherSeed is a finite number.
+  let rand = Math.random;
+  if (ditherMode > 0 && Number.isFinite(options.ditherSeed)) {
+    let state = (Number(options.ditherSeed) >>> 0) || 1;
+    rand = () => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
   const previousNoise = new Float32Array(numChannels);
   for (let i = 0; i < length; i++) {
     for (let ch = 0; ch < numChannels; ch++) {
       let s = channels[ch][i] || 0;
       if (ditherMode > 0) {
-        const rawNoise = (Math.random() - Math.random()) / 32768;
+        const rawNoise = (rand() - rand()) / 32768;
         const shaped = ditherMode === 1
           ? rawNoise
           : rawNoise - previousNoise[ch] * (ditherMode === 2 ? 0.45 : 0.82);

@@ -45,6 +45,14 @@ mask. It must not create a second STFT, iSTFT, worklet, or native bridge path.
   controls. The UI continues to show the timing class and any model fallback.
 - Gate lookahead ranges from 0–20 ms and intentionally adds the equivalent
   Live-Mix playback delay. It is not an offline-only parameter.
+- Gate attack is milliseconds. The canonical range is **0–200 ms** on the
+  Engineer rack, the landing slider, and `PlaybackMixer.setGateAttack`
+  (schema `gateAttack`). The worklet accepts a wider clamp; the mixer is the
+  limit that actually reaches it. Contract version is `PARAM_CONTRACT_VERSION`
+  in `src/core/ParamMigration.js`. An unversioned saved value of 201–500 ms
+  (the older Engineer slider) is set to 200 ms and the restore path reports
+  that change. Values outside 0–500 ms are reset to the 5 ms default and
+  reported. In-range values keep their millisecond meaning.
 - `phaseCorr` (shown as **Mono Correlation**) and `crosstalkCancel` require
   distinct stereo channels. Mono input reports an unavailable runtime state
   instead of a fake effect. Mono Correlation is a midpoint blend, not a

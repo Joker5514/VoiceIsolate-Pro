@@ -31,6 +31,8 @@ describe('Android complete app pipeline', () => {
     // Studio console skin required offline (same as web/Electron)
     expect(prepare).toContain('app/engineer-console.css');
     expect(prepare).toContain('app/engineer-console.js');
+    expect(prepare).toContain('app/workstation-premium.css');
+    expect(prepare).toContain('fonts/Geist-Variable.woff2');
     expect(prepare).toContain('app/slider-map.js');
     expect(prepare).toContain('app/workflow-tier.js');
     expect(prepare).toContain('app/whisper-hunter.js');
@@ -80,6 +82,10 @@ describe('Android complete app pipeline', () => {
     expect(verify).toContain('demucs_v4_fp32.onnx');
     expect(verify).toContain('app/engineer-console.css');
     expect(verify).toContain('app/engineer-console.js');
+    expect(verify).toContain('app/workstation-premium.css');
+    expect(verify).toContain('id="vipMetricGuide"');
+    expect(verify).toContain('id="vipStemPath"');
+    expect(verify).toContain("id: 'forensic'");
     expect(verify).toContain('Mount the complete 67-control rack');
     expect(verify).toContain('section-eq');
     expect(verify).toContain('tab-extreme');

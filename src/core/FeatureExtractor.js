@@ -52,18 +52,24 @@ export function zeroCrossingRate(frame) {
  * @param {Float32Array} frame
  * @returns {Float32Array}
  */
+function spectrumInto(frame, re, im, mag) {
+  re.fill(0);
+  im.fill(0);
+  const nFrame = frame.length;
+  for (let i = 0; i < nFrame; i++) re[i] = frame[i];
+  fftInPlace(re, im);
+  const half = mag.length;
+  for (let k = 0; k < half; k++) mag[k] = Math.hypot(re[k], im[k]);
+  return mag;
+}
+
 export function magnitudeSpectrum(frame) {
   const n = nextPow2(frame.length);
   const re = new Float32Array(n);
   const im = new Float32Array(n);
-  for (let i = 0; i < frame.length; i++) re[i] = frame[i];
-  fftInPlace(re, im);
   const half = (n >> 1) + 1;
   const mag = new Float32Array(half);
-  for (let k = 0; k < half; k++) {
-    mag[k] = Math.hypot(re[k], im[k]);
-  }
-  return mag;
+  return spectrumInto(frame, re, im, mag);
 }
 
 function nextPow2(n) {
@@ -274,15 +280,47 @@ export function voicedUnvoicedScore({ zcr, harmonicity, speechRatio }) {
  * @param {number} sampleRate
  * @param {object} [opts]
  */
-export function extractFrameFeatures(mono, sampleRate, opts = {}) {
+export function featureGeometry(sampleRate, opts = {}) {
   const frameSec = opts.frameSec ?? DEFAULT_FRAME_SEC;
   const hopSec = opts.hopSec ?? DEFAULT_HOP_SEC;
   const frameLen = Math.max(32, Math.round(frameSec * sampleRate));
   const hop = Math.max(16, Math.round(hopSec * sampleRate));
-  const frames = [];
-  let prevMag = null;
+  return { frameSec, hopSec, frameLen, hop };
+}
 
-  for (let start = 0; start + frameLen <= mono.length; start += hop) {
+/**
+ * Resumable feature pass. Scratch FFT buffers stay with the pass so a long
+ * file does not allocate a new spectrum on every frame. `advanceFeaturePass`
+ * writes the same frame records as a single `extractFrameFeatures` call.
+ */
+export function createFeaturePass(mono, sampleRate, opts = {}) {
+  const geo = featureGeometry(sampleRate, opts);
+  const n = nextPow2(geo.frameLen);
+  const half = (n >> 1) + 1;
+  return {
+    mono,
+    sampleRate,
+    ...geo,
+    frames: [],
+    start: 0,
+    prevMag: null,
+    re: new Float32Array(n),
+    im: new Float32Array(n),
+    magA: new Float32Array(half),
+    magB: new Float32Array(half),
+    useA: true,
+    done: false,
+    result: null,
+  };
+}
+
+export function advanceFeaturePass(pass, maxFrames = 256) {
+  if (pass.done) return pass;
+  const { mono, sampleRate, frameLen, hop, re, im } = pass;
+  const limit = Math.max(1, maxFrames | 0);
+  let produced = 0;
+  while (produced < limit && pass.start + frameLen <= mono.length) {
+    const start = pass.start;
     const frame = mono.subarray(start, start + frameLen);
     let sumSq = 0;
     let peak = 0;
@@ -293,15 +331,15 @@ export function extractFrameFeatures(mono, sampleRate, opts = {}) {
     }
     const rms = Math.sqrt(sumSq / frame.length);
     const zcr = zeroCrossingRate(frame);
-    const mag = magnitudeSpectrum(frame);
+    const mag = pass.useA ? pass.magA : pass.magB;
+    spectrumInto(frame, re, im, mag);
     const shape = spectralShape(mag, sampleRate);
-    const flux = spectralFlux(mag, prevMag);
+    const flux = spectralFlux(mag, pass.prevMag);
     const speechRatio = speechBandRatio(mag, sampleRate);
     const harmonicity = harmonicityScore(mag, sampleRate);
     const hum = detectHum(mag, sampleRate);
     const vu = voicedUnvoicedScore({ zcr, harmonicity, speechRatio });
-
-    frames.push({
+    pass.frames.push({
       t: start / sampleRate,
       rms,
       peak,
@@ -318,9 +356,20 @@ export function extractFrameFeatures(mono, sampleRate, opts = {}) {
       humFreq: hum.freq,
       voiced: vu.voiced,
     });
-
-    prevMag = mag;
+    pass.prevMag = mag;
+    pass.useA = !pass.useA;
+    pass.start = start + hop;
+    produced++;
   }
+  if (pass.start + frameLen > mono.length) {
+    pass.result = finalizeFeaturePass(pass);
+    pass.done = true;
+  }
+  return pass;
+}
+
+function finalizeFeaturePass(pass) {
+  const { frames, mono, frameSec, hopSec } = pass;
 
   // Noise floor estimate: percentile of low-energy frames (also the frame
   // classifier's silence reference, so it is left as is).
@@ -383,6 +432,12 @@ export function extractFrameFeatures(mono, sampleRate, opts = {}) {
     },
     global: globalLevels(mono),
   };
+}
+
+export function extractFrameFeatures(mono, sampleRate, opts = {}) {
+  const pass = createFeaturePass(mono, sampleRate, opts);
+  while (!pass.done) advanceFeaturePass(pass, 1024);
+  return pass.result;
 }
 
 /**

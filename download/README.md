@@ -3,26 +3,27 @@
 Large installers are **not committed to git**. End-user binaries are published through [GitHub Releases](https://github.com/Joker5514/VoiceIsolate-Pro/releases), and the web download hub is https://voice-isolate-pro.vercel.app/download/.
 
 **Repository version:** `25.0.2` · native build number `250002`  
-**Latest published release:** `v25.0.2`  
-**Release metadata last updated:** `2026-08-25T21:22:40Z`
+**Latest published release:** [`v25.0.3`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.3)  
+**Release published:** `2026-09-09T23:31:43Z`  
+**Reviewed source:** `f5b271892de7bb8aca85b351062dd81f9191f756`
 
-The current release assets are valid downloads, but they predate current `main`. See [`docs/releases/release-provenance.json`](../docs/releases/release-provenance.json) before making any cross-platform same-build claim.
+Desktop browsers, Android browsers, Capacitor Android, and Electron Windows share one upload-only shell. The published assets below are valid downloads and predate reviewed `main`. See [`docs/releases/release-provenance.json`](../docs/releases/release-provenance.json) before making any cross-platform same-build claim.
 
 ## Android APK
 
 | Channel | URL |
 |---|---|
 | Latest | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
-| Pinned `v25.0.2` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk |
+| Pinned `v25.0.3` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-android-debug.apk |
 | Historical releases | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
 Published asset:
 
 - File: `VoiceIsolate-Pro-android-debug.apk`
 - Type: Android sideload/debug APK
-- Size: `101365796` bytes
-- SHA-256: `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b`
-- GitHub asset updated: `2026-08-25T21:22:40Z`
+- Size: `101650376` bytes
+- SHA-256: `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626`
+- GitHub asset updated: `2026-09-09T23:31:41Z`
 
 Build locally:
 
@@ -39,16 +40,16 @@ WebView debugging is controlled by `BuildConfig.DEBUG`; release builds must keep
 | Channel | URL |
 |---|---|
 | Latest | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
-| Pinned `v25.0.2` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| Pinned `v25.0.3` | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-25.0.2-win-x64.exe |
 | Historical releases | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
 Published asset:
 
 - File: `VoiceIsolate-Pro-25.0.2-win-x64.exe`
 - Type: Windows x64 NSIS installer
-- Size: `144628415` bytes
-- SHA-256: `6f4c0887bb0ef64bd1de5e30cd14cfcd8dc34cf9788433c5c3881c8583b0e621`
-- GitHub asset updated: `2026-08-24T17:20:22Z`
+- Size: `144667075` bytes
+- SHA-256: `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8`
+- GitHub asset updated: `2026-09-09T23:31:43Z`
 
 Build locally:
 

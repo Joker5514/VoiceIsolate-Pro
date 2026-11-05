@@ -61,6 +61,8 @@
     }
 
     function _getBuffer() {
+      // With instant A/B armed the bridge always holds the processed output.
+      if (typeof app._getBridgePlaybackBuffer === 'function') return app._getBridgePlaybackBuffer();
       if (typeof app._getPlaybackBuffer === 'function') return app._getPlaybackBuffer();
       const mode = app.abMode || 'original';
       if (mode === 'processed') {
@@ -219,13 +221,24 @@
         const bridge = typeof app._ensureBridge === 'function' ? await app._ensureBridge() : null;
         if (bridge && typeof bridge.loadBuffer === 'function') {
           app.playOffset = safeOffset;
+          const instant = Boolean(app._instantABReady?.());
           if (app._bridgeBuf !== buf) {
-            bridge.loadBuffer(buf);
-            app._bridgeBuf = buf;
+            // Processed output with retained stems goes back in as the stem
+            // pair (so isolation sliders keep working), not a flat buffer.
+            if (instant && app._cleanStemChannels?.length && typeof app._loadSeparationStemsToBridge === 'function') {
+              await app._loadSeparationStemsToBridge();
+            }
+            if (app._bridgeBuf !== buf) {
+              bridge.loadBuffer(buf);
+              app._bridgeBuf = buf;
+            }
             if (typeof bridge.applyParams === 'function') {
               bridge.applyParams(window.VIP_PARAMS || {});
             }
           }
+          // Armed: the bridge holds the processed output and abMode picks the
+          // lane. Not armed: the graph output is what A/B loaded.
+          bridge.setComparisonMode?.(instant && app.abMode === 'original' ? 'original' : 'processed');
           await bridge.seek(safeOffset);
           await bridge.play();
           _usingBridge = true;
@@ -575,6 +588,16 @@
         return;
       }
       const next = (app.abMode === 'processed') ? 'original' : 'processed';
+      // Instant path: Original is a sample-aligned lane beside the processed
+      // stems, so switching is a short crossfade — no reload, no restart.
+      if (typeof app._switchABInstant === 'function' && app._switchABInstant(next)) {
+        _setABLabel(next === 'processed' ? 'B' : 'A');
+        const btn = $('tpAB');
+        if (btn) btn.classList.toggle('active', next === 'processed');
+        try { app.updateAudioMetrics?.(app._computeAudioMetricsState?.()); } catch (_) { /* metrics are cosmetic */ }
+        log('A/B switched instantly to', next);
+        return;
+      }
       const wasPlaying = !!app._fixPlayState?.isPlaying;
       const pos = (typeof app._getTransportPosition === 'function')
         ? app._getTransportPosition()
@@ -596,23 +619,30 @@
       origAB.parentNode.replaceChild(freshAB, origAB);
     }
     if (freshAB) freshAB.addEventListener('click', _toggleAB);
+    // app.js caches this node; point it at the live one so its enable/disable
+    // writes reach the button the user actually sees.
+    if (freshAB && app.dom) app.dom.tpAB = freshAB;
 
-    /* X key shortcut */
+    /* X key shortcut. X has no native action on buttons, tabs or sliders, so it
+       works with focus anywhere except text entry (after clicking Process the
+       focus is on a button, after a slider drag it is on a range input). */
+    const NON_TEXT_INPUTS = new Set(['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file']);
     document.addEventListener('keydown', (e) => {
       const target = e.target;
-      if (!target) return;
+      if (!target || e.code !== 'KeyX' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       const tag = (target.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      const inButtonOrTab = tag === 'BUTTON' || (typeof target.closest === 'function' && target.closest('[role="tablist"]'));
-      if (inButtonOrTab) return;
-
-      if (e.code === 'KeyX') _toggleAB();
+      if (tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
+      if (tag === 'INPUT' && !NON_TEXT_INPUTS.has(String(target.type || '').toLowerCase())) return;
+      const btn = $('tpAB');
+      if (btn && btn.disabled) return;
+      _toggleAB();
     });
 
     /* Always re-enable AB button (fixes try-only bug in runPipeline) */
     function _refreshAB() {
       const btn = $('tpAB');
-      if (btn) btn.disabled = !(app.inputBuffer || app.outputBuffer);
+      // Enabled exactly when there is processed audio to compare against.
+      if (btn) btn.disabled = !(app.outputBuffer || app.procBuffer) || Boolean(app.isProcessing);
     }
     window.addEventListener('vip:processingDone', _refreshAB);
     window.addEventListener('vip:fileLoaded',     _refreshAB);

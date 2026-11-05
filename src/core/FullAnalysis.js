@@ -9,6 +9,8 @@
 
 import {
   extractFrameFeatures,
+  createFeaturePass,
+  advanceFeaturePass,
   downmixToMono,
   globalLevels,
 } from './FeatureExtractor.js';
@@ -55,13 +57,28 @@ function classifyFrame(frame, ctx) {
  * @param {number} sampleRate
  * @param {object} [opts]
  */
+function extractionMatches(extraction, opts) {
+  if (!extraction || !Array.isArray(extraction.frames)) return false;
+  if (opts.frameSec != null && extraction.frameSec !== opts.frameSec) return false;
+  if (opts.hopSec != null && extraction.hopSec !== opts.hopSec) return false;
+  return true;
+}
+
+function cancelledAnalysis() {
+  const err = new Error('Analysis cancelled');
+  err.code = 'CANCELLED';
+  return err;
+}
+
 export function analyzeAudio(channels, sampleRate, opts = {}) {
-  const mono = downmixToMono(channels);
+  const mono = opts.mono instanceof Float32Array ? opts.mono : downmixToMono(channels);
   const levels = globalLevels(mono);
-  const extraction = extractFrameFeatures(mono, sampleRate, {
-    frameSec: opts.frameSec,
-    hopSec: opts.hopSec,
-  });
+  const extraction = extractionMatches(opts.extraction, opts)
+    ? opts.extraction
+    : extractFrameFeatures(mono, sampleRate, {
+      frameSec: opts.frameSec,
+      hopSec: opts.hopSec,
+    });
   const frames = extraction.frames;
   const hopSec = extraction.hopSec;
 
@@ -230,6 +247,43 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
   return analysis;
 }
 
+/**
+ * Same result as analyzeAudio. Feature extraction yields between slices so a
+ * worker can report real progress and observe cancellation. A matching
+ * `opts.extraction` is reused and is not computed again.
+ */
+export async function analyzeAudioCooperative(channels, sampleRate, opts = {}, hooks = {}) {
+  const mono = opts.mono instanceof Float32Array ? opts.mono : downmixToMono(channels);
+  const started = performance.now();
+  const reused = extractionMatches(opts.extraction, opts);
+  let extraction = reused ? opts.extraction : null;
+  if (!extraction) {
+    const pass = createFeaturePass(mono, sampleRate, opts);
+    const total = Math.max(1, Math.ceil(Math.max(0, mono.length - pass.frameLen) / pass.hop));
+    const slice = Math.max(1, hooks.framesPerSlice || 400);
+    while (!pass.done) {
+      if (hooks.shouldStop?.()) throw cancelledAnalysis();
+      advanceFeaturePass(pass, slice);
+      try { hooks.onProgress?.(pass.frames.length, total); } catch { /* observers must not abort analysis */ }
+      if (!pass.done && hooks.yield) await hooks.yield();
+    }
+    extraction = pass.result;
+  } else if (hooks.yield) {
+    await hooks.yield();
+    if (hooks.shouldStop?.()) throw cancelledAnalysis();
+  }
+  const analysis = analyzeAudio(channels, sampleRate, { ...opts, mono, extraction });
+  analysis.diagnostics = {
+    extraction: reused ? 'reused' : 'computed',
+    frames: extraction.frames.length,
+    sampleRate,
+    channels: Array.isArray(channels) ? channels.length : 1,
+    durationSec: sampleRate > 0 ? mono.length / sampleRate : 0,
+    elapsedMs: Math.round(performance.now() - started),
+  };
+  return analysis;
+}
+
 function buildVisualLayers(parts) {
   const color = {
     lead_speech: '#3b82f6',
@@ -277,4 +331,4 @@ function buildVisualLayers(parts) {
   ];
 }
 
-export default { analyzeAudio };
+export default { analyzeAudio, analyzeAudioCooperative };

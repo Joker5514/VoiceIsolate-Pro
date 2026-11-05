@@ -13,8 +13,9 @@
  *            privacy, model + worklet integrity, provenance, production build
  *   browser  real-Chromium journeys (Engineer, Landing, shell guards,
  *            runtime privacy) — on by default, `--no-browser` to skip
- *   network  live release/download contract — opt-in with `--network`
- *            (needs GitHub API + public download routes)
+ *   network  live release/download contract + remote model-delivery liveness —
+ *            opt-in with `--network` (needs GitHub API, public download routes
+ *            and/or the model CDN hosts)
  *   desktop  Electron runtime security smoke — opt-in with `--desktop`
  *            (needs the Electron binary and a display, e.g. xvfb-run)
  *
@@ -47,7 +48,16 @@ const includeDesktop = flag('--desktop');
 const failFast = flag('--fail-fast');
 
 const node = (script, ...rest) => [process.execPath, [script, ...rest]];
-const pnpm = (script) => [process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['run', '--silent', script]];
+// Node cannot spawn a Windows .cmd shim directly (EINVAL, status null).
+// Go through cmd.exe so `pnpm` resolves the same way a developer shell does.
+const pnpm = (script) => {
+  const args = ['run', '--silent', script];
+  if (process.platform === 'win32') {
+    const comspec = process.env.ComSpec || 'cmd.exe';
+    return [comspec, ['/d', '/s', '/c', 'pnpm', ...args]];
+  }
+  return ['pnpm', args];
+};
 
 /** [id, tier, area, command] — order matters: build precedes build-dependent checks. */
 const STEPS = [
@@ -64,7 +74,10 @@ const STEPS = [
   ['privacy-static', 'static', 'privacy', node('scripts/check-privacy-invariants.js')],
   ['no-cloud-audio', 'static', 'privacy', node('scripts/check-no-cloud-audio.js')],
   ['models', 'static', 'model integrity', node('scripts/validate-model-integrity.mjs')],
-  ['model-delivery', 'static', 'model integrity', node('scripts/validate-onnx-models.js')],
+  // Remote-delivery liveness needs egress (Blob HEAD checks for optional
+  // large models) — belongs to the opt-in network tier so the static tier
+  // stays hermetic (VIP-003). Shipped-bytes integrity is the `models` step.
+  ['model-delivery', 'network', 'model delivery', node('scripts/validate-onnx-models.js')],
   ['worklets', 'static', 'worklet integrity', node('scripts/verify-worklets.js')],
   ['provenance', 'static', 'provenance', node('scripts/validate-release-provenance.mjs')],
   ['build', 'static', 'production build', node('scripts/build.mjs')],
@@ -134,7 +147,16 @@ for (const [id, tier, area, [cmd, cmdArgs]] of selected) {
   const run = spawnSync(cmd, cmdArgs, { cwd: root, env, stdio: 'inherit' });
   const status = run.status === 0 ? 'PASS' : 'FAIL';
   const durationMs = Date.now() - started;
-  results.push({ id, tier, area, status, exitCode: run.status, signal: run.signal, durationMs });
+  results.push({
+    id,
+    tier,
+    area,
+    status,
+    exitCode: run.status,
+    signal: run.signal,
+    error: run.error ? String(run.error.message || run.error) : null,
+    durationMs,
+  });
   console.log(`   ${status} ${id} in ${(durationMs / 1000).toFixed(1)} s\n`);
   if (status === 'FAIL' && failFast) { stoppedEarly = true; break; }
 }

@@ -2687,7 +2687,11 @@ details.slider-group.vip-section:not([open]) > .vip-section-body{
 }
 /* Any open vip-section body must be visible (analysis, presets, viz, etc.) */
 details.vip-section[open] > .vip-section-body{display:block}
-details.vip-section:not([open]) > .vip-section-body{/* native details already hides non-open children */}
+details.vip-section:not([open]) > .vip-section-body{display:none !important}
+details.save-row.vip-section[open] > .vip-section-body{display:flex;flex-wrap:wrap;gap:6px}
+details.cockpit-card.vip-section[open] > .vip-section-body{display:grid;gap:12px}
+details.vip-workstation__canvas.vip-section[open] > .vip-section-body{display:flex;flex-direction:column;gap:12px;min-height:0;flex:1 1 auto}
+details.vip-workstation__canvas.vip-section:not([open]){min-height:0}
 .viz-hdr.vip-section-summary{margin-bottom:0}
 .viz-hdr.vip-section-summary .viz-actions{pointer-events:auto}
 

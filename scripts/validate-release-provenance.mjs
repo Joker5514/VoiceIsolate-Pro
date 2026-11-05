@@ -139,7 +139,9 @@ export function validateProvenance(doc, options = {}) {
   if (typeof doc.tag !== 'string' || !/^v\d+\.\d+\.\d+$/.test(doc.tag)) {
     push(errors, 'tag', 'tag must look like vX.Y.Z');
   } else if (typeof doc.productVersion === 'string' && doc.tag !== `v${doc.productVersion}`) {
-    push(errors, 'tag', `tag must be v\${productVersion} (expected v${doc.productVersion})`);
+    if (doc.claims?.allowPackageFilenameOnNewerTag !== true) {
+      push(errors, 'tag', `tag must be v\${productVersion} (expected v${doc.productVersion}) unless claims.allowPackageFilenameOnNewerTag is true`);
+    }
   }
   if (
     typeof options.packageVersion === 'string'

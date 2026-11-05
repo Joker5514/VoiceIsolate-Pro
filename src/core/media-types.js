@@ -14,6 +14,12 @@ export const AMBIGUOUS_MEDIA_EXTENSIONS = /\.(webm)$/i;
 /** MIDI is never supported by the Web Audio decode path. */
 export const MIDI_EXTENSIONS = /\.(mid|midi)$/i;
 
+/**
+ * Image extensions — never audio/video; always rejected by the ingestion pipeline.
+ * This list gates early rejection so images never reach the decode path.
+ */
+export const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|avif|bmp|tiff?|ico|heic|heif|svg|raw|cr2|nef|arw|dng)$/i;
+
 const MIDI_MIMES = new Set(['audio/midi', 'audio/x-midi', 'audio/mid']);
 const MEDIA_SNIFF_TIMEOUT_MS = 5000;
 
@@ -151,18 +157,42 @@ export function isGenericMimeType(type) {
 }
 
 /**
+ * True when the MIME type identifies an image — never audio/video.
+ * @param {string|null|undefined} type
+ * @returns {boolean}
+ */
+export function isImageMimeType(type) {
+  return (type || '').toLowerCase().startsWith('image/');
+}
+
+/**
+ * True when a file is an image based on MIME type or extension.
+ * Used to reject images early before they enter the audio/video pipeline.
+ * @param {Blob|File|null|undefined} blob
+ * @returns {boolean}
+ */
+export function isImageFile(blob) {
+  if (!blob) return false;
+  if (isImageMimeType(blob.type)) return true;
+  return IMAGE_EXTENSIONS.test(blob?.name || '');
+}
+
+/**
  * Infer whether a blob is ingestible audio/video from its MIME type and/or
  * filename extension. Windows often reports `application/octet-stream` or an
  * empty type for otherwise valid media files.
  *
  * @param {Blob|File} blob
- * @returns {'audio'|'video'|'midi'|null}
+ * @returns {'audio'|'video'|'midi'|'image'|null}
  */
 export function inferMediaKind(blob) {
   const type = (blob?.type || '').toLowerCase();
   const name = blob?.name || '';
 
   if (MIDI_MIMES.has(type) || MIDI_EXTENSIONS.test(name)) return 'midi';
+
+  // Explicit image MIME or image extension — never an audio/video source.
+  if (isImageMimeType(type) || IMAGE_EXTENSIONS.test(name)) return 'image';
 
   // Voice memos labeled video/mp4 — extension wins.
   if (/\.(m4a|m4b|m4r)$/i.test(name)) return 'audio';
@@ -193,9 +223,20 @@ export function inferMediaKind(blob) {
  */
 export async function sniffMediaKind(blob, options = {}) {
   if (!blob || typeof blob.slice !== 'function') return null;
+  // Never sniff a blob with an explicit image MIME — the MIME is authoritative.
+  if (isImageMimeType(blob.type)) return null;
   try {
     const head = new Uint8Array(await readBlobHead(blob, options));
     if (head.length < 4) return null;
+
+    // JPEG: FF D8 FF — unambiguous image, never audio/video.
+    if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return null;
+
+    // PNG: 89 50 4E 47 — unambiguous image.
+    if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return null;
+
+    // GIF: 47 49 46 38 ('GIF8')
+    if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x38) return null;
 
     // RIFF....WAVE / AVI / WEBP
     if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46) {
@@ -253,11 +294,12 @@ export async function sniffMediaKind(blob, options = {}) {
  */
 export async function resolveMediaKind(blob, options = {}) {
   const quick = inferMediaKind(blob);
+  // 'image' and 'midi' are definite non-media: return them so callers can
+  // produce actionable errors without entering the sniff path.
   if (quick) return quick;
-  if (!isGenericMimeType(blob?.type) && blob?.type) {
-    // Explicit non-media MIME without a recognized extension — reject.
-    return null;
-  }
+  // Explicit non-media MIME (e.g. image/, application/pdf) without a
+  // recognized media extension — reject without sniffing.
+  if (!isGenericMimeType(blob?.type) && blob?.type) return null;
   return sniffMediaKind(blob, options);
 }
 
@@ -299,11 +341,14 @@ export default {
   sniffMediaKind,
   resolveMediaKind,
   isGenericMimeType,
+  isImageMimeType,
+  isImageFile,
   isVideoSource,
   isIngestibleMedia,
   AUDIO_EXTENSIONS,
   VIDEO_EXTENSIONS,
   AMBIGUOUS_MEDIA_EXTENSIONS,
+  IMAGE_EXTENSIONS,
   GENERIC_MIME_TYPES,
   FILE_INPUT_ACCEPT,
   FILE_INPUT_ACCEPT_ANDROID_NATIVE,

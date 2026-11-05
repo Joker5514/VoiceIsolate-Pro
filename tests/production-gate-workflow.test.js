@@ -112,6 +112,13 @@ describe('prod:verify gate behaviour', () => {
   const os = require('os');
   const gatePath = path.join(ROOT, 'scripts/prod-verify.mjs');
 
+  test('windows pnpm steps go through cmd.exe instead of spawning pnpm.cmd', () => {
+    const src = fs.readFileSync(gatePath, 'utf8');
+    expect(src).toContain('ComSpec');
+    expect(src).not.toMatch(/win32' \? 'pnpm\.cmd'/);
+    expect(src).toContain("'/d', '/s', '/c', 'pnpm'");
+  });
+
   test.each([['--only'], ['--only=']])('an empty %s selection exits 2 without verifying anything', (arg) => {
     const run = spawnSync(process.execPath, [gatePath, arg], { cwd: ROOT, encoding: 'utf8' });
     expect(run.status).toBe(2);

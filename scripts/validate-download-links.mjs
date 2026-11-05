@@ -14,8 +14,9 @@ const TIMEOUT_MS = 15_000;
 const RETRIES = 2;
 
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+const provenanceDoc = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/releases/release-provenance.json'), 'utf8'));
 const version = pkg.version;
-const tag = `v${version}`;
+const tag = provenanceDoc.tag;
 const apkName = 'VoiceIsolate-Pro-android-debug.apk';
 const exeName = `VoiceIsolate-Pro-${version}-win-x64.exe`;
 const pinnedApk = `https://github.com/${REPO}/releases/download/${tag}/${apkName}`;
@@ -87,7 +88,8 @@ async function validateGitHubRelease() {
   const response = await request(`${GITHUB_API}/releases/latest`, {}, 'GitHub latest release API');
   assert(response.ok, `GitHub latest release API: HTTP ${response.status}`);
   const release = await response.json();
-  assert(release.tag_name === tag, `Latest release ${release.tag_name} does not match package version ${tag}`);
+  assert(release.tag_name === tag, `Latest release ${release.tag_name} does not match provenance tag ${tag}`);
+  assert(provenanceDoc.productVersion === version, 'release-provenance productVersion does not match package.json');
   assert(release.draft === false, 'Latest release must not be draft');
   assert(release.prerelease === false, 'Latest release must not be prerelease');
 
@@ -149,7 +151,7 @@ function validateRepositoryReferences({ apk, exe }) {
 
   const provenance = JSON.parse(read('docs/releases/release-provenance.json'));
   assert(provenance.productVersion === version, 'release-provenance productVersion does not match package.json');
-  assert(provenance.tag === tag, 'release-provenance tag does not match package.json');
+  assert(provenance.tag === tag, 'release-provenance tag does not match the published release tag');
   const android = provenance.platforms?.find((entry) => entry.platform === 'android');
   const windows = provenance.platforms?.find((entry) => entry.platform === 'windows');
   assert(android, 'release-provenance is missing android record');

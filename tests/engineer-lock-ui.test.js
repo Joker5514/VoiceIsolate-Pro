@@ -84,6 +84,19 @@ describe('collapsible panels + persistence', () => {
     expect(indexHtml).toMatch(/id="section-whisper-hunter"/);
     expect(indexHtml).toMatch(/id="sourceMatrixPanel"/);
     expect(indexHtml).toMatch(/vip-section-summary/);
+    for (const id of [
+      'section-cockpit',
+      'section-signal-canvas',
+      'engineerCompareToggle',
+      'section-selection',
+      'section-overlay',
+      'section-forensic',
+      'section-save',
+      'section-transport',
+      'videoCard',
+    ]) {
+      expect(indexHtml).toMatch(new RegExp(`<details[^>]*id="${id}"[^>]*open`));
+    }
   });
 
   test('collapsible open state persisted in localStorage', () => {

@@ -13,12 +13,12 @@ const css = fs.readFileSync(path.join(ROOT, 'public/landing.css'), 'utf8');
 describe('Landing first-impression / mobile premium', () => {
   test('hero communicates local/privacy value prop', () => {
     expect(html).toMatch(/vip-hero/);
-    // #820 unified premium UX: new hero "Hear What Others Miss" + legacy fallback
+    // Visible hero is Signal Glass. Older slogans stay in the page for the title contract.
+    const hasSignalHero = /Bring the voice\s*forward\./i.test(html);
     const hasNewHero = /Hear What Others Miss/i.test(html);
     const hasLegacyHero = /Clean voice\./i.test(html);
-    expect(hasNewHero || hasLegacyHero).toBe(true);
-    // Legacy strings kept hidden for compat, new visible strings also acceptable
-    const hasEvidence = /Keep the evidence\./i.test(html) || /Hear What Others Miss/i.test(html);
+    expect(hasSignalHero || hasNewHero || hasLegacyHero).toBe(true);
+    const hasEvidence = /Keep the evidence\./i.test(html) || /Hear What Others Miss/i.test(html) || /Bring the voice\s*forward\./i.test(html);
     expect(hasEvidence).toBe(true);
     const hasPrivacy = /Zero telemetry/i.test(html) || /Zero Cloud/i.test(html) || /Private/i.test(html);
     expect(hasPrivacy).toBe(true);

@@ -1,19 +1,19 @@
 # Android — Capacitor package
 
-VoiceIsolate Pro uses Capacitor 8 to package the shared web product shell for Android. The app opens the Landing surface at `/` and the same Engineer Console used on web/desktop at `/app/`.
+VoiceIsolate Pro uses Capacitor 8 to package the shared web product shell for Android. The app opens the Landing surface at `/` and the same Engineer Console used on desktop browsers, Android browsers, and Electron at `/app/`. Android Chrome uses the production website. The APK is a separate package of that shell and is not the website deployment.
 
 ## Current download
 
 - Latest APK: https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk
-- Pinned `v25.0.2`: https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk
+- Pinned `v25.0.3`: https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.3/VoiceIsolate-Pro-android-debug.apk
 - Download hub: https://voice-isolate-pro.vercel.app/download/
 
-Published `v25.0.2` APK metadata:
+Published `v25.0.3` APK metadata (repository package version remains `25.0.2`):
 
 - File: `VoiceIsolate-Pro-android-debug.apk`
-- Size: `101365796` bytes
-- SHA-256: `5e531b938c78ae0fc25e0c40111d5ec766549684000030eac63284fd0eb59d5b`
-- GitHub asset updated: `2026-08-25T21:22:40Z`
+- Size: `101650376` bytes
+- SHA-256: `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626`
+- GitHub asset updated: `2026-09-09T23:31:41Z`
 - Channel: **debug/sideload**, not a Play Store production artifact
 
 Install:

@@ -178,6 +178,65 @@ await page.click('[data-hero-tier="creator"]', { timeout: 3000 });
     }
     check(fieldNavPresent && await page.locator('#psFieldNav').count() === 1, 'field nav present');
 
+    // Signal workspace (shown below 1024px). Its profile buttons and region
+    // palette threw TypeErrors from nonexistent store methods while every
+    // static check passed, so drive them with real clicks.
+    await page.waitForFunction(() => window.__vipPremiumWorkspace && window.__vipApplyProfile && window._vipApp, null, { timeout: 15000 });
+    const pageErrors = [];
+    page.on('pageerror', (e) => pageErrors.push(e.message));
+    await page.evaluate(async () => {
+      const { getAudioSessionStore } = await import('/src/state/audioSessionStore.js');
+      window.__smokeProfileEvents = [];
+      getAudioSessionStore().subscribe('PROFILE_CHANGED', (p) => window.__smokeProfileEvents.push(p));
+    });
+    const expectedPreset = { meeting: 'Room Echo Reduction', studio: 'Podcast Clean', forensic: 'Forensic Extract', quick: 'Voice Clarity' };
+    const clicks = ['meeting', 'studio', 'forensic', 'quick', 'quick'];
+    for (const [i, profile] of clicks.entries()) {
+      const before = await page.evaluate(() => window.__smokeProfileEvents.length);
+      await page.click(`#engineerProfiles [data-profile="${profile}"]`, { timeout: 5000 });
+      await page.waitForTimeout(150);
+      const r = await page.evaluate(async () => {
+        const { getAudioSessionStore } = await import('/src/state/audioSessionStore.js');
+        return { events: window.__smokeProfileEvents.length, store: getAudioSessionStore().getActiveProfile(), preset: window._vipApp._activePresetName };
+      });
+      const emitted = r.events - before;
+      const wantEvents = i > 0 && clicks[i - 1] === profile ? 0 : 1;
+      check(
+        pageErrors.length === 0 && r.store === profile && r.preset === expectedPreset[profile] && emitted === wantEvents,
+        `profile ${profile}: store ${r.store}, preset ${r.preset}, ${emitted} PROFILE_CHANGED${pageErrors.length ? `, errors: ${pageErrors.join(' | ')}` : ''}`,
+      );
+    }
+
+    await page.evaluate(() => {
+      const sr = 48000; const ch = new Float32Array(sr * 4);
+      for (let i = 0; i < ch.length; i++) ch[i] = Math.sin(2 * Math.PI * 220 * i / sr) * 0.3;
+      window.__vipPremiumWorkspace.handleFileImported({ channelData: [ch], sampleRate: sr, duration: 4 });
+    });
+    const wave = page.locator('#engineerWaveCanvas');
+    await wave.scrollIntoViewIfNeeded();
+    const box = await wave.boundingBox();
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await page.click('#regionActionPalette [data-action="enhance"]', { timeout: 5000 });
+    await page.waitForTimeout(200);
+    const action = await page.evaluate(async () => {
+      const { getAudioSessionStore } = await import('/src/state/audioSessionStore.js');
+      const sel = getAudioSessionStore().getSelection();
+      return {
+        whisperLift: window.VIP_PARAMS?.whisperLift,
+        voiceTunnel: window.VIP_PARAMS?.voiceTunnel,
+        selSeconds: sel && [Number(sel.start.toFixed(2)), Number(sel.end.toFixed(2))],
+        paletteOpen: document.getElementById('regionActionPalette').classList.contains('vip-context-palette--visible'),
+      };
+    });
+    check(
+      pageErrors.length === 0 && action.whisperLift === 6 && action.voiceTunnel === 60 && !action.paletteOpen
+        && action.selSeconds && action.selSeconds[0] > 0.7 && action.selSeconds[0] < 0.9 && action.selSeconds[1] > 1.9 && action.selSeconds[1] <= 2.1,
+      `region palette Enhance Voice applies (${JSON.stringify(action)}${pageErrors.length ? `, errors: ${pageErrors.join(' | ')}` : ''})`,
+    );
+
     const cspish = consoleErrors.filter((t) => /Content Security Policy|Refused to/i.test(t));
     check(cspish.length === 0, `no CSP console errors (${cspish.slice(0, 3).join(' | ')})`);
 

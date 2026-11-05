@@ -151,19 +151,37 @@ async function startServer() {
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() => window.__quickCleanMessages.filter((msg) => msg.type === 'process').length), 1);
     check('Live-Mix controls do not rerun inference', await page.locator('#noiseReductionVal').innerText());
-    await page.locator('#pauseBtn').click();
-    await page.locator('#prepareComparisonBtn').click();
-    await page.waitForFunction(() => !document.querySelector('#compareOriginalBtn').disabled || document.querySelector('#comparisonStatus').textContent.includes('unavailable'), null, { timeout: 150000 });
-    assert.equal(await page.locator('#compareOriginalBtn').isDisabled(), false, await page.locator('#comparisonStatus').innerText());
-    await page.locator('#compareOriginalBtn').click();
-    assert.equal(await page.locator('#compareOriginalBtn').getAttribute('aria-pressed'), 'true');
-    await page.locator('#compareCleanedBtn').click();
+    // A/B arms itself after Process (no prepare step) and switches as a
+    // crossfade on the running transport: same sources, playhead keeps moving.
+    assert.equal(await page.locator('#prepareComparisonBtn').count(), 0);
+    await page.waitForFunction(() => !document.querySelector('#compareOriginalBtn').disabled, null, { timeout: 30000 });
+    const ab = await page.evaluate(async () => {
+      const m = window.__vipDiagnostics.mixer;
+      // The fixture is 3 s: restart from the top so the switch lands mid-playback.
+      await m.seek(0);
+      if (!m.isPlaying()) document.querySelector('#playBtn').click();
+      await new Promise((r) => setTimeout(r, 150));
+      const src = m._cleanSource;
+      const t0 = m.currentTime();
+      document.querySelector('#compareOriginalBtn').click();
+      await new Promise((r) => setTimeout(r, 120));
+      const raw = { mode: m.getComparisonMode(), sameSource: m._cleanSource === src, playing: m.isPlaying(), advanced: m.currentTime() - t0 };
+      document.querySelector('#compareCleanedBtn').click();
+      await new Promise((r) => setTimeout(r, 120));
+      return { raw, processed: { mode: m.getComparisonMode(), sameSource: m._cleanSource === src, playing: m.isPlaying() } };
+    });
+    assert.deepEqual([ab.raw.mode, ab.processed.mode], ['original', 'processed'], JSON.stringify(ab));
+    assert.ok(ab.raw.sameSource && ab.processed.sameSource && ab.raw.playing && ab.processed.playing, JSON.stringify(ab));
+    assert.ok(ab.raw.advanced > 0.05, JSON.stringify(ab));
     assert.equal(await page.locator('#compareCleanedBtn').getAttribute('aria-pressed'), 'true');
-    check('Matched A/B renders and switches', await page.locator('#comparisonStatus').innerText());
+    check('A/B is ready without a prepare step and switches instantly mid-playback', ab);
+    await page.waitForFunction(() => /level matched|matching is unavailable/i.test(document.querySelector('#comparisonStatus').textContent), null, { timeout: 150000 });
+    check('Levels are matched in the background', await page.locator('#comparisonStatus').innerText());
     await page.locator('#pauseBtn').click();
     await page.locator('#volumeSlider').fill('60');
-    assert.equal(await page.locator('#compareOriginalBtn').isDisabled(), true);
-    check('Changing mix invalidates stale A/B snapshot', true);
+    assert.equal(await page.locator('#compareOriginalBtn').isDisabled(), false);
+    await page.waitForFunction(() => /level matched|matching is unavailable/i.test(document.querySelector('#comparisonStatus').textContent), null, { timeout: 150000 });
+    check('Changing the mix keeps A/B live and re-matches levels in the background', await page.locator('#comparisonStatus').innerText());
     const downloadEvent = page.waitForEvent('download', { timeout: 150000 });
     await page.locator('#downloadBtn').click();
     const download = await downloadEvent;

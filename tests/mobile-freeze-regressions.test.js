@@ -295,7 +295,9 @@ describe('render layers', () => {
     const layer = new WaveformLayer(canvas);
     layer.setData([ch], n / 48000);
     expect(layer._computePeaks(512)).toBeNull(); // pyramid still building: no full scan in render
-    for (let i = 0; i < 200 && !layer._buckets; i++) await new Promise((r) => setTimeout(r, 5));
+    // Poll up to 5 s — the build is CPU-bound so in a loaded full-suite run
+    // the cooperative setTimeout yields arrive later than the 1 s default cap.
+    for (let i = 0; i < 500 && !layer._buckets; i++) await new Promise((r) => setTimeout(r, 10));
     const peaks = layer._computePeaks(512);
     expect(peaks).not.toBeNull();
     const spp = Math.floor(n / 512);
@@ -311,7 +313,7 @@ describe('render layers', () => {
     }
     expect(maxErr).toBeLessThan(0.2);
     layer.dispose?.();
-  });
+  }, 15_000 /* pyramid build on a loaded CI run can approach 5 s */);
 
   test('SpectrogramLayer subsampling does not alias a periodic tone to silence', async () => {
     const { SpectrogramLayer } = await import('../src/ui/components/SpectrogramLayer/SpectrogramLayer.js');

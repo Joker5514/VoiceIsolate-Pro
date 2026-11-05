@@ -196,7 +196,7 @@ async function main() {
     await waitForLandingBoot(page);
     // Title updated with the #820/#821 unified signal-first UX (previous:
     // 'VoiceIsolate Pro — Local voice isolation · Stem-Split & Live-Mix').
-    check(await page.title() === 'VoiceIsolate Pro — Hear What Others Miss · 100% On-Device', 'title correct');
+    check(await page.title() === 'VoiceIsolate Pro — Bring the voice forward · 100% On-Device', 'title correct');
     for (const id of ['noiseReductionSlider', 'voiceLevelSlider', 'volumeSlider',
       'eqLowSlider', 'eqHighSlider', 'presetSelect', 'waveCanvas', 'specCanvas',
       'muteVoiceBtn', 'muteNoiseBtn', 'speakersPanel', 'speakerCardsGrid']) {

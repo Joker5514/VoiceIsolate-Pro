@@ -10,6 +10,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
@@ -62,7 +63,10 @@ test('the uploader makes no network calls and writes nothing without --yes', () 
   const manifest = path.join(ROOT, 'public/app/models-manifest.json');
   const before = fs.readFileSync(manifest);
   try {
-    const r = spawnSync(process.execPath, ['--import', trap, path.join(ROOT, 'scripts/upload-to-vercel-blob.mjs')], {
+    // On Windows, --import requires a file:// URL for absolute paths; bare
+    // drive-letter paths (C:\...) are rejected by the ESM loader.
+    const trapUrl = pathToFileURL(trap).href;
+    const r = spawnSync(process.execPath, ['--import', trapUrl, path.join(ROOT, 'scripts/upload-to-vercel-blob.mjs')], {
       cwd: ROOT, encoding: 'utf8', env: { ...process.env, BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_not_real' },
     });
     expect(r.status).toBe(0);

@@ -10,13 +10,47 @@
       "purpose": "Voice Activity Detection — gates the pipeline before heavy ML stages",
       "size_mb": 2.22,
       "min_bytes": 100000,
-      "input_names": ["input", "state", "sr"],
-      "input_shapes": [[1, 512], [2, 1, 128], []],
-      "input_types": ["float32", "float32", "int64"],
-      "output_names": ["output", "stateN"],
-      "output_shapes": [[1, 1], [2, 1, 128]],
+      "input_names": [
+        "input",
+        "state",
+        "sr"
+      ],
+      "input_shapes": [
+        [
+          1,
+          512
+        ],
+        [
+          2,
+          1,
+          128
+        ],
+        []
+      ],
+      "input_types": [
+        "float32",
+        "float32",
+        "int64"
+      ],
+      "output_names": [
+        "output",
+        "stateN"
+      ],
+      "output_shapes": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          128
+        ]
+      ],
       "sample_rate": 16000,
-      "execution_provider_preference": ["wasm"],
+      "execution_provider_preference": [
+        "wasm"
+      ],
       "load_priority": "eager",
       "delivery": "repo_committed",
       "status": "committed",
@@ -31,13 +65,47 @@
       "purpose": "Voice Activity Detection — int8 quantized variant (same architecture as silero_vad, marginal size delta due to LSTM overhead)",
       "size_mb": 2.27,
       "min_bytes": 100000,
-      "input_names": ["input", "state", "sr"],
-      "input_shapes": [[1, 512], [2, 1, 128], []],
-      "input_types": ["float32", "float32", "int64"],
-      "output_names": ["output", "stateN"],
-      "output_shapes": [[1, 1], [2, 1, 128]],
+      "input_names": [
+        "input",
+        "state",
+        "sr"
+      ],
+      "input_shapes": [
+        [
+          1,
+          512
+        ],
+        [
+          2,
+          1,
+          128
+        ],
+        []
+      ],
+      "input_types": [
+        "float32",
+        "float32",
+        "int64"
+      ],
+      "output_names": [
+        "output",
+        "stateN"
+      ],
+      "output_shapes": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1,
+          128
+        ]
+      ],
       "sample_rate": 16000,
-      "execution_provider_preference": ["wasm"],
+      "execution_provider_preference": [
+        "wasm"
+      ],
       "load_priority": "eager",
       "delivery": "repo_committed",
       "status": "committed",
@@ -52,13 +120,31 @@
       "purpose": "Spectral noise suppressor — bidirectional GRU mask predictor operating on chunked magnitude bins",
       "size_mb": 1.93,
       "min_bytes": 500000,
-      "input_names": ["input"],
-      "input_shapes": [[1, 2049]],
-      "input_types": ["float32"],
-      "output_names": ["output"],
-      "output_shapes": [[1, 2049]],
+      "input_names": [
+        "input"
+      ],
+      "input_shapes": [
+        [
+          1,
+          2049
+        ]
+      ],
+      "input_types": [
+        "float32"
+      ],
+      "output_names": [
+        "output"
+      ],
+      "output_shapes": [
+        [
+          1,
+          2049
+        ]
+      ],
       "sample_rate": 48000,
-      "execution_provider_preference": ["wasm"],
+      "execution_provider_preference": [
+        "wasm"
+      ],
       "load_priority": "eager",
       "delivery": "repo_committed",
       "status": "committed_trained",
@@ -73,11 +159,24 @@
       "purpose": "Hybrid Demucs v4 — primary vocals / accompaniment source separation",
       "size_mb": 83,
       "min_bytes": 10000000,
-      "input_names": ["input"],
-      "input_shapes": [[1, 1, "dynamic"]],
-      "input_types": ["float32"],
+      "input_names": [
+        "input"
+      ],
+      "input_shapes": [
+        [
+          1,
+          1,
+          "dynamic"
+        ]
+      ],
+      "input_types": [
+        "float32"
+      ],
       "sample_rate": 44100,
-      "execution_provider_preference": ["webgpu", "wasm"],
+      "execution_provider_preference": [
+        "webgpu",
+        "wasm"
+      ],
       "load_priority": "lazy",
       "delivery": "vercel_blob",
       "status": "vercel_blob",
@@ -92,13 +191,32 @@
       "purpose": "Band-Split RNN — spectral mask predictor for vocal isolation (secondary path)",
       "size_mb": 3.69,
       "min_bytes": 1000000,
-      "input_names": ["input"],
-      "input_shapes": [[1, 2049]],
-      "input_types": ["float32"],
-      "output_names": ["output"],
-      "output_shapes": [[1, 2049]],
+      "input_names": [
+        "input"
+      ],
+      "input_shapes": [
+        [
+          1,
+          2049
+        ]
+      ],
+      "input_types": [
+        "float32"
+      ],
+      "output_names": [
+        "output"
+      ],
+      "output_shapes": [
+        [
+          1,
+          2049
+        ]
+      ],
       "sample_rate": 48000,
-      "execution_provider_preference": ["webgpu", "wasm"],
+      "execution_provider_preference": [
+        "webgpu",
+        "wasm"
+      ],
       "load_priority": "lazy",
       "delivery": "repo_committed",
       "status": "committed_trained",
@@ -113,19 +231,157 @@
       "purpose": "4D complex-spectrogram BSRNN for offline isolation",
       "size_mb": 3.69,
       "min_bytes": 1000000,
-      "input_names": ["input"],
-      "input_shapes": [[1, 4, 1025, "dynamic"]],
-      "input_types": ["float32"],
-      "output_names": ["output"],
-      "output_shapes": [[1, 4, 1025, "dynamic"]],
+      "input_names": [
+        "input"
+      ],
+      "input_shapes": [
+        [
+          1,
+          4,
+          1025,
+          "dynamic"
+        ]
+      ],
+      "input_types": [
+        "float32"
+      ],
+      "output_names": [
+        "output"
+      ],
+      "output_shapes": [
+        [
+          1,
+          4,
+          1025,
+          "dynamic"
+        ]
+      ],
       "sample_rate": 44100,
-      "execution_provider_preference": ["webgpu", "wasm"],
+      "execution_provider_preference": [
+        "webgpu",
+        "wasm"
+      ],
       "load_priority": "lazy",
       "delivery": "optional",
       "status": "not-shipped",
       "sha256": "",
       "source": "crlandsc/bsrnn",
       "export_notes": "Not in the repository. Export with scripts/export_bsrnn_onnx.py (n_fft 2048, 1025 bins, 44.1 kHz) and pin a sha256 before use. Offline-only, consumed by offline-processor.js."
+    },
+    {
+      "id": "dfn3_enc",
+      "filename": "dfn3_enc.onnx",
+      "path": "/app/models/dfn3_enc.onnx",
+      "purpose": "DeepFilterNet3 encoder — ERB + complex feature extraction",
+      "size_mb": 1.95,
+      "min_bytes": 100000,
+      "input_names": [
+        "feat_erb",
+        "feat_spec"
+      ],
+      "input_shapes": [
+        [
+          1,
+          32,
+          16
+        ],
+        [
+          2,
+          32,
+          16,
+          1
+        ]
+      ],
+      "input_types": [
+        "float32",
+        "float32"
+      ],
+      "output_names": [
+        "e0",
+        "e1",
+        "e2",
+        "e3",
+        "emb",
+        "c0",
+        "lsnr"
+      ],
+      "output_shapes": null,
+      "sample_rate": 48000,
+      "execution_provider_preference": [
+        "webgpu",
+        "wasm"
+      ],
+      "load_priority": "lazy",
+      "delivery": "repo_committed",
+      "status": "committed_trained",
+      "sha256": "7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916",
+      "source": "DeepFilterNet3 (Schröter et al., MIT OR Apache-2.0), one of the three graphs of upstream models/DeepFilterNet3_onnx.tar.gz. Composite manifest entry: deepfilternet3. See src/workers/DeepFilterNet.js (libDF 0.5.6 port) and LICENSE-DeepFilterNet.txt.",
+      "usage_notes": "Named tensors as exported by Rikorose/DeepFilterNet; fed by DeepFilterNet.js. Part of composite deepfilternet3 (fft 960 / hop 480 at 48 kHz — separate branch from the fused 4096-point spectral-mask chain)."
+    },
+    {
+      "id": "dfn3_erb_dec",
+      "filename": "dfn3_erb_dec.onnx",
+      "path": "/app/models/dfn3_erb_dec.onnx",
+      "purpose": "DeepFilterNet3 ERB decoder — coarse ERB mask",
+      "size_mb": 3.29,
+      "min_bytes": 100000,
+      "input_names": [
+        "emb",
+        "e3",
+        "e2",
+        "e1",
+        "e0"
+      ],
+      "input_shapes": null,
+      "input_types": [
+        "float32"
+      ],
+      "output_names": [
+        "m"
+      ],
+      "output_shapes": null,
+      "sample_rate": 48000,
+      "execution_provider_preference": [
+        "webgpu",
+        "wasm"
+      ],
+      "load_priority": "lazy",
+      "delivery": "repo_committed",
+      "status": "committed_trained",
+      "sha256": "ab669a1d10afe20911728b33053a452071042317a90581092b325da7b2f9d895",
+      "source": "DeepFilterNet3 (Schröter et al., MIT OR Apache-2.0), one of the three graphs of upstream models/DeepFilterNet3_onnx.tar.gz. Composite manifest entry: deepfilternet3. See src/workers/DeepFilterNet.js (libDF 0.5.6 port) and LICENSE-DeepFilterNet.txt.",
+      "usage_notes": "ERB mask head of composite deepfilternet3."
+    },
+    {
+      "id": "dfn3_df_dec",
+      "filename": "dfn3_df_dec.onnx",
+      "path": "/app/models/dfn3_df_dec.onnx",
+      "purpose": "DeepFilterNet3 deep-filter decoder — complex coefficient regression",
+      "size_mb": 3.34,
+      "min_bytes": 100000,
+      "input_names": [
+        "emb",
+        "c0"
+      ],
+      "input_shapes": null,
+      "input_types": [
+        "float32"
+      ],
+      "output_names": [
+        "coefs"
+      ],
+      "output_shapes": null,
+      "sample_rate": 48000,
+      "execution_provider_preference": [
+        "webgpu",
+        "wasm"
+      ],
+      "load_priority": "lazy",
+      "delivery": "repo_committed",
+      "status": "committed_trained",
+      "sha256": "23114ce3b0f6464b763ee62f7bb8aab6b2a129a21eabd5bcfe59413db05f278a",
+      "source": "DeepFilterNet3 (Schröter et al., MIT OR Apache-2.0), one of the three graphs of upstream models/DeepFilterNet3_onnx.tar.gz. Composite manifest entry: deepfilternet3. See src/workers/DeepFilterNet.js (libDF 0.5.6 port) and LICENSE-DeepFilterNet.txt.",
+      "usage_notes": "Deep-filter head of composite deepfilternet3."
     }
   ],
   "worklets": [
@@ -143,7 +399,11 @@
         "vercel_blob": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js"
       },
       "cdn_mirrors": [
-        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "e8870cd5c8ee1490a7c1e74d2fceab391f1f6c59d085882157acb3328c2dbba1" }
+        {
+          "provider": "vercel-blob",
+          "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js",
+          "sha256": "e8870cd5c8ee1490a7c1e74d2fceab391f1f6c59d085882157acb3328c2dbba1"
+        }
       ],
       "usage_notes": "Primary load path: same-origin /app/dsp-processor.js (COOP+COEP headers from vercel.json). Canonical mirror map for this manifest is `sources`; `cdn_mirrors` is retained as a backward-compatible alias of the same fallback URLs. Each mirror is SHA-256 pinned to guard against tampered CDN payloads before creating any Blob URL fallback. Fallback path: fetch from a mirror, wrap in a same-origin Blob URL, and pass that to AudioWorklet.addModule(). Blob URLs bypass COEP since they are same-origin. Audio data never leaves the browser."
     }
@@ -158,11 +418,22 @@
   ],
   "model_loader_behavior": {
     "cache_name": "vip-models-v1",
-    "eager_models": ["silero_vad", "rnnoise"],
-    "lazy_models": ["demucs_v4", "bsrnn_vocals"],
-    "pending_models": ["demucs_v4"],
+    "eager_models": [
+      "silero_vad",
+      "rnnoise"
+    ],
+    "lazy_models": [
+      "demucs_v4",
+      "bsrnn_vocals"
+    ],
+    "pending_models": [
+      "demucs_v4"
+    ],
     "bsrnn_fallback_mode": "dsp_only",
-    "skip_statuses": ["pending_export", "blocked_export"],
+    "skip_statuses": [
+      "pending_export",
+      "blocked_export"
+    ],
     "placeholder_guard_bytes": 51200,
     "download_ui": "Show progress modal with per-model MB progress bar. Do not block UI thread during fetch.",
     "integrity_check": "sha256 field — leave empty to skip check, populate after upload to enable."

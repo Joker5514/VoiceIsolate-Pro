@@ -11,6 +11,8 @@
  * - Responsive inspector/drawers
  */
 
+import { isTextEntry } from '../isTextEntry.js';
+
 export class BrowserAdapter {
   constructor(sessionStore, uiStore) {
     this.sessionStore = sessionStore;
@@ -79,13 +81,17 @@ export class BrowserAdapter {
 
   setupKeyboardShortcuts(handlers = {}) {
     const onKey = (e) => {
+      // X (A/B) has no native action on sliders, toggles or buttons, so it
+      // works there; everything else stays out of the way of form controls.
+      if (e.key?.toLowerCase() === 'x' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !isTextEntry(e.target)) {
+        handlers.abToggle?.();
+        return;
+      }
       // Don't interfere when typing
       if (e.target.matches('input, textarea, select')) return;
       if (e.code === 'Space') {
         e.preventDefault();
         handlers.playPause?.();
-      } else if (e.key.toLowerCase() === 'x') {
-        handlers.abToggle?.();
       } else if (e.key === 'Escape') {
         handlers.clearSelection?.();
       } else if (e.key.toLowerCase() === 'l') {

@@ -64,6 +64,11 @@ const MODEL_REGISTRY = {
   demucs_v4:       { path: 'models/demucs_v4_quantized.onnx',    sizeBytes: 87_031_808 },
   bsrnn_vocals:    { path: 'models/bsrnn_vocals.onnx',           sizeBytes:  3_870_554 },
   bsrnn_vocals_complex: { path: 'models/bsrnn_vocals_complex.onnx', sizeBytes: 3_870_554 },
+  // DeepFilterNet3 parts (composite `deepfilternet3`) — shipped files kept in
+  // the registry so cache/preload sets stay aligned with models-manifest.json.
+  dfn3_enc:        { path: 'models/dfn3_enc.onnx',              sizeBytes:  1_954_042 },
+  dfn3_erb_dec:    { path: 'models/dfn3_erb_dec.onnx',          sizeBytes:  3_292_397 },
+  dfn3_df_dec:     { path: 'models/dfn3_df_dec.onnx',           sizeBytes:  3_340_803 },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

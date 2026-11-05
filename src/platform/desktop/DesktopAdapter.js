@@ -8,6 +8,8 @@
  * - native device integration through platform adapter
  */
 
+import { isTextEntry } from '../isTextEntry.js';
+
 export class DesktopAdapter {
   constructor(sessionStore, uiStore) {
     this.sessionStore = sessionStore;
@@ -116,13 +118,22 @@ export class DesktopAdapter {
   }
 
   setupKeyboardShortcuts(handlers = {}) {
+    // Profile key map: 1=Quick 2=Meeting 3=Studio 4=Forensic
+    const PROFILE_KEYS = { '1': 'quick', '2': 'meeting', '3': 'studio', '4': 'forensic' };
+
     const onKey = (e) => {
-      if (e.target.matches('input, textarea, select')) return;
+      // X (A/B) has no native action on sliders, toggles or buttons, so it
+      // works there; everything else stays out of the way of form controls.
+      if (e.key?.toLowerCase() === 'x' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !isTextEntry(e.target)) {
+        handlers.abToggle?.();
+        return;
+      }
+      // Form controls keep their native keys (Space toggles a checkbox, digits
+      // never reach a focused slider); contenteditable counts as text entry.
+      if (isTextEntry(e.target) || e.target?.matches?.('input, textarea, select')) return;
       if (e.code === 'Space') {
         e.preventDefault();
         handlers.playPause?.();
-      } else if (e.key.toLowerCase() === 'x') {
-        handlers.abToggle?.();
       } else if (e.key === 'Escape') {
         handlers.clearSelection?.();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
@@ -134,6 +145,9 @@ export class DesktopAdapter {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         handlers.enhance?.();
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && PROFILE_KEYS[e.key]) {
+        // 1-4: profile shortcuts (bare key, no modifier, no repeat, not in a text field)
+        handlers.selectProfile?.(PROFILE_KEYS[e.key]);
       }
     };
     window.addEventListener('keydown', onKey);

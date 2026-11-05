@@ -119,7 +119,7 @@ function drawWaveform(canvas, data) {
 
 function drawWavePeaks(ctx, peaks, w, mid) {
 
-  ctx.strokeStyle = '#2ed5e5';
+  ctx.strokeStyle = '#22d3ee';
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = 0; x < w; x++) {
@@ -432,8 +432,8 @@ function wireContextualActions() {
     const startSec = state.selection.start * state.duration;
     const endSec = state.selection.end * state.duration;
 
-    // Dispatch to session store
-    sessionStore.setSelection(state.selection);
+    // The store already holds this selection (in seconds): setSelection()
+    // pushes it through sessionStore.selectRegion on pointerup.
     // Trigger processing via existing engineer pipeline if available
     if (window.__vipEngineerProcessSelection) {
       window.__vipEngineerProcessSelection({ action, startSec, endSec, startNorm: state.selection.start, endNorm: state.selection.end });
@@ -467,7 +467,9 @@ function wireProfiles() {
     if (!btn) return;
     const profile = btn.dataset.profile;
     container.querySelectorAll('[data-profile]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
-    sessionStore.setActiveProfile(profile);
+    sessionStore.setProfile(profile);
+    // Android: haptic confirmation on profile selection (no-op on Browser/Desktop)
+    platform.hapticConfirm?.('selection');
     // Apply profile to existing DSP controls if engineer app has it
     if (window.__vipApplyProfile) {
       window.__vipApplyProfile(profile);
@@ -535,7 +537,7 @@ function updateLiveMetrics(metrics) {
     deepSnr: metrics.snrDb != null ? `${metrics.snrDb.toFixed(1)}` : null,
     deepRms: metrics.rms != null ? metrics.rms.toFixed(4) : null,
     deepPeak: metrics.peak != null ? metrics.peak.toFixed(4) : null,
-    deepLufs: metrics.lufs != null ? `${metrics.lufs.toFixed(1)} LUFS` : null,
+    deepLufs: metrics.lufs != null ? metrics.lufs.toFixed(1) : null,
     deepVoices: metrics.voices != null ? String(metrics.voices) : null,
     deepDuration: metrics.duration != null ? `${metrics.duration.toFixed(2)}s` : null,
   };
@@ -544,6 +546,14 @@ function updateLiveMetrics(metrics) {
       const el = $(id);
       if (el) el.textContent = val;
     }
+  }
+  if (metrics.lufs != null) {
+    const level = $('hLUFS');
+    if (level) level.textContent = metrics.lufs.toFixed(1);
+  }
+  if (metrics.voices != null) {
+    const voices = $('hVoices');
+    if (voices) voices.textContent = String(metrics.voices);
   }
 }
 
@@ -622,6 +632,10 @@ async function handleFileImported(detail) {
     const result = await runAutoAnalysis(channelData, sampleRate, {
       signal: abort.signal,
       maybeYield: createYieldBudget(),
+      // VIP-007: existing diarization path for the speaker overlay — loaded
+      // lazily so this module's import graph stays light.
+      detectSpeakers: (clean, sr, opts) => import('/src/pipeline/SpeakerDetection.js')
+        .then((m) => m.detectSpeakers(clean, sr, opts)),
       onProgress: (pct, extra) => {
         if (!abort.signal.aborted) sessionStore.updateAnalysisProgress(pct, extra);
       },
@@ -669,6 +683,19 @@ function initPlatform() {
       toggleLoop: () => window.__vipToggleLoop?.(),
       cropIn: () => window.__vipCropIn?.(),
       cropOut: () => window.__vipCropOut?.(),
+      // Desktop: keys 1-4 select Quick/Meeting/Studio/Forensic profiles
+      selectProfile: (profile) => {
+        sessionStore.setProfile(profile);
+        // Sync profile button aria-pressed state in the DOM
+        const container = $('engineerProfiles');
+        if (container) {
+          container.querySelectorAll('[data-profile]').forEach((b) => {
+            b.setAttribute('aria-pressed', String(b.dataset.profile === profile));
+          });
+        }
+        if (window.__vipApplyProfile) window.__vipApplyProfile(profile);
+        uiStore.setActiveProfile?.(profile);
+      },
     });
   } catch (e) {
     console.warn('[VIP][premium] platform init failed', e);

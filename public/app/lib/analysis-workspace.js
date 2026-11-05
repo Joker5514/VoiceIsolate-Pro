@@ -85,11 +85,20 @@ export function installAnalysisWorkspace(app) {
     usmMethodBadge: document.getElementById('usmMethodBadge'),
   };
 
+  let progressStartedAt = 0;
+  // Elapsed time is measured. The percent is the host's stage progress.
+  // There is no estimated time remaining.
+  const progressText = (pct, stage) => {
+    const elapsed = progressStartedAt > 0
+      ? ` · ${((performance.now() - progressStartedAt) / 1000).toFixed(1)}s`
+      : '';
+    return `${stage || 'analysis'} · ${Math.round(pct || 0)}%${elapsed}`;
+  };
   const host = new FullAnalysisHost({
     onProgress: (pct, stage) => {
       if (els.progress) els.progress.hidden = false;
       if (els.progressFill) els.progressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-      if (els.progressLabel) els.progressLabel.textContent = `${stage || 'analyzing'}… ${Math.round(pct)}%`;
+      if (els.progressLabel) els.progressLabel.textContent = progressText(pct, stage);
     },
   });
 
@@ -396,6 +405,7 @@ export function installAnalysisWorkspace(app) {
     }
     const enriched = enrichAnalysisWithCollaboration(analysis, envProfile);
     app._lastFullAnalysis = enriched;
+    app._analysisFileSeq = app._fileSeq; // stamp for stale-result guard
     app._jointIsolationPlan = enriched.jointPlan || null;
     app._hunterEnvFromAnalysis = envProfile;
     lastAnalysis = enriched;
@@ -472,6 +482,7 @@ export function installAnalysisWorkspace(app) {
   function renderAnalysis(analysis) {
     lastAnalysis = analysis;
     app._lastFullAnalysis = analysis;
+    app._analysisFileSeq = app._fileSeq; // stamp for stale-result guard
     if (analysis?.jointPlan) app._jointIsolationPlan = analysis.jointPlan;
 
     if (timeline) timeline.setAnalysis(analysis);
@@ -536,6 +547,7 @@ export function installAnalysisWorkspace(app) {
     cancelled = false;
     lastAnalysis = null;
     app._lastFullAnalysis = null;
+    app._analysisFileSeq = -1; // invalidate stale-result guard
     app._jointIsolationPlan = null;
     app._hunterEnvFromAnalysis = null;
     app._usmResult = null;
@@ -655,6 +667,7 @@ export function installAnalysisWorkspace(app) {
       return null;
     }
     setBusy(true);
+    progressStartedAt = performance.now();
     if (els.root) els.root.dataset.state = 'running';
     if (jobs?.beginJob) {
       job = jobs.beginJob('Full analysis', { kind: 'analysis' });
@@ -720,7 +733,7 @@ export function installAnalysisWorkspace(app) {
         if (typeof app.updateProcessingOverlay === 'function') {
           app.updateProcessingOverlay(stage || 'Analyzing…', pct, 8, job?.id || null);
         }
-        if (els.progressLabel) els.progressLabel.textContent = `${stage || 'analysis'} · ${Math.round(pct || 0)}%`;
+        if (els.progressLabel) els.progressLabel.textContent = progressText(pct, stage);
       };
       let analysis;
       analysis = await host.analyze([mono], buf.sampleRate, {
@@ -941,6 +954,7 @@ export function installAnalysisWorkspace(app) {
       });
       lastAnalysis = enriched;
       app._lastFullAnalysis = enriched;
+      app._analysisFileSeq = app._fileSeq; // stamp for stale-result guard
       renderAnalysis(enriched);
       if (lastAnalysis) await ensureAuditionBuffers(lastAnalysis);
 
