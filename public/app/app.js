@@ -5139,9 +5139,11 @@ class VoiceIsolatePro {
       if (typeof this._ensureProvenance !== 'function') structuredLog('warn', '[VIP] provenance unavailable; process snapshot not recorded', { site: 'processComplete' });
       this._ensureProvenance?.()
         .then((p) => { if (!p) structuredLog('warn', '[VIP] provenance unavailable; process snapshot not recorded', { site: 'processComplete' }); return p?.recordProcessSnapshot({
-          modelIds: Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
-            ? this.activeModelChain
-            : ['bsrnn_vocals'],
+          modelIds: viaFallback
+            ? []
+            : (Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
+              ? this.activeModelChain
+              : ['bsrnn_vocals']),
           processingEngine: viaFallback ? 'dsp-fallback' : 'ml-worker',
           effectiveParams: this.getEffectiveParams(window.VIP_PARAMS || {}),
         }); })
@@ -8150,9 +8152,11 @@ class VoiceIsolatePro {
       if (!prov || !opts.outputBlob || !opts.filename) return null;
       return await prov.recordExport({
         ...opts,
-        modelIds: Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
-          ? this.activeModelChain
-          : ['bsrnn_vocals'],
+        modelIds: this._processingEngine === 'dsp-fallback'
+          ? []
+          : (Array.isArray(this.activeModelChain) && this.activeModelChain.length > 0
+            ? this.activeModelChain
+            : ['bsrnn_vocals']),
         processingEngine: this._processingEngine === 'dsp-fallback' ? 'dsp-fallback' : 'ml-worker',
       });
     } catch (err) {

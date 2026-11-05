@@ -188,7 +188,9 @@ export class EngineerProvenanceCoordinator {
    */
   recordProcessSnapshot(info = {}) {
     const engine = info.processingEngine || 'ml-worker';
-    const rawIds = Array.isArray(info.modelIds) ? info.modelIds : ['bsrnn_vocals'];
+    const rawIds = Array.isArray(info.modelIds)
+      ? info.modelIds.filter((id) => typeof id === 'string' && id)
+      : [];
     const modelIds = engine === 'dsp-fallback' ? [] : [...rawIds];
     const paramsSnap = info.effectiveParams ? snapshotParams(info.effectiveParams) : null;
     this._lastProcessSnapshot = {
@@ -254,9 +256,12 @@ export class EngineerProvenanceCoordinator {
     ]);
 
     const engine = opts.processingEngine || this._lastProcessSnapshot?.processingEngine || 'ml-worker';
+    const provided = Array.isArray(opts.modelIds)
+      ? opts.modelIds
+      : this._lastProcessSnapshot?.modelIds;
     const modelIds = engine === 'dsp-fallback'
       ? []
-      : [...(opts.modelIds || this._lastProcessSnapshot?.modelIds || ['bsrnn_vocals'])];
+      : (Array.isArray(provided) ? provided.filter((id) => typeof id === 'string' && id) : []);
     const paramsSnap = opts.effectiveParams
       ? snapshotParams(opts.effectiveParams)
       : (this._lastProcessSnapshot?.effectiveParams || null);
@@ -300,7 +305,7 @@ export class EngineerProvenanceCoordinator {
       application: {
         version: appVersion,
         inferenceRevision: INFERENCE_REVISION,
-        modelChainRevision: modelChainRevision(modelIds),
+        modelChainRevision: modelIds.length ? modelChainRevision(modelIds) : null,
         modelIds,
         models: modelIds.map((id) => ({
           id,
