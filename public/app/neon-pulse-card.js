@@ -25,13 +25,13 @@
     bg:           '#090b10',
     card:         '#0d1117',
     border:       '#1e2d40',
-    glow1:        '#00ffe7',  // cyan
-    glow2:        '#bf00ff',  // violet
+    glow1:        '#ff5c8a',  // cyan
+    glow2:        '#ff8fa3',  // violet
     glow3:        '#ff3cac',  // hot-pink
     glow4:        '#f7971e',  // amber
     text:         '#c8d8e8',
     textDim:      '#4a6070',
-    accent:       '#00ffe7',
+    accent:       '#ff5c8a',
     labelFont:    "11px 'JetBrains Mono', 'Fira Code', monospace",
   };
 

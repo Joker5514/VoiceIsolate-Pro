@@ -14,23 +14,23 @@ const themeCss = fs.readFileSync(path.join(ROOT, 'public/app/slider-theme.css'),
 const ticksCss = fs.readFileSync(path.join(ROOT, 'public/app/slider-ticks.css'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(ROOT, 'public/app/index.html'), 'utf8');
 
-describe('slider lock accent token (cyan protected)', () => {
+describe('slider lock accent token (pearl protected)', () => {
   test('style.css defines --vip-lock-accent and uses it for locked state', () => {
-    expect(styleCss).toMatch(/--vip-lock-accent\s*:\s*#67e8f9/i);
+    expect(styleCss).toMatch(/--vip-lock-accent\s*:\s*#ff8fa3/i);
     expect(styleCss).toMatch(/var\(--vip-lock-accent/);
     // No amber lock hardcodes in locked thumb/row rules
     expect(styleCss).not.toMatch(/data-locked[\s\S]{0,200}#ffcc44/);
   });
 
-  test('slider-theme.css lock tokens are cyan, not amber', () => {
-    expect(themeCss).toMatch(/--vip-lock-accent\s*:\s*#67e8f9/i);
+  test('slider-theme.css lock tokens are pearl, not amber', () => {
+    expect(themeCss).toMatch(/--vip-lock-accent\s*:\s*#ff8fa3/i);
     expect(themeCss).not.toMatch(/--vip-lock\s*:\s*#ffcc44/);
     expect(themeCss).toMatch(/var\(--vip-lock-accent/);
   });
 
-  test('slider-ticks.css locked ticks use cyan, not amber', () => {
+  test('slider-ticks.css locked ticks use pearl, not amber', () => {
     expect(ticksCss).toMatch(/\.slider-tick-wrapper\.is-locked/);
-    expect(ticksCss).toMatch(/103,\s*232,\s*249/);
+    expect(ticksCss).toMatch(/255,\s*143,\s*163/);
     expect(ticksCss).not.toMatch(/255,\s*204,\s*68/);
   });
 

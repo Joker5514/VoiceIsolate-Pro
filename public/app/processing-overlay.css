@@ -9,7 +9,7 @@
   --vip-panel:    rgba(8, 14, 22, 0.96);
   --vip-panel-2:  rgba(12, 18, 28, 0.99);
   --vip-border:   rgba(60, 100, 140, 0.22);
-  --vip-cyan:     #00ffe7;
+  --vip-cyan:     #ff5c8a;
   --vip-cyan-dim: rgba(0, 255, 231, 0.55);
   --vip-violet:   #9d4dff;
   --vip-pink:     #ff3cac;
@@ -46,11 +46,11 @@ body.vip-processing-lock {
   transition: border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
 }
 .proc-cancel-btn:hover:not(:disabled) {
-  border-color: var(--vip-cyan, #00ffe7);
+  border-color: var(--vip-cyan, #ff5c8a);
   background: rgba(0, 40, 50, 0.9);
 }
 .proc-cancel-btn:focus-visible {
-  outline: 2px solid var(--vip-cyan, #00ffe7);
+  outline: 2px solid var(--vip-cyan, #ff5c8a);
   outline-offset: 2px;
 }
 .proc-cancel-btn:disabled {

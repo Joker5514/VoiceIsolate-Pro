@@ -35,10 +35,10 @@ describe('mobile fit stylesheet', () => {
   });
 
   test('Signal Glass tokens, 44px targets, and reduced motion are declared', () => {
-    expect(css).toContain('#22d3ee');
-    expect(css).toContain('#f5b942');
-    expect(css).toContain('#c3cbd5');
-    expect(css).toContain('#0a0e14');
+    expect(css).toContain('#d90429');
+    expect(css).toContain('#ff8fa3');
+    expect(css).toContain('#e7dce0');
+    expect(css).toContain('#070708');
     expect(css).toContain('cubic-bezier(0.23, 1, 0.32, 1)');
     expect(css).toMatch(/@media \(max-width: 768px\)/);
     expect(css).toContain('min-height: 44px');
@@ -48,6 +48,16 @@ describe('mobile fit stylesheet', () => {
     expect(css).toContain('overflow-x: visible');
     // Workstation body must keep scrolling the rack. Collapse clips only the play control.
     expect(css).not.toMatch(/body\.eng-console\.ws\s*\{[^}]*overflow/);
+  });
+
+  test('the neural skin does not resize play over the collapse contract', () => {
+    const skin = fs.readFileSync(path.join(ROOT, 'public/app/neural-console.css'), 'utf8');
+    const open = /body\.eng-console\.neural-console #tpPlay\.btn-tp-play \{([^}]*)\}/.exec(skin);
+    expect(open).not.toBeNull();
+    expect(open[1]).not.toMatch(/\b(?:min-)?(?:width|height)\s*:/);
+    expect(skin).toMatch(/\.vip-play-slot\.is-collapsed #tpPlay \{[^}]*width:\s*0/);
+    expect(engineer).toContain('id="tpPlayCollapseToggle"');
+    expect(engineer).toContain('src="/play-collapse.js"');
   });
 });
 

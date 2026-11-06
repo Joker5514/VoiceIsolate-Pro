@@ -18,23 +18,32 @@
 }
 
 :root {
+  /* ── Pearlescent red — the only accent family ────────────── */
+  --neon: #ff2d55;
+  --deep: #d90429;
+  --pearl: #ff8fa3;
+  --shimmer: #ff5c8a;
+  --cream: #f3e6c8;
+  --brass: #c9a46a;
+  --brass-dark: #8a6a3a;
+
   /* ── Precision Studio semantic surfaces ───────────────────── */
-  --surface-root:  #070b10;
-  --surface-panel: #0d131b;
-  --surface-raised:#121a23;
-  --border-subtle: #1d2a34;
-  --text-primary:  #f4f7fa;
-  --text-secondary:#8d9aaa;
-  --action-process:#ff3d4d;
-  /* Filled-surface variant of --action-process. The accent red only reaches
-     3.48:1 against white, so any control that paints white text ON the action
-     color uses this darker red (5.05:1) instead. Accents, borders, glows and
-     text-on-dark keep --action-process. */
-  --action-process-solid: #d81f30;
-  --action-live:   #2ed5e5;
+  --surface-root:  #070708;
+  --surface-panel: #141114;
+  --surface-raised:#1a1618;
+  --border-subtle: #2a2226;
+  --text-primary:  #f4eef1;
+  --text-secondary:#9a8a90;
+  --action-process:#ff2d55;
+  /* Filled-surface variant of --action-process. White on #ff2d55 is 3.65:1,
+     so any control that paints white text ON the action color uses this
+     deeper red (5.25:1) instead. Accents, borders, glows and text-on-dark
+     keep --action-process. */
+  --action-process-solid: #d90429;
+  --action-live:   #ff5c8a;
   --state-success: #31cf7d;
-  --state-warning: #f0b541;
-  --source-secondary: #9b6cff;
+  --state-warning: #ff8fa3;
+  --source-secondary: #ff5c8a;
 
   /* ── Backgrounds (legacy aliases → Precision Studio) ──────── */
   --void:      var(--surface-root);
@@ -42,9 +51,9 @@
   --app-bg:    var(--surface-root);
   --surface-1: var(--surface-panel);
   --surface-2: var(--surface-raised);
-  --surface-3: #161f29;
-  --surface-4: #1a2430;
-  --canvas-bg: #05080c;
+  --surface-3: #221c1f;
+  --surface-4: #2a2226;
+  --canvas-bg: #050405;
   --well-bg:   rgba(0,0,0,0.32);
 
   /* ── Signal red ramp ──────────────────────────────────────── */
@@ -53,9 +62,9 @@
   --red-700: #b91c1c;
   --red-600: #e11d3a;
   --red-500: var(--action-process);
-  --red-400: #ff6b78;
-  --red-300: #fca5a5;
-  --red-wash: rgba(255,61,77,0.08);
+  --red-400: #ff5c8a;
+  --red-300: #ff8fa3;
+  --red-wash: rgba(255,45,85,0.08);
 
   /* ── Status ───────────────────────────────────────────────── */
   --ok:     var(--state-success);
@@ -64,15 +73,15 @@
   --info:   var(--action-live);
 
   /* ── Stem colors ──────────────────────────────────────────── */
-  --stem-voice: #ef4444;
-  --stem-noise: #5e5e78;
+  --stem-voice: #ff2d55;
+  --stem-noise: #ff8fa3;
 
   /* ── Forensic magnitude ramp ──────────────────────────────── */
-  --signal-floor: #0a0e14;
-  --signal-low:   #1a2a3a;
-  --signal-mid:   #c2410c;
-  --signal-hot:   #f97316;
-  --signal-peak:  #fbbf24;
+  --signal-floor: #070708;
+  --signal-low:   #2a161c;
+  --signal-mid:   #d90429;
+  --signal-hot:   #ff2d55;
+  --signal-peak:  #ff8fa3;
   --signal-clip:  #ffffff;
 
   /* ── Text ramp ────────────────────────────────────────────── */
@@ -80,7 +89,7 @@
   --text:       #c5ced6;
   --text-2:     var(--text-secondary);
   /* Raised from #6d7a86 (4.49:1 on --surface-root) to clear WCAG AA 4.5:1. */
-  --text-dim:   #7b8894;
+  --text-dim:   #8f7c82;
   /* Faintest text tier. Raised from rgba(244,247,250,0.18) — 1.61:1, the 9-10px
      `.vis-hint` / `.hint-range-*` labels it paints were unreadable. 0.48 alpha
      is 4.65-4.72:1 on every VIP surface and still sits below --text-dim (5.14-

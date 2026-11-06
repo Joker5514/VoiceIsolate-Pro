@@ -1,7 +1,8 @@
 /*
- * Premium workstation skin. Loads last on the Engineer shell.
- * Cyan is the voice and the filled action. Gold is the background stem.
- * Red stays on danger and error. Control IDs and counts are untouched.
+ * Premium workstation skin. Loads on the Engineer shell.
+ * Pearlescent red is the only accent. Brass is reserved for the analog
+ * VU furniture. Control IDs and counts are untouched.
+ * White text on a filled action uses #d90429 (5.25:1), not #ff2d55 (3.65:1).
  */
 @font-face { font-family: 'Geist'; src: url('/fonts/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: 'Geist Mono'; src: url('/fonts/GeistMono-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
@@ -9,74 +10,76 @@
 
 body.eng-console,
 body.eng-console.ec-skin {
-  --surface-root: #0a0e14;
-  --surface-panel: #121820;
-  --surface-raised: #18202b;
-  --void: #0a0e14;
-  --bg: #0a0e14;
-  --app-bg: #0a0e14;
-  --canvas-bg: #06090d;
-  --text-primary: #e8eef5;
-  --text-hi: #e8eef5;
-  --text: #c3cbd5;
-  --action-live: #22d3ee;
-  --action-process: #22d3ee;
-  --action-process-solid: #22d3ee;
-  --source-secondary: #f5b942;
-  --stem-voice: #22d3ee;
-  --stem-noise: #f5b942;
-  --state-success: #3ddc97;
-  --state-warning: #f5b942;
-  --danger: #ff5c6e;
-  --border-focus: rgba(34, 211, 238, 0.55);
-  --ws-bg: #0a0e14;
-  --ws-panel: #121820;
-  --ws-panel-2: #18202b;
-  --ws-red: #22d3ee;
-  --ws-red-solid: #22d3ee;
-  --vip-accent: #22d3ee;
-  --vip-accent-dim: rgba(8, 70, 82, 0.65);
-  --vip-accent-tip: #d7f7fc;
-  --vip-accent-soft: rgba(34, 211, 238, 0.18);
-  --vip-accent-glow: rgba(34, 211, 238, 0.55);
-  --vip-accent-glow2: rgba(34, 211, 238, 0.28);
+  --surface-root: #070708;
+  --surface-panel: #141114;
+  --surface-raised: #1a1618;
+  --void: #070708;
+  --bg: #070708;
+  --app-bg: #070708;
+  --canvas-bg: #050405;
+  --text-primary: #f4eef1;
+  --text-hi: #f4eef1;
+  --text: #e7dce0;
+  --action-live: #ff5c8a;
+  --action-process: #ff2d55;
+  --action-process-solid: #d90429;
+  --source-secondary: #ff8fa3;
+  --stem-voice: #ff2d55;
+  --stem-noise: #ff8fa3;
+  --state-success: #31cf7d;
+  --state-warning: #ff8fa3;
+  --danger: #ff2d55;
+  --border-focus: rgba(255, 45, 85, 0.55);
+  --ws-bg: #070708;
+  --ws-panel: #141114;
+  --ws-panel-2: #1a1618;
+  --ws-red: #ff2d55;
+  --ws-red-solid: #d90429;
+  --vip-accent: #ff2d55;
+  --vip-accent-dim: rgba(80, 16, 28, 0.65);
+  --vip-accent-tip: #ff8fa3;
+  --vip-accent-soft: rgba(255, 45, 85, 0.18);
+  --vip-accent-glow: rgba(255, 45, 85, 0.55);
+  --vip-accent-glow2: rgba(255, 92, 138, 0.28);
   --font-ui: 'Geist', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, monospace;
-  background: #0a0e14 !important;
-  color: #e8eef5;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(217, 4, 41, 0.18), transparent 55%),
+    #070708 !important;
+  color: #f4eef1;
 }
 
 body.eng-console.ec-skin .hdr {
   background: rgba(10, 14, 20, 0.86) !important;
   border: 0 !important;
-  border-bottom: 1px solid rgba(34, 211, 238, 0.22) !important;
+  border-bottom: 1px solid rgba(255, 45, 85, 0.22) !important;
   box-shadow: none !important;
   backdrop-filter: blur(14px);
 }
 body.eng-console .hdr-badge {
-  color: #22d3ee !important;
-  border-color: rgba(34, 211, 238, 0.35) !important;
+  color: #ff2d55 !important;
+  border-color: rgba(255, 45, 85, 0.35) !important;
   background: transparent !important;
 }
 body.eng-console .vip-engineer-nav {
-  background: #0a0e14;
+  background: #070708;
   border-bottom: 1px solid #1d2a34;
 }
 body.eng-console .vip-engineer-nav__item--active {
   color: #e8eef5 !important;
   background: transparent !important;
-  box-shadow: inset 0 0 0 1px #22d3ee !important;
+  box-shadow: inset 0 0 0 1px #ff2d55 !important;
 }
 body.eng-console .vip-ondevice__dot { background: #3ddc97 !important; }
 
 body.eng-console .vip-hero {
   background:
     linear-gradient(#10161d, #0c1218) padding-box,
-    linear-gradient(135deg, rgba(34, 211, 238, 0.36), rgba(245, 185, 66, 0.30)) border-box !important;
+    linear-gradient(135deg, rgba(255, 45, 85, 0.36), rgba(245, 185, 66, 0.30)) border-box !important;
   border: 1px solid transparent !important;
   border-radius: 16px;
 }
-body.eng-console .vip-hero-kicker { color: #22d3ee !important; }
+body.eng-console .vip-hero-kicker { color: #ff2d55 !important; }
 body.eng-console .vip-hero-title {
   font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.04em;
@@ -89,7 +92,7 @@ body.eng-console .vip-hero-title em {
   font-family: 'Instrument Serif', Georgia, serif;
   font-style: italic;
   font-weight: 400;
-  color: #22d3ee;
+  color: #ff2d55;
 }
 body.eng-console #vipHero .vip-tier-pill {
   border: 1px solid rgba(195, 203, 213, 0.28) !important;
@@ -98,44 +101,45 @@ body.eng-console #vipHero .vip-tier-pill {
   box-shadow: none !important;
 }
 body.eng-console #vipHero .vip-tier-pill[aria-pressed="true"] {
-  border-color: #22d3ee !important;
+  border-color: #ff2d55 !important;
   background: transparent !important;
   color: #e8eef5 !important;
-  box-shadow: inset 0 0 0 1px #22d3ee !important;
+  box-shadow: inset 0 0 0 1px #ff2d55 !important;
 }
 
-/* One filled action: cyan pill, dark ink. Upload stays glass. */
+/* Filled actions: white sits on the deep red (5.25:1). Upload stays glass. */
 body.eng-console.ec-skin .btn-primary:not(#heroCtaUpload),
 body.eng-console.ec-skin #processBtn,
 body.eng-console.ec-skin #heroCtaProcess:not(:disabled),
 body.eng-console.ec-skin #mobileProcessBtn:not(:disabled) {
-  background: #22d3ee !important;
-  border-color: transparent !important;
-  color: #061018 !important;
+  background: #d90429 !important;
+  border-color: rgba(255, 143, 163, 0.4) !important;
+  color: #fff !important;
   border-radius: 999px !important;
-  box-shadow: none !important;
+  box-shadow: 0 0 24px rgba(255, 45, 85, 0.35), inset 0 1px 0 rgba(255, 220, 230, 0.35) !important;
   text-shadow: none !important;
 }
 body.eng-console.ec-skin .btn-primary:not(#heroCtaUpload):hover:not(:disabled),
 body.eng-console.ec-skin #processBtn:hover:not(:disabled),
 body.eng-console.ec-skin #heroCtaProcess:hover:not(:disabled) {
-  background: #67e4f4 !important;
-  color: #061018 !important;
+  background: #d90429 !important;
+  color: #fff !important;
+  box-shadow: 0 0 36px rgba(255, 45, 85, 0.55), inset 0 1px 0 rgba(255, 220, 230, 0.45) !important;
   transform: none !important;
 }
 body.eng-console.ec-skin #processBtn:disabled,
 body.eng-console.ec-skin #mobileProcessBtn:disabled,
 body.eng-console.ec-skin #vipHero #heroCtaProcess:disabled {
-  background: #17323a !important;
-  color: #8aa3ab !important;
+  background: #2a1218 !important;
+  color: #c4a8ae !important;
   border-color: transparent !important;
   border-radius: 999px !important;
   box-shadow: none !important;
 }
 body.eng-console.ec-skin #vipHero #heroCtaProcess:not(:disabled) {
-  background: #22d3ee !important;
-  border-color: transparent !important;
-  color: #061018 !important;
+  background: #d90429 !important;
+  border-color: rgba(255, 143, 163, 0.4) !important;
+  color: #fff !important;
   border-radius: 999px !important;
   box-shadow: none !important;
   text-shadow: none !important;
@@ -143,20 +147,20 @@ body.eng-console.ec-skin #vipHero #heroCtaProcess:not(:disabled) {
 body.eng-console .btn-reprocess {
   background: transparent !important;
   color: #e8eef5 !important;
-  border: 1px solid rgba(34, 211, 238, 0.4) !important;
+  border: 1px solid rgba(255, 45, 85, 0.4) !important;
   border-radius: 999px !important;
   box-shadow: none !important;
 }
 body.eng-console .btn-preset.active {
   background: transparent !important;
   color: #e8eef5 !important;
-  border-color: #22d3ee !important;
-  box-shadow: inset 0 0 0 1px #22d3ee !important;
+  border-color: #ff2d55 !important;
+  box-shadow: inset 0 0 0 1px #ff2d55 !important;
 }
 body.eng-console.ec-skin #vipHero #heroCtaUpload {
   background: transparent !important;
   color: #e8eef5 !important;
-  border: 1px solid rgba(34, 211, 238, 0.4) !important;
+  border: 1px solid rgba(255, 45, 85, 0.4) !important;
   border-radius: 999px !important;
   box-shadow: none !important;
 }
@@ -175,57 +179,57 @@ body.eng-console .engine-pill[data-state="error"] {
   background: rgba(239, 68, 68, 0.05);
 }
 
-body.eng-console .hdr-ver { color: #22d3ee !important; }
+body.eng-console .hdr-ver { color: #ff2d55 !important; }
 body.eng-console .vip-hero-fallback-mark {
-  color: #22d3ee !important;
+  color: #ff2d55 !important;
   text-shadow: none !important;
 }
 body.eng-console .vip-dsp-loader-ring--a {
-  border-top-color: rgba(34, 211, 238, 0.75);
+  border-top-color: rgba(255, 45, 85, 0.75);
   border-right-color: rgba(245, 185, 66, 0.35);
 }
 body.eng-console .vip-dsp-loader-ring--b {
-  border-bottom-color: rgba(34, 211, 238, 0.55);
+  border-bottom-color: rgba(255, 45, 85, 0.55);
   border-left-color: rgba(245, 185, 66, 0.35);
 }
 body.eng-console .tab-btn.active,
 body.eng-console #tabBar [data-tab].active {
   color: #e8eef5 !important;
   background: transparent !important;
-  border-bottom-color: #22d3ee !important;
+  border-bottom-color: #ff2d55 !important;
   text-shadow: none !important;
-  box-shadow: inset 0 -2px 0 #22d3ee !important;
+  box-shadow: inset 0 -2px 0 #ff2d55 !important;
 }
 body.eng-console .vip-research-panel {
-  border-color: rgba(34, 211, 238, 0.28) !important;
+  border-color: rgba(255, 45, 85, 0.28) !important;
   background: #121820 !important;
 }
-body.eng-console .vip-research-head strong { color: #22d3ee !important; }
+body.eng-console .vip-research-head strong { color: #ff2d55 !important; }
 body.eng-console .btn-preset {
   border-color: rgba(195, 203, 213, 0.28) !important;
   background: transparent !important;
   color: #c3cbd5 !important;
 }
 body.eng-console .tab-btn::after,
-body.eng-console .tab-btn.active::after { background: #22d3ee !important; }
+body.eng-console .tab-btn.active::after { background: #ff2d55 !important; }
 body.eng-console .spectro3d-container {
-  border-color: rgba(34, 211, 238, 0.22) !important;
+  border-color: rgba(255, 45, 85, 0.22) !important;
   box-shadow: none !important;
   background: #070b10 !important;
 }
 body.eng-console #btn-whisper-hunter,
 body.eng-console #btn-whisper-hunter:hover {
   background: transparent !important;
-  border: 1px solid rgba(34, 211, 238, 0.4) !important;
+  border: 1px solid rgba(255, 45, 85, 0.4) !important;
   color: #e8eef5 !important;
   border-radius: 999px !important;
   box-shadow: none !important;
   transform: none !important;
 }
 body.eng-console #btn-whisper-hunter.running {
-  background: rgba(34, 211, 238, 0.14) !important;
-  border-color: #22d3ee !important;
-  box-shadow: 0 0 14px rgba(34, 211, 238, 0.35) !important;
+  background: rgba(255, 45, 85, 0.14) !important;
+  border-color: #ff2d55 !important;
+  box-shadow: 0 0 14px rgba(255, 45, 85, 0.35) !important;
 }
 body.eng-console .btn-ab,
 body.eng-console .btn-ab.active {
@@ -247,13 +251,13 @@ body.eng-console .tp-ab-label[data-version="A"] .tp-ab-tag {
   border-color: transparent !important;
 }
 body.eng-console .tp-ab-label[data-version="B"] {
-  border-color: rgba(34, 211, 238, 0.45) !important;
-  background: rgba(34, 211, 238, 0.08) !important;
-  color: #22d3ee !important;
+  border-color: rgba(255, 45, 85, 0.45) !important;
+  background: rgba(255, 45, 85, 0.08) !important;
+  color: #ff2d55 !important;
 }
 body.eng-console .tp-ab-label[data-version="B"] .tp-ab-tag {
-  background: #22d3ee !important;
-  color: #061018 !important;
+  background: #d90429 !important;
+  color: #fff !important;
 }
 
 body.eng-console .vip-signal-chain {
@@ -279,7 +283,7 @@ body.eng-console .vip-metric-guide {
 body.eng-console .vip-metric-guide div {
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid rgba(34, 211, 238, 0.22);
+  border: 1px solid rgba(255, 45, 85, 0.22);
   border-radius: 8px;
   background: rgba(10, 14, 20, 0.45);
 }
@@ -302,9 +306,9 @@ body.eng-console .vip-stem-path {
 }
 body.eng-console .vip-stem-path a {
   padding: 4px 8px;
-  border: 1px solid rgba(34, 211, 238, 0.35);
+  border: 1px solid rgba(255, 45, 85, 0.35);
   border-radius: 999px;
-  color: #22d3ee;
+  color: #ff2d55;
   font-size: 12px;
   text-decoration: none;
 }
@@ -322,7 +326,7 @@ body.eng-console .ps-quick-strip__btn {
   cursor: pointer;
 }
 body.eng-console .ps-workspace-nav a[aria-current="page"] {
-  box-shadow: inset 0 -2px 0 #22d3ee;
+  box-shadow: inset 0 -2px 0 #ff2d55;
 }
 
 @media (prefers-reduced-motion: reduce) {

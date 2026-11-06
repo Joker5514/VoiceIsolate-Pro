@@ -101,6 +101,7 @@
   <link rel="stylesheet" href="workstation-premium.css" />
   <link rel="stylesheet" href="/vip-workstation.css" />
   <link rel="stylesheet" href="/mobile-fit.css" />
+  <link rel="stylesheet" href="neural-console.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -193,13 +194,13 @@
 
   <header class="hdr">
     <div class="hdr-left">
-      <div class="hdr-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
+      <div class="hdr-icon"><svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="2" y="11" width="2.2" height="4" rx="1" fill="#fff" opacity="0.55"/><rect x="5.5" y="8" width="2.2" height="10" rx="1" fill="#fff" opacity="0.75"/><rect x="9" y="5" width="2.2" height="16" rx="1" fill="#fff"/><rect x="12.5" y="3" width="2.2" height="20" rx="1" fill="#fff"/><rect x="16" y="6" width="2.2" height="14" rx="1" fill="#fff"/><rect x="19.5" y="9" width="2.2" height="8" rx="1" fill="#fff" opacity="0.75"/><rect x="22.5" y="11" width="2" height="4" rx="1" fill="#fff" opacity="0.5"/></svg></div>
       <div style="display:flex;flex-direction:column;gap:2px;">
-        <h1 class="hdr-title" style="margin:0;">VoiceIsolate</h1>
-        <span class="hdr-ver">PRO</span>
+        <h1 class="hdr-title" style="margin:0;">VoiceIsolate Pro</h1>
+        <span class="hdr-ver nc-micro">Neural Vocal DSP Console</span>
       </div>
       <div style="width:1px;height:22px;background:var(--border-strong);margin:0 2px;flex:none;"></div>
-      <span class="hdr-title" style="font-size:11px;font-weight:500;color:var(--text-dim);letter-spacing:0;">Engineer Console</span>
+      <span class="hdr-title nc-micro" style="font-size:11px;font-weight:500;color:var(--text-dim);letter-spacing:0.16em;">Neural Vocal DSP Console</span>
       <span class="hdr-badge">LOCAL DSP</span>
       <span class="hdr-badge" title="Studio rack skin · single-pass STFT · click-safe controls">CONSOLE</span>
       <span class="hdr-badge diag-badge" style="display:none;">32-Stage Deca-Pass</span>
@@ -275,8 +276,8 @@
         <div class="vip-hero-tier" role="group" aria-label="Workflow tier">
           <span class="vip-hero-tier-label">Workflow</span>
           <div id="heroTierPicker" class="vip-hero-tier-picker">
-            <button type="button" class="vip-tier-pill" data-hero-tier="creator" aria-pressed="false">Quick</button>
-            <button type="button" class="vip-tier-pill" data-hero-tier="studio" aria-pressed="true">Studio</button>
+            <button type="button" class="vip-tier-pill" data-hero-tier="creator" aria-pressed="false">Quick Clean</button>
+            <button type="button" class="vip-tier-pill" data-hero-tier="studio" aria-pressed="true">Live Mix</button>
             <button type="button" class="vip-tier-pill" data-hero-tier="forensic" aria-pressed="false">Forensic</button>
           </div>
         </div>
@@ -449,11 +450,11 @@
         <summary class="vip-section-summary">Analysis Overlay</summary>
         <div class="vip-section-body">
         <div id="analysisOverlayLegend" style="display:flex;flex-wrap:wrap;gap:6px;">
-          <span class="vip-chip" style="--chip-color:#22d3ee;background:rgba(34,211,238,0.12);border:1px solid rgba(34,211,238,0.24);color:#22d3ee;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Speech</span>
-          <span class="vip-chip" style="background:rgba(34,211,238,0.10);border:1px solid rgba(34,211,238,0.28);color:#22d3ee;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Whisper</span>
-          <span class="vip-chip" style="background:rgba(195,203,213,0.12);border:1px solid rgba(195,203,213,0.28);color:#c3cbd5;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Background Noise</span>
-          <span class="vip-chip" style="background:rgba(201,132,58,0.14);border:1px solid rgba(201,132,58,0.32);color:#c9843a;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Hum</span>
-          <span class="vip-chip" style="background:rgba(245,185,66,0.12);border:1px solid rgba(245,185,66,0.32);color:#f5b942;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Music/bleed</span>
+          <span class="vip-chip" style="--chip-color:#ff2d55;background:rgba(255,45,85,0.12);border:1px solid rgba(255,45,85,0.28);color:#ff8fa3;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Speech</span>
+          <span class="vip-chip" style="background:rgba(255,143,163,0.10);border:1px solid rgba(255,143,163,0.28);color:#ff8fa3;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Whisper</span>
+          <span class="vip-chip" style="background:rgba(154,138,144,0.12);border:1px solid rgba(154,138,144,0.28);color:#9a8a90;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Background Noise</span>
+          <span class="vip-chip" style="background:rgba(255,92,138,0.12);border:1px solid rgba(255,92,138,0.32);color:#ff5c8a;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Hum</span>
+          <span class="vip-chip" style="background:rgba(255,143,163,0.12);border:1px solid rgba(255,143,163,0.32);color:#ff8fa3;padding:2px 8px;border-radius:999px;font:600 10px/1 ui-sans-serif;">Music/bleed</span>
         </div>
         <div id="analysisOverlayList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>
         </div>
