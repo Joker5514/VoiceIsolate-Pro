@@ -40,6 +40,7 @@
       wireFocusExplain();
       installPrecisionStudioShell();
       installWorkstation();
+      installNeuralChrome();
       pinEngineerDock();
       installExplainBullets();
       trackHeaderHeight();
@@ -174,7 +175,8 @@
     // Header version polish
     const hdrVer = document.querySelector('.hdr-left .hdr-title[style*="font-size:11px"]');
     if (hdrVer) {
-      hdrVer.textContent = 'Engineer Console';
+      hdrVer.textContent = 'Neural Vocal DSP Console';
+      hdrVer.classList.add('nc-micro');
     }
     const badge = document.querySelector('.hdr-badge');
     if (badge && !document.getElementById('ecModeBadge')) {
@@ -981,6 +983,288 @@
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
+  }
+
+  function installNeuralChrome() {
+    document.body.classList.add('neural-console');
+    installNeuralHeader();
+    installNeuralTabs();
+    tagNeuralColumns();
+    installNeuralMeters();
+    installNeuralBottom();
+    const tick = () => {
+      try { syncNeuralReadouts(); } catch { /* cosmetic */ }
+    };
+    tick();
+    setInterval(tick, 800);
+    const fileInfo = document.getElementById('fileInfo');
+    if (fileInfo && typeof MutationObserver === 'function') {
+      new MutationObserver(tick).observe(fileInfo, { childList: true, characterData: true, subtree: true });
+    }
+  }
+
+  function installNeuralHeader() {
+    const hdr = document.querySelector('.hdr');
+    if (!hdr || document.getElementById('ncFileChip')) return;
+    const icon = hdr.querySelector('.hdr-icon');
+    if (icon) {
+      icon.innerHTML = '<svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true"><rect x="2" y="11" width="2.2" height="4" rx="1" fill="#fff" opacity="0.55"/><rect x="5.5" y="8" width="2.2" height="10" rx="1" fill="#fff" opacity="0.75"/><rect x="9" y="5" width="2.2" height="16" rx="1" fill="#fff"/><rect x="12.5" y="3" width="2.2" height="20" rx="1" fill="#fff"/><rect x="16" y="6" width="2.2" height="14" rx="1" fill="#fff"/><rect x="19.5" y="9" width="2.2" height="8" rx="1" fill="#fff" opacity="0.75"/><rect x="22.5" y="11" width="2" height="4" rx="1" fill="#fff" opacity="0.5"/></svg>';
+    }
+    const title = hdr.querySelector('h1.hdr-title');
+    if (title) title.textContent = 'VoiceIsolate Pro';
+
+    const chip = el('div', 'nc-file-chip');
+    chip.id = 'ncFileChip';
+    chip.title = 'Active session file';
+    chip.innerHTML = '<span class="dot" aria-hidden="true"></span><span id="ncFileName">No file loaded</span>';
+
+    const latency = el('div', 'nc-latency');
+    latency.innerHTML = '<div class="k">Latency</div><div class="v" id="ncLatency">—</div>';
+
+    const importBtn = el('button', 'nc-btn nc-btn-ghost', 'Import');
+    importBtn.type = 'button';
+    importBtn.id = 'ncImport';
+    importBtn.addEventListener('click', () => {
+      const browse = document.getElementById('fileBtn');
+      const input = document.getElementById('fileInput');
+      if (browse) browse.click();
+      else input?.click();
+    });
+
+    const exportBtn = el('button', 'nc-btn nc-btn-export', 'Export');
+    exportBtn.type = 'button';
+    exportBtn.id = 'ncExport';
+    exportBtn.addEventListener('click', () => {
+      const save = document.getElementById('saveProcBtn');
+      if (save && !save.disabled) save.click();
+      else save?.scrollIntoView({ block: 'center' });
+    });
+
+    const actions = hdr.querySelector('.hdr-actions');
+    hdr.insertBefore(chip, actions);
+    hdr.insertBefore(latency, actions);
+    hdr.insertBefore(importBtn, actions);
+    hdr.insertBefore(exportBtn, actions);
+  }
+
+  function installNeuralTabs() {
+    if (document.getElementById('ncModeTabs')) return;
+    const wrap = el('div', 'nc-tabs-wrap');
+    wrap.id = 'ncModeTabs';
+    const tabs = el('div', 'nc-tabs');
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Console mode');
+    const modes = [
+      ['studio', 'Live Mix'],
+      ['creator', 'Quick Clean'],
+      ['forensic', 'Forensic'],
+    ];
+    modes.forEach(([tier, label]) => {
+      const btn = el('button', 'nc-tab', label);
+      btn.type = 'button';
+      btn.dataset.ncTier = tier;
+      btn.setAttribute('role', 'tab');
+      btn.addEventListener('click', () => {
+        document.querySelector(`[data-hero-tier="${tier}"]`)?.click();
+        syncNeuralTabs();
+      });
+      tabs.appendChild(btn);
+    });
+    wrap.appendChild(tabs);
+    const hdr = document.querySelector('.hdr');
+    if (hdr) hdr.insertAdjacentElement('afterend', wrap);
+    else document.body.prepend(wrap);
+    syncNeuralTabs();
+  }
+
+  function syncNeuralTabs() {
+    document.querySelectorAll('.nc-tab').forEach((tab) => {
+      const source = document.querySelector(`[data-hero-tier="${tab.dataset.ncTier}"]`);
+      const on = source?.getAttribute('aria-pressed') === 'true';
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+
+  function tagNeuralColumns() {
+    const cols = [
+      ['.ec-col-session', 'Signal Source', 'Input Bus'],
+      ['.ec-col-stage', 'Real-Time Monitor', 'Waveform Scope'],
+      ['.ec-col-rack', 'Master Output', 'Analog Path'],
+    ];
+    cols.forEach(([sel, title, micro]) => {
+      const col = document.querySelector(sel);
+      if (!col || col.querySelector('.nc-col-label')) return;
+      const row = el('div', 'nc-col-label');
+      row.innerHTML = `<div class="title"></div><div class="micro"></div>`;
+      row.querySelector('.title').textContent = title;
+      row.querySelector('.micro').textContent = micro;
+      col.prepend(row);
+    });
+  }
+
+  function vuFace(needleId) {
+    const wrap = el('div', 'nc-vu-face');
+    wrap.innerHTML = `<svg viewBox="0 0 140 100" aria-hidden="true">
+      <path d="M18 78 A52 52 0 0 1 122 78" fill="none" stroke="#3a2e1a" stroke-width="1.2" opacity="0.35"/>
+      <path d="M22 74 A46 46 0 0 1 78 28" fill="none" stroke="#2a2210" stroke-width="2.5"/>
+      <path d="M78 28 A46 46 0 0 1 108 42" fill="none" stroke="#8a3010" stroke-width="2.5"/>
+      <path d="M108 42 A46 46 0 0 1 118 74" fill="none" stroke="#6a1018" stroke-width="2.5"/>
+      <g fill="#3a2e1a" font-family="system-ui,sans-serif" font-size="6.5" font-weight="700">
+        <text x="20" y="86">−20</text><text x="42" y="52">−10</text><text x="68" y="34">0</text>
+        <text x="92" y="42">+1</text><text x="108" y="62">+3</text>
+      </g>
+      <text x="70" y="62" text-anchor="middle" fill="#5a4828" font-size="7" font-weight="700" letter-spacing="1">VU</text>
+      <g id="${needleId}"><line x1="70" y1="86" x2="70" y2="32" stroke="#1a1010" stroke-width="1.6" stroke-linecap="round"/><circle cx="70" cy="86" r="4" fill="#c9a46a" stroke="#8a6a3a" stroke-width="1"/></g>
+    </svg>`;
+    return wrap;
+  }
+
+  function installNeuralMeters() {
+    const rack = document.querySelector('.ec-col-rack');
+    if (!rack || document.getElementById('ncVuPair')) return;
+    const pair = el('div', 'nc-vu-pair');
+    pair.id = 'ncVuPair';
+    [['ncNeedleIn', 'Input', 'ncVuIn'], ['ncNeedleOut', 'Output', 'ncVuOut']].forEach(([needle, label, readId]) => {
+      const unit = el('div', 'nc-vu-unit');
+      unit.appendChild(vuFace(needle));
+      unit.appendChild(el('div', 'nc-vu-label', label));
+      const reading = el('div', 'nc-vu-reading', '—');
+      reading.id = readId;
+      unit.appendChild(reading);
+      pair.appendChild(unit);
+    });
+    const card = el('div', 'nc-neural');
+    card.id = 'ncNeuralCard';
+    card.innerHTML = `<div class="kicker">Neural Engine</div>
+      <div class="model">BSRNN vocals</div>
+      <div class="arch">Band-split mask · on device</div>
+      <div class="nc-neural-stats">
+        <div><div class="k">SNR</div><div class="v" id="ncSnr">—</div></div>
+        <div><div class="k">Noise</div><div class="v" id="ncNoise">—</div></div>
+      </div>`;
+    const label = rack.querySelector('.nc-col-label');
+    if (label) label.insertAdjacentElement('afterend', pair);
+    else rack.prepend(pair);
+    rack.appendChild(card);
+  }
+
+  function installNeuralBottom() {
+    const grid = document.querySelector('main.main-grid');
+    if (!grid || document.getElementById('ncBottom')) return;
+    const bottom = el('div', 'nc-bottom');
+    bottom.id = 'ncBottom';
+    const voice = channelCard('Voice', 'Isolated stem · bus A', 'ncVoiceFill', 'ncVoiceDb');
+    const music = channelCard('Music', 'Residual bed · bus B', 'ncMusicFill', 'ncMusicDb');
+    const scenes = el('div', 'nc-scenes glass');
+    scenes.appendChild(el('div', 'title', 'Scene'));
+    [
+      ['podcast', 'Podcast'],
+      ['interview', 'Interview'],
+      ['broadcast', 'Broadcast'],
+      ['restoration', 'Restoration'],
+    ].forEach(([id, label]) => {
+      const btn = el('button', 'nc-preset', label);
+      btn.type = 'button';
+      btn.dataset.scene = id;
+      btn.addEventListener('click', () => {
+        const sel = document.getElementById('heroSceneSelect');
+        const studio = document.querySelector('[data-hero-tier="studio"]');
+        if (studio && studio.getAttribute('aria-pressed') !== 'true') studio.click();
+        if (sel) {
+          sel.value = id;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        syncNeuralScenes();
+      });
+      scenes.appendChild(btn);
+    });
+    bottom.append(voice, music, scenes);
+    grid.appendChild(bottom);
+    syncNeuralScenes();
+  }
+
+  function channelCard(name, sub, fillId, dbId) {
+    const card = el('div', 'nc-channel glass');
+    card.innerHTML = `<div class="nc-level"><div class="fill" id="${fillId}"></div></div>
+      <div><div class="name"></div><div class="sub"></div></div>
+      <div class="db" id="${dbId}">—</div>`;
+    card.querySelector('.name').textContent = name;
+    card.querySelector('.sub').textContent = sub;
+    return card;
+  }
+
+  function readText(id) {
+    const node = document.getElementById(id);
+    return node ? node.textContent.trim() : '';
+  }
+
+  function parseNumber(text) {
+    const m = String(text).replace('−', '-').replace('–', '-').match(/-?\d+(?:\.\d+)?/);
+    return m ? Number(m[0]) : null;
+  }
+
+  function dbToAngle(text) {
+    const db = parseNumber(text);
+    if (db == null) return -36;
+    const clamped = Math.max(-20, Math.min(3, db));
+    return -50 + ((clamped + 20) / 23) * 78;
+  }
+
+  function setNeedle(id, text) {
+    const needle = document.getElementById(id);
+    if (!needle) return;
+    const angle = dbToAngle(text);
+    needle.setAttribute('transform', `rotate(${angle.toFixed(1)} 70 86)`);
+  }
+
+  function setFill(id, text) {
+    const fill = document.getElementById(id);
+    if (!fill) return;
+    const n = parseNumber(text);
+    const pct = n == null ? 8 : Math.max(6, Math.min(100, n));
+    fill.style.height = `${pct}%`;
+  }
+
+  function syncNeuralScenes() {
+    const current = document.getElementById('heroSceneSelect')?.value;
+    document.querySelectorAll('.nc-preset').forEach((btn) => {
+      btn.setAttribute('aria-pressed', btn.dataset.scene === current ? 'true' : 'false');
+    });
+  }
+
+  function syncNeuralReadouts() {
+    const file = readText('fileInfo') || readText('hFile') || 'No file loaded';
+    const name = document.getElementById('ncFileName');
+    if (name) name.textContent = file;
+    const latency = document.getElementById('ncLatency');
+    if (latency) {
+      const ctx = window._vipApp?.ctx;
+      const seconds = ctx ? (ctx.baseLatency || 0) + (ctx.outputLatency || 0) : 0;
+      latency.textContent = seconds > 0 ? `${(seconds * 1000).toFixed(1)} ms` : '—';
+    }
+    const peak = readText('hPeak');
+    const rms = readText('hRMS');
+    const voice = readText('hVoice');
+    const noise = readText('hNoise');
+    const snr = readText('hSNR');
+    const vuIn = document.getElementById('ncVuIn');
+    const vuOut = document.getElementById('ncVuOut');
+    if (vuIn) vuIn.textContent = peak && peak !== '--' ? peak : '—';
+    if (vuOut) vuOut.textContent = rms && rms !== '--' ? rms : '—';
+    setNeedle('ncNeedleIn', peak);
+    setNeedle('ncNeedleOut', rms);
+    const voiceDb = document.getElementById('ncVoiceDb');
+    const musicDb = document.getElementById('ncMusicDb');
+    if (voiceDb) voiceDb.textContent = voice && voice !== '--' ? voice : '—';
+    if (musicDb) musicDb.textContent = noise && noise !== '--' ? noise : '—';
+    setFill('ncVoiceFill', voice);
+    setFill('ncMusicFill', noise);
+    const snrNode = document.getElementById('ncSnr');
+    const noiseNode = document.getElementById('ncNoise');
+    if (snrNode) snrNode.textContent = snr && snr !== '-- dB' && snr !== '--' ? snr : '—';
+    if (noiseNode) noiseNode.textContent = noise && noise !== '--' ? noise : '—';
+    syncNeuralTabs();
+    syncNeuralScenes();
   }
 
   function escape(s) {

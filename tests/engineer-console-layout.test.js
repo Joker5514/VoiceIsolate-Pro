@@ -17,6 +17,20 @@ describe('Engineer Console skin', () => {
   test('index loads console CSS/JS', () => {
     expect(html).toMatch(/engineer-console\.css/);
     expect(html).toMatch(/engineer-console\.js/);
+    expect(html).toMatch(/neural-console\.css/);
+  });
+
+  test('neural console chrome proxies existing controls', () => {
+    expect(js).toMatch(/installNeuralChrome/);
+    expect(js).toMatch(/getElementById\('fileInput'\)/);
+    expect(js).toMatch(/getElementById\('saveProcBtn'\)/);
+    expect(js).toMatch(/data-hero-tier/);
+    expect(js).toMatch(/heroSceneSelect/);
+    expect(js).not.toMatch(/getUserMedia/);
+    expect(html).toContain('Live Mix');
+    expect(html).toContain('Quick Clean');
+    expect(html).toContain('id="fileInput"');
+    expect(html).toContain('id="tpPlay"');
   });
 
   test('critical control IDs still present', () => {

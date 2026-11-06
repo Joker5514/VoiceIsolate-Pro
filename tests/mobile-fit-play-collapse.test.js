@@ -35,10 +35,10 @@ describe('mobile fit stylesheet', () => {
   });
 
   test('Signal Glass tokens, 44px targets, and reduced motion are declared', () => {
-    expect(css).toContain('#22d3ee');
-    expect(css).toContain('#f5b942');
-    expect(css).toContain('#c3cbd5');
-    expect(css).toContain('#0a0e14');
+    expect(css).toContain('#d90429');
+    expect(css).toContain('#ff8fa3');
+    expect(css).toContain('#e7dce0');
+    expect(css).toContain('#070708');
     expect(css).toContain('cubic-bezier(0.23, 1, 0.32, 1)');
     expect(css).toMatch(/@media \(max-width: 768px\)/);
     expect(css).toContain('min-height: 44px');

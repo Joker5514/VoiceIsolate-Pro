@@ -167,7 +167,7 @@
     ctx.strokeRect(left + 0.5, 0.5, Math.max(0, width - 1), h - 1);
     if (label) {
       ctx.font = '10px "JetBrains Mono", monospace';
-      ctx.fillStyle = color ? '#69ff47' : '#00ffe7';
+      ctx.fillStyle = color ? '#69ff47' : '#ff5c8a';
       ctx.fillText(label, left + 4, 14);
     }
   }
@@ -190,7 +190,7 @@
     ctx.strokeRect(0.5, top + 0.5, w - 1, Math.max(0, height - 1));
     if (label) {
       ctx.font = '10px "JetBrains Mono", monospace';
-      ctx.fillStyle = color ? '#69ff47' : '#00ffe7';
+      ctx.fillStyle = color ? '#69ff47' : '#ff5c8a';
       ctx.fillText(label, 6, Math.max(14, top + 14));
     }
   }
@@ -338,7 +338,7 @@
       }
       const hz = barsToHz(lo, hi);
       ctx.font = '10px "JetBrains Mono", monospace';
-      ctx.fillStyle = '#00ffe7';
+      ctx.fillStyle = '#ff5c8a';
       ctx.fillText('ISO: ' + fmtHz(hz.freqLow) + ' – ' + fmtHz(hz.freqHigh), lo * barW + 4, 14);
     }
 

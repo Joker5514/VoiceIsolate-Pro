@@ -10,13 +10,13 @@
 
 /* ══ Root tokens ═══════════════════════════════════════════ */
 :root {
-  --np-bg:       #090b10;
-  --np-card:     #0d1117;
-  --np-border:   #1e2d40;
-  --np-cyan:     #00ffe7;
-  --np-violet:   #bf00ff;
-  --np-pink:     #ff3cac;
-  --np-amber:    #f7971e;
+  --np-bg:       #070708;
+  --np-card:     #141114;
+  --np-border:   #2a2226;
+  --np-cyan:     #ff5c8a;
+  --np-violet:   #ff8fa3;
+  --np-pink:     #ff2d55;
+  --np-amber:    #ff8fa3;
   --np-text:     #c8d8e8;
   --np-dim:      #4a6070;
   --np-radius:   14px;

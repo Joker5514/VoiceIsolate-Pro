@@ -15,8 +15,8 @@ const indexHtml = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
 
 describe('VoiceIsolate semantic design tokens', () => {
   test('canonical token file owns process/live/status semantics', () => {
-    expect(tokens).toContain('--action-process:#ff3d4d');
-    expect(tokens).toContain('--action-live:   #2ed5e5');
+    expect(tokens).toContain('--action-process:#ff2d55');
+    expect(tokens).toContain('--action-live:   #ff5c8a');
     expect(tokens).toContain('--state-success: #31cf7d');
   });
 
@@ -28,7 +28,7 @@ describe('VoiceIsolate semantic design tokens', () => {
     // landing.css still contains maintenance-era aliases. Keep them harmless by
     // requiring ps-shell.css (which imports ds-tokens.css) to load immediately
     // after it, before any premium extension sheet.
-    expect(landing).toContain('--action-process: #ff3d4d');
+    expect(landing).toContain('--action-process: #ff2d55');
     const landingPos = indexHtml.indexOf('href="/landing.css"');
     const shellPos = indexHtml.indexOf('href="/ps-shell.css"');
     const premiumPos = indexHtml.indexOf('href="/premium-refresh.css"');

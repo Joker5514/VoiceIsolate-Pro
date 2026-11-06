@@ -286,7 +286,7 @@ export async function analyzeAudioCooperative(channels, sampleRate, opts = {}, h
 
 function buildVisualLayers(parts) {
   const color = {
-    lead_speech: '#3b82f6',
+    lead_speech: '#ff2d55',
     secondary_speech: '#8b5cf6',
     music: '#ec4899',
     noise: '#6b7280',

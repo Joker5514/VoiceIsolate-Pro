@@ -206,7 +206,7 @@
       ctx.stroke();
       return false;
     }
-    ctx.strokeStyle = color || '#22d3ee';
+    ctx.strokeStyle = color || '#ff2d55';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, mid);
@@ -268,10 +268,10 @@
     const inBuf = app.inputBuffer || app.origBuffer;
     const outBuf = app.outputBuffer || app.procBuffer;
     if (_isTabDrawTarget('waveform') && inBuf) {
-      _drawPlayhead($('waveCanvas'), inBuf, '#22d3ee', positionSec);
+      _drawPlayhead($('waveCanvas'), inBuf, '#ff2d55', positionSec);
     }
     if (_isTabDrawTarget('abcompare')) {
-      if (inBuf) _drawPlayhead($('waveOrigCanvas'), inBuf, '#22d3ee', positionSec);
+      if (inBuf) _drawPlayhead($('waveOrigCanvas'), inBuf, '#ff2d55', positionSec);
       if (outBuf) _drawPlayhead($('waveProcCanvas'), outBuf, '#69ff47', positionSec);
     }
   }
@@ -285,8 +285,8 @@
     if (!app) return;
     const inBuf = app.inputBuffer || app.origBuffer;
     const outBuf = app.outputBuffer || app.procBuffer;
-    _drawWaveformOnto($('waveCanvas'), inBuf, '#22d3ee');
-    _drawWaveformOnto($('waveOrigCanvas'), inBuf, '#22d3ee');
+    _drawWaveformOnto($('waveCanvas'), inBuf, '#ff2d55');
+    _drawWaveformOnto($('waveOrigCanvas'), inBuf, '#ff2d55');
     _drawWaveformOnto($('waveProcCanvas'), outBuf, '#69ff47');
 
     const specBuf = outBuf || inBuf;

@@ -13,22 +13,22 @@
 
 /* ── Design Tokens ────────────────────────────────────────────────────── */
 :root {
-  --surface-root: #070b10;
-  --surface-panel: #0d131b;
-  --surface-raised: #121a23;
-  --border-subtle: #1d2a34;
-  --text-primary: #f4f7fa;
-  --text-secondary: #8d9aaa;
-  --action-process: #ff3d4d;
-  /* Filled-surface variant of --action-process. The accent red only reaches
-     3.48:1 against white, so any control that paints white text ON the action
-     color uses this darker red (5.05:1) instead. Accents, borders, glows and
-     text-on-dark keep --action-process. */
-  --action-process-solid: #d81f30;
-  --action-live: #2ed5e5;
+  --surface-root: #070708;
+  --surface-panel: #141114;
+  --surface-raised: #1a1618;
+  --border-subtle: #2a2226;
+  --text-primary: #f4eef1;
+  --text-secondary: #9a8a90;
+  --action-process: #ff2d55;
+  /* Filled-surface variant of --action-process. White on #ff2d55 is 3.65:1,
+     so any control that paints white text ON the action color uses this
+     deeper red (5.25:1) instead. Accents, borders, glows and text-on-dark
+     keep --action-process. */
+  --action-process-solid: #d90429;
+  --action-live: #ff5c8a;
   --state-success: #31cf7d;
-  --state-warning: #f0b541;
-  --source-secondary: #9b6cff;
+  --state-warning: #ff8fa3;
+  --source-secondary: #ff5c8a;
 
   --void:       var(--surface-root);
   --bg:         var(--surface-root);
@@ -54,7 +54,7 @@
   --text-2:    var(--text-secondary);
   /* Raised from #6d7a86 (4.49:1 on --surface-root) to clear WCAG AA 4.5:1
      for the 9-12px secondary labels this token paints. */
-  --text-dim:  #7b8894;
+  --text-dim:  #8f7c82;
   /* Faintest text tier. Raised from rgba(244,247,250,0.18) — 1.61:1, the 9-10px
      `.vis-hint` / `.hint-range-*` labels it paints were unreadable. 0.48 alpha
      is 4.65-4.72:1 on every VIP surface and still sits below --text-dim (5.14-
@@ -931,10 +931,10 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
 .speaker-card-header { display: flex; align-items: center; gap: 8px; }
 
 .speaker-swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.speaker-swatch-1 { background: #3b82f6; }
+.speaker-swatch-1 { background: #ff5c8a; }
 .speaker-swatch-2 { background: #a855f7; }
 .speaker-swatch-3 { background: #10b981; }
-.speaker-swatch-4 { background: #f59e0b; }
+.speaker-swatch-4 { background: #ff8fa3; }
 .speaker-swatch-5 { background: #ef4444; }
 .speaker-swatch-6 { background: #06b6d4; }
 .speaker-swatch-7 { background: #84cc16; }
