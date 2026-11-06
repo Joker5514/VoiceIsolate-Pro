@@ -33,6 +33,8 @@ function initUnifiedWorkspace() {
         badge.setStatus(sessionStore.isAnalyzing() ? 'processing' : 'ready');
       });
     }
+  }).catch((err) => {
+    console.warn('[Premium] capability detection failed:', err);
   });
 
   // Unified Signal Canvas
@@ -144,7 +146,7 @@ function initUnifiedWorkspace() {
 
   // Automatic analysis on import — enhance existing landing.js ingestion
   // Listen for file ingestion via custom event or intercept
-  window.addEventListener('vip:fileImported', async (e) => {
+  const onFileImported = async (e) => {
     const { channelData, sampleRate, analysis } = e.detail || {};
     if (!channelData) return;
     try {
@@ -168,13 +170,27 @@ function initUnifiedWorkspace() {
           speechRatio: result.speechRatio,
         });
       }
-      document.getElementById('analysisOverlayStatus').textContent =
-        `Analysis ready — ${result.regions.length} regions detected (Speech ${result.speechSegments.length}, Whisper ${result.whisperCandidates.length}, Noise ${result.noiseSegments.length})`;
+      const overlayStatus = document.getElementById('analysisOverlayStatus');
+      const regionCount = result?.regions?.length ?? 0;
+      const speechCount = result?.speechSegments?.length ?? 0;
+      const whisperCount = result?.whisperCandidates?.length ?? 0;
+      const noiseCount = result?.noiseSegments?.length ?? 0;
+      const analysisLine = `Analysis ready — ${regionCount} regions detected (Speech ${speechCount}, Whisper ${whisperCount}, Noise ${noiseCount})`;
+      if (overlayStatus) overlayStatus.textContent = analysisLine;
+      else console.warn('[Premium] analysis overlay status is missing; analysis result stays successful');
     } catch (err) {
       if (err?.name === 'AbortError' || err?.name === 'StaleAnalysisError') return; // superseded by a newer import
+      const uiWrite = err instanceof TypeError
+        && /Cannot set properties of null \(setting '(?:textContent|innerHTML|hidden|disabled|value)'\)/.test(err?.message || '');
       console.warn('[Premium] auto analysis failed', err);
+      if (uiWrite) return;
       sessionStore.setAnalysisResult({ state: 'error', error: err.message });
     }
+  };
+  window.addEventListener('vip:fileImported', (e) => {
+    onFileImported(e).catch((err) => {
+      console.error('[Premium] file import listener failed:', err);
+    });
   });
 
   // Raw / Processed / Removed is owned by landing.js (setRaw at import,

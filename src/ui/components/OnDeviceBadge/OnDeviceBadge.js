@@ -61,14 +61,23 @@ export class OnDeviceBadge {
       error: { color: Tokens.critical.default, label: 'Local error', glow: 'rgba(255,61,77,0.25)', wash: Tokens.critical.wash },
     };
     const cfg = statusMap[status] || statusMap.ready;
+    if (!this._els.dot || !this._els.label) {
+      console.warn('[VIP][OnDeviceBadge] status nodes missing; badge was cleared or failed to mount');
+      return;
+    }
     this._els.dot.style.background = cfg.color;
     this._els.dot.style.boxShadow = `0 0 0 4px ${cfg.wash}, 0 0 10px ${cfg.glow}`;
     this._els.label.textContent = cfg.label;
-    if (backend) this._els.backend.textContent = backend;
+    if (backend && this._els.backend) this._els.backend.textContent = backend;
+    else if (backend) console.warn('[VIP][OnDeviceBadge] backend node missing');
   }
 
   setBackend(backend) {
     this.options.backend = backend;
+    if (!this._els.backend) {
+      console.warn('[VIP][OnDeviceBadge] backend node missing');
+      return;
+    }
     this._els.backend.textContent = backend;
   }
 
