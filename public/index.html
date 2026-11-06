@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="/premium-signal.css">
   <link rel="stylesheet" href="/landing-v3.css">
   <link rel="stylesheet" href="/vip-workstation.css">
+  <link rel="stylesheet" href="/mobile-fit.css">
 </head>
 <body class="ps-shell v3">
   <a class="ps-skip-link" href="#workspace">Skip to audio workspace</a>
@@ -395,7 +396,14 @@
 
               <div class="v3-transport">
                 <span class="v3-transport__keys">
-                  <button id="playBtn" class="vip-iconbtn v3-play" type="button" disabled aria-label="Play" title="Play">▶</button>
+                  <span class="vip-play-slot" id="playSlot">
+                    <button id="playCollapseToggle" class="vip-play-toggle" type="button" data-vip-play-toggle aria-expanded="true" aria-controls="playBtn" aria-label="Collapse play button">
+                      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 5.25 L7 9.25 L11 5.25" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <span class="vip-play-target">
+                      <button id="playBtn" class="vip-iconbtn v3-play" type="button" disabled aria-label="Play" title="Play">▶</button>
+                    </span>
+                  </span>
                   <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">⏸</button>
                   <button id="stopBtn" class="vip-iconbtn" type="button" disabled aria-label="Stop" title="Stop">■</button>
                 </span>
@@ -594,5 +602,6 @@
   <script type="module" src="/landing-premium.js"></script>
   <script type="module" src="/landing-v3.js"></script>
   <script type="module" src="/app/sw-boot.js"></script>
+  <script defer src="/play-collapse.js"></script>
 </body>
 </html>
