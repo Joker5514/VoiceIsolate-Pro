@@ -157,4 +157,36 @@ export function resetFileInput(fileInput) {
   try { fileInput.value = ''; } catch { /* ignore */ }
 }
 
-export default { openFilePicker, primeAudioGesture, fixUploadTouchTargets, resetFileInput };
+const DOM_NULL_WRITE = /Cannot set properties of null \(setting '(?:textContent|innerHTML|hidden|disabled|value)'\)/;
+
+/**
+ * Separate a DOM write on a missing node from a real file-import failure.
+ * Landing used to prefix every unhandled rejection with "Upload failed:",
+ * so a status-node miss was reported as a failed upload.
+ *
+ * @param {unknown} reason
+ * @param {{ ingestInFlight?: boolean }} [opts]
+ * @returns {{ kind: 'ui'|'upload'|'app', message: string, status: string|null }}
+ */
+export function classifyClientRejection(reason, opts = {}) {
+  const message = reason && typeof reason === 'object' && reason.message
+    ? String(reason.message)
+    : String(reason ?? 'unknown');
+  const name = reason && typeof reason === 'object' && reason.name ? String(reason.name) : '';
+  const isTypeError = reason instanceof TypeError || name === 'TypeError';
+  if (isTypeError && DOM_NULL_WRITE.test(message)) {
+    return { kind: 'ui', message, status: null };
+  }
+  if (opts.ingestInFlight) {
+    return { kind: 'upload', message, status: `Upload failed: ${message}` };
+  }
+  return { kind: 'app', message, status: message };
+}
+
+export default {
+  openFilePicker,
+  primeAudioGesture,
+  fixUploadTouchTargets,
+  resetFileInput,
+  classifyClientRejection,
+};

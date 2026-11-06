@@ -17,7 +17,7 @@ import { formatIngestionPlan, resolveIngestionPlan } from '/src/core/IngestionBu
 import { separateStems } from '/src/pipeline/StemSeparation.js';
 import { createMediaTransport } from '/src/presentation/MediaTransport.js';
 import { mountExplainBullets, foldParagraph, INGESTION_EXPLAINS } from '/src/presentation/ExplainBullets.js';
-import { openFilePicker, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
+import { openFilePicker, primeAudioGesture, fixUploadTouchTargets, classifyClientRejection } from '/src/presentation/UploadWiring.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
 import { LANDING_PRESETS, RT_SLIDER_DEFAULTS } from '/src/core/MixCalibration.js';
@@ -184,9 +184,7 @@ let chunkedExportFile = null;
 let pendingMediaFrac = 0;
 const mediaTransport = createMediaTransport({
   onEnded() {
-    if (ui.timeReadout && ingested?.duration) {
-      ui.timeReadout.textContent = `${fmtTime(0)} / ${fmtTime(mediaTransport.duration() || ingested.duration)}`;
-    }
+    if (ingested?.duration) writeTimeReadout(0, mediaTransport.duration() || ingested.duration);
   },
 });
 /** @type {File|Blob|null} original upload retained for video remux export */
@@ -492,6 +490,28 @@ function setStatus(msg, cls = '') {
 function fmtTime(s) {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+let timeReadoutMissingLogged = false;
+
+/** Transport clock. A missing readout is a UI defect, not a failed import. */
+function writeTimeReadout(cur, dur) {
+  if (!ui.timeReadout) {
+    if (!timeReadoutMissingLogged) {
+      timeReadoutMissingLogged = true;
+      console.warn('[VIP][landing] time readout is missing; duration stays in the status line');
+    }
+    return;
+  }
+  ui.timeReadout.textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+}
+
+function setSpeakerStatus(text) {
+  if (!ui.speakerStatus) {
+    console.warn('[VIP][landing] speaker status is missing:', text);
+    return;
+  }
+  ui.speakerStatus.textContent = text;
 }
 
 // ─── Processing indicator (DS ProcessLoader component) ───────────────────────
@@ -1101,8 +1121,12 @@ function ensureWorkerReady() {
 }
 
 async function detectSpeakers(clean, sampleRate) {
+  if (!ui.speakersPanel || !ui.speakerStatus) {
+    console.warn('[VIP][landing] speaker panel is missing; detection UI skipped');
+    return;
+  }
   ui.speakersPanel.hidden = false;
-  ui.speakerStatus.textContent = 'Detecting speakers…';
+  setSpeakerStatus('Detecting speakers…');
   speakerControls.clear();
   const seq = requestSeq;
   // A stale run used to keep its DiarizationWorker (and a full-length copy of
@@ -1116,14 +1140,14 @@ async function detectSpeakers(clean, sampleRate) {
     mixer.loadSpeakerSegments(segments);
     const count = speakerControls.render(speakers);
     const methodLabel = method === 'onnx' ? 'ONNX embeddings' : 'spectral fingerprint';
-    ui.speakerStatus.textContent = count === 0
+    setSpeakerStatus(count === 0
       ? 'No distinct speakers detected.'
-      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`;
+      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`);
   } catch (err) {
     if (seq !== requestSeq || ctl.signal.aborted) return;
     console.error('[VIP][landing] diarization failed:', err);
     mixer.loadSpeakerSegments([]);
-    ui.speakerStatus.textContent = `Speaker detection unavailable: ${err.message}`;
+    setSpeakerStatus(`Speaker detection unavailable: ${err.message}`);
   }
   // Target enrollment becomes available once stems exist (same module as Engineer).
   void ensureTargetSpeakerUi();
@@ -1592,8 +1616,13 @@ async function ingestFrom(file) {
 }
 
 async function onFileChosen() {
-  try { await primeAudioGesture(); } catch { /* best-effort */ }
-  await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
+  try {
+    try { await primeAudioGesture(); } catch { /* best-effort */ }
+    await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
+  } catch (err) {
+    console.error('[VIP][landing] file choice failed:', err);
+    setStatus(err?.message || 'Import failed', 'error');
+  }
 }
 
 function wireUploadDropZone() {
@@ -1617,14 +1646,20 @@ function wireUploadDropZone() {
     }
     primeAudioGesture().catch(() => {});
   };
+  const openPickerSafely = () => {
+    openPicker().catch((err) => {
+      console.error('[VIP][landing] picker failed:', err);
+      setStatus(err?.message || 'Upload control failed', 'error');
+    });
+  };
   zone.addEventListener('click', (event) => {
     if (event.target.closest('#browseBtn') || event.target.closest('#openDriveBtn')) return;
-    openPicker();
+    openPickerSafely();
   });
   zone.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      openPicker();
+      openPickerSafely();
     }
   });
   // browseBtn is <label for="fileInput"> — native picker; skip redundant JS handler.
@@ -1639,7 +1674,12 @@ function wireUploadDropZone() {
     zone.classList.remove('drag-over');
     const file = event.dataTransfer?.files?.[0];
     if (!file) return;
-    primeAudioGesture().catch(() => {}).finally(() => ingestFrom(file));
+    primeAudioGesture().catch(() => {}).finally(() => {
+      ingestFrom(file).catch((err) => {
+        console.error('[VIP][landing] drop import failed:', err);
+        setStatus(err?.message || 'Import failed', 'error');
+      });
+    });
   });
 }
 
@@ -1675,7 +1715,7 @@ function presentChunkedImport(next, file) {
   }
   setStatus('Chunked processing selected. Source preserved. Press Process.', 'active');
   for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.seekSlider]) if (el) el.disabled = false;
-  ui.timeReadout.textContent = `${fmtTime(0)} / ${fmtTime(next.duration || 0)}`;
+  writeTimeReadout(0, next.duration || 0);
 }
 
 function recomputeMemoryPlan() {
@@ -2139,7 +2179,7 @@ function wireTransport() {
       pendingMediaFrac = frac;
       const dur = mediaTransport.duration() || ingested?.duration || 0;
       if (mediaTransport.active()) mediaTransport.seek(frac * dur);
-      if (ui.timeReadout) ui.timeReadout.textContent = `${fmtTime(frac * dur)} / ${fmtTime(dur)}`;
+      writeTimeReadout(frac * dur, dur);
       return;
     }
     if (!mixer) return;
@@ -2157,7 +2197,7 @@ function wireTransport() {
     if (chunkedMediaActive()) {
       const dur = mediaTransport.duration() || ingested?.duration || 0;
       const cur = mediaTransport.active() ? mediaTransport.currentTime() : pendingMediaFrac * dur;
-      ui.timeReadout.textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+      writeTimeReadout(cur, dur);
       if (ui.seekSlider && dur > 0 && !mediaTransport.isPlaying()) {
         /* leave the scrubber where the user put it while paused */
       } else if (ui.seekSlider && dur > 0) {
@@ -2170,7 +2210,7 @@ function wireTransport() {
     if (!mixer) return;
     const cur = mixer.currentTime();
     const dur = mixer.duration();
-    ui.timeReadout.textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+    writeTimeReadout(cur, dur);
     if (ui.seekSlider && dur > 0) {
       ui.seekSlider.value = String(Math.round((cur / dur) * 1000));
       paintSeekFill(ui.seekSlider, cur, dur);
@@ -2203,7 +2243,12 @@ function wireDragAndDrop() {
     zone.classList.remove('upload-panel--dragging');
     const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (!file) return;
-    primeAudioGesture().catch(() => {}).finally(() => ingestFrom(file));
+    primeAudioGesture().catch(() => {}).finally(() => {
+      ingestFrom(file).catch((err) => {
+        console.error('[VIP][landing] drop import failed:', err);
+        setStatus(err?.message || 'Import failed', 'error');
+      });
+    });
   });
 }
 
@@ -2221,8 +2266,14 @@ window.addEventListener('error', (event) => {
   }
 });
 window.addEventListener('unhandledrejection', (event) => {
-  const msg = event.reason?.message || String(event.reason || 'unknown');
-  setStatus(`Upload failed: ${msg}`, 'error');
+  const classified = classifyClientRejection(event.reason, { ingestInFlight });
+  event.preventDefault();
+  if (classified.kind === 'ui') {
+    console.error('[VIP][landing] status UI update failed; import state was left unchanged:', event.reason);
+    return;
+  }
+  console.error('[VIP][landing] unhandled rejection:', event.reason);
+  if (classified.status) setStatus(classified.status, 'error');
 });
 ui.processBtn.addEventListener('click', onProcess);
 document.getElementById('memoryProfile')?.addEventListener('change', () => { recomputeMemoryPlan(); });
