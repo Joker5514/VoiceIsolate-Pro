@@ -40,6 +40,7 @@
       wireFocusExplain();
       installPrecisionStudioShell();
       installWorkstation();
+      pinEngineerDock();
       trackHeaderHeight();
       bindCollapsibleSections();
       // Defer ticker + summary so reparent paints before any interval work.
@@ -424,6 +425,7 @@
     if (!on) {
       document.body.classList.remove('ws');
       wsRestore();
+      pinEngineerDock();
     } else if (!wsMoves.length) {
       const stage = document.querySelector('.ec-col-stage');
       const session = document.querySelector('.ec-col-session');
@@ -441,6 +443,58 @@
     }
     // Canvases size from their boxes; let the visualizers re-measure.
     try { window.dispatchEvent(new Event('resize')); } catch { /* cosmetic */ }
+  }
+
+  function wirePremiumAudioChrome(card) {
+    if (!card || card.dataset.pacWired === '1') return;
+    card.dataset.pacWired = '1';
+    card.addEventListener('click', (event) => {
+      if (!event.target.closest('.pac-bar')) return;
+      if (event.target.closest('button, input, select, textarea, a, label')) event.preventDefault();
+    });
+    const paint = () => {
+      const badge = document.getElementById('vip-proc-badge');
+      const detail = document.getElementById('pipeDetail');
+      const ready = document.getElementById('pacReady');
+      const status = document.getElementById('pacStatus');
+      const text = (detail?.textContent || badge?.querySelector('.vip-pb-label')?.textContent || 'Ready')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const state = badge?.dataset.state || 'idle';
+      if (ready) {
+        ready.dataset.state = state;
+        ready.textContent = text.length > 48 ? `${text.slice(0, 46)}…` : text;
+      }
+      if (status && status.textContent !== text) status.textContent = text;
+    };
+    paint();
+    const sources = ['vip-proc-badge', 'pipeDetail', 'stat-status']
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
+    if (sources.length && typeof MutationObserver !== 'undefined') {
+      const obs = new MutationObserver(paint);
+      sources.forEach((node) => obs.observe(node, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-state'],
+      }));
+    }
+  }
+
+  function pinEngineerDock() {
+    const card = document.querySelector('.transport-card');
+    const bar = document.getElementById('mobileActionBar');
+    if (card && card.parentElement !== document.body) {
+      document.body.insertBefore(card, bar || null);
+    }
+    const slot = document.getElementById('pacProcessSlot');
+    const btn = document.getElementById('processBtn');
+    const again = document.getElementById('reprocessBtn');
+    if (slot && btn && !slot.contains(btn)) slot.append(btn);
+    if (slot && again && !slot.contains(again)) slot.append(again);
+    wirePremiumAudioChrome(card);
   }
 
   function installWorkstation() {

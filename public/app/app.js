@@ -1327,7 +1327,7 @@ class VoiceIsolatePro {
           'section-gate', 'section-analysis', 'section-separation',
           'section-cockpit', 'section-signal-canvas', 'engineerCompareToggle',
           'section-selection', 'section-overlay', 'section-forensic',
-          'section-save', 'section-transport', 'fileLibraryPanel',
+          'section-save', 'fileLibraryPanel',
           'ecIntegrityCard', 'ecOutputSafety', 'section-ec-analysis', 'section-ec-diar',
         ],
     );
@@ -1362,7 +1362,13 @@ class VoiceIsolatePro {
         el.dataset.vipSectionKey = `vip-section-anon-${i}`;
       }
       const storeKey = id || el.dataset.vipSectionKey;
-      if (storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)) {
+      // Play, the clock, and the seek rail live in the summary, so collapsing
+      // the module does not hide them or touch the audio engine.
+      if (id === 'section-transport') {
+        el.open = storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)
+          ? !!stored[storeKey]
+          : false;
+      } else if (storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)) {
         el.open = !!stored[storeKey];
       } else if (defaultOpen.has(id) || el.classList.contains('active')) {
         el.open = true;
@@ -8393,6 +8399,16 @@ class VoiceIsolatePro {
       cropClearBtn: this.dom.tpCropClear,
       seekEl: this.dom.tpSeek,
       regionBar: this.dom.tpRegionBar,
+      onChange: (region) => {
+        const el = document.getElementById('pacSelection');
+        if (!el || !region) return;
+        if (!mixer.hasCrop()) {
+          el.textContent = 'Full file';
+          return;
+        }
+        const span = Math.max(0, region.out - region.in);
+        el.textContent = `${fmtTime(region.in)} – ${fmtTime(region.out)} · ${fmtTime(span)}`;
+      },
     });
   }
 

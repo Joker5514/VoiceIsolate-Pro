@@ -1,0 +1,597 @@
+/* Premium Audio Control — one collapsible surface for the existing transport.
+   Loaded after vip-workstation.css, which hid the summary and pinned a tall dock.
+   IDs and audio-engine listeners stay on the original nodes. */
+
+body.eng-console {
+  --pac-bg: #0c1014;
+  --pac-raise: #12181e;
+  --pac-ink: #e7eef4;
+  --pac-ink-2: #c5d0da;
+  --pac-label: #b7c4d0;
+  --pac-line: rgba(226, 232, 238, 0.16);
+  --pac-line-2: rgba(226, 232, 238, 0.08);
+  --pac-cyan: #7fd4de;
+  --pac-disabled: #8b9aaa;
+}
+
+body.eng-console details.transport-card.pac {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  color: var(--pac-ink);
+  color-scheme: dark;
+  background: var(--pac-bg) !important;
+  border: 0 !important;
+  border-top: 1px solid var(--pac-line) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.4) !important;
+  overflow: hidden;
+}
+
+body.eng-console details.transport-card.pac:hover {
+  border-color: var(--pac-line) !important;
+  box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.4) !important;
+  transform: none !important;
+}
+
+/* The summary is the collapsed bar. vip-workstation.css set it to display:none. */
+body.eng-console details.transport-card.pac > summary.pac-bar {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 10px;
+  list-style: none;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pac-ink);
+  background: linear-gradient(#141a20, #0c1014);
+  border: 0;
+  border-radius: 0;
+  justify-content: flex-start;
+}
+
+body.eng-console details.transport-card.pac > summary.pac-bar::-webkit-details-marker,
+body.eng-console details.transport-card.pac > summary.pac-bar::marker {
+  display: none;
+  content: none;
+}
+
+body.eng-console details.transport-card.pac > summary.pac-bar::before,
+body.eng-console details.transport-card.pac > summary.pac-bar::after {
+  content: none !important;
+  display: none !important;
+  border: 0 !important;
+  width: 0;
+  height: 0;
+}
+
+body.eng-console details.transport-card.pac[open] > .pac-panel {
+  grid-row: 1;
+  display: block;
+  padding: 0;
+  background: var(--pac-raise);
+  animation: pac-rise 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pac-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.eng-console details.transport-card.pac[open] > .pac-panel { animation: none; }
+  body.eng-console .pac-chevron { transition: none; }
+}
+
+body.eng-console .pac-bar__seek,
+body.eng-console .pac .tp-time-wrap,
+body.eng-console .pac-ready,
+body.eng-console .pac-chevron {
+  flex: none;
+}
+
+body.eng-console .pac .tp-time-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+body.eng-console .pac .tp-time {
+  font-family: ui-monospace, 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--pac-ink);
+}
+
+body.eng-console .pac .tp-time-sep { color: var(--pac-ink-2); }
+
+body.eng-console .pac .transport-seek {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+body.eng-console .pac .tp-seek-rail,
+body.eng-console .pac .transport-region-bar {
+  height: 2px;
+  left: 0;
+  right: 0;
+  background: rgba(226, 232, 238, 0.14);
+  box-shadow: none;
+}
+
+body.eng-console .pac .tp-seek-fill {
+  background: var(--pac-cyan);
+  box-shadow: none;
+}
+
+body.eng-console .pac .transport-region-bar::before {
+  background: rgba(127, 212, 222, 0.22);
+  border-left: 1px solid var(--pac-cyan);
+  border-right: 1px solid var(--pac-cyan);
+}
+
+body.eng-console .pac input[type="range"].tp-seek {
+  height: 28px;
+  background: transparent;
+  touch-action: manipulation;
+}
+
+body.eng-console .pac input[type="range"].tp-seek::-webkit-slider-thumb {
+  width: 11px;
+  height: 11px;
+  margin-top: -4.5px;
+  background: #f4fafb;
+  border: 1px solid var(--pac-cyan);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+body.eng-console .pac input[type="range"].tp-seek::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  background: #f4fafb;
+  border: 1px solid var(--pac-cyan);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+body.eng-console .pac .transport-seek:hover .tp-seek-fill,
+body.eng-console .pac input[type="range"].tp-seek::-webkit-slider-thumb:hover {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transform: none;
+}
+
+body.eng-console .pac-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 28%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--pac-ink-2);
+}
+
+body.eng-console .pac-ready::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pac-disabled);
+}
+
+body.eng-console .pac-ready[data-state="processing"]::before,
+body.eng-console .pac-ready[data-state="done"]::before,
+body.eng-console .pac-ready[data-state="ready"]::before {
+  background: var(--pac-cyan);
+}
+
+body.eng-console .pac-ready[data-state="error"]::before {
+  background: #ef4444;
+}
+
+body.eng-console .pac-chevron {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-right: 1px solid var(--pac-ink-2);
+  border-bottom: 1px solid var(--pac-ink-2);
+  transform: rotate(-135deg);
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.eng-console .pac-chevron::before {
+  content: '';
+  position: absolute;
+  inset: -16px;
+}
+
+body.eng-console details.transport-card.pac[open] > summary.pac-bar .pac-chevron {
+  transform: rotate(45deg);
+}
+
+body.eng-console .pac .btn-tp-play {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: #1a222a;
+  color: var(--pac-disabled);
+  box-shadow: none;
+}
+
+body.eng-console .pac .btn-tp-play:not(:disabled) {
+  background: #d7e6ec;
+  color: #0c1216;
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+body.eng-console .pac .btn-tp-play:not(:disabled):hover {
+  background: #eef6f8;
+  color: #0c1216;
+}
+
+body.eng-console .pac .btn-tp-play span {
+  display: block;
+  font-size: 11px;
+  line-height: 1;
+  transform: translateX(1px);
+}
+
+body.eng-console .pac-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.25fr) minmax(0, 0.9fr);
+  min-width: 0;
+}
+
+body.eng-console .pac-group {
+  min-width: 0;
+  padding: 8px 12px 10px;
+}
+
+body.eng-console .pac-group + .pac-group {
+  border-left: 1px solid var(--pac-line-2);
+}
+
+body.eng-console .pac-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pac-label);
+}
+
+body.eng-console .pac .tp-buttons,
+body.eng-console .pac .tp-speed,
+body.eng-console .pac .tp-region-group,
+body.eng-console .pac .tp-ab,
+body.eng-console .pac-process {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+body.eng-console .pac .tp-speed label {
+  color: var(--pac-label);
+  font-size: 11px;
+}
+
+body.eng-console .pac .btn-tp,
+body.eng-console .pac .btn-ab,
+body.eng-console .pac #tpSpeed {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(226, 232, 238, 0.14);
+  background: #151b22;
+  color: var(--pac-ink);
+  box-shadow: none;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+body.eng-console .pac #tpSpeed {
+  height: 28px;
+  color-scheme: dark;
+}
+
+body.eng-console .pac .btn-tp:hover:not(:disabled),
+body.eng-console .pac .btn-ab:hover:not(:disabled) {
+  background: #1c252e;
+  color: var(--pac-ink);
+  border-color: rgba(226, 232, 238, 0.28);
+  box-shadow: none;
+}
+
+body.eng-console .pac .btn-tp:disabled,
+body.eng-console .pac .btn-ab:disabled {
+  opacity: 1;
+  color: var(--pac-disabled);
+  background: #141a20;
+  border-color: rgba(226, 232, 238, 0.08);
+  cursor: not-allowed;
+}
+
+body.eng-console .pac .btn-tp-loop.is-active,
+body.eng-console .pac .btn-tp-loop[aria-pressed="true"],
+body.eng-console .pac #tpAB[aria-pressed="true"] {
+  color: #e8f7f8;
+  background: #15262b;
+  border-color: rgba(127, 212, 222, 0.7);
+}
+
+body.eng-console .pac-selection,
+body.eng-console .pac-status {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--pac-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+body.eng-console .pac .tp-ab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pac-ink-2);
+  font-size: 11px;
+}
+
+body.eng-console.ec-skin .pac #processBtn,
+body.eng-console.ec-skin .pac #processBtn:hover:not(:disabled) {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 4px !important;
+  background: #152026 !important;
+  border: 1px solid rgba(127, 212, 222, 0.55) !important;
+  color: #e7f4f6 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body.eng-console.ec-skin .pac #processBtn:disabled {
+  background: #12181c !important;
+  color: var(--pac-disabled) !important;
+  border-color: rgba(226, 232, 238, 0.1) !important;
+}
+
+body.eng-console .pac #reprocessBtn,
+body.eng-console .pac #reprocessBtn:hover:not(:disabled) {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 4px !important;
+  background: transparent !important;
+  border: 1px solid rgba(226, 232, 238, 0.22) !important;
+  color: var(--pac-ink) !important;
+  box-shadow: none !important;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body.eng-console .pac #reprocessBtn:disabled {
+  color: var(--pac-disabled) !important;
+  border-color: rgba(226, 232, 238, 0.1) !important;
+}
+
+body.eng-console .pac :focus-visible {
+  outline: 2px solid var(--pac-cyan);
+  outline-offset: 2px;
+}
+
+body.eng-console .pac ::selection {
+  background: rgba(127, 212, 222, 0.28);
+  color: #f4fafb;
+}
+
+body.eng-console .pac-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 232, 238, 0.28) transparent;
+}
+
+body.eng-console .pac [hidden] { display: none !important; }
+
+/* One Process control. The mobile bar nodes stay in the DOM for their wiring. */
+body.eng-console .mobile-action-bar { display: none !important; }
+
+/* Phone speed and compare rules in mobile.css do not apply inside this module. */
+body.eng-console .pac .tp-speed,
+body.eng-console .pac .tp-ab { display: flex !important; }
+body.eng-console .pac .tp-ab-label { display: inline-flex !important; }
+
+/* Below the workstation breakpoint the module is a bottom dock. */
+body.eng-console.ec-skin:not(.ws) > details.transport-card.pac {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 180;
+}
+
+body.eng-console.ec-skin:not(.ws) {
+  padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+}
+
+body.eng-console.ec-skin.ws > details.transport-card.pac {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  order: 2;
+  z-index: 4;
+}
+
+body.eng-console.ec-skin.ws {
+  padding-bottom: 0;
+}
+
+@media (max-width: 899px) {
+  body.eng-console .pac-groups { grid-template-columns: minmax(0, 1fr); }
+  body.eng-console .pac-group + .pac-group {
+    border-left: 0;
+    border-top: 1px solid var(--pac-line-2);
+  }
+  body.eng-console details.transport-card.pac[open] > .pac-panel {
+    max-height: min(46vh, 320px);
+    overflow: auto;
+  }
+}
+
+/* Field navigation owns the bottom edge on small phones. Sit the dock above it. */
+@media (max-width: 640px) {
+  body.eng-console.ec-skin.ps-workstation:not(.ws) > details.transport-card.pac {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+  body.eng-console.ec-skin.ps-workstation:not(.ws) {
+    padding-bottom: calc(64px + 52px + env(safe-area-inset-bottom, 0px));
+  }
+  body.eng-console .pac-ready { max-width: 72px; }
+}
+
+@media (pointer: coarse) {
+  body.eng-console .pac .btn-tp,
+  body.eng-console .pac .btn-ab,
+  body.eng-console .pac #processBtn,
+  body.eng-console .pac #reprocessBtn,
+  body.eng-console .pac #tpSpeed {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  body.eng-console .pac .transport-seek,
+  body.eng-console .pac input[type="range"].tp-seek {
+    height: 44px;
+  }
+  body.eng-console.ec-skin:not(.ws) {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Workstation rules in engineer-console.css outrank a bare .pac class.
+   These selectors stay ahead of that grid, the 40px play key, and the inset clock. */
+body.eng-console details.transport-card.pac .btn-tp-play {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 50% !important;
+  background: #1a222a;
+  color: var(--pac-disabled);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+body.eng-console details.transport-card.pac .btn-tp-play:not(:disabled) {
+  background: #d7e6ec;
+  color: #0c1216;
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+body.eng-console details.transport-card.pac .tp-time-wrap {
+  width: auto;
+  max-width: 46%;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.eng-console details.transport-card.pac .transport-seek {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 48px;
+}
+
+body.eng-console details.transport-card.pac .tp-speed,
+body.eng-console details.transport-card.pac .tp-buttons,
+body.eng-console details.transport-card.pac .tp-ab,
+body.eng-console details.transport-card.pac .tp-region-group {
+  justify-content: flex-start;
+  width: auto;
+}
+
+body.eng-console details.transport-card.pac .tp-time {
+  font-size: 12px;
+  color: var(--pac-ink);
+}
+
+body.eng-console details.transport-card.pac .btn-tp:not(.btn-tp-play),
+body.eng-console details.transport-card.pac .btn-ab {
+  border-radius: 4px !important;
+  background: #151b22;
+  color: var(--pac-ink);
+  border: 1px solid rgba(226, 232, 238, 0.14);
+  box-shadow: none;
+}
+
+body.eng-console details.transport-card.pac > summary.pac-bar {
+  background-color: #0c1014;
+  background-image: linear-gradient(#141a20, #0c1014);
+}
+
+@media (pointer: coarse) {
+  body.eng-console details.transport-card.pac .btn-tp,
+  body.eng-console details.transport-card.pac .btn-ab,
+  body.eng-console details.transport-card.pac #processBtn,
+  body.eng-console details.transport-card.pac #reprocessBtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  body.eng-console details.transport-card.pac .btn-tp-play {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (pointer: fine) {
+  body.eng-console details.transport-card.pac > summary.pac-bar { min-height: 40px; }
+  body.eng-console details.transport-card.pac .btn-tp-play {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+  }
+}
