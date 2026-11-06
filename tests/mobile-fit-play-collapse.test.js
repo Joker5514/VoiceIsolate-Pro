@@ -49,6 +49,16 @@ describe('mobile fit stylesheet', () => {
     // Workstation body must keep scrolling the rack. Collapse clips only the play control.
     expect(css).not.toMatch(/body\.eng-console\.ws\s*\{[^}]*overflow/);
   });
+
+  test('the neural skin does not resize play over the collapse contract', () => {
+    const skin = fs.readFileSync(path.join(ROOT, 'public/app/neural-console.css'), 'utf8');
+    const open = /body\.eng-console\.neural-console #tpPlay\.btn-tp-play \{([^}]*)\}/.exec(skin);
+    expect(open).not.toBeNull();
+    expect(open[1]).not.toMatch(/\b(?:min-)?(?:width|height)\s*:/);
+    expect(skin).toMatch(/\.vip-play-slot\.is-collapsed #tpPlay \{[^}]*width:\s*0/);
+    expect(engineer).toContain('id="tpPlayCollapseToggle"');
+    expect(engineer).toContain('src="/play-collapse.js"');
+  });
 });
 
 describe('play collapse control', () => {
