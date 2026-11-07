@@ -331,8 +331,8 @@ describe('DSPCore.encodeWAV', () => {
     expect(DSPCore.encodeWAV(new Float32Array(50), 48000, 24).byteLength).toBe(44 + 150);
   });
 
-  test('32-bit: buffer size = 44 + samples*4', () => {
-    expect(DSPCore.encodeWAV(new Float32Array(100), 48000, 32).byteLength).toBe(444);
+  test('32-bit float: fmt+fact header plus 4 bytes per sample', () => {
+    expect(DSPCore.encodeWAV(new Float32Array(100), 48000, 32).byteLength).toBe(58 + 400);
   });
 
   test('sample rate written correctly at offset 24', () => {
@@ -345,11 +345,11 @@ describe('DSPCore.encodeWAV', () => {
     expect(new DataView(buf).getUint32(4, true)).toBe(36 + 10 * 2);
   });
 
-  test('16-bit clamps over-range samples to ±32767', () => {
+  test('16-bit clamps over-range samples to +32767 and -32768', () => {
     const buf = DSPCore.encodeWAV(new Float32Array([2.0, -2.0]), 48000, 16);
     const v = new DataView(buf);
     expect(v.getInt16(44, true)).toBe(0x7FFF);
-    expect(v.getInt16(46, true)).toBe(-0x7FFF);
+    expect(v.getInt16(46, true)).toBe(-32768);
   });
 });
 

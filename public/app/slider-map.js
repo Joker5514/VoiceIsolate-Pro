@@ -165,7 +165,7 @@ export const SLIDER_HINTS = {
 
   outGain: 'Trims final output level after all processing. Boost toward +6 dB when isolation lowered loudness; cut toward –3 dB if export peaks near 0 dBFS.',
   dryWet: 'Blends original audio with the processed result. Lower toward 40% to compare before/after; keep at 100% for full isolation output.',
-  ditherAmt: 'Adds tiny noise when reducing bit depth (0=off, 1=TPDF, 2=shaped, 3=high-pass). Use mode 1 for 16-bit podcast export; 0 for 32-bit float workflows.',
+  ditherAmt: 'Adds tiny noise when reducing bit depth (0=off, 1=TPDF, 2=error feedback, 3=stronger error feedback). Use mode 1 for 16-bit podcast export; 0 when wavBits is 32-bit float.',
   outWidth: 'Sets final stereo spread on the output bus. Narrow toward 0% for mono distribution; widen toward 130% only when the source is true stereo.',
 
   whisperLift: {
@@ -586,7 +586,7 @@ const RAW_SLIDER_REGISTRY = [
     id: 'ditherAmt', key: 'ditherAmt', label: 'Dither',
     min: 0, max: 3, step: 1, default: 0, unit: '',
     transform: v => v, target: 'export', rt: false, group: 'tab-out',
-    tip: 'Noise shaping dither applied before bit-depth reduction: 0=off, 1=TPDF, 2=shaped, 3=high-pass.'
+    tip: 'Encoder dither before integer bit-depth reduction: 0=off, 1=TPDF, 2=error feedback, 3=stronger error feedback.'
   },
   {
     id: 'outWidth', key: 'outWidth', label: 'Output Width',

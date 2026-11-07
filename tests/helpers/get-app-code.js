@@ -49,6 +49,16 @@ const INLINED_MODULES = [
 // so globalThis.DSPCore is live when app.js evaluates. In test evals/new Function
 // that context is absent — prepend dsp-core inline and set globalThis.DSPCore
 // so resolveDSPOrFail() in app.js succeeds without modification.
+function buildWavEncoderPreamble() {
+  const src = fs.readFileSync(path.join(SRC_CORE_DIR, 'wav-encoder-impl.js'), 'utf8');
+  return `
+(function _injectWavEncoder() {
+${src}
+})();
+const encodeWavArrayBuffer = globalThis.VIPWavEncoder.encodeWavArrayBuffer;
+`;
+}
+
 function buildDspCorePreamble() {
   const src = fs.readFileSync(path.join(APP_DIR, 'dsp-core.js'), 'utf8');
   // Wrap in an IIFE so its internal vars don't bleed into the test scope,
@@ -222,7 +232,7 @@ const WHISPER_HUNTER_IMPORTS = {};
 }
 
 function getAppCode() {
-  const preamble = buildDspCorePreamble();
+  const preamble = buildWavEncoderPreamble() + '\n' + buildDspCorePreamble();
   const inlined  = INLINED_MODULES.map(inlineAsIIFE).join('\n');
   const appJsRaw = fs.readFileSync(path.join(APP_DIR, 'app.js'), 'utf8');
   let appJsCode = stripRelativeImports(appJsRaw);

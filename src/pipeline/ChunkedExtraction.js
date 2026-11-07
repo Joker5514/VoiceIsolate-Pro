@@ -10,6 +10,7 @@
 
 import { SAMPLE_RATE, MAX_CHANNELS } from '../core/audio-config.js';
 import { parseWavMetadata } from '../core/IngestionBudget.js';
+import { interleaveFloat32, wavHeaderBytes } from '../core/WavEncoder.js';
 import { openCompressedReader } from './CompressedAudioReader.js';
 import { resampleWindow, sourceSpan } from './resample-window.js';
 
@@ -168,38 +169,14 @@ function createMemorySink(channelCount) {
   };
 }
 
-function floatToI16(sample) {
-  const x = Math.max(-1, Math.min(1, sample));
-  return x < 0 ? Math.round(x * 32768) : Math.round(x * 32767);
-}
-
-function wavHeaderBytes(channels, sampleRate, frames) {
-  const dataBytes = frames * channels * 2;
-  const buf = new ArrayBuffer(44);
-  const v = new DataView(buf);
-  const str = (at, s) => { for (let i = 0; i < s.length; i++) v.setUint8(at + i, s.charCodeAt(i)); };
-  str(0, 'RIFF');
-  v.setUint32(4, 36 + dataBytes, true);
-  str(8, 'WAVE');
-  str(12, 'fmt ');
-  v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true);
-  v.setUint16(22, channels, true);
-  v.setUint32(24, sampleRate, true);
-  v.setUint32(28, sampleRate * channels * 2, true);
-  v.setUint16(32, channels * 2, true);
-  v.setUint16(34, 16, true);
-  str(36, 'data');
-  v.setUint32(40, dataBytes, true);
-  return new Uint8Array(buf);
-}
-
 async function createFileSink({ channels, sampleRate, totalFrames }) {
-  const header = wavHeaderBytes(channels, sampleRate, totalFrames);
+  // Float32 spill. Quantizing to int16 here dithered the audio once, then
+  // export dithered it again. The final encoder is the only quantizer.
+  const header = wavHeaderBytes(channels, sampleRate, totalFrames, 32);
   let writer = null;
   let handle = null;
   let handleName = '';
-  if (typeof navigator !== 'undefined' && navigator.storage?.getDirectory && totalFrames * channels * 2 > 32 * 1024 * 1024) {
+  if (typeof navigator !== 'undefined' && navigator.storage?.getDirectory && totalFrames * channels * 4 > 32 * 1024 * 1024) {
     try {
       const root = await navigator.storage.getDirectory();
       handleName = `vip-extract-${Date.now()}.wav`;
@@ -215,12 +192,7 @@ async function createFileSink({ channels, sampleRate, totalFrames }) {
   return {
     kind: 'file',
     write(samples) {
-      const n = samples[0].length;
-      const pcm = new Int16Array(n * channels);
-      for (let i = 0; i < n; i++) {
-        for (let c = 0; c < channels; c++) pcm[i * channels + c] = floatToI16(samples[c][i]);
-      }
-      const bytes = new Uint8Array(pcm.buffer);
+      const bytes = interleaveFloat32(samples);
       if (writer) return writer.write(bytes);
       parts.push(bytes);
       return undefined;

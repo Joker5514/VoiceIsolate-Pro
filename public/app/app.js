@@ -54,6 +54,7 @@ import {
   LIVE_MIX_PARAM_IDS,
   snapshotParams,
 } from '/src/core/ParameterSchema.js';
+import { encodeWavArrayBuffer } from '/src/core/WavEncoder.js';
 import {
   buildCustomPresetValues,
   loadCustomPresets,
@@ -687,7 +688,7 @@ const SLIDERS = {
   out: [
     { id:'outGain', label:'Output Gain', min:-24, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Final output trim after all processing. Maximum +12 dB; the limiter ceiling prevents output clipping.', example:'Add +3 dB if the cleaned voice is too quiet; the limiter still prevents clipping above its ceiling.' },
     { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:5, unit:'%', rt:true, desc:'Blends the original (dry) with the processed (wet) signal.', example:'100% is fully processed; drop to 70% to keep a touch of the natural original and soften aggressive cleanup.' },
-    { id:'ditherAmt', label:'Dither', min:0, max:3, val:0, step:1, unit:'', rt:false, desc:'Adds encoder-only dither while quantising a 16-bit WAV: 0=off, 1=TPDF, 2=shaped, 3=high-pass.', example:'Leave at 0 for deterministic 16-bit exports; use 1 for a standard TPDF export.' },
+    { id:'ditherAmt', label:'Dither', min:0, max:3, val:0, step:1, unit:'', rt:false, desc:'Encoder-only dither for integer WAV: 0=off, 1=TPDF, 2=error feedback, 3=stronger error feedback. Ignored for 32-bit float.', example:'Leave at 0 for a deterministic 16-bit export; use 1 for standard TPDF.' },
     { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:10, unit:'%', rt:true, desc:'Final stereo width applied at the very end of the chain.', example:'100% leaves width unchanged; 0% guarantees a centered mono output for phone playback.' },
   ],
   extreme: [
@@ -871,31 +872,15 @@ function fmtTime(s) {
 // WAV encoder (standalone helper)
 // ---------------------------------------------------------------------------
 async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null, outMeta = null) {
+  const api = globalThis.VIPWavEncoder;
+  if (!api) throw new Error('[VIP] WAV encoder module was not loaded');
   const numCh = audioBuffer.numberOfChannels;
   const numSamples = audioBuffer.length;
   const sr = audioBuffer.sampleRate;
-  const bps = 2;
-  const dataBytes = numSamples * numCh * bps;
-  // RIFF sizes are uint32; past this the header would silently wrap.
-  if (36 + dataBytes > 0xFFFFFFFF) {
-    throw new RangeError('This export exceeds the 4 GB WAV limit. Trim the region and export again.');
-  }
-  // Check before allocating the whole file, not only between chunks.
-  throwIfAborted(signal);
-  const buf = new ArrayBuffer(44 + dataBytes);
-  const v = new DataView(buf);
-  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  ws(0, 'RIFF'); v.setUint32(4, buf.byteLength - 8, true); ws(8, 'WAVE');
-  ws(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
-  v.setUint16(22, numCh, true); v.setUint32(24, sr, true);
-  v.setUint32(28, sr * numCh * bps, true); v.setUint16(32, numCh * bps, true);
-  v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, dataBytes, true);
   const mode = Math.max(0, Math.min(3, Math.round(Number(ditherMode) || 0)));
-  const previousNoise = new Float32Array(numCh);
-  // Same mulberry32 TPDF as ExportManager.encodeWav. A recorded seed makes a
-  // dithered 16-bit export bit-reproducible. A numeric 4th argument is the
-  // forensic seed. Mode 0 never draws noise.
-  let rand = Math.random;
+  // A recorded seed makes a dithered integer export bit-reproducible. A
+  // numeric 4th argument is the forensic seed. Mode 0 never draws noise.
+  let ditherSeed;
   if (mode > 0) {
     const numericSeed = Number.isFinite(Number(outMeta)) && typeof outMeta !== 'object'
       ? (Number(outMeta) >>> 0) || 1
@@ -905,46 +890,45 @@ async function encodeWavBuffer(audioBuffer, ditherMode = 0, signal = null, outMe
         ? (Number(outMeta.ditherSeed) >>> 0) || 1
         : (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1);
     if (outMeta && typeof outMeta === 'object') outMeta.ditherSeed = requested;
-    let state = requested;
-    rand = () => {
-      state = (state + 0x6d2b79f5) >>> 0;
-      let t = state;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+    ditherSeed = requested;
   }
+  const bitDepth = outMeta && typeof outMeta === 'object' && Number.isFinite(Number(outMeta.bitDepth))
+    ? Number(outMeta.bitDepth) : 16;
+  const truePeakDb = outMeta && typeof outMeta === 'object' && Number.isFinite(Number(outMeta.truePeakDb))
+    ? Number(outMeta.truePeakDb) : undefined;
+  const options = { ditherAmt: mode, ditherSeed, bitDepth, truePeakDb };
+  const plan = api.planWav(numCh, numSamples, sr, options);
+  if (plan.tooBig) {
+    throw new RangeError('This export exceeds the 4 GB WAV limit. Trim the region and export again.');
+  }
+  // Check before allocating the whole file, not only between chunks.
+  throwIfAborted(signal);
+  const buf = new ArrayBuffer(plan.byteLength);
+  const view = new DataView(buf);
+  api.writeWavHeader(view, plan);
   // One getChannelData() per channel: calling it per sample crossed the Web
   // Audio binding numSamples × numCh times (3.3× slower in Chromium).
   const data = Array.from({ length: numCh }, (_, ch) => audioBuffer.getChannelData(ch));
+  const state = api.createQuantizeState(numCh, options, plan);
+  if (truePeakDb != null && numSamples > 0) {
+    const meter = api.createTruePeakMeter();
+    await processInChunks({
+      total: numSamples,
+      chunkSize: 48000,
+      signal,
+      runChunk: (from, to) => meter.push(data, from, to),
+    });
+    meter.finish();
+    state.gain = api.gainForTruePeak(meter.peak, truePeakDb);
+  }
   // Time-budgeted chunks: a 15-minute stereo export was a multi-second
-  // main-thread freeze when written in one task.
+  // main-thread freeze when written in one task. Dither state carries across
+  // the seams, so the bytes match a single-shot encode.
   await processInChunks({
     total: numSamples,
     chunkSize: 48000,
     signal,
-    runChunk: (from, to) => {
-      let off = 44 + from * numCh * bps;
-      for (let i = from; i < to; i++) {
-        for (let ch = 0; ch < numCh; ch++) {
-          let s = data[ch][i] || 0;
-          if (mode > 0) {
-            // 1 = TPDF, 2 = shaped, 3 = high-pass-shaped. Dither is injected at
-            // the 16-bit quantisation boundary only and never mutates playback PCM.
-            const rawNoise = (rand() - rand()) / 32768;
-            const shaped = mode === 1
-              ? rawNoise
-              : rawNoise - previousNoise[ch] * (mode === 2 ? 0.45 : 0.82);
-            previousNoise[ch] = rawNoise;
-            s += shaped;
-          }
-          s = Math.max(-1, Math.min(1, s));
-          // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
-          v.setInt16(off, Math.round(s < 0 ? s * 0x8000 : s * 0x7FFF), true);
-          off += 2;
-        }
-      }
-    },
+    runChunk: (from, to) => api.quantizeRange(view, data, from, to, plan, state),
   });
   return buf;
 }
@@ -4517,11 +4501,13 @@ class VoiceIsolatePro {
     }
     const effectiveParams = this.getEffectiveParams(window.VIP_PARAMS || {});
     const ditherAmt = buildMlProcessingConfig(effectiveParams).export.ditherAmt;
-    const meta = {};
+    const bitDepth = buildMlProcessingConfig(effectiveParams).export.wavBits;
+    const truePeakDb = Math.min(Number.isFinite(effectiveParams.limThresh) ? effectiveParams.limThresh : -1, -0.1);
+    const meta = { bitDepth, truePeakDb };
     const forensicSeed = this._resolveExportDitherSeed?.(ditherAmt);
     if (Number.isFinite(forensicSeed)) meta.ditherSeed = forensicSeed;
     else if (ditherAmt > 0) meta.ditherSeed = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
-    const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed: meta.ditherSeed });
+    const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed: meta.ditherSeed, bitDepth, truePeakDb });
     const filename = `processed-${Date.now()}.wav`;
     let prov = { ok: false };
     try {
@@ -4694,7 +4680,9 @@ class VoiceIsolatePro {
       }
       const effectiveParams = this.getEffectiveParams(window.VIP_PARAMS || {});
       const ditherAmt = buildMlProcessingConfig(effectiveParams).export.ditherAmt;
-      const meta = {};
+      const bitDepth = buildMlProcessingConfig(effectiveParams).export.wavBits;
+      const truePeakDb = Math.min(Number.isFinite(effectiveParams.limThresh) ? effectiveParams.limThresh : -1, -0.1);
+      const meta = { bitDepth, truePeakDb };
       const forensicSeed = this._resolveExportDitherSeed?.(ditherAmt);
       if (Number.isFinite(forensicSeed)) meta.ditherSeed = forensicSeed;
       const filename = 'processed-' + Date.now() + '.wav';
@@ -4715,7 +4703,7 @@ class VoiceIsolatePro {
           ditherSeed: meta.ditherSeed ?? null,
           region: { in: cropIn, out: cropOut },
         },
-        detail: 'Engineer Live-Mix rendered to 16-bit WAV',
+        detail: bitDepth === 32 ? 'Engineer Live-Mix rendered to 32-bit float WAV' : `Engineer Live-Mix rendered to ${bitDepth}-bit WAV`,
       });
       if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
       if (isDesktopShell()) {
@@ -6598,18 +6586,30 @@ class VoiceIsolatePro {
       const out = buf.getChannelData(ch);
       if (DSP && typeof DSP.truePeakLimit === 'function' && out.length <= CHUNK * 2) {
         DSP.truePeakLimit(out, ceil);
-      } else if (DSP && typeof DSP.truePeakLimit === 'function') {
-        // A subarray is a zero-copy view, so the limiter can be time-sliced
-        // without allocating another full channel.  The previous single call
-        // monopolised the renderer for long recordings at 98% progress.
+      } else if (DSP && typeof DSP.createTruePeakMeter === 'function') {
+        // One gain for the whole channel. Per-chunk limiting would step the
+        // gain at every boundary. The meter keeps its filter history across
+        // the yielded slices.
+        const meter = DSP.createTruePeakMeter();
         await processInChunks({
           total: out.length,
           chunkSize: CHUNK,
           signal,
-          runChunk: (start, end) => {
-            DSP.truePeakLimit(out.subarray(start, end), ceil);
-          },
+          runChunk: (start, end) => meter.pushMono(out.subarray(start, end)),
         });
+        meter.finish();
+        const gain = DSP.gainForTruePeak(meter.peak, ceil);
+        if (gain < 1) {
+          await processInChunks({
+            total: out.length,
+            chunkSize: CHUNK,
+            signal,
+            runChunk: (start, end) => {
+              const slice = out.subarray(start, end);
+              for (let i = 0; i < slice.length; i++) slice[i] *= gain;
+            },
+          });
+        }
       } else {
         await processInChunks({
           total: out.length,
@@ -8661,39 +8661,9 @@ class VoiceIsolatePro {
   }
 
   encWav(buf) {
-    const nCh = buf.numberOfChannels;
-    const sr = buf.sampleRate;
-    const dL = buf.length * nCh * 2;
-    const a = new ArrayBuffer(44 + dL);
-    const v = new DataView(a);
-    const ws = (o, s) => {
-      for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
-    };
-    ws(0, 'RIFF');
-    v.setUint32(4, 36 + dL, true);
-    ws(8, 'WAVE');
-    ws(12, 'fmt ');
-    v.setUint32(16, 16, true);
-    v.setUint16(20, 1, true);
-    v.setUint16(22, nCh, true);
-    v.setUint32(24, sr, true);
-    v.setUint32(28, sr * nCh * 2, true);
-    v.setUint16(32, nCh * 2, true);
-    v.setUint16(34, 16, true);
-    ws(36, 'data');
-    v.setUint32(40, dL, true);
-    let off = 44;
-    const chans = [];
-    for (let ch = 0; ch < nCh; ch++) chans.push(buf.getChannelData(ch));
-    for (let i = 0; i < buf.length; i++) {
-      for (let ch = 0; ch < nCh; ch++) {
-        let s = chans[ch][i];
-        s = Math.max(-1, Math.min(1, s));
-        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        off += 2;
-      }
-    }
-    return a;
+    const channels = [];
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch));
+    return encodeWavArrayBuffer(channels, buf.sampleRate, { bitDepth: 16, ditherAmt: 0 }).buffer;
   }
 
   estVoices(buf) {

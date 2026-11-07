@@ -8,82 +8,28 @@
 
 import { isDesktopShell, saveExportBlob, filtersForFilename } from '../core/DesktopBridge.js';
 import { debugLog } from '../core/debug.js';
+import { encodeWavArrayBuffer } from '../core/WavEncoder.js';
 
 /**
- * Encode Float32 channels to 16-bit PCM WAV.
+ * Encode Float32 channels to WAV. The bytes come from the shared encoder
+ * (`src/core/wav-encoder-impl.js`): 16-bit PCM by default, 24-bit PCM or
+ * 32-bit IEEE float when `bitDepth` says so.
  *
- * Dither (VIP-040): `ditherAmt` 0-3 selects off / TPDF / + two noise-shaped
- * variants (two-tap predictors 0.45 / 0.82). With `ditherSeed` set (any
- * finite number) the TPDF noise comes from a seeded mulberry32 stream instead
- * of Math.random(), so the export is bit-reproducible for forensic reruns —
- * the seed is recorded in the export's `.viprovenance.json` options. Without
- * a seed the dither is standard random TPDF (±1 LSB at 16-bit); that export
- * is intentionally not bit-reproducible. ditherAmt 0 is always deterministic.
+ * Dither (VIP-040): `ditherAmt` 0-3 selects off / TPDF / error-feedback
+ * (coefficients 0.45 and 0.82). With `ditherSeed` set (any finite number)
+ * the TPDF noise comes from a seeded mulberry32 stream instead of
+ * Math.random(), so the export is bit-reproducible. Without a seed the
+ * dither is random TPDF and intentionally not bit-reproducible. ditherAmt 0
+ * is always deterministic. Float exports ignore dither.
  *
  * @param {Float32Array[]} channels
  * @param {number} sampleRate
- * @param {{ ditherAmt?: number, ditherSeed?: number }} [options]
+ * @param {{ ditherAmt?: number, ditherSeed?: number, bitDepth?: number, truePeakDb?: number }} [options]
  * @returns {Blob}
  */
 export function encodeWav(channels, sampleRate, options = {}) {
-  const numChannels = channels.length || 1;
-  const length = channels[0]?.length || 0;
-  const bytesPerSample = 2;
-  const blockAlign = numChannels * bytesPerSample;
-  const dataSize = length * blockAlign;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  const writeStr = (offset, str) => {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-  };
-
-  writeStr(0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * blockAlign, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true);
-  writeStr(36, 'data');
-  view.setUint32(40, dataSize, true);
-
-  let offset = 44;
-  const ditherMode = Math.max(0, Math.min(3, Math.round(Number(options.ditherAmt) || 0)));
-  // Seeded (reproducible) TPDF noise when ditherSeed is a finite number.
-  let rand = Math.random;
-  if (ditherMode > 0 && Number.isFinite(options.ditherSeed)) {
-    let state = (Number(options.ditherSeed) >>> 0) || 1;
-    rand = () => {
-      state = (state + 0x6d2b79f5) >>> 0;
-      let t = state;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  const previousNoise = new Float32Array(numChannels);
-  for (let i = 0; i < length; i++) {
-    for (let ch = 0; ch < numChannels; ch++) {
-      let s = channels[ch][i] || 0;
-      if (ditherMode > 0) {
-        const rawNoise = (rand() - rand()) / 32768;
-        const shaped = ditherMode === 1
-          ? rawNoise
-          : rawNoise - previousNoise[ch] * (ditherMode === 2 ? 0.45 : 0.82);
-        previousNoise[ch] = rawNoise;
-        s += shaped;
-      }
-      s = Math.max(-1, Math.min(1, s));
-      // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
-      view.setInt16(offset, Math.round(s < 0 ? s * 0x8000 : s * 0x7fff), true);
-      offset += 2;
-    }
-  }
+  const list = channels && channels.length ? channels : [new Float32Array(0)];
+  const { buffer } = encodeWavArrayBuffer(list, sampleRate, options);
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
