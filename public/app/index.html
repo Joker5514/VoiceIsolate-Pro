@@ -99,6 +99,8 @@
   <!-- Studio console skin (layout/visual only — preserves IDs) -->
   <link rel="stylesheet" href="engineer-console.css" />
   <link rel="stylesheet" href="workstation-premium.css" />
+  <link rel="stylesheet" href="/vip-workstation.css" />
+  <link rel="stylesheet" href="/mobile-fit.css" />
   <link rel="stylesheet" href="premium-audio-control.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
@@ -239,7 +241,7 @@
     <a class="vip-engineer-nav__item" href="#vizCard" data-nav="compare"><span class="vip-nav__dot" aria-hidden="true"></span>Compare</a>
     <a class="vip-engineer-nav__item" href="#section-processing" data-nav="export"><span class="vip-nav__dot" aria-hidden="true"></span>Export</a>
     <a class="vip-engineer-nav__item" href="#settings" data-nav="settings"><span class="vip-nav__dot" aria-hidden="true"></span>Settings</a>
-    <span style="flex:1"></span>
+    <span class="vip-engineer-nav__spacer" style="flex:1"></span>
     <span class="vip-ondevice" id="engineerOnDeviceBadge"><span class="vip-ondevice__dot"></span>On-device · Private · Zero Cloud</span>
   </nav>
 
@@ -746,6 +748,16 @@
       <details class="card pipeline-box vip-section" id="section-processing" open>
         <summary class="vip-section-summary">Processing Pipeline</summary>
         <div class="vip-section-body">
+        <div class="vip-memory-row">
+          <label for="memoryProfile" class="inline-label">Memory</label>
+          <select id="memoryProfile" aria-label="Memory profile">
+            <option value="AUTO" selected>AUTO</option>
+            <option value="LOW">LOW</option>
+            <option value="BALANCED">BALANCED</option>
+            <option value="HIGH">HIGH</option>
+          </select>
+        </div>
+        <div id="audioOptimization" class="vip-optimization" hidden role="status" aria-live="polite"></div>
         <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
           <span class="vip-pb-dot" aria-hidden="true"></span>
           <span class="vip-pb-label">Ready — drop a file or browse to begin</span>
@@ -793,7 +805,14 @@
     <section class="col-right">
       <details class="card transport-card pac vip-section" id="section-transport" open>
         <summary class="vip-section-summary pac-bar">
-          <button id="tpPlay" class="btn btn-tp btn-tp-play" type="button" aria-label="Play (Space)" title="Play (Space)" disabled><span aria-hidden="true">&#9654;</span></button>
+          <span class="vip-play-slot" id="tpPlaySlot">
+            <button id="tpPlayCollapseToggle" class="vip-play-toggle" type="button" data-vip-play-toggle aria-expanded="true" aria-controls="tpPlay" aria-label="Collapse play button">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 5.25 L7 9.25 L11 5.25" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="vip-play-target">
+              <button id="tpPlay" class="btn btn-tp btn-tp-play" type="button" aria-label="Play (Space)" title="Play (Space)" disabled><span aria-hidden="true">&#9654;</span></button>
+            </span>
+          </span>
           <span class="tp-time-wrap">
             <span class="tp-time" id="tpCur">0:00</span>
             <span class="tp-time-sep">/</span>
@@ -1027,6 +1046,7 @@
   <!-- Mobile upload fix: iOS Safari decodeAudioData, AudioContext gesture lock,
        touch-action bleed, MIME accept scope. Loads after all modules are bootstrapped. -->
   <script src="./mobile-upload-fix.js"></script>
+  <script defer src="/play-collapse.js"></script>
   <!-- Research mode: local session export + ORT/benchmark strip (no network) -->
   <script src="./research-mode.js" defer></script>
   <script type="module" src="./sw-boot.js"></script>

@@ -1,0 +1,166 @@
+/* Persistent workstation dock. Pins the existing transport. Does not add a second player. */
+.vip-explain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+.vip-explain__q {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: #9fb0c3;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  padding: 6px 2px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.vip-explain__q::before {
+  content: "▸ ";
+  color: #22d3ee;
+}
+.vip-explain__q[aria-expanded="true"]::before {
+  content: "▾ ";
+}
+.vip-explain__a {
+  margin: 0 0 6px 1.1rem;
+  color: #c5d0dc;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.vip-optimization {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 8px;
+  background: #10151c;
+  color: #d5dee8;
+  white-space: pre-wrap;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.vip-optimization[data-kind="limit"] {
+  border-color: rgba(251, 191, 36, 0.7);
+}
+
+body.v3 {
+  padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
+}
+body.v3 .v3-transport {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 180;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: #0c1016;
+  border-top: 1px solid rgba(255, 70, 70, 0.35);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}
+body.v3 .v3-transport .v3-seek {
+  flex: 1 1 180px;
+  min-width: 120px;
+}
+body.v3 .vip-dock-process {
+  margin-left: auto;
+}
+body.v3 .vip-dock-process #processBtn {
+  min-height: 44px;
+  min-width: 44px;
+}
+body.v3 > .v3-transport .vip-iconbtn {
+  width: 44px;
+  height: 44px;
+}
+body.v3 > .v3-transport .vip-dock-source {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.ec-skin {
+  padding-bottom: calc(168px + env(safe-area-inset-bottom, 0px));
+}
+body.ec-skin .transport-card {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 180;
+  margin: 0;
+  max-height: none;
+  background: #0c1016;
+  border-top: 1px solid rgba(255, 70, 70, 0.45);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+}
+body.ec-skin .transport-card > summary {
+  display: none;
+}
+body.ec-skin .vip-dock-process {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 8px 0;
+}
+body.eng-console.ws > details.transport-card.vip-section[open] > .vip-section-body {
+  grid-template-columns: auto auto minmax(120px, 1fr) auto auto;
+}
+body.eng-console.ws > details.transport-card .vip-dock-process {
+  grid-column: 5;
+  grid-row: 1;
+  align-self: center;
+  padding: 0;
+}
+@media (max-width: 767px) {
+  body.ec-skin.ps-workstation .transport-card {
+    bottom: var(--ps-bottom-stack, calc(133px + env(safe-area-inset-bottom, 0px)));
+  }
+  body.ec-skin.ps-workstation {
+    padding-bottom: calc(var(--ps-bottom-stack, 133px) + 168px);
+  }
+  body.ec-skin .transport-card > .vip-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px 8px;
+  }
+  body.ec-skin .transport-card .tp-meta {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+  }
+  body.ec-skin .transport-card .btn-tp {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  body.ec-skin .vip-dock-process {
+    display: none;
+  }
+  body.v3 {
+    padding-bottom: calc(196px + env(safe-area-inset-bottom, 0px));
+  }
+  body.v3 > .v3-transport {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "keys time process"
+      "seek seek seek"
+      "source source source";
+    align-items: center;
+    gap: 6px 8px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  body.v3 > .v3-transport .v3-transport__keys { grid-area: keys; }
+  body.v3 > .v3-transport .time-readout { grid-area: time; }
+  body.v3 > .v3-transport .vip-dock-process { grid-area: process; margin-left: 0; }
+  body.v3 > .v3-transport .v3-seek { grid-area: seek; min-width: 0; flex: none; }
+  body.v3 > .v3-transport .vip-dock-source { grid-area: source; }
+}

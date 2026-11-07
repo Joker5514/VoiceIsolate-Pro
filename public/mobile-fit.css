@@ -1,0 +1,293 @@
+/*
+ * Mobile fit + Signal Glass polish.
+ * Layout and paint only: no audio, checkout, or API behavior.
+ *
+ * Tokens: voice #22d3ee, background stem #f5b942, reference #c3cbd5,
+ * canvas #0a0e14. Motion 150–300ms, expo-out. Touch targets are 44px
+ * from the viewport width, not pointer:coarse, so a resized desktop
+ * window matches a phone.
+ */
+
+:root {
+  --vip-voice: #22d3ee;
+  --vip-bgst: #f5b942;
+  --vip-ref: #c3cbd5;
+  --vip-canvas: #0a0e14;
+  --vip-ink: #061018;
+  --vip-ease-expo: cubic-bezier(0.23, 1, 0.32, 1);
+  --vip-motion: 220ms;
+}
+
+/* Play is the cyan pill on both surfaces. The collapse toggle stays glass. */
+#playBtn.v3-play,
+#tpPlay.btn-tp-play {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  border-color: transparent;
+  background: var(--vip-voice);
+  color: var(--vip-ink);
+  box-shadow: 0 6px 16px rgba(34, 211, 238, 0.22);
+  transition:
+    width var(--vip-motion) var(--vip-ease-expo),
+    opacity 200ms var(--vip-ease-expo),
+    background-color 150ms ease,
+    transform 200ms var(--vip-ease-expo);
+}
+#playBtn.v3-play:hover:not(:disabled),
+#tpPlay.btn-tp-play:hover:not(:disabled) {
+  background: #67e4f4;
+  color: var(--vip-ink);
+}
+
+.vip-play-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  transition: gap var(--vip-motion) var(--vip-ease-expo);
+}
+.vip-play-slot.is-collapsed { gap: 0; }
+.vip-play-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid #26323d;
+  background: rgba(195, 203, 213, 0.06);
+  color: var(--vip-ref);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.vip-play-toggle:hover { background: rgba(34, 211, 238, 0.1); color: var(--vip-voice); border-color: rgba(34, 211, 238, 0.45); }
+.vip-play-toggle:focus-visible { outline: 2px solid var(--vip-voice); outline-offset: 2px; }
+.vip-play-toggle svg { transition: transform 200ms var(--vip-ease-expo); }
+.vip-play-slot.is-collapsed .vip-play-toggle svg { transform: rotate(-90deg); }
+.vip-play-target {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+}
+body.v3 .vip-play-slot.is-collapsed #playBtn,
+body.eng-console .vip-play-slot.is-collapsed #tpPlay,
+body.eng-console.ws > .transport-card .vip-play-slot.is-collapsed #tpPlay,
+.vip-play-slot.is-collapsed #playBtn,
+.vip-play-slot.is-collapsed #tpPlay {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#unifiedSignalCanvas,
+body.v3 .v3-spectrum canvas,
+.spectro3d-container,
+.viz-canvas {
+  background-color: var(--vip-canvas);
+}
+body.v3 .v3-lane--voice .v3-lane__name i { background: var(--vip-voice); }
+body.v3 .v3-lane--bg .v3-lane__name i { background: var(--vip-bgst); }
+
+@media (max-width: 768px) {
+  /* Page itself does not scroll sideways. Internal tab rails may. */
+  html { overflow-x: clip; }
+  body.v3 .v3-hero,
+  #vipHero,
+  #vipHero .vip-hero-bg {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  body.v3 .v3-header {
+    height: auto;
+    min-height: 52px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 6px 12px;
+  }
+  body.v3 .v3-nav {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-x: visible;
+  }
+  body.v3 .v3-nav a,
+  body.v3 .v3-link,
+  body.v3 .v3-brand,
+  body.v3 .v3-btn,
+  body.v3 .v3-workspace .v3-transport .vip-iconbtn,
+  body.v3 .v3-workspace .v3-transport .v3-play,
+  body.v3 .v3-workspace .v3-seg .vip-btn,
+  body.v3 .v3-workspace .v3-seg .btn-tp-region,
+  body.v3 .v3-workspace .vip-btn,
+  body.v3 .v3-workspace .btn,
+  body.v3 .v3-workspace .vip-select,
+  body.v3 .v3-close .btn,
+  body.v3 .ps-btn,
+  body.v3 summary {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+  body.v3 .v3-nav a,
+  body.v3 .v3-link,
+  body.v3 .v3-brand,
+  body.v3 .v3-workspace .v3-transport .vip-iconbtn,
+  body.v3 .v3-workspace .v3-transport .v3-play,
+  body.v3 .v3-workspace .v3-seg .vip-btn,
+  body.v3 .v3-workspace .v3-seg .btn-tp-region {
+    min-width: 44px;
+  }
+  body.v3 .v3-nav a,
+  body.v3 .v3-link { height: 44px; }
+  body.v3 .v3-workspace .vip-select { height: 44px; }
+  body.v3 .v3-btn { height: 44px; }
+  body.v3 summary { padding-top: 10px; padding-bottom: 10px; }
+
+  /* How-it-works steps stack. The sideways scroller was the phone overflow. */
+  body.v3 .v3-pipeline {
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+  }
+  body.v3 .v3-hero { padding: 28px 16px 36px; gap: 28px; }
+  body.v3 .v3-wrap { padding: 36px 16px; gap: 20px; }
+  body.v3 .v3-transport { gap: 10px; padding: 12px; }
+  body.v3 .v3-transport .time-readout { min-height: 44px; display: inline-flex; align-items: center; }
+  body.v3 .v3-lanes__wave { min-height: 168px; }
+
+  .vip-engineer-nav {
+    flex-wrap: wrap;
+    margin: 8px;
+    gap: 6px;
+    max-width: calc(100% - 16px);
+  }
+  .vip-engineer-nav__spacer { display: none; }
+  .vip-engineer-nav__item,
+  .vip-ondevice {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+  .vip-ondevice {
+    flex: 1 1 100%;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.35;
+    padding: 8px 12px;
+  }
+
+  a.btn,
+  label.btn,
+  button.btn,
+  button.btn-xs,
+  button.btn-tp,
+  .hdr-stats-toggle,
+  .vip-profiles__btn,
+  .vip-compare-toggle__btn,
+  .vip-context-palette__btn,
+  .tab-btn,
+  summary.vip-section-summary,
+  summary.file-library-summary {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+  button.btn-xs,
+  button.btn-tp,
+  .hdr-stats-toggle,
+  .btn-viz-tab-nav {
+    min-width: 44px;
+  }
+  .hdr-scale,
+  .hdr-actions,
+  .tp-buttons,
+  .transport-top,
+  .vip-profiles,
+  .vip-compare-toggle__group,
+  .vip-context-palette {
+    flex-wrap: wrap;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .tp-buttons { flex-shrink: 1; gap: 8px; }
+  .transport-card { padding: 12px; }
+  .vip-hero-trust-text { white-space: normal; }
+  #unifiedSignalCanvas { background: var(--vip-canvas) !important; }
+  #unifiedSignalCanvas [data-header],
+  #unifiedSignalCanvas [data-header] > div,
+  #unifiedSignalCanvas [data-timeline] {
+    flex-wrap: wrap !important;
+    row-gap: 8px;
+  }
+  #unifiedSignalCanvas [data-timeline] {
+    height: auto !important;
+    min-height: 52px;
+  }
+      #unifiedSignalCanvas button {
+        min-width: 44px !important;
+        min-height: 44px !important;
+      }
+
+      /* Inline component styles and the v3 28–36px rows lose to these. */
+      body.v3 .v3-lane .vip-switch,
+      body.v3 .slider-hint-btn,
+      body.v3 .v3-modes .ps-btn,
+      body.v3 .compare-row__ab .vip-btn--ab,
+      body.v3 .v3-workspace .v3-seg .vip-btn,
+      body.v3 .v3-aside a {
+        min-height: 44px;
+        height: auto;
+      }
+      body.v3 .v3-lane .vip-switch,
+      body.v3 .slider-hint-btn {
+        min-width: 44px;
+        height: 44px;
+        flex-basis: 44px;
+        line-height: 44px;
+      }
+      body.v3 .v3-aside a { display: inline-flex; align-items: center; }
+      body.v3 #comparisonToggleMount [data-mode],
+      body.v3 #comparisonToggleMount [data-action],
+      #comparisonToggleMount [data-mode],
+      #comparisonToggleMount [data-action],
+      #liveMetricsMount button,
+      [data-action="toggleAdvanced"] {
+        min-height: 44px !important;
+        min-width: 44px !important;
+        height: auto !important;
+      }
+      body.eng-console .np-tab,
+      .ec-rack-nav a,
+      .viz-card .tab-btn {
+        min-height: 44px;
+        min-width: 44px;
+      }
+      .ec-rack-nav a { display: inline-flex; align-items: center; }
+      .dbg-btn, .dbg-close, .ps-skip-link {
+        min-height: 44px !important;
+        min-width: 44px !important;
+        box-sizing: border-box;
+      }
+    }
+
+@media (prefers-reduced-motion: reduce) {
+  .vip-play-slot,
+  .vip-play-target,
+  .vip-play-toggle svg,
+  #playBtn.v3-play,
+  #tpPlay.btn-tp-play {
+    transition: none !important;
+  }
+  .vip-play-slot.is-collapsed .vip-play-toggle svg { transform: none; }
+}

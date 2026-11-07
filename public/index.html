@@ -21,6 +21,8 @@
   <link rel="stylesheet" href="/premium-refresh.css">
   <link rel="stylesheet" href="/premium-signal.css">
   <link rel="stylesheet" href="/landing-v3.css">
+  <link rel="stylesheet" href="/vip-workstation.css">
+  <link rel="stylesheet" href="/mobile-fit.css">
 </head>
 <body class="ps-shell v3">
   <a class="ps-skip-link" href="#workspace">Skip to audio workspace</a>
@@ -292,12 +294,20 @@
                 <button data-profile="forensic" class="vip-btn vip-btn--ghost vip-tap" type="button">Forensic</button>
               </span>
             </div>
+            <label for="memoryProfile" class="inline-label">Memory</label>
+            <select id="memoryProfile" class="vip-select" aria-label="Memory profile">
+              <option value="AUTO" selected>AUTO</option>
+              <option value="LOW">LOW</option>
+              <option value="BALANCED">BALANCED</option>
+              <option value="HIGH">HIGH</option>
+            </select>
             <span class="v3-row__end">
               <button id="cancelProcessBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled aria-label="Cancel processing">Cancel</button>
               <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Isolate &amp; Enhance</button>
             </span>
           </div>
           <p id="outcomeHelp" class="hint">Import starts automatic local analysis — noise floor, VAD, whisper candidates, speakers. Profiles change processing behavior; Whisper Boost appears as a contextual action when relevant.</p>
+          <div id="audioOptimization" class="vip-optimization" hidden role="status" aria-live="polite"></div>
           <p id="quickCleanPreflight" class="hint" role="status">Checking local processing support…</p>
           <p id="quickCleanModelDetails" class="hint" aria-live="polite"></p>
           <p id="quickCleanStatus" class="hint quick-clean-status" data-state="empty">Idle — choose a file to begin. Audio stays on device.</p>
@@ -386,7 +396,14 @@
 
               <div class="v3-transport">
                 <span class="v3-transport__keys">
-                  <button id="playBtn" class="vip-iconbtn v3-play" type="button" disabled aria-label="Play" title="Play">▶</button>
+                  <span class="vip-play-slot" id="playSlot">
+                    <button id="playCollapseToggle" class="vip-play-toggle" type="button" data-vip-play-toggle aria-expanded="true" aria-controls="playBtn" aria-label="Collapse play button">
+                      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 5.25 L7 9.25 L11 5.25" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <span class="vip-play-target">
+                      <button id="playBtn" class="vip-iconbtn v3-play" type="button" disabled aria-label="Play" title="Play">▶</button>
+                    </span>
+                  </span>
                   <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">⏸</button>
                   <button id="stopBtn" class="vip-iconbtn" type="button" disabled aria-label="Stop" title="Stop">■</button>
                 </span>
@@ -585,5 +602,6 @@
   <script type="module" src="/landing-premium.js"></script>
   <script type="module" src="/landing-v3.js"></script>
   <script type="module" src="/app/sw-boot.js"></script>
+  <script defer src="/play-collapse.js"></script>
 </body>
 </html>

@@ -237,6 +237,14 @@ body.eng-console details.transport-card.pac[open] > summary.pac-bar .pac-chevron
   transform: rotate(45deg);
 }
 
+body.eng-console details.transport-card.pac .vip-play-slot {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-width: 0;
+}
+
 body.eng-console .pac .btn-tp-play {
   width: 32px;
   height: 32px;

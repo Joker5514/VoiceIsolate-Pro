@@ -77,6 +77,8 @@ describe('premium audio control module', () => {
     expect(sheetAt).toBeGreaterThan(skinAt);
     const dockAt = html.indexOf('/vip-workstation.css');
     if (dockAt !== -1) expect(sheetAt).toBeGreaterThan(dockAt);
+    const fitAt = html.indexOf('/mobile-fit.css');
+    if (fitAt !== -1) expect(sheetAt).toBeGreaterThan(fitAt);
     expect(css).toMatch(/summary\.pac-bar/);
     expect(css).toMatch(/display:\s*flex/);
     expect(css).toMatch(/\.mobile-action-bar\s*\{\s*display:\s*none\s*!important/);

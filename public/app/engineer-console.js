@@ -41,6 +41,7 @@
       installPrecisionStudioShell();
       installWorkstation();
       pinEngineerDock();
+      installExplainBullets();
       trackHeaderHeight();
       bindCollapsibleSections();
       // Defer ticker + summary so reparent paints before any interval work.
@@ -495,6 +496,26 @@
     if (slot && btn && !slot.contains(btn)) slot.append(btn);
     if (slot && again && !slot.contains(again)) slot.append(again);
     wirePremiumAudioChrome(card);
+    const memory = document.getElementById('memoryProfile');
+    if (memory && memory.dataset.pacPlan !== '1') {
+      memory.dataset.pacPlan = '1';
+      memory.addEventListener('change', (event) => {
+        const app = window._vipApp;
+        if (app && typeof app._recomputeChunkPlan === 'function') app._recomputeChunkPlan(event.target.value);
+      });
+    }
+  }
+
+  function installExplainBullets() {
+    import('/src/presentation/ExplainBullets.js').then((mod) => {
+      document.querySelectorAll('p.group-desc').forEach((node, index) => {
+        mod.foldParagraph(node, 'How does this stage work?', `group-desc-${index}`);
+      });
+      const chain = document.getElementById('vipSignalChain');
+      if (chain) mod.foldParagraph(chain, 'How does the processing pipeline work?', 'pipeline-explain');
+      const host = document.getElementById('section-processing')?.querySelector('.vip-section-body');
+      if (host) mod.mountExplainBullets(host, mod.INGESTION_EXPLAINS);
+    }).catch(() => { /* explanations are secondary to the controls */ });
   }
 
   function installWorkstation() {

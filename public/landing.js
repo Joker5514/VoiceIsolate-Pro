@@ -12,7 +12,12 @@
 'use strict';
 
 import { ingestFile, assertIngestible, isDesktopShell, pickAudioFile } from '/src/pipeline/FileIngestion.js';
-import { openFilePicker, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
+import { runChunkedExtraction } from '/src/pipeline/ChunkedExtraction.js';
+import { formatIngestionPlan, resolveIngestionPlan } from '/src/core/IngestionBudget.js';
+import { separateStems } from '/src/pipeline/StemSeparation.js';
+import { createMediaTransport } from '/src/presentation/MediaTransport.js';
+import { mountExplainBullets, foldParagraph, INGESTION_EXPLAINS } from '/src/presentation/ExplainBullets.js';
+import { openFilePicker, primeAudioGesture, fixUploadTouchTargets, classifyClientRejection } from '/src/presentation/UploadWiring.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
 import { LANDING_PRESETS, RT_SLIDER_DEFAULTS } from '/src/core/MixCalibration.js';
@@ -175,6 +180,13 @@ let workerReadyTimer = null;
 let targetSpeakerUi = null;
 
 let ingested = null;
+let chunkedExportFile = null;
+let pendingMediaFrac = 0;
+const mediaTransport = createMediaTransport({
+  onEnded() {
+    if (ingested?.duration) writeTimeReadout(0, mediaTransport.duration() || ingested.duration);
+  },
+});
 /** @type {File|Blob|null} original upload retained for video remux export */
 let sourceFile = null;
 let requestSeq = 0;
@@ -398,6 +410,20 @@ async function runLevelMatch() {
  * @param {'original'|'processed'|'removed'} lane
  */
 async function selectComparison(lane, { autoplay = true } = {}) {
+  if (chunkedExportFile && ingested?.strategy === 'chunked' && !mixer?.cleanBuffer) {
+    if (lane === 'removed') {
+      setStatus('The removed stem was not kept. A second full-length copy would exceed this memory plan.', 'warn');
+      return false;
+    }
+    const src = lane === 'processed' ? chunkedExportFile : sourceFile;
+    const keep = mediaTransport.currentTime() || pendingMediaFrac * (ingested.duration || 0);
+    const playing = mediaTransport.isPlaying();
+    mixer?.stop();
+    await mediaTransport.use(src, lane === 'processed' ? 'processed' : 'original');
+    mediaTransport.seek(keep);
+    if (playing || autoplay) await mediaTransport.play();
+    return true;
+  }
   if (!comparisonReady || !mixer) return false;
   comparisonEngaged = true;
   applyComparisonLevels();
@@ -464,6 +490,28 @@ function setStatus(msg, cls = '') {
 function fmtTime(s) {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+let timeReadoutMissingLogged = false;
+
+/** Transport clock. A missing readout is a UI defect, not a failed import. */
+function writeTimeReadout(cur, dur) {
+  if (!ui.timeReadout) {
+    if (!timeReadoutMissingLogged) {
+      timeReadoutMissingLogged = true;
+      console.warn('[VIP][landing] time readout is missing; duration stays in the status line');
+    }
+    return;
+  }
+  ui.timeReadout.textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+}
+
+function setSpeakerStatus(text) {
+  if (!ui.speakerStatus) {
+    console.warn('[VIP][landing] speaker status is missing:', text);
+    return;
+  }
+  ui.speakerStatus.textContent = text;
 }
 
 // ─── Processing indicator (DS ProcessLoader component) ───────────────────────
@@ -775,6 +823,11 @@ async function onOpenFromDrive() {
 async function onSaveToDrive() { await onDownloadProcessed({ drive: true }); }
 
 async function onDownloadProcessed({ video = false, drive = false } = {}) {
+  if (chunkedExportFile && !mixer?.cleanBuffer) {
+    const base = (sourceFile?.name || ingested?.sourceName || 'export').replace(/\.[^.]+$/, '').slice(0, 80) || 'export';
+    triggerBlobDownload(chunkedExportFile, `${base}-processed.wav`);
+    return;
+  }
   if (!hasProcessed || !mixer?.cleanBuffer || downloadInFlight || processingInFlight || ingestInFlight) return;
   downloadInFlight = true;
   updateDownloadButton();
@@ -1068,8 +1121,12 @@ function ensureWorkerReady() {
 }
 
 async function detectSpeakers(clean, sampleRate) {
+  if (!ui.speakersPanel || !ui.speakerStatus) {
+    console.warn('[VIP][landing] speaker panel is missing; detection UI skipped');
+    return;
+  }
   ui.speakersPanel.hidden = false;
-  ui.speakerStatus.textContent = 'Detecting speakers…';
+  setSpeakerStatus('Detecting speakers…');
   speakerControls.clear();
   const seq = requestSeq;
   // A stale run used to keep its DiarizationWorker (and a full-length copy of
@@ -1083,14 +1140,14 @@ async function detectSpeakers(clean, sampleRate) {
     mixer.loadSpeakerSegments(segments);
     const count = speakerControls.render(speakers);
     const methodLabel = method === 'onnx' ? 'ONNX embeddings' : 'spectral fingerprint';
-    ui.speakerStatus.textContent = count === 0
+    setSpeakerStatus(count === 0
       ? 'No distinct speakers detected.'
-      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`;
+      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`);
   } catch (err) {
     if (seq !== requestSeq || ctl.signal.aborted) return;
     console.error('[VIP][landing] diarization failed:', err);
     mixer.loadSpeakerSegments([]);
-    ui.speakerStatus.textContent = `Speaker detection unavailable: ${err.message}`;
+    setSpeakerStatus(`Speaker detection unavailable: ${err.message}`);
   }
   // Target enrollment becomes available once stems exist (same module as Engineer).
   void ensureTargetSpeakerUi();
@@ -1353,6 +1410,7 @@ async function ingestFrom(file) {
   }
   const seq = ++ingestSeq;
   requestSeq += 1;
+  processingInFlight = false;
   speakerDetectAbort?.abort();
   ingestInFlight = true;
   // The previous file's import analysis must not keep running or publish.
@@ -1403,6 +1461,8 @@ async function ingestFrom(file) {
     setStatus(`Decoding “${file.name}”…`, 'warn');
     const next = await ingestFile(file, {
       signal: job.controller.signal,
+      profile: document.getElementById('memoryProfile')?.value || 'AUTO',
+      modelIds: landingModelIds(),
       onBudget: (estimate) => {
         if (estimate.decision === 'warn') setStatus(
           `Large recording: estimated ${Math.ceil(estimate.estimatedBytes / 1048576)} MiB working memory on this ${estimate.tier.toLowerCase()} device. Keep this tab foregrounded; shorter excerpts use less memory.`, 'warn');
@@ -1425,6 +1485,11 @@ async function ingestFrom(file) {
       return;
     }
     ingested = next;
+    chunkedExportFile = null;
+    mediaTransport.close();
+    if (next.strategy === 'chunked') {
+      presentChunkedImport(next, file);
+    }
     // Always attempt preview for video sources after decode succeeds.
     if (isVideoFile(file)) loadVideo(file);
     if (seq !== ingestSeq) {
@@ -1436,11 +1501,15 @@ async function ingestFrom(file) {
     hideSpinner();
     endJob(job.id, 'completed');
     if (window.__vipLandingJobId === job.id) window.__vipLandingJobId = null;
-    quickClean.setState('imported', `Imported “${file.name}”. Automatic analysis starting…`);
-    setStatus(`Imported “${file.name}” — automatic analysis starting…`, 'active');
+    if (next.strategy !== 'chunked') {
+      quickClean.setState('imported', `Imported “${file.name}”. Automatic analysis starting…`);
+      setStatus(`Imported “${file.name}” — automatic analysis starting…`, 'active');
+    }
 
-    // ── Unified UX: preserve raw immutable, dispatch for automatic analysis
-    try {
+    // Chunked imports have no full PCM buffer. Analysis waits until a window exists.
+    if (next.strategy === 'chunked') {
+      quickClean.setState('ready', 'Chunked processing is selected. Press Process. The source file is unchanged.');
+    } else try {
       // Decoded ingest buffers are never mutated (Process copies before the
       // worker transfer), so raw adopts them: an eager clone here was a
       // synchronous full-file copy plus one more resident copy per import.
@@ -1537,7 +1606,8 @@ async function ingestFrom(file) {
   } finally {
     if (seq === ingestSeq) {
       ingestInFlight = false;
-      if (ingested) quickClean.setState('ready', 'Ready. Choose an outcome and press Process locally.');
+      if (ingested && ingested.strategy !== 'chunked') quickClean.setState('ready', 'Ready. Choose an outcome and press Process locally.');
+      if (ingested?.strategy === 'chunked') quickClean.setState('ready', 'Chunked processing is selected. Press Process. The source file is unchanged.');
       void refreshPreflight();
       ui.fileInput.disabled = false;
       ui.fileInput.value = '';
@@ -1546,8 +1616,13 @@ async function ingestFrom(file) {
 }
 
 async function onFileChosen() {
-  try { await primeAudioGesture(); } catch { /* best-effort */ }
-  await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
+  try {
+    try { await primeAudioGesture(); } catch { /* best-effort */ }
+    await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
+  } catch (err) {
+    console.error('[VIP][landing] file choice failed:', err);
+    setStatus(err?.message || 'Import failed', 'error');
+  }
 }
 
 function wireUploadDropZone() {
@@ -1571,14 +1646,20 @@ function wireUploadDropZone() {
     }
     primeAudioGesture().catch(() => {});
   };
+  const openPickerSafely = () => {
+    openPicker().catch((err) => {
+      console.error('[VIP][landing] picker failed:', err);
+      setStatus(err?.message || 'Upload control failed', 'error');
+    });
+  };
   zone.addEventListener('click', (event) => {
     if (event.target.closest('#browseBtn') || event.target.closest('#openDriveBtn')) return;
-    openPicker();
+    openPickerSafely();
   });
   zone.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      openPicker();
+      openPickerSafely();
     }
   });
   // browseBtn is <label for="fileInput"> — native picker; skip redundant JS handler.
@@ -1593,7 +1674,12 @@ function wireUploadDropZone() {
     zone.classList.remove('drag-over');
     const file = event.dataTransfer?.files?.[0];
     if (!file) return;
-    primeAudioGesture().catch(() => {}).finally(() => ingestFrom(file));
+    primeAudioGesture().catch(() => {}).finally(() => {
+      ingestFrom(file).catch((err) => {
+        console.error('[VIP][landing] drop import failed:', err);
+        setStatus(err?.message || 'Import failed', 'error');
+      });
+    });
   });
 }
 
@@ -1603,8 +1689,130 @@ function warnIfNotServed() {
   }
 }
 
+function landingModelIds() {
+  const id = ui.modelSelect?.value || 'bsrnn_vocals';
+  if (id === 'max_isolation') return ['bsrnn_vocals', 'rnnoise'];
+  if (id === 'rnnoise') return ['rnnoise'];
+  if (id === 'enhance_speech') return ['deepfilternet3'];
+  return ['bsrnn_vocals'];
+}
+
+function showIngestionPlan(plan, name) {
+  const panel = document.getElementById('audioOptimization');
+  if (!panel || !plan) return;
+  const text = formatIngestionPlan(plan, name);
+  panel.hidden = !text;
+  panel.dataset.kind = plan.strategy === 'chunked' ? 'chunked' : 'limit';
+  panel.textContent = text;
+}
+
+function presentChunkedImport(next, file) {
+  showIngestionPlan(next.ingestionPlan, file.name);
+  const provider = document.getElementById('ortProviderHint')?.textContent || '';
+  const execution = /webgpu/i.test(provider) ? '\nExecution: WebGPU' : '';
+  if (execution && document.getElementById('audioOptimization')) {
+    document.getElementById('audioOptimization').textContent += execution;
+  }
+  setStatus('Chunked processing selected. Source preserved. Press Process.', 'active');
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.seekSlider]) if (el) el.disabled = false;
+  writeTimeReadout(0, next.duration || 0);
+}
+
+function recomputeMemoryPlan() {
+  const prev = ingested?.ingestionPlan;
+  if (!prev?.known) return;
+  const profile = document.getElementById('memoryProfile')?.value || 'AUTO';
+  const next = resolveIngestionPlan({
+    duration: prev.duration,
+    channels: prev.channels,
+    sampleRate: prev.sampleRate,
+    source: prev.wav ? 'wav-header' : prev.metadataSource,
+    ...(prev.wav || {}),
+  }, prev.compressedBytes ?? prev.measurements?.compressedBytes ?? 0, {
+    workingBytes: prev.budgetBytes,
+    tier: prev.tier,
+  }, { profile, contract: prev.contract });
+  ingested.ingestionPlan = next;
+  ingested.strategy = next.strategy;
+  showIngestionPlan(next, sourceFile?.name || ingested.sourceName);
+  ui.processBtn.disabled = next.strategy === 'refuse';
+}
+
+async function processChunked() {
+  const plan = ingested?.ingestionPlan;
+  if (!plan || plan.strategy !== 'chunked' || !plan.chunk?.viable) {
+    setStatus(formatIngestionPlan(plan, sourceFile?.name || 'recording'), 'error');
+    return;
+  }
+  processingInFlight = true;
+  hasProcessed = false;
+  chunkedExportFile = null;
+  ui.processBtn.disabled = true;
+  ui.fileInput.disabled = true;
+  const job = beginJob('Chunked extraction', { kind: 'separate' });
+  window.__vipLandingJobId = job.id;
+  const id = ++requestSeq;
+  showSpinner('Extracting speech…');
+  quickClean.setState('processing', 'Extracting speech in memory-sized windows…');
+  try {
+    if (mediaTransport.isPlaying()) mediaTransport.pause();
+    mixer?.pause();
+    const result = await runChunkedExtraction(sourceFile, plan, {
+      signal: job.controller.signal,
+      processWindow: async (input, sampleRate, info) => {
+        const stems = await separateStems(input, sampleRate, {
+          modelIds: ingested.modelIds,
+          transferOwned: true,
+          skipCache: true,
+          signal: info.signal,
+          sourceName: sourceFile?.name,
+        });
+        if (!stems?.clean?.[0] || stems.clean[0].length !== input[0].length) {
+          throw Object.assign(new Error('The local model did not return a full window. Nothing was marked complete.'), { code: 'CHUNK_FAILED' });
+        }
+        return stems.clean;
+      },
+      onProgress: (frac) => setProcStage('separate', Math.round(frac * 100), 'Extracting speech…'),
+    });
+    if (id !== requestSeq) return;
+    if (result.kind === 'pcm' && result.noise?.length) {
+      mediaTransport.close();
+      onStems({
+        requestId: id, clean: result.clean, noise: result.noise,
+        sampleRate: result.sampleRate, passthrough: false,
+      });
+      return;
+    }
+    chunkedExportFile = result.file;
+    processingInFlight = false;
+    hasProcessed = true;
+    hideSpinner();
+    endJob(job.id, 'completed');
+    window.__vipLandingJobId = null;
+    for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.seekSlider, ui.downloadBtn, ui.compareOriginalBtn, ui.compareCleanedBtn]) {
+      if (el) el.disabled = false;
+    }
+    if (ui.compareRemovedBtn) ui.compareRemovedBtn.disabled = true;
+    ui.fileInput.disabled = false;
+    showIngestionPlan(plan, sourceFile?.name || 'recording');
+    const panel = document.getElementById('audioOptimization');
+    if (panel) {
+      panel.textContent += `\nOutput: ${result.frames} frames, ${result.sampleRate} Hz, ${result.channels} ch.\nRemoved stem: not held.`;
+    }
+    setStatus(`Extraction finished. ${result.frames} frames at ${result.sampleRate} Hz. Source unchanged.`, 'active');
+    updateDownloadButton();
+  } catch (err) {
+    if (id !== requestSeq) return;
+    failProcessing(err);
+  }
+}
+
 async function onProcess() {
   if (!ingested || ingestInFlight || processingInFlight || stemsInstalling || downloadInFlight) return;
+  if (ingested.strategy === 'chunked') {
+    await processChunked();
+    return;
+  }
   processingInFlight = true;
   try {
     // VIP-005: last check before the chain is captured — analysis may have
@@ -1927,16 +2135,54 @@ function startOutputMeter() {
   if (!_meterRAF && _meterEl) _meterRAF = requestAnimationFrame(_meterTick);
 }
 
+function chunkedMediaActive() {
+  return ingested?.strategy === 'chunked' && !mixer?.cleanBuffer;
+}
+
 function wireTransport() {
   ui.playBtn.addEventListener('click', async () => {
-    try { await mixer.play(); syncVideo(); } catch (err) { setStatus(err.message, 'error'); }
+    try {
+      if (chunkedMediaActive()) {
+        mixer?.stop();
+        const processed = mediaTransport.source() === 'processed' && chunkedExportFile;
+        const src = processed ? chunkedExportFile : (chunkedExportFile && mediaTransport.source() === 'processed' ? chunkedExportFile : sourceFile);
+        const useProcessed = processed;
+        await mediaTransport.use(useProcessed ? chunkedExportFile : sourceFile, useProcessed ? 'processed' : 'original');
+        if (pendingMediaFrac) mediaTransport.seek(pendingMediaFrac * (mediaTransport.duration() || ingested.duration || 0));
+        await mediaTransport.play();
+        return;
+      }
+      if (mediaTransport.isPlaying()) mediaTransport.pause();
+      await mixer.play();
+      syncVideo();
+    } catch (err) { setStatus(err.message, 'error'); }
   });
-  ui.pauseBtn.addEventListener('click', () => { if (mixer) { mixer.pause(); syncVideo(); } });
-  ui.stopBtn.addEventListener('click', () => { if (mixer) { mixer.stop(); syncVideo(); } });
+  ui.pauseBtn.addEventListener('click', () => {
+    if (mediaTransport.active()) {
+      pendingMediaFrac = (mediaTransport.duration() ? mediaTransport.currentTime() / mediaTransport.duration() : pendingMediaFrac);
+      mediaTransport.pause();
+      return;
+    }
+    if (mixer) { mixer.pause(); syncVideo(); }
+  });
+  ui.stopBtn.addEventListener('click', () => {
+    if (mediaTransport.active()) {
+      mediaTransport.stop();
+      pendingMediaFrac = 0;
+    }
+    if (mixer) { mixer.stop(); syncVideo(); }
+  });
 
   ui.seekSlider?.addEventListener('input', async (e) => {
-    if (!mixer) return;
     const frac = Number(e.target.value) / 1000;
+    if (chunkedMediaActive()) {
+      pendingMediaFrac = frac;
+      const dur = mediaTransport.duration() || ingested?.duration || 0;
+      if (mediaTransport.active()) mediaTransport.seek(frac * dur);
+      writeTimeReadout(frac * dur, dur);
+      return;
+    }
+    if (!mixer) return;
     try {
       await mixer.seek(frac * mixer.duration());
       syncVideo();
@@ -1948,10 +2194,23 @@ function wireTransport() {
   // One ticker drives the time readout and keeps the muted video aligned with
   // the mixer clock (covers waveform click-to-seek and natural end-of-stream).
   setInterval(() => {
+    if (chunkedMediaActive()) {
+      const dur = mediaTransport.duration() || ingested?.duration || 0;
+      const cur = mediaTransport.active() ? mediaTransport.currentTime() : pendingMediaFrac * dur;
+      writeTimeReadout(cur, dur);
+      if (ui.seekSlider && dur > 0 && !mediaTransport.isPlaying()) {
+        /* leave the scrubber where the user put it while paused */
+      } else if (ui.seekSlider && dur > 0) {
+        ui.seekSlider.value = String(Math.round((cur / dur) * 1000));
+        paintSeekFill(ui.seekSlider, cur, dur);
+      }
+      return;
+    }
+    if (mediaTransport.isPlaying()) mediaTransport.pause();
     if (!mixer) return;
     const cur = mixer.currentTime();
     const dur = mixer.duration();
-    ui.timeReadout.textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+    writeTimeReadout(cur, dur);
     if (ui.seekSlider && dur > 0) {
       ui.seekSlider.value = String(Math.round((cur / dur) * 1000));
       paintSeekFill(ui.seekSlider, cur, dur);
@@ -1984,7 +2243,12 @@ function wireDragAndDrop() {
     zone.classList.remove('upload-panel--dragging');
     const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (!file) return;
-    primeAudioGesture().catch(() => {}).finally(() => ingestFrom(file));
+    primeAudioGesture().catch(() => {}).finally(() => {
+      ingestFrom(file).catch((err) => {
+        console.error('[VIP][landing] drop import failed:', err);
+        setStatus(err?.message || 'Import failed', 'error');
+      });
+    });
   });
 }
 
@@ -2002,10 +2266,46 @@ window.addEventListener('error', (event) => {
   }
 });
 window.addEventListener('unhandledrejection', (event) => {
-  const msg = event.reason?.message || String(event.reason || 'unknown');
-  setStatus(`Upload failed: ${msg}`, 'error');
+  const classified = classifyClientRejection(event.reason, { ingestInFlight });
+  event.preventDefault();
+  if (classified.kind === 'ui') {
+    console.error('[VIP][landing] status UI update failed; import state was left unchanged:', event.reason);
+    return;
+  }
+  console.error('[VIP][landing] unhandled rejection:', event.reason);
+  if (classified.status) setStatus(classified.status, 'error');
 });
 ui.processBtn.addEventListener('click', onProcess);
+document.getElementById('memoryProfile')?.addEventListener('change', () => { recomputeMemoryPlan(); });
+foldParagraph(document.getElementById('outcomeHelp'), 'What happens after import?', 'outcome-help');
+mountExplainBullets(document.getElementById('quickCleanStatus')?.parentElement, INGESTION_EXPLAINS);
+(() => {
+  const transport = document.querySelector('.v3-transport');
+  if (!transport) return;
+  const btn = ui.processBtn;
+  if (btn && !btn.closest('.v3-transport')) {
+    const slot = document.createElement('div');
+    slot.className = 'vip-dock-process';
+    slot.append(btn);
+    transport.append(slot);
+  }
+  const source = document.querySelector('.compare-row__ab');
+  if (source && !transport.contains(source)) {
+    const hold = document.createElement('div');
+    hold.className = 'vip-dock-source';
+    hold.setAttribute('role', 'group');
+    hold.setAttribute('aria-label', 'Original or processed');
+    hold.append(source);
+    const slot = transport.querySelector('.vip-dock-process');
+    transport.insertBefore(hold, slot);
+  }
+  // Volume stays in the mixer. The dock keeps transport, source, and Process.
+  const volume = transport.querySelector('.v3-volume');
+  const tilt = document.querySelector('#stemsTilt');
+  if (volume && tilt) tilt.append(volume);
+  // Leave the tilted mixer. perspective on that card would trap position:fixed.
+  if (transport.parentElement !== document.body) document.body.append(transport);
+})();
 ui.modelSelect.addEventListener('change', () => {
   if (ui.modelSelect.value === ENHANCE_OUTCOME_ID && enhanceGuard.warned) {
     // Informed, explicit override AFTER the hazard notice: honor it, with the
