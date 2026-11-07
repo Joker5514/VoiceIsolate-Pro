@@ -53,6 +53,11 @@ importScripts('/src/workers/MainsHumFilter.js');
 // Classic-worker helper: DeepFilterNet3 feature extraction, deep filter and
 // its own 960-point STFT/iSTFT (src/workers/DeepFilterNet.js).
 importScripts('/src/workers/DeepFilterNet.js');
+// Classic-worker helper: Kaiser windowed-sinc rate conversion. The short-file
+// path uses OfflineAudioContext; this is the in-worker path (Demucs and any
+// other waveform model whose rate is not the file rate). Do not replace it
+// with linear interpolation — that folds content above the lower Nyquist.
+importScripts('/src/workers/BandlimitedResampler.js');
 
 // Canonical schema (keep in sync with ModelIdbSchema.js + ml-worker-fetch-cache.js)
 const IDB_NAME = 'vip-model-cache';
@@ -1127,20 +1132,13 @@ function canFuseSpectralChain(entries) {
   );
 }
 
-/** Linear resample mono PCM between sample rates. */
-function resampleLinear(samples, fromSr, toSr) {
+/** Bandlimited resample of mono PCM. Zero-phase Kaiser sinc, not a linear interpolator. */
+function resampleBandlimited(samples, fromSr, toSr) {
   if (fromSr === toSr) return new Float32Array(samples);
-  const ratio = toSr / fromSr;
-  const outLen = Math.max(1, Math.round(samples.length * ratio));
-  const out = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) {
-    const src = i / ratio;
-    const i0 = Math.floor(src);
-    const i1 = Math.min(samples.length - 1, i0 + 1);
-    const frac = src - i0;
-    out[i] = samples[i0] * (1 - frac) + samples[i1] * frac;
+  if (typeof self.vipResampleMono !== 'function') {
+    throw new Error('[VIP][MLWorker] Bandlimited resampler was not loaded.');
   }
-  return out;
+  return self.vipResampleMono(samples, fromSr, toSr);
 }
 
 /** Load (or reuse) every part session of a composite entry, keyed by part id. */
@@ -1188,7 +1186,7 @@ async function runDeepFilterNetEntry(entry, sessions, samples, onProgress, reque
 async function runWaveformMask(entry, session, samples, sampleRate, onProgress, requestId) {
   checkCancelled(requestId);
   const modelSr = entry.sampleRate || 44100;
-  let pcm = sampleRate === modelSr ? samples : resampleLinear(samples, sampleRate, modelSr);
+  let pcm = sampleRate === modelSr ? samples : resampleBandlimited(samples, sampleRate, modelSr);
   const segmentLen = entry.segmentSamples || 344520;
   const inName = entry.io?.input || 'input';
   const outName = entry.io?.output || 'output';
@@ -1219,7 +1217,7 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress, 
   }
 
   if (sampleRate !== modelSr) {
-    const back = resampleLinear(out, modelSr, sampleRate);
+    const back = resampleBandlimited(out, modelSr, sampleRate);
     const fixed = new Float32Array(samples.length);
     fixed.set(back.subarray(0, Math.min(back.length, samples.length)));
     return fixed;

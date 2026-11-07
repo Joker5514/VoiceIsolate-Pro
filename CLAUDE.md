@@ -276,6 +276,15 @@ Rules:
     `scripts/validate.js`; any other `audioWorklet.addModule` target (or a
     dynamic one) and `getUserMedia` remain forbidden. Do not delete them or
     re-tighten the allowlist as a "live-pipeline" regression.
+  - Long-file rate conversion is a **Kaiser windowed-sinc** in
+    `src/core/BandlimitedResampler.js`, reached from `resample-window.js`
+    (ChunkedExtraction and CompressedAudioReader read `sourceSpan` so each
+    chunk matches a one-shot resample) and from `MLWorker`'s waveform-model
+    path via `importScripts('/src/workers/BandlimitedResampler.js')`. Cutoff
+    is the lower Nyquist. The short-file path stays `OfflineAudioContext` in
+    `FileIngestion.js`. Do not put linear interpolation back on either path:
+    it folds content above the lower Nyquist and rolls off the highs, so a
+    long upload sounds worse than a short one.
   - `public/app/dsp-processor.js` (`registerProcessor('dsp-processor')`) is
     **legacy-shipped** on web, Android, and desktop for Engineer Mode
     compatibility and offline precache, but it is **not** `addModule`-loaded

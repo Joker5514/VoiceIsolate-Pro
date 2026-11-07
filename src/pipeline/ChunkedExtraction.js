@@ -11,7 +11,7 @@
 import { SAMPLE_RATE, MAX_CHANNELS } from '../core/audio-config.js';
 import { parseWavMetadata } from '../core/IngestionBudget.js';
 import { openCompressedReader } from './CompressedAudioReader.js';
-import { resampleWindow } from './resample-window.js';
+import { resampleWindow, sourceSpan } from './resample-window.js';
 
 export { resampleWindow };
 
@@ -110,9 +110,13 @@ async function readWavCanonical(file, plan, canonStart, canonCount) {
     return pcm.slice(0, channels);
   }
   const totalSrc = Math.floor(wav.dataBytes / wav.blockAlign);
-  const srcStart = Math.max(0, Math.floor(canonStart * wav.sampleRate / SAMPLE_RATE));
-  const srcEnd = Math.min(totalSrc, Math.ceil((canonStart + canonCount) * wav.sampleRate / SAMPLE_RATE) + 1);
-  const pcm = await readWavSlice(file, wav, srcStart, Math.max(1, srcEnd - srcStart));
+  const span = sourceSpan(wav.sampleRate, canonStart, canonCount);
+  const srcStart = Math.max(0, Math.min(totalSrc, span.srcStart));
+  const srcEnd = Math.max(srcStart, Math.min(totalSrc, span.srcEnd));
+  if (srcEnd <= srcStart) {
+    return Array.from({ length: channels }, () => new Float32Array(canonCount));
+  }
+  const pcm = await readWavSlice(file, wav, srcStart, srcEnd - srcStart);
   return resampleWindow(pcm.slice(0, channels), srcStart, wav.sampleRate, canonStart, canonCount);
 }
 

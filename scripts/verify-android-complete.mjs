@@ -38,6 +38,7 @@ const REQUIRED = [
   'src/workers/MLWorker.js',
   'src/workers/EngineerSpectralControls.js',
   'src/workers/MainsHumFilter.js',
+  'src/workers/BandlimitedResampler.js',
   'src/workers/DeepFilterNet.js',
   'src/workers/SpeakerEmbeddingWorker.js',
   'src/workers/SpeakerFeatures.js',
