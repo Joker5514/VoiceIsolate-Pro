@@ -1,19 +1,31 @@
-/** Map absolute canonical frames onto a source-rate slice that starts at srcStart. */
+/**
+ * Map absolute canonical frames onto a source-rate slice that starts at srcStart.
+ *
+ * Bandlimited Kaiser windowed-sinc (src/core/BandlimitedResampler.js). The
+ * kernel is centered on each output time, so a window matches a one-shot
+ * resample when the slice covers `sourceSpan` — that is the context
+ * ChunkedExtraction and CompressedAudioReader read around every chunk.
+ */
 import { SAMPLE_RATE } from '../core/audio-config.js';
+import {
+  kernelRadius,
+  resampleWindow as resampleBandlimited,
+  sourceSpan as spanAt,
+} from '../core/BandlimitedResampler.js';
+
+/** Kernel half-width in source samples. Zero when `fromRate` is already canonical. */
+export function sourceMargin(fromRate, toRate = SAMPLE_RATE) {
+  return kernelRadius(fromRate, toRate);
+}
+
+/**
+ * Source frames [srcStart, srcEnd) that the kernel reads for canonical frames
+ * [canonStart, canonStart + outFrames). srcStart may be negative at file start.
+ */
+export function sourceSpan(fromRate, canonStart, outFrames, toRate = SAMPLE_RATE) {
+  return spanAt(canonStart, outFrames, fromRate, toRate);
+}
 
 export function resampleWindow(channels, srcStart, fromRate, canonStart, outFrames) {
-  const out = channels.map(() => new Float32Array(outFrames));
-  const srcLen = channels[0]?.length || 0;
-  if (!srcLen || outFrames < 1) return out;
-  const scale = fromRate / SAMPLE_RATE;
-  for (let i = 0; i < outFrames; i++) {
-    const pos = (canonStart + i) * scale - srcStart;
-    const i0 = Math.max(0, Math.min(srcLen - 1, Math.floor(pos)));
-    const i1 = Math.min(srcLen - 1, i0 + 1);
-    const t = Math.max(0, Math.min(1, pos - Math.floor(pos)));
-    for (let c = 0; c < channels.length; c++) {
-      out[c][i] = channels[c][i0] * (1 - t) + channels[c][i1] * t;
-    }
-  }
-  return out;
+  return resampleBandlimited(channels, srcStart, fromRate, canonStart, outFrames, SAMPLE_RATE);
 }

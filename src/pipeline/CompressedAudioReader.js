@@ -10,7 +10,7 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS } from '../core/audio-config.js';
-import { resampleWindow } from './resample-window.js';
+import { resampleWindow, sourceSpan } from './resample-window.js';
 
 function fail(code, message) {
   const error = new Error(message);
@@ -457,10 +457,11 @@ async function openDecoderStream(file, info) {
 
   return {
     async read(canonStart, canonCount) {
-      const srcStart = Math.floor(canonStart * sourceRate / SAMPLE_RATE);
-      const srcEnd = Math.ceil((canonStart + canonCount) * sourceRate / SAMPLE_RATE) + 1;
+      const span = sourceSpan(sourceRate, canonStart, canonCount);
+      const srcStart = Math.max(0, span.srcStart);
+      const srcEnd = Math.max(srcStart + 1, span.srcEnd);
       await pumpUntil(srcEnd);
-      const src = materialize(srcStart, Math.max(1, srcEnd - srcStart));
+      const src = materialize(srcStart, srcEnd - srcStart);
       const out = sourceRate === SAMPLE_RATE
         ? src.map((ch) => ch.subarray(0, canonCount))
         : resampleWindow(src, srcStart, sourceRate, canonStart, canonCount);
