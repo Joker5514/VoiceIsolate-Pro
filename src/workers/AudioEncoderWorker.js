@@ -24,11 +24,13 @@
  */
 'use strict';
 
+import { encodeWavArrayBuffer } from '../core/WavEncoder.js';
+
 export const WAV_LIMITS = Object.freeze({
   maxChannels: 8,
   minSampleRate: 8000,
   maxSampleRate: 384000,
-  // RIFF chunk size (data + 36) must fit a uint32.
+  // RIFF chunk size must fit a uint32. 36 is the 16/24-bit PCM overhead.
   maxDataBytes: 0xFFFFFFFF - 36,
 });
 
@@ -38,7 +40,7 @@ export const WAV_LIMITS = Object.freeze({
  * @param {unknown} sampleRate
  * @returns {{ numChannels: number, length: number }}
  */
-export function validatePcm(channels, sampleRate) {
+export function validatePcm(channels, sampleRate, options) {
   if (!Array.isArray(channels) || channels.length === 0 || channels.length > WAV_LIMITS.maxChannels) {
     throw new TypeError(`Invalid channels: expected 1–${WAV_LIMITS.maxChannels} Float32Array channels.`);
   }
@@ -53,8 +55,11 @@ export function validatePcm(channels, sampleRate) {
   if (!Number.isInteger(sampleRate) || sampleRate < WAV_LIMITS.minSampleRate || sampleRate > WAV_LIMITS.maxSampleRate) {
     throw new RangeError(`Invalid sample rate ${sampleRate}: expected an integer from ${WAV_LIMITS.minSampleRate} to ${WAV_LIMITS.maxSampleRate} Hz.`);
   }
-  const dataBytes = length * channels.length * 2;
-  if (dataBytes > WAV_LIMITS.maxDataBytes) {
+  const bits = Number(options && options.bitDepth);
+  const bytesPerSample = bits >= 28 ? 4 : bits >= 20 ? 3 : 2;
+  const overhead = bytesPerSample === 4 ? 50 : 36;
+  const dataBytes = length * channels.length * bytesPerSample;
+  if (overhead + dataBytes > 0xFFFFFFFF) {
     throw new RangeError('Audio is too long for a WAV file (4 GiB limit).');
   }
   let nonFinite = 0;
@@ -66,49 +71,22 @@ export function validatePcm(channels, sampleRate) {
 }
 
 /**
- * Encode validated Float32 PCM to a 16-bit WAV.
+ * Encode validated Float32 PCM with the shared WAV encoder.
+ * Default is 16-bit PCM and no dither, matching the historical worker.
  * @param {Float32Array[]} channels
  * @param {number} sampleRate
+ * @param {{ bitDepth?: number, ditherAmt?: number, ditherSeed?: number, truePeakDb?: number }} [options]
  * @returns {{ blob: Blob, clippedSamples: number }}
  */
-export function encodeWAV(channels, sampleRate) {
-  const { numChannels, length } = validatePcm(channels, sampleRate);
-  const bytesPerSample = 2;
-  const blockAlign = numChannels * bytesPerSample;
-  const dataSize = length * blockAlign;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * blockAlign, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true);
-  writeString(view, 36, 'data');
-  view.setUint32(40, dataSize, true);
-
-  let clippedSamples = 0;
-  let offset = 44;
-  for (let i = 0; i < length; i++) {
-    for (let ch = 0; ch < numChannels; ch++) {
-      let sample = channels[ch][i];
-      if (sample > 1) { sample = 1; clippedSamples++; } else if (sample < -1) { sample = -1; clippedSamples++; }
-      // Round, not truncate: setInt16 truncates toward zero, a 2-LSB dead zone.
-      view.setInt16(offset, Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF), true);
-      offset += 2;
-    }
-  }
+export function encodeWAV(channels, sampleRate, options = {}) {
+  validatePcm(channels, sampleRate, options);
+  const { buffer, clippedSamples } = encodeWavArrayBuffer(channels, sampleRate, {
+    bitDepth: options.bitDepth ?? 16,
+    ditherAmt: options.ditherAmt ?? 0,
+    ditherSeed: options.ditherSeed,
+    truePeakDb: options.truePeakDb,
+  });
   return { blob: new Blob([buffer], { type: 'audio/wav' }), clippedSamples };
-}
-
-function writeString(view, offset, string) {
-  for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,14 +95,14 @@ function writeString(view, offset, string) {
 
 if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typeof window === 'undefined') {
   self.onmessage = (e) => {
-    const { type, requestId, channels, sampleRate, format } = e.data || {};
+    const { type, requestId, channels, sampleRate, format, bitDepth, ditherAmt, ditherSeed, truePeakDb } = e.data || {};
     if (type !== 'encode') return;
     try {
       if (format !== 'wav') {
         throw new TypeError(`Unsupported format "${format}": this build encodes WAV only.`);
       }
       self.postMessage({ type: 'progress', requestId, progress: 0.5, stage: 'encoding-wav' });
-      const { blob, clippedSamples } = encodeWAV(channels, sampleRate);
+      const { blob, clippedSamples } = encodeWAV(channels, sampleRate, { bitDepth, ditherAmt, ditherSeed, truePeakDb });
       self.postMessage({ type: 'progress', requestId, progress: 1, stage: 'complete' });
       self.postMessage({ type: 'result', requestId, blob, format: 'wav', clippedSamples });
     } catch (error) {

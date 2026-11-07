@@ -17,18 +17,22 @@ describe('processed WAV dither contract', () => {
     expect(appSource).toContain("async function downloadWav(audioBuffer, name, ditherMode = 0, signal = null, outMeta = null)");
     expect(appSource).toContain('encodeWavBuffer(buf, ditherAmt, signal, meta)');
     expect(appSource).toContain('ditherSeed: meta.ditherSeed ?? null');
-    expect(appSource).toContain('encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed: meta.ditherSeed })');
+    expect(appSource).toContain('encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed: meta.ditherSeed, bitDepth, truePeakDb })');
   });
 
   test('Analysis Workspace Export uses the same canonical dither snapshot', () => {
     expect(analysisSource).toContain("import { buildMlProcessingConfig, snapshotParams } from '/src/core/ParameterSchema.js';");
-    expect(analysisSource).toContain('const ditherAmt = buildMlProcessingConfig(params).export.ditherAmt;');
-    expect(analysisSource).toContain('exportAudioBuffer(buf, name, { ditherAmt, ditherSeed: meta.ditherSeed });');
+    expect(analysisSource).toContain('const ditherAmt = exportCfg.ditherAmt;');
+    expect(analysisSource).toContain('const bitDepth = exportCfg.wavBits;');
+    expect(analysisSource).toContain('exportAudioBuffer(buf, name, { ditherAmt, ditherSeed: meta.ditherSeed, bitDepth, truePeakDb });');
   });
 
   test('the shared WAV encoder alone adds quantisation dither', () => {
-    expect(exportSource).toContain('const ditherMode = Math.max(0, Math.min(3, Math.round(Number(options.ditherAmt) || 0)));');
-    expect(exportSource).toContain('if (ditherMode > 0)');
+    const encoderSource = fs.readFileSync(path.join(ROOT, 'src/core/wav-encoder-impl.js'), 'utf8');
+    expect(encoderSource).toContain('var ditherMode = Math.max(0, Math.min(3, Math.round(Number(src.ditherAmt) || 0)));');
+    expect(encoderSource).toContain('state.mode > 0');
+    expect(encoderSource).toContain('state.feedback * state.error[ch]');
+    expect(exportSource).toContain('encodeWavArrayBuffer');
     const fallbackStart = appSource.indexOf('async _runFallbackPipeline');
     const fallbackEnd = appSource.indexOf('\n  _applyOutputSafetyLimit(', fallbackStart);
     expect(appSource.slice(fallbackStart, fallbackEnd)).not.toContain('applyDither');

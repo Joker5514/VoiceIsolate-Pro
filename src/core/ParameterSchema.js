@@ -101,7 +101,8 @@ export const PARAMETER_SCHEMA = Object.freeze([
   // ── Output ────────────────────────────────────────────────────────────
   { id: 'outGain', label: 'Output Gain', category: 'output', min: -24, max: 12, default: 0, step: 0.5, unit: 'dB', rt: true, path: 'audioParam', effect: 'Post-chain trim.' },
   { id: 'dryWet', label: 'Dry/Wet', category: 'output', min: 0, max: 100, default: 100, step: 5, unit: '%', rt: true, path: 'audioParam', effect: 'Blend unprocessed vs processed bus.' },
-  { id: 'ditherAmt', label: 'Dither', category: 'output', min: 0, max: 3, default: 0, step: 1, unit: '', rt: false, path: 'offlineOnly', effect: 'Export dither intensity for 16-bit targets.' },
+  { id: 'ditherAmt', label: 'Dither', category: 'output', min: 0, max: 3, default: 0, step: 1, unit: '', rt: false, path: 'offlineOnly', effect: 'Export dither for integer WAV: 0 off, 1 TPDF, 2 and 3 error-feedback noise shaping. Ignored for 32-bit float.' },
+  { id: 'wavBits', label: 'WAV Bits', category: 'output', min: 16, max: 32, default: 16, step: 8, unit: 'bit', rt: false, path: 'offlineOnly', effect: 'Export word length. 16 and 24 are integer PCM; 32 is IEEE float. Default 16 is the historical WAV export.' },
   { id: 'outWidth', label: 'Out Width', category: 'output', min: 0, max: 200, default: 100, step: 10, unit: '%', rt: true, path: 'audioParam', effect: 'Final stereo width scale.' },
 
   // ── Whisper / extreme ─────────────────────────────────────────────────
@@ -195,7 +196,7 @@ export const ML_POST_STEM_PARAM_IDS = Object.freeze([
 ]);
 
 /** Controls that deliberately act only while encoding a lossy integer export. */
-export const EXPORT_PARAM_IDS = Object.freeze(['ditherAmt']);
+export const EXPORT_PARAM_IDS = Object.freeze(['ditherAmt', 'wavBits']);
 
 /** PlaybackMixer / active worklet controls. Keep in parity with EngineerModeBridge. */
 export const LIVE_MIX_PARAM_IDS = Object.freeze([

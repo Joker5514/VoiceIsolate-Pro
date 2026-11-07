@@ -7,6 +7,18 @@
 
 'use strict';
 
+function vipWavEncoder() {
+  if (typeof globalThis !== 'undefined' && globalThis.VIPWavEncoder) return globalThis.VIPWavEncoder;
+  if (typeof require === 'function' && typeof process !== 'undefined' && process.cwd) {
+    var fs = require('fs');
+    var path = require('path');
+    var file = path.join(process.cwd(), 'src/core/wav-encoder-impl.js');
+    (new Function(fs.readFileSync(file, 'utf8')))();
+    if (globalThis.VIPWavEncoder) return globalThis.VIPWavEncoder;
+  }
+  throw new Error('[VIP] WAV encoder module was not loaded');
+}
+
 /**
  * Per-bin adaptive noise floor tracker using a minimum statistics approach
  * (Martin 2001). Maintains a rolling minimum over a configurable window of
@@ -1517,26 +1529,20 @@ const DSPCore = {
     return { left: out_l, right: out_r };
   },
 
-  /** S32: Soft-knee peak limiter. Output is strictly bounded by `ceiling`.
-   *  The knee starts ~3 dB below the ceiling so peaks compress smoothly
-   *  rather than slamming into a hard threshold (which created derivative
-   *  discontinuities and clicks on transients). A final hard clamp guarantees
-   *  |sample| ≤ ceiling even for pathological super-unity ML stems. */
+  /** S32: 4× oversampled true-peak limiter. Linear gain brings the
+   *  oversampled peak to `ceilingDb` (default −1 dBTP). Signals already
+   *  under the ceiling are left untouched. */
   truePeakLimit(data, ceilingDb) {
-    const ceilDb = Number.isFinite(ceilingDb) ? Math.min(ceilingDb, 0) : -1;
-    const ceiling = Math.pow(10, ceilDb / 20);
-    const knee = ceiling * 0.7079;             // -3 dB below ceiling
-    const range = Math.max(1e-12, ceiling - knee);
-    for (let i = 0; i < data.length; i++) {
-      const x = data[i];
-      const a = Math.abs(x);
-      if (a <= knee) continue;                 // linear region
-      const over = (a - knee) / range;         // ≥ 0
-      let compressed = knee + range * Math.tanh(over);
-      if (compressed > ceiling) compressed = ceiling; // hard contract
-      data[i] = (x < 0 ? -compressed : compressed);
-    }
+    vipWavEncoder().limitTruePeakInPlace(data, ceilingDb);
     return data;
+  },
+
+  createTruePeakMeter() {
+    return vipWavEncoder().createTruePeakMeter();
+  },
+
+  gainForTruePeak(peak, ceilingDb) {
+    return vipWavEncoder().gainForTruePeak(peak, ceilingDb);
   },
 
   /** S33: TPDF dither for bit-depth reduction */
@@ -1704,53 +1710,15 @@ const DSPCore = {
 
   // ===== WAV ENCODING =====
 
-  /** Encode Float32Array to WAV ArrayBuffer */
-  encodeWAV(data, sampleRate, bitDepth = 16) {
-    const bytesPerSample = bitDepth / 8;
-    const numSamples = data.length;
-    const dataSize = numSamples * bytesPerSample;
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
-
-    const writeStr = (off, str) => {
-      for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
-    };
-
-    writeStr(0, 'RIFF');
-    view.setUint32(4, 36 + dataSize, true);
-    writeStr(8, 'WAVE');
-    writeStr(12, 'fmt ');
-    view.setUint32(16, 16, true);                  // chunk size
-    view.setUint16(20, bitDepth === 32 ? 3 : 1, true); // format (3=float, 1=PCM)
-    view.setUint16(22, 1, true);                   // channels
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * bytesPerSample, true);
-    view.setUint16(32, bytesPerSample, true);
-    view.setUint16(34, bitDepth, true);
-    writeStr(36, 'data');
-    view.setUint32(40, dataSize, true);
-
-    const offset = 44;
-    if (bitDepth === 16) {
-      for (let i = 0; i < numSamples; i++) {
-        const s = Math.max(-1, Math.min(1, data[i]));
-        view.setInt16(offset + i * 2, s * 0x7FFF, true);
-      }
-    } else if (bitDepth === 24) {
-      for (let i = 0; i < numSamples; i++) {
-        const s = Math.max(-1, Math.min(1, data[i]));
-        const val = Math.floor(s * 0x7FFFFF);
-        view.setUint8(offset + i * 3, val & 0xFF);
-        view.setUint8(offset + i * 3 + 1, (val >> 8) & 0xFF);
-        view.setUint8(offset + i * 3 + 2, (val >> 16) & 0xFF);
-      }
-    } else { // 32-bit float
-      for (let i = 0; i < numSamples; i++) {
-        view.setFloat32(offset + i * 4, data[i], true);
-      }
-    }
-
-    return buffer;
+  /** Encode one mono Float32Array with the shared WAV encoder. */
+  encodeWAV(data, sampleRate, bitDepth = 16, options = {}) {
+    const encoded = vipWavEncoder().encodeWavArrayBuffer([data], sampleRate, {
+      bitDepth,
+      ditherAmt: options.ditherAmt || 0,
+      ditherSeed: options.ditherSeed,
+      truePeakDb: options.truePeakDb,
+    });
+    return encoded.buffer;
   },
 
   // ===== ADVANCED DSP: ADAPTIVE NOISE ESTIMATION =====

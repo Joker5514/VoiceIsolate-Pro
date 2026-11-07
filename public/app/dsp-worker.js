@@ -7,6 +7,7 @@
 'use strict';
 
 // BUG-K FIX: explicit relative path prevents failure in some worker origins
+importScripts('/src/core/wav-encoder-impl.js');
 importScripts('./dsp-core.js');
 
 // eslint-disable-next-line no-undef

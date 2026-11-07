@@ -12,6 +12,10 @@ const FFTBridge = new Function(
   `${fftBridgeSrc}\nreturn { computeSTFT, reconstructISTFT, encodeWAV };`
 )();
 
+beforeAll(async () => {
+  await import('../src/core/WavEncoder.js');
+});
+
 describe('fft-bridge', () => {
   test('computeSTFT emits at least one frame for empty and short buffers', () => {
     const empty = FFTBridge.computeSTFT(new Float32Array(0), 1024, 256, 48000);

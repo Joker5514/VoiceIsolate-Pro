@@ -1069,14 +1069,17 @@ export function installAnalysisWorkspace(app) {
     const params = typeof app.getEffectiveParams === 'function'
       ? app.getEffectiveParams(rawParams)
       : rawParams;
-    const ditherAmt = buildMlProcessingConfig(params).export.ditherAmt;
+    const exportCfg = buildMlProcessingConfig(params).export;
+    const ditherAmt = exportCfg.ditherAmt;
+    const bitDepth = exportCfg.wavBits;
+    const truePeakDb = Math.min(Number.isFinite(params.limThresh) ? params.limThresh : -1, -0.1);
     const meta = {};
     const forensicSeed = typeof app._resolveExportDitherSeed === 'function'
       ? app._resolveExportDitherSeed(ditherAmt)
       : undefined;
     if (Number.isFinite(forensicSeed)) meta.ditherSeed = forensicSeed;
     else if (ditherAmt > 0) meta.ditherSeed = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
-    const result = await exportAudioBuffer(buf, name, { ditherAmt, ditherSeed: meta.ditherSeed });
+    const result = await exportAudioBuffer(buf, name, { ditherAmt, ditherSeed: meta.ditherSeed, bitDepth, truePeakDb });
     if (!result.ok) {
       showError(result.error || 'Export failed');
       return;

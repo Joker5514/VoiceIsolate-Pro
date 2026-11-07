@@ -15,6 +15,7 @@ const body = app.slice(app.indexOf('async function encodeWavBuffer('), app.index
 let encodeWavBuffer;
 let build;
 beforeAll(async () => {
+  await import('../src/core/WavEncoder.js');
   const { processInChunks, throwIfAborted } = await import('../src/pipeline/ui-yield.js');
   // ArrayBuffer is a parameter so a test can observe allocations.
   // eslint-disable-next-line no-new-func

@@ -194,6 +194,72 @@ test('an MP4 audio sample table is read without loading a media payload', async 
   expect(info.samples[1].offset).toBe(4112);
 });
 
+function siSdr(ref, est) {
+  let dot = 0;
+  let energy = 0;
+  for (let i = 0; i < ref.length; i++) {
+    dot += ref[i] * est[i];
+    energy += ref[i] * ref[i];
+  }
+  if (energy === 0) return Infinity;
+  const scale = dot / energy;
+  let noise = 0;
+  let signal = 0;
+  for (let i = 0; i < ref.length; i++) {
+    const s = scale * ref[i];
+    const e = est[i] - s;
+    signal += s * s;
+    noise += e * e;
+  }
+  if (noise === 0) return Infinity;
+  return 10 * Math.log10(signal / noise);
+}
+
+test('file-sink float32 spill matches the memory sink above 90 dB SI-SDR', async () => {
+  const total = 20000;
+  const channels = 2;
+  const plan = planFor(total, { channels, core: 4096, context: 512, fade: 512 });
+  const options = {
+    readWindow: (start, count) => tone(start, count, channels),
+    processWindow: async (input) => input.map((ch) => {
+      const out = new Float32Array(ch.length);
+      for (let i = 0; i < ch.length; i++) out[i] = ch[i] * 0.8;
+      return out;
+    }),
+  };
+  const memory = await chunked.runChunkedExtraction(null, plan, { ...options, sink: 'memory' });
+  const file = await chunked.runChunkedExtraction(null, plan, { ...options, sink: 'file' });
+  const bytes = Buffer.from(await file.file.arrayBuffer());
+  const meta = budget.parseWavMetadata(bytes);
+  expect(meta.format).toBe(3);
+  expect(meta.bitDepth).toBe(32);
+  const data = bytes.subarray(meta.dataOffset, meta.dataOffset + meta.dataBytes);
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const decoded = chunked.decodeInterleavedPcm(view, file.frames, meta);
+  const scores = [];
+  const errors = [];
+  for (let c = 0; c < channels; c++) {
+    const ref = memory.clean[c];
+    const est = decoded[c];
+    let energy = 0;
+    let peakErr = 0;
+    for (let i = 0; i < ref.length; i++) {
+      energy += ref[i] * ref[i];
+      peakErr = Math.max(peakErr, Math.abs(ref[i] - est[i]));
+    }
+    const score = siSdr(ref, est);
+    scores.push(score);
+    errors.push(peakErr);
+    expect(energy).toBeGreaterThan(0);
+    expect(peakErr).toBe(0);
+    expect(score).toBeGreaterThan(90);
+  }
+  console.log(`WAV_ENCODER_MEASUREMENTS ${JSON.stringify({
+    chunkedFileVsMemorySiSdrDb: scores.map((score) => (score === Infinity ? 'Infinity' : score)),
+    chunkedPeakAbsError: errors,
+  })}`);
+});
+
 test('MPEG-1 Layer III frame length is stable across two frames', async () => {
   const frame = Buffer.alloc(417);
   frame[0] = 0xff;

@@ -40,45 +40,15 @@ const VoiceIsolatePro = extractVoiceIsolatePro();
 
 describe('Utility Functions from app.js', () => {
   // Standalone implementations matching public/app/app.js methods
-  function encWav(buf) {
-    const nCh = buf.numberOfChannels;
-    const sr = buf.sampleRate;
-    const dL = buf.length * nCh * 2;
-    const a = new ArrayBuffer(44 + dL);
-    const v = new DataView(a);
-    const ws = (o, s) => {
-      for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
-    };
-    ws(0, 'RIFF');
-    v.setUint32(4, 36 + dL, true);
-    ws(8, 'WAVE');
-    ws(12, 'fmt ');
-    v.setUint32(16, 16, true);
-    v.setUint16(20, 1, true);
-    v.setUint16(22, nCh, true);
-    v.setUint32(24, sr, true);
-    v.setUint32(28, sr * nCh * 2, true);
-    v.setUint16(32, nCh * 2, true);
-    v.setUint16(34, 16, true);
-    ws(36, 'data');
-    v.setUint32(40, dL, true);
-    let off = 44;
-
-    const chans = new Array(nCh);
-    for (let ch = 0; ch < nCh; ch++) {
-      chans[ch] = buf.getChannelData(ch);
-    }
-
-    for (let i = 0; i < buf.length; i++) {
-      for (let ch = 0; ch < nCh; ch++) {
-        let s = chans[ch][i];
-        s = Math.max(-1, Math.min(1, s));
-        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        off += 2;
+    function encWav(buf) {
+      if (!globalThis.VIPWavEncoder) {
+        const src = require('fs').readFileSync(require('path').join(__dirname, '../src/core/wav-encoder-impl.js'), 'utf8');
+        (new Function(src))();
       }
+      const channels = [];
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch));
+      return globalThis.VIPWavEncoder.encodeWavArrayBuffer(channels, buf.sampleRate, { bitDepth: 16, ditherAmt: 0 }).buffer;
     }
-    return a;
-  }
 
   function calcRMS(d) {
     let s = 0;
@@ -467,8 +437,8 @@ describe('Utility Functions from app.js', () => {
       // Frame 0
       // ch 0: 0 -> 0
       expect(v.getInt16(off, true)).toBe(0); off += 2;
-      // ch 1: 0.5 -> 0.5 * 32767 = 16383
-      expect(v.getInt16(off, true)).toBeCloseTo(16383, -1); off += 2;
+      // ch 1: 0.5 → round(0.5 × 32767) = 16384
+      expect(v.getInt16(off, true)).toBe(16384); off += 2;
 
       // Frame 1
       // ch 0: 1.0 -> 32767

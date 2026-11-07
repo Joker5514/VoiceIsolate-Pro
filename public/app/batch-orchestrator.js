@@ -6,6 +6,18 @@
 
 'use strict';
 
+function vipWavEncoder() {
+  if (typeof globalThis !== 'undefined' && globalThis.VIPWavEncoder) return globalThis.VIPWavEncoder;
+  if (typeof require === 'function' && typeof process !== 'undefined' && process.cwd) {
+    var fs = require('fs');
+    var path = require('path');
+    var file = path.join(process.cwd(), 'src/core/wav-encoder-impl.js');
+    (new Function(fs.readFileSync(file, 'utf8')))();
+    if (globalThis.VIPWavEncoder) return globalThis.VIPWavEncoder;
+  }
+  throw new Error('[VIP] WAV encoder module was not loaded');
+}
+
 /**
  * Async batch processing orchestrator.
  * Offline / creator queue owner only — live interactive routing remains in
@@ -306,42 +318,16 @@ class BatchOrchestrator {
     }
   }
 
-  _encodeWAV(data, sampleRate, bitDepth = 16) {
-    // Use DSPCore if available
-    if (typeof DSPCore !== 'undefined') {
-      return DSPCore.encodeWAV(data, sampleRate, bitDepth);
+  _encodeWAV(data, sampleRate, bitDepth = 16, options = {}) {
+    if (typeof DSPCore !== 'undefined' && DSPCore.encodeWAV) {
+      return DSPCore.encodeWAV(data, sampleRate, bitDepth, options);
     }
-
-    // Inline WAV encoder
-    const bytesPerSample = bitDepth / 8;
-    const dataSize = data.length * bytesPerSample;
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
-
-    const ws = (off, str) => {
-      for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
-    };
-
-    ws(0, 'RIFF');
-    view.setUint32(4, 36 + dataSize, true);
-    ws(8, 'WAVE');
-    ws(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * bytesPerSample, true);
-    view.setUint16(32, bytesPerSample, true);
-    view.setUint16(34, bitDepth, true);
-    ws(36, 'data');
-    view.setUint32(40, dataSize, true);
-
-    for (let i = 0; i < data.length; i++) {
-      const s = Math.max(-1, Math.min(1, data[i]));
-      view.setInt16(44 + i * 2, s * 0x7FFF, true);
-    }
-
-    return buffer;
+    return vipWavEncoder().encodeWavArrayBuffer([data], sampleRate, {
+      bitDepth,
+      ditherAmt: options.ditherAmt || 0,
+      ditherSeed: options.ditherSeed,
+      truePeakDb: options.truePeakDb,
+    }).buffer;
   }
 }
 
