@@ -101,6 +101,7 @@
   <link rel="stylesheet" href="workstation-premium.css" />
   <link rel="stylesheet" href="/vip-workstation.css" />
   <link rel="stylesheet" href="/mobile-fit.css" />
+  <link rel="stylesheet" href="premium-audio-control.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -802,74 +803,87 @@
     </section>
 
     <section class="col-right">
-      <details class="card transport-card vip-section" id="section-transport" open>
-        <summary class="vip-section-summary">Transport</summary>
-        <div class="vip-section-body">
-        <div class="transport-top">
-          <div class="tp-buttons" role="group" aria-label="Playback controls">
-            <span class="vip-play-slot" id="tpPlaySlot">
-              <button id="tpPlayCollapseToggle" class="vip-play-toggle" type="button" data-vip-play-toggle aria-expanded="true" aria-controls="tpPlay" aria-label="Collapse play button">
-                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 5.25 L7 9.25 L11 5.25" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <span class="vip-play-target">
-                <button id="tpPlay" class="btn btn-tp btn-tp-play" type="button" aria-label="Play (Space)" title="Play (Space)" disabled><span aria-hidden="true">&#9654;</span></button>
-              </span>
+      <details class="card transport-card pac vip-section" id="section-transport" open>
+        <summary class="vip-section-summary pac-bar">
+          <span class="vip-play-slot" id="tpPlaySlot">
+            <button id="tpPlayCollapseToggle" class="vip-play-toggle" type="button" data-vip-play-toggle aria-expanded="true" aria-controls="tpPlay" aria-label="Collapse play button">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 5.25 L7 9.25 L11 5.25" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="vip-play-target">
+              <button id="tpPlay" class="btn btn-tp btn-tp-play" type="button" aria-label="Play (Space)" title="Play (Space)" disabled><span aria-hidden="true">&#9654;</span></button>
             </span>
-            <button id="playOrig" class="btn btn-tp vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">Play Original</button>
-            <button id="playProc" class="btn btn-tp vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">Play Processed</button>
-            <button id="tpPause" class="btn btn-tp" type="button" aria-label="Pause (Space)" title="Pause (Space)" disabled><span aria-hidden="true">&#9208;</span></button>
-            <button id="tpStop" class="btn btn-tp" type="button" aria-label="Stop" title="Stop" disabled><span aria-hidden="true">&#9209;</span></button>
-            <button id="tpRew" class="btn btn-tp" type="button" aria-label="Rewind" title="Rewind" disabled><span aria-hidden="true">&#9664;&#9664;</span></button>
-            <button id="tpFwd" class="btn btn-tp" type="button" aria-label="Fast Forward" title="Fast Forward" disabled><span aria-hidden="true">&#9654;&#9654;</span></button>
-          </div>
-          <div class="tp-time-wrap">
+          </span>
+          <span class="tp-time-wrap">
             <span class="tp-time" id="tpCur">0:00</span>
             <span class="tp-time-sep">/</span>
             <span class="tp-time" id="tpDur">0:00</span>
+          </span>
+          <span class="transport-seek pac-bar__seek">
+            <span id="tpRegionBar" class="transport-region-bar" hidden aria-hidden="true"></span>
+            <span class="tp-seek-rail" aria-hidden="true"><span id="tpSeekFill" class="tp-seek-fill"></span></span>
+            <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
+          </span>
+          <span id="pacReady" class="pac-ready" data-state="idle">Ready</span>
+          <span class="pac-chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="vip-section-body pac-panel">
+          <div class="pac-groups">
+            <section class="pac-group" aria-label="Transport">
+              <h3 class="pac-label">Transport</h3>
+              <div class="tp-buttons" role="group" aria-label="Playback controls">
+                <button id="playOrig" class="btn btn-tp vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">Play Original</button>
+                <button id="playProc" class="btn btn-tp vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">Play Processed</button>
+                <button id="tpPause" class="btn btn-tp" type="button" aria-label="Pause (Space)" title="Pause (Space)" disabled><span aria-hidden="true">&#9208;</span></button>
+                <button id="tpStop" class="btn btn-tp" type="button" aria-label="Stop" title="Stop" disabled><span aria-hidden="true">&#9209;</span></button>
+                <button id="tpRew" class="btn btn-tp" type="button" aria-label="Rewind" title="Rewind" disabled><span aria-hidden="true">&#9664;&#9664;</span></button>
+                <button id="tpFwd" class="btn btn-tp" type="button" aria-label="Fast Forward" title="Fast Forward" disabled><span aria-hidden="true">&#9654;&#9654;</span></button>
+              </div>
+              <div class="tp-speed">
+                <label for="tpSpeed">Speed</label>
+                <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
+                <select id="tpSpeed" aria-label="Playback speed">
+                  <option value="0.25">0.25x</option>
+                  <option value="0.5">0.5x</option>
+                  <option value="0.75">0.75x</option>
+                  <option value="1" selected>1x</option>
+                  <option value="1.25">1.25x</option>
+                  <option value="1.5">1.5x</option>
+                  <option value="1.75">1.75x</option>
+                  <option value="2">2x</option>
+                </select>
+                <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
+              </div>
+            </section>
+            <section class="pac-group" aria-label="Timeline and selection">
+              <h3 class="pac-label">Timeline</h3>
+              <div class="tp-region-group">
+                <button id="tpLoop" class="btn btn-tp btn-tp-region btn-tp-loop" type="button" disabled aria-pressed="false" title="Loop playback (L)">Loop</button>
+                <button id="tpCropIn" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop in-point at playhead ([)">In</button>
+                <button id="tpCropOut" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop out-point at playhead (])">Out</button>
+                <button id="tpCropClear" class="btn btn-tp btn-tp-region" type="button" disabled title="Clear crop">Clr</button>
+              </div>
+              <p id="pacSelection" class="pac-selection">Full file</p>
+              <div class="tp-ab">
+                <button id="tpAB" class="btn btn-ab" type="button"
+                  aria-label="Compare Original vs Processed"
+                  aria-describedby="tpABLabel"
+                  aria-pressed="false"
+                  title="Compare Original / Processed (X) — sample-accurate, keeps playhead"
+                  disabled>Compare Original</button>
+                <button id="abToggle" class="btn btn-ab vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">A/B</button>
+                <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
+                  <span class="tp-ab-tag">A</span>
+                  <span class="tp-ab-name">Original</span>
+                </span>
+                <span id="abLabel" class="tp-ab-label vip-tp-alias" data-version="A" hidden aria-hidden="true"></span>
+              </div>
+            </section>
+            <section class="pac-group" aria-label="Processing">
+              <h3 class="pac-label">Processing</h3>
+              <div class="pac-process" id="pacProcessSlot"></div>
+              <p id="pacStatus" class="pac-status" role="status">Ready</p>
+            </section>
           </div>
-          <div class="tp-meta">
-            <div class="tp-speed">
-              <label for="tpSpeed">Speed</label>
-              <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
-              <select id="tpSpeed" aria-label="Playback speed">
-                <option value="0.25">0.25x</option>
-                <option value="0.5">0.5x</option>
-                <option value="0.75">0.75x</option>
-                <option value="1" selected>1x</option>
-                <option value="1.25">1.25x</option>
-                <option value="1.5">1.5x</option>
-                <option value="1.75">1.75x</option>
-                <option value="2">2x</option>
-              </select>
-              <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
-            </div>
-            <div class="tp-region-group">
-              <button id="tpLoop" class="btn btn-tp btn-tp-region btn-tp-loop" type="button" disabled aria-pressed="false" title="Loop playback (L)">Loop</button>
-              <button id="tpCropIn" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop in-point at playhead ([)">In</button>
-              <button id="tpCropOut" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop out-point at playhead (])">Out</button>
-              <button id="tpCropClear" class="btn btn-tp btn-tp-region" type="button" disabled title="Clear crop">Clr</button>
-            </div>
-            <div class="tp-ab">
-              <button id="tpAB" class="btn btn-ab" type="button"
-                aria-label="Compare Original vs Processed"
-                aria-describedby="tpABLabel"
-                aria-pressed="false"
-                title="Compare Original / Processed (X) — sample-accurate, keeps playhead"
-                disabled>Compare Original</button>
-              <button id="abToggle" class="btn btn-ab vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">A/B</button>
-              <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
-                <span class="tp-ab-tag">A</span>
-                <span class="tp-ab-name">Original</span>
-              </span>
-              <span id="abLabel" class="tp-ab-label vip-tp-alias" data-version="A" hidden aria-hidden="true"></span>
-            </div>
-          </div>
-        </div>
-        <div class="transport-seek">
-          <div id="tpRegionBar" class="transport-region-bar" hidden aria-hidden="true"></div>
-          <div class="tp-seek-rail" aria-hidden="true"><span id="tpSeekFill" class="tp-seek-fill"></span></div>
-          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
-        </div>
         </div>
       </details>
 
