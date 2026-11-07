@@ -1322,10 +1322,10 @@ class VoiceIsolatePro {
     // Mobile/Android: keep rack closed except upload+process — fewer DOM mounts, less freeze.
     const defaultOpen = new Set(
       mobile
-        ? ['section-upload', 'section-processing', 'section-transport', 'vizCard', 'section-signal-canvas']
+        ? ['section-upload', 'section-processing', 'vizCard', 'section-signal-canvas']
         : [
           'section-upload', 'section-processing', 'section-separation',
-          'section-signal-canvas', 'engineerCompareToggle', 'section-transport', 'vizCard',
+          'section-signal-canvas', 'engineerCompareToggle', 'vizCard',
         ],
     );
 
@@ -1358,9 +1358,12 @@ class VoiceIsolatePro {
         el.dataset.vipSectionKey = `vip-section-anon-${i}`;
       }
       const storeKey = id || el.dataset.vipSectionKey;
-      // The transport is the persistent dock. A stored collapse must not hide Play or Process.
+      // Play, the clock, and the seek rail live in the summary, so collapsing
+      // the module does not hide them or touch the audio engine.
       if (id === 'section-transport') {
-        el.open = true;
+        el.open = storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)
+          ? !!stored[storeKey]
+          : false;
       } else if (storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)) {
         el.open = !!stored[storeKey];
       } else {
@@ -8589,6 +8592,16 @@ class VoiceIsolatePro {
       cropClearBtn: this.dom.tpCropClear,
       seekEl: this.dom.tpSeek,
       regionBar: this.dom.tpRegionBar,
+      onChange: (region) => {
+        const el = document.getElementById('pacSelection');
+        if (!el || !region) return;
+        if (!mixer.hasCrop()) {
+          el.textContent = 'Full file';
+          return;
+        }
+        const span = Math.max(0, region.out - region.in);
+        el.textContent = `${fmtTime(region.in)} – ${fmtTime(region.out)} · ${fmtTime(span)}`;
+      },
     });
   }
 
