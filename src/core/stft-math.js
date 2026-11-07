@@ -7,7 +7,10 @@
  * Rules (see CLAUDE.md §1 + audit F-01/F-04/F-06/F-07):
  *   • Use PERIODIC Hann (denominator N, not N−1) for COLA at 75% overlap.
  *   • Prefer STFT_PRESETS instead of hard-coding N/H pairs in call sites.
- *   • frameCount() is the only allowed framing formula for offline STFT.
+ *   • frameCount() counts whole windows that lie inside the buffer. Analysis
+ *     that must not see padded content keeps using it.
+ *   • Synthesis that rebuilds the file, including the edges, uses
+ *     paddedFrameCount() with paddedSample() (reflect by N−hop on both sides).
  *
  * Pure module: no DOM, no Web Audio, no I/O.
  */

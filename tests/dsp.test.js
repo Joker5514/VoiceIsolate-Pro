@@ -1466,7 +1466,8 @@ describe('DSPCore.forwardSTFT', () => {
   test('frameCount matches the expected number of frames', () => {
     const data      = makeSine(N_SAMPLES);
     const { frameCount } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
-    const expected  = Math.floor((N_SAMPLES - FFT_SIZE) / HOP) + 1;
+    const pad = FFT_SIZE - HOP;
+    const expected = Math.floor((N_SAMPLES - 1 + pad) / HOP) + 1;
     expect(frameCount).toBe(expected);
   });
 

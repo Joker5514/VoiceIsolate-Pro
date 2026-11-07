@@ -797,19 +797,31 @@ describe('DSPCore STFT/iSTFT roundtrip', () => {
     expect(() => DSPCore.inverseSTFT(mag, phase, 4096, 1024, N)).not.toThrow();
   });
 
-  test('frameCount matches expected value', () => {
+  test('frameCount matches the edge-covering padded count', () => {
     const data = new Float32Array(48000);
-    const { frameCount } = DSPCore.forwardSTFT(data, 4096, 1024);
-    const expected = Math.floor((48000 - 4096) / 1024) + 1;
+    const fftSize = 4096;
+    const hopSize = 1024;
+    const { frameCount } = DSPCore.forwardSTFT(data, fftSize, hopSize);
+    const pad = fftSize - hopSize;
+    const expected = Math.floor((data.length - 1 + pad) / hopSize) + 1;
     expect(frameCount).toBe(expected);
+    expect(frameCount).toBeGreaterThan(Math.floor((data.length - fftSize) / hopSize) + 1);
   });
 
-  test('short clips smaller than fftSize produce zero frames with empty spectra', () => {
+  test('clips shorter than fftSize still round-trip, including both edges', () => {
     const data = new Float32Array(1024);
+    for (let i = 0; i < data.length; i++) data[i] = Math.sin(i * 0.17) * 0.5;
+    data[0] = 0.8;
+    data[data.length - 1] = -0.6;
     const { frameCount, mag, phase } = DSPCore.forwardSTFT(data, 4096, 1024);
-    expect(frameCount).toBe(0);
-    expect(mag).toEqual([]);
-    expect(phase).toEqual([]);
+    expect(frameCount).toBeGreaterThan(0);
+    expect(mag.length).toBe(frameCount);
+    expect(phase.length).toBe(frameCount);
+    const out = DSPCore.inverseSTFT(mag, phase, 4096, 1024, data.length);
+    expect(out.length).toBe(data.length);
+    let maxErr = 0;
+    for (let i = 0; i < data.length; i++) maxErr = Math.max(maxErr, Math.abs(out[i] - data[i]));
+    expect(maxErr).toBeLessThan(1e-5);
   });
 });
 
