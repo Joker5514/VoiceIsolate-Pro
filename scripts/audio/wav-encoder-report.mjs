@@ -138,6 +138,11 @@ writeSpectrumPlot(
   smooth(flat, 48),
   smooth(shaped, 48),
 );
+writeWaveformPlot(
+  path.join(outDir, 'before-after-error.png'),
+  quantizationError(quiet, legacyTruncate(quiet)),
+  quantizationError(quiet, readPcm16(afterBuf)),
+);
 
 const record = {
   legacyTruncationDiffers: differ,
@@ -157,10 +162,52 @@ const record = {
     before: path.join(outDir, 'wav-before-truncation.wav'),
     after: path.join(outDir, 'wav-after-shaped.wav'),
     spectrum: path.join(outDir, 'error-spectrum.png'),
+    waveform: path.join(outDir, 'before-after-error.png'),
   },
 };
 fs.writeFileSync(path.join(outDir, 'wav-encoder-measurements.json'), JSON.stringify(record, null, 2));
 console.log(JSON.stringify(record, null, 2));
+
+function quantizationError(samples, pcm) {
+  const n = Math.min(samples.length, pcm.length, 480);
+  const err = new Float64Array(n);
+  for (let i = 0; i < n; i++) err[i] = pcm[i] / 32768 - samples[i];
+  return err;
+}
+
+function writeWaveformPlot(file, before, after) {
+  const width = 880;
+  const height = 360;
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = 248; rgba[i + 1] = 246; rgba[i + 2] = 241; rgba[i + 3] = 255;
+  }
+  const plot = { l: 48, t: 28, r: width - 20, b: height - 36 };
+  const mid = (plot.t + plot.b) / 2;
+  let peak = 1e-8;
+  for (let i = 0; i < before.length; i++) {
+    peak = Math.max(peak, Math.abs(before[i]), Math.abs(after[i]));
+  }
+  const yOf = (v) => mid - (v / peak) * ((plot.b - plot.t) / 2 - 8);
+  const xOf = (i) => plot.l + (i / (before.length - 1)) * (plot.r - plot.l);
+  for (let x = plot.l; x < plot.r; x++) {
+    const o = (Math.round(mid) * width + x) * 4;
+    rgba[o] = 210; rgba[o + 1] = 206; rgba[o + 2] = 198;
+  }
+  strokeSeries(rgba, width, before, xOf, yOf, [40, 90, 160]);
+  strokeSeries(rgba, width, after, xOf, yOf, [176, 48, 32]);
+  fs.writeFileSync(file, encodePng(width, height, rgba));
+}
+
+function strokeSeries(rgba, width, series, xOf, yOf, rgb) {
+  let prev = null;
+  for (let i = 0; i < series.length; i += 1) {
+    const x = Math.round(xOf(i));
+    const y = Math.round(yOf(series[i]));
+    if (prev) line(rgba, width, prev.x, prev.y, x, y, rgb);
+    prev = { x, y };
+  }
+}
 
 function smooth(mag, radius) {
   const out = new Float64Array(mag.length);
