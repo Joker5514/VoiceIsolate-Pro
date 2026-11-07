@@ -204,6 +204,101 @@ const DSPCore = {
     return w;
   },
 
+  /**
+   * Reflect pad used by synthesis. Matches src/core/stft-math.js
+   * paddedFrameCount: extend by fftSize−hopSize on both sides so every sample
+   * sits under a full set of windows. hop >= fftSize is analysis-only
+   * (the static spectrogram asks for one non-overlapping window) and stays
+   * on the historic whole-window count.
+   */
+  _edgePad(fftSize, hopSize) {
+    return (Number.isInteger(hopSize) && hopSize >= 1 && hopSize < fftSize)
+      ? (fftSize - hopSize)
+      : 0;
+  },
+
+  _analysisFrames(length, fftSize, hopSize) {
+    const pad = length > 0 ? this._edgePad(fftSize, hopSize) : 0;
+    if (pad > 0) {
+      return { frameCount: Math.floor((length - 1 + pad) / hopSize) + 1, pad };
+    }
+    const frameCount = length >= fftSize
+      ? Math.floor((length - fftSize) / hopSize) + 1
+      : 0;
+    return { frameCount, pad: 0 };
+  },
+
+  /** Odd reflection about the nearest edge sample. Same formula as paddedSample. */
+  _reflectSample(data, idx) {
+    const len = data.length;
+    if (idx >= 0 && idx < len) return data[idx];
+    if (len <= 1) return len ? data[0] : 0;
+    const period = 2 * (len - 1);
+    let m = idx % period;
+    if (m < 0) m += period;
+    const mirrored = data[m < len ? m : period - m];
+    return 2 * data[idx < 0 ? 0 : len - 1] - mirrored;
+  },
+
+  _fillWindowed(data, offset, fftSize, window, real) {
+    const len = data.length;
+    if (offset >= 0 && offset + fftSize <= len) {
+      for (let i = 0; i < fftSize; i++) real[i] = data[offset + i] * window[i];
+      return;
+    }
+    for (let i = 0; i < fftSize; i++) {
+      const idx = offset + i;
+      const s = (idx >= 0 && idx < len) ? data[idx] : this._reflectSample(data, idx);
+      real[i] = s * window[i];
+    }
+  },
+
+  _tagFrames(mag, inputLength, pad) {
+    mag.inputLength = inputLength;
+    mag.pad = pad;
+  },
+
+  _resolveOutputLength(mag, frameCount, fftSize, hopSize, outputLength) {
+    if (outputLength > 0) return outputLength;
+    if (mag && Number.isFinite(mag.inputLength) && mag.inputLength >= 0 && Number.isFinite(mag.pad)) {
+      return mag.inputLength;
+    }
+    if (frameCount <= 0) return 0;
+    return (frameCount - 1) * hopSize + fftSize;
+  },
+
+  _synthesisPad(mag, fftSize, hopSize) {
+    return Number.isFinite(mag.pad) ? mag.pad : this._edgePad(fftSize, hopSize);
+  },
+
+  _olaAdd(output, windowSum, real, window, windowSq, offset) {
+    const len = output.length;
+    const n0 = offset < 0 ? -offset : 0;
+    const n1 = Math.min(window.length, len - offset);
+    for (let i = n0; i < n1; i++) {
+      output[offset + i] += real[i] * window[i];
+      windowSum[offset + i] += windowSq[i];
+    }
+  },
+
+  /**
+   * Padded framing puts every output sample at the steady-state window² sum,
+   * so the divisor is that sum. The half-peak floor only remains for the
+   * non-overlapping analysis geometry, where a partial edge would otherwise
+   * divide by a near-zero Hann sample.
+   */
+  _normalizeOla(output, windowSum, padded) {
+    const len = output.length;
+    if (padded) {
+      for (let i = 0; i < len; i++) output[i] /= Math.max(windowSum[i], 1e-12);
+      return;
+    }
+    let maxNorm = 0;
+    for (let i = 0; i < len; i++) if (windowSum[i] > maxNorm) maxNorm = windowSum[i];
+    const floorNorm = Math.max(1e-12, 0.5 * maxNorm);
+    for (let i = 0; i < len; i++) output[i] /= Math.max(windowSum[i], floorNorm);
+  },
+
   // ===== STFT / iSTFT =====
 
   /**
@@ -220,11 +315,10 @@ const DSPCore = {
     }
     const window = this.hannWindow(fftSize);
     const halfN = fftSize / 2 + 1;
-    // Guard: clips in shorter than one FFT window produce 0 frames rather
-    // than a negative frameCount (which would have overflowed downstream).
-    const frameCount = data.length >= fftSize
-      ? Math.floor((data.length - fftSize) / hopSize) + 1
-      : 0;
+    // Edge-covering frames: start fftSize−hop before sample 0 and run past the
+    // end (odd reflection), so the inverse overlap-add covers every sample.
+    // Clips with hop >= fftSize keep the historic whole-window count.
+    const { frameCount, pad } = this._analysisFrames(data.length, fftSize, hopSize);
     const mag = [];
     const phase = [];
 
@@ -233,12 +327,9 @@ const DSPCore = {
     const imag = new Float32Array(fftSize);
 
     for (let f = 0; f < frameCount; f++) {
-      const offset = f * hopSize;
-      // Windowed frame → real/imag (imag is always 0 for real input)
+      const offset = f * hopSize - pad;
       imag.fill(0);
-      for (let i = 0; i < fftSize; i++) {
-        real[i] = (offset + i < data.length) ? data[offset + i] * window[i] : 0;
-      }
+      this._fillWindowed(data, offset, fftSize, window, real);
 
       // SINGLE-PASS STFT BOUNDARY
       // Forward transform entry: all spectral stages operate in-place after this call.
@@ -255,7 +346,8 @@ const DSPCore = {
       phase.push(p);
     }
 
-    return { mag, phase, frameCount };
+    this._tagFrames(mag, data.length, pad);
+    return { mag, phase, frameCount, inputLength: data.length, pad };
   },
 
   /**
@@ -276,9 +368,7 @@ const DSPCore = {
     const shouldAbort = typeof opts.shouldAbort === 'function' ? opts.shouldAbort : null;
     const window = this.hannWindow(fftSize);
     const halfN = fftSize / 2 + 1;
-    const frameCount = data.length >= fftSize
-      ? Math.floor((data.length - fftSize) / hopSize) + 1
-      : 0;
+    const { frameCount, pad } = this._analysisFrames(data.length, fftSize, hopSize);
     const mag = new Array(frameCount);
     const phase = new Array(frameCount);
     const real = new Float32Array(fftSize);
@@ -293,13 +383,14 @@ const DSPCore = {
 
     for (let f = 0; f < frameCount; f++) {
       if (shouldAbort && shouldAbort()) {
-        return { mag: mag.slice(0, f), phase: phase.slice(0, f), frameCount: f };
+        const partialMag = mag.slice(0, f);
+        const partialPhase = phase.slice(0, f);
+        this._tagFrames(partialMag, data.length, pad);
+        return { mag: partialMag, phase: partialPhase, frameCount: f, inputLength: data.length, pad };
       }
-      const offset = f * hopSize;
+      const offset = f * hopSize - pad;
       imag.fill(0);
-      for (let i = 0; i < fftSize; i++) {
-        real[i] = (offset + i < data.length) ? data[offset + i] * window[i] : 0;
-      }
+      this._fillWindowed(data, offset, fftSize, window, real);
       this._fft(real, imag, false);
       const m = new Float32Array(halfN);
       const p = new Float32Array(halfN);
@@ -320,7 +411,8 @@ const DSPCore = {
       }
     }
     if (onProgress) onProgress(1);
-    return { mag, phase, frameCount };
+    this._tagFrames(mag, data.length, pad);
+    return { mag, phase, frameCount, inputLength: data.length, pad };
   },
 
   /**
@@ -336,7 +428,8 @@ const DSPCore = {
     const windowSq = this._hannSqCache(fftSize, window);
     const frameCount = mag.length;
     const halfN = fftSize / 2 + 1;
-    const len = outputLength || (frameCount - 1) * hopSize + fftSize;
+    const len = this._resolveOutputLength(mag, frameCount, fftSize, hopSize, outputLength);
+    const pad = this._synthesisPad(mag, fftSize, hopSize);
     const output = new Float32Array(len);
     const windowSum = new Float32Array(len);
     const real = new Float32Array(fftSize);
@@ -350,7 +443,7 @@ const DSPCore = {
     const yieldUI = macrotaskYield;
 
     for (let f = 0; f < frameCount; f++) {
-      const offset = f * hopSize;
+      const offset = f * hopSize - pad;
       const magF = mag[f];
       const phaseF = phase[f];
       for (let k = 0; k < halfN; k++) {
@@ -365,11 +458,7 @@ const DSPCore = {
         imag[k] = -imag[fftSize - k];
       }
       this._fft(real, imag, true);
-      const nMax = Math.min(fftSize, len - offset);
-      for (let i = 0; i < nMax; i++) {
-        output[offset + i] += real[i] * window[i];
-        windowSum[offset + i] += windowSq[i];
-      }
+      this._olaAdd(output, windowSum, real, window, windowSq, offset);
       if (maybeYield) {
         if ((f & 7) === 7) {
           if (onProgress) onProgress(f / frameCount);
@@ -380,14 +469,7 @@ const DSPCore = {
         await yieldUI();
       }
     }
-    let maxNormA = 0;
-    for (let i = 0; i < len; i++) {
-      if (windowSum[i] > maxNormA) maxNormA = windowSum[i];
-    }
-    const floorNormA = Math.max(1e-12, 0.5 * maxNormA);
-    for (let i = 0; i < len; i++) {
-      output[i] /= Math.max(windowSum[i], floorNormA);
-    }
+    this._normalizeOla(output, windowSum, pad > 0);
     if (onProgress) onProgress(1);
     return output;
   },
@@ -404,7 +486,8 @@ const DSPCore = {
     const windowSq = this._hannSqCache(fftSize, window);
     const frameCount = mag.length;
     const halfN = fftSize / 2 + 1;
-    const len = outputLength || (frameCount - 1) * hopSize + fftSize;
+    const len = this._resolveOutputLength(mag, frameCount, fftSize, hopSize, outputLength);
+    const pad = this._synthesisPad(mag, fftSize, hopSize);
     const output = new Float32Array(len);
     const windowSum = new Float32Array(len);
 
@@ -413,7 +496,7 @@ const DSPCore = {
     const imag = new Float32Array(fftSize);
 
     for (let f = 0; f < frameCount; f++) {
-      const offset = f * hopSize;
+      const offset = f * hopSize - pad;
       const magF = mag[f];
       const phaseF = phase[f];
 
@@ -436,25 +519,14 @@ const DSPCore = {
       // Inverse transform exit: overlap-add reconstruction begins immediately after this call.
       this._fft(real, imag, true);
 
-      // Overlap-add with synthesis window — iterate only over the in-range slice
-      // so the per-sample bounds check inside the inner loop can be removed.
-      const nMax = Math.min(fftSize, len - offset);
-      for (let i = 0; i < nMax; i++) {
-        output[offset + i] += real[i] * window[i];
-        windowSum[offset + i] += windowSq[i];
-      }
+      // Overlap-add with synthesis window. Frames begin pad samples before
+      // index 0; only the original [0, len) region is accumulated.
+      this._olaAdd(output, windowSum, real, window, windowSq, offset);
     }
 
-    // Edge-safe OLA normalize: floor divisor at half peak so file edges (partial
-    // overlap) do not amplify residual into clicks / zipper noise.
-    let maxNorm = 0;
-    for (let i = 0; i < len; i++) {
-      if (windowSum[i] > maxNorm) maxNorm = windowSum[i];
-    }
-    const floorNorm = Math.max(1e-12, 0.5 * maxNorm);
-    for (let i = 0; i < len; i++) {
-      output[i] /= Math.max(windowSum[i], floorNorm);
-    }
+    // Padded framing already gives every sample its steady-state window² sum.
+    // Dividing by that sum (not by max(sum, 0.5·peak)) keeps the file edges.
+    this._normalizeOla(output, windowSum, pad > 0);
 
     return output;
   },

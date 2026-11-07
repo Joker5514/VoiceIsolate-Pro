@@ -86,6 +86,18 @@
     return w;
   }
 
+  /** Odd reflection. Same formula as src/core/stft-math.js paddedSample. */
+  function _reflectSample(x, idx) {
+    const len = x.length;
+    if (idx >= 0 && idx < len) return x[idx];
+    if (len <= 1) return len ? x[0] : 0;
+    const period = 2 * (len - 1);
+    let m = idx % period;
+    if (m < 0) m += period;
+    const mirrored = x[m < len ? m : period - m];
+    return 2 * x[idx < 0 ? 0 : len - 1] - mirrored;
+  }
+
   /** Cooley–Tukey radix-2 DIT FFT — in-place, float32 */
   function _fftInPlace(re, im) {
     const N = re.length;
@@ -135,16 +147,21 @@
     globalThis.DSP.forwardSTFT = function forwardSTFT(signal, fftSize, hopSize) {
       const win      = _hannWindow(fftSize); // AUDIT-FIX #12: periodic Hann
       const halfBins = fftSize / 2 + 1;
-      const numFrames = Math.max(1, Math.floor((signal.length - fftSize) / hopSize) + 1);
+      const pad = (signal.length > 0 && hopSize < fftSize) ? (fftSize - hopSize) : 0;
+      const numFrames = signal.length === 0
+        ? 1
+        : (pad > 0
+          ? Math.floor((signal.length - 1 + pad) / hopSize) + 1
+          : Math.max(1, Math.floor((signal.length - fftSize) / hopSize) + 1));
       const mag   = new Array(numFrames);
       const phase = new Array(numFrames);
 
       for (let f = 0; f < numFrames; f++) {
         const re   = new Float32Array(fftSize);
         const im   = new Float32Array(fftSize);
-        const base = f * hopSize;
+        const base = f * hopSize - pad;
         for (let i = 0; i < fftSize; i++)
-          re[i] = (signal[base + i] || 0) * win[i];
+          re[i] = _reflectSample(signal, base + i) * win[i];
 
         _fftInPlace(re, im);
 
@@ -155,13 +172,19 @@
           phase[f][b] = Math.atan2(im[b], re[b]);
         }
       }
-      return { mag, phase, fftSize, hopSize };
+      mag.inputLength = signal.length;
+      mag.pad = pad;
+      return { mag, phase, fftSize, hopSize, inputLength: signal.length, pad };
     };
 
     globalThis.DSP.inverseSTFT = function inverseSTFT(mag, phase, fftSize, hopSize, outputLength) {
       const win = _hannWindow(fftSize); // AUDIT-FIX #12: periodic Hann
-      const out = new Float32Array(outputLength);
-      const env = new Float32Array(outputLength);
+      const pad = Number.isFinite(mag.pad) ? mag.pad : (hopSize < fftSize ? fftSize - hopSize : 0);
+      const len = outputLength > 0
+        ? outputLength
+        : (Number.isFinite(mag.inputLength) ? mag.inputLength : 0);
+      const out = new Float32Array(len);
+      const env = new Float32Array(len);
       const halfBins = fftSize / 2 + 1;
 
       for (let f = 0; f < mag.length; f++) {
@@ -181,17 +204,16 @@
 
         _ifftInPlace(re, im);
 
-        const base = f * hopSize;
-        for (let i = 0; i < fftSize; i++) {
-          const idx = base + i;
-          if (idx >= outputLength) break;
-          out[idx] += re[i] * win[i];
-          env[idx] += win[i] * win[i];
+        const base = f * hopSize - pad;
+        const i0 = base < 0 ? -base : 0;
+        const i1 = Math.min(fftSize, len - base);
+        for (let i = i0; i < i1; i++) {
+          out[base + i] += re[i] * win[i];
+          env[base + i] += win[i] * win[i];
         }
       }
 
-      for (let i = 0; i < outputLength; i++)
-        if (env[i] > 1e-8) out[i] /= env[i];
+      for (let i = 0; i < len; i++) out[i] /= Math.max(env[i], 1e-12);
 
       return out;
     };

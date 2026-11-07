@@ -15,6 +15,7 @@ import {
   FFT_SIZE_LIVE,
   validateRingBufferConstants,
 } from './ring-buffer-constants.js';
+import { paddedFrameCount, paddedSample } from './stft-math.js';
 
 const _hannCache = Object.create(null);
 
@@ -250,24 +251,50 @@ export function reconstructPassThrough(samples, opts = {}) {
   const fftSize = opts.fftSize ?? FFT_SIZE_LIVE;
   const hopSize = opts.hopSize ?? HOP_SIZE;
   validateRingBufferConstants({ fftSize, hopSize });
+  if (!samples.length) return new Float32Array(0);
 
-  const recon = new OverlapAddReconstructor({
-    fftSize,
-    hopSize,
-    outputLength: samples.length,
-  });
-
-  const win = hannWindow(fftSize);
-  const frameCount = Math.max(1, Math.ceil(Math.max(0, samples.length - fftSize) / hopSize) + 1);
-  const frame = new Float32Array(fftSize);
-
-  for (let f = 0; f < frameCount; f++) {
-    const start = f * hopSize;
-    frame.fill(0);
-    const avail = Math.max(0, Math.min(fftSize, samples.length - start));
-    for (let i = 0; i < avail; i++) frame[i] = samples[start + i] * win[i];
-    recon.addGrain(frame, f);
+  // Non-overlapping grains cannot cover the periodic-Hann zero at index 0.
+  // That geometry is not a synthesis preset; keep the historic unpadded loop.
+  if (hopSize >= fftSize) {
+    const recon = new OverlapAddReconstructor({
+      fftSize,
+      hopSize,
+      outputLength: samples.length,
+    });
+    const win = hannWindow(fftSize);
+    const frameCount = Math.max(1, Math.ceil(Math.max(0, samples.length - fftSize) / hopSize) + 1);
+    const frame = new Float32Array(fftSize);
+    for (let f = 0; f < frameCount; f++) {
+      const start = f * hopSize;
+      frame.fill(0);
+      const avail = Math.max(0, Math.min(fftSize, samples.length - start));
+      for (let i = 0; i < avail; i++) frame[i] = samples[start + i] * win[i];
+      recon.addGrain(frame, f);
+    }
+    return recon.finalize();
   }
 
-  return recon.finalize();
+  // Same edge cover as MLWorker: frames start N−hop before sample 0, samples
+  // outside the buffer are odd-reflected, and each output sample is divided
+  // by its true window² sum (the half-peak floor attenuated the edges).
+  const pad = fftSize - hopSize;
+  const frames = paddedFrameCount(samples.length, fftSize, hopSize);
+  const out = new Float32Array(samples.length);
+  const norm = new Float32Array(samples.length);
+  const win = hannWindow(fftSize);
+  const frame = new Float32Array(fftSize);
+
+  for (let f = 0; f < frames; f++) {
+    const start = f * hopSize - pad;
+    for (let i = 0; i < fftSize; i++) frame[i] = paddedSample(samples, start + i) * win[i];
+    const i0 = start < 0 ? -start : 0;
+    const i1 = Math.min(fftSize, samples.length - start);
+    for (let i = i0; i < i1; i++) {
+      const w = win[i];
+      out[start + i] += frame[i] * w;
+      norm[start + i] += w * w;
+    }
+  }
+  for (let i = 0; i < out.length; i++) out[i] /= Math.max(norm[i], 1e-12);
+  return out;
 }

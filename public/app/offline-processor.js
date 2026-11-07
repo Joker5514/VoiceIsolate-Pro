@@ -144,16 +144,34 @@ function fftInPlace(data, n, inv) {
  * Each frame is complex interleaved [re0,im0,…,re(N-1),im(N-1)].
  * Architecture: this is the ONE forward FFT call per processFile() invocation.
  */
+/** Odd reflection. Same formula as src/core/stft-math.js paddedSample. */
+function reflectSample(x, idx) {
+  const len = x.length;
+  if (idx >= 0 && idx < len) return x[idx];
+  if (len <= 1) return len ? x[0] : 0;
+  const period = 2 * (len - 1);
+  let m = idx % period;
+  if (m < 0) m += period;
+  const mirrored = x[m < len ? m : period - m];
+  return 2 * x[idx < 0 ? 0 : len - 1] - mirrored;
+}
+
 function forwardSTFT(pcm) {
   const window   = makeBlackmanHarris(FFT_SIZE);
-  const hopCount = Math.floor((pcm.length - FFT_SIZE) / HOP_SIZE) + 1;
+  // Cover sample 0 and the last sample: reflect by N−hop on both sides
+  // (stft-math paddedFrameCount). Whole windows inside the buffer left the
+  // tail silent and both edges under a partial window² sum.
+  const pad = FFT_SIZE - HOP_SIZE;
+  const hopCount = pcm.length > 0
+    ? Math.floor((pcm.length - 1 + pad) / HOP_SIZE) + 1
+    : 0;
   const frames   = [];
 
   for (let h = 0; h < hopCount; h++) {
     const frame = new Float64Array(FFT_SIZE * 2); // complex interleaved
-    const start = h * HOP_SIZE;
+    const start = h * HOP_SIZE - pad;
     for (let i = 0; i < FFT_SIZE; i++) {
-      frame[2 * i] = (start + i < pcm.length ? pcm[start + i] : 0) * window[i];
+      frame[2 * i] = reflectSample(pcm, start + i) * window[i];
       // imag = 0
     }
     // SINGLE-PASS STFT BOUNDARY
@@ -161,17 +179,18 @@ function forwardSTFT(pcm) {
     fftInPlace(frame, FFT_SIZE, false);
     frames.push(frame);
   }
-  return { frames, hopCount, pcmLen: pcm.length };
+  return { frames, hopCount, pcmLen: pcm.length, pad };
 }
 
 /**
  * Inverse STFT → reconstructed Float32Array PCM.
  * Architecture: this is the ONE inverse FFT call per processFile() invocation.
  */
-function inverseSTFT({ frames, hopCount, pcmLen }) {
+function inverseSTFT({ frames, hopCount, pcmLen, pad }) {
   const window  = makeBlackmanHarris(FFT_SIZE);
-  const out     = new Float32Array(pcmLen + FFT_SIZE);
-  const norm    = new Float32Array(pcmLen + FFT_SIZE);
+  const padSamples = Number.isFinite(pad) ? pad : (FFT_SIZE - HOP_SIZE);
+  const out     = new Float32Array(pcmLen);
+  const norm    = new Float32Array(pcmLen);
   // Reuse one scratch buffer — frames are already consumed after spectral ops,
   // so we can IFFT in-place on a copy only when the caller needs frames later.
   // Single alloc avoids per-hop Float64Array.slice() GC pressure on long files.
@@ -183,18 +202,20 @@ function inverseSTFT({ frames, hopCount, pcmLen }) {
     // SINGLE-PASS STFT BOUNDARY
     // Inverse transform exit for the offline Creator / Forensic path.
     fftInPlace(scratch, FFT_SIZE, true);
-    const start = h * HOP_SIZE;
-    for (let i = 0; i < FFT_SIZE; i++) {
+    const start = h * HOP_SIZE - padSamples;
+    const i0 = start < 0 ? -start : 0;
+    const i1 = Math.min(FFT_SIZE, pcmLen - start);
+    for (let i = i0; i < i1; i++) {
       const w2 = window[i] * window[i];
       out[start + i]  += scratch[2 * i] * window[i];
       norm[start + i] += w2;
     }
   }
-  // Normalise OLA
+  // Every original sample now carries the steady-state window² sum.
   for (let i = 0; i < pcmLen; i++) {
-    out[i] = norm[i] > 1e-9 ? out[i] / norm[i] : 0;
+    out[i] = norm[i] > 1e-12 ? out[i] / norm[i] : 0;
   }
-  return out.subarray(0, pcmLen);
+  return out;
 }
 
 // ---------------------------------------------------------------------------

@@ -137,17 +137,21 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   const phases     = [];
   const times      = [];
 
-  // Frame count aligned with DSPCore / stft-math (F-07): floor((L-N)/H)+1 when L≥N.
-  // Empty/short clips: one zero-padded frame so callers never receive an empty STFT.
-  const numFrames = pcm.length >= fftSize
-    ? Math.floor((pcm.length - fftSize) / hopSize) + 1
-    : 1;
+  // Synthesis frames match stft-math paddedFrameCount: reflect by N−hop on
+  // both sides so the inverse covers sample 0 and the last sample. Empty
+  // input keeps one silent frame. hop === fftSize stays one window per hop
+  // (analysis-only; a periodic Hann cannot rebuild those boundaries).
+  const pad = (pcm.length > 0 && hopSize < fftSize) ? (fftSize - hopSize) : 0;
+  const numFrames = pcm.length === 0
+    ? 1
+    : (pad > 0
+      ? Math.floor((pcm.length - 1 + pad) / hopSize) + 1
+      : (pcm.length >= fftSize ? Math.floor((pcm.length - fftSize) / hopSize) + 1 : 1));
 
   for (let frame = 0; frame < numFrames; frame++) {
-    const pos = frame * hopSize;
+    const pos = frame * hopSize - pad;
     for (let i = 0; i < fftSize; i++) {
-      const srcIdx = pos + i;
-      re[i] = srcIdx < pcm.length ? pcm[srcIdx] * win[i] : 0;
+      re[i] = _reflectSample(pcm, pos + i) * win[i];
       im[i] = 0;
     }
 
@@ -166,7 +170,21 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
     times.push((pos + fftSize / 2) / sampleRate);
   }
 
-  return { magnitudes, phases, times, fftSize, hopSize, halfBins, sampleRate };
+  magnitudes.inputLength = pcm.length;
+  magnitudes.pad = pad;
+  return { magnitudes, phases, times, fftSize, hopSize, halfBins, sampleRate, inputLength: pcm.length, pad };
+}
+
+/** Odd reflection. Same formula as src/core/stft-math.js paddedSample. */
+function _reflectSample(x, idx) {
+  const len = x.length;
+  if (idx >= 0 && idx < len) return x[idx];
+  if (len <= 1) return len ? x[0] : 0;
+  const period = 2 * (len - 1);
+  let m = idx % period;
+  if (m < 0) m += period;
+  const mirrored = x[m < len ? m : period - m];
+  return 2 * x[idx < 0 ? 0 : len - 1] - mirrored;
 }
 
 /**
@@ -186,7 +204,12 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
 
   const halfBins   = (fftSize >> 1) + 1;
   const numFrames  = magnitudes.length;
-  const outputLen  = (numFrames - 1) * hopSize + fftSize;
+  const pad        = Number.isFinite(magnitudes.pad)
+    ? magnitudes.pad
+    : (hopSize < fftSize ? fftSize - hopSize : 0);
+  const outputLen  = Number.isFinite(magnitudes.inputLength) && magnitudes.inputLength >= 0
+    ? magnitudes.inputLength
+    : Math.max(0, (numFrames - 1) * hopSize + fftSize - pad);
   const output     = new Float32Array(outputLen);
   const norm       = new Float32Array(outputLen);
   const win        = makeHannWindow(fftSize); // AUDIT-FIX #15: now periodic
@@ -210,17 +233,20 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     // ── SINGLE INVERSE STFT ──────────────────────────────────────────────────
     fftInPlace(re, im, true);
 
-    const frameStart = f * hopSize;
-    for (let i = 0; i < fftSize; i++) {
-      const idx = frameStart + i;
+    const frameStart = f * hopSize - pad;
+    const i0 = frameStart < 0 ? -frameStart : 0;
+    const i1 = Math.min(fftSize, outputLen - frameStart);
+    for (let i = i0; i < i1; i++) {
       const w = win[i];
-      output[idx] += re[i] * w;
-      norm[idx] += w * w;
+      output[frameStart + i] += re[i] * w;
+      norm[frameStart + i] += w * w;
     }
   }
 
+  // The pad puts every sample at its steady-state window² sum. Divide by
+  // that sum; a half-peak floor would push the file edges toward 0.
   for (let i = 0; i < outputLen; i++) {
-    if (norm[i] > 1e-12) output[i] /= norm[i];
+    output[i] /= Math.max(norm[i], 1e-12);
   }
 
   return output;

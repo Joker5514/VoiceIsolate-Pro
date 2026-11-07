@@ -139,7 +139,9 @@ async function handleProcess(payload) {
     }
   }
 
-  // Single Forward STFT — do not add a second one anywhere in this function
+  // Single Forward STFT — do not add a second one anywhere in this function.
+  // Pass the input length so the padded inverse crops back to the file,
+  // including the samples that used to fall off the last full window.
   const { mag, phase } = dspCore.forwardSTFT(processed);
 
   // In-place spectral operations on mag/phase arrays
@@ -153,7 +155,7 @@ async function handleProcess(payload) {
   }
 
   // Single Inverse STFT — do not add a second one anywhere
-  const output = dspCore.inverseSTFT(mag, phase);
+  const output = dspCore.inverseSTFT(mag, phase, 4096, 1024, processed.length);
 
   return {
     processedData: output.buffer,
