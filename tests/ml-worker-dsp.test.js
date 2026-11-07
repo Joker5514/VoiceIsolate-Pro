@@ -132,9 +132,8 @@ describe('MLWorker spectral-mask reconstruction (runSpectralMask)', () => {
         expect(Number.isFinite(out[i])).toBe(true);
         maxErr = Math.max(maxErr, Math.abs(out[i] - input[i]));
       }
-      // 50 Hz sits far below the fixed HF taper (bins ≥ 35% of Nyquist), so
-      // the only error left is float32 FFT round-off plus the taper's effect
-      // on the mirror's slope discontinuity: measured ≤ 3.5e-4 at 0.5 peak.
+      // Float32 FFT round-off only. A 50 Hz tone has no energy on the old
+      // air-band shelf, and a unity mask now reconstructs the whole buffer.
       expect(maxErr).toBeLessThan(1e-3);
     },
   );
@@ -147,11 +146,10 @@ describe('MLWorker spectral-mask reconstruction (runSpectralMask)', () => {
     input[24000] = 1;
     input[len - 10] = 1;
     const out = await sb.runSpectralMask(ENTRY, unity, input, () => {});
-    // The always-on HF taper shapes every impulse identically (≈0.82 peak);
-    // the edges must match the interior instead of collapsing to 0.
-    expect(out[24000]).toBeGreaterThan(0.5);
-    expect(Math.abs(out[10] - out[24000])).toBeLessThan(0.01);
-    expect(Math.abs(out[len - 10] - out[24000])).toBeLessThan(0.01);
+    // Edges must match the interior sample, at the impulse's own amplitude.
+    expect(Math.abs(out[24000] - 1)).toBeLessThan(1e-6);
+    expect(Math.abs(out[10] - out[24000])).toBeLessThan(1e-6);
+    expect(Math.abs(out[len - 10] - out[24000])).toBeLessThan(1e-6);
   });
 
   test('the hop-N/2 path reconstructs edges as well', async () => {

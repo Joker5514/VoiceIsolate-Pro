@@ -901,8 +901,8 @@ async function runFusedSpectralMaskChain(
   // unity mask dropped ~60 ms of signal (impulses at the boundaries vanished)
   // and the noise residual received the voice there. Odd reflection rather
   // than zero (or even) padding avoids an artificial step (or kink) at the
-  // edge, which the HF taper below would otherwise smear into the first and
-  // last samples.
+  // edge, so this single STFT does not smear a padding discontinuity into
+  // the first and last samples.
   const pad = N - hop;
   const totalFrames = Math.max(1, Math.floor((samples.length - 1 + pad) / hop) + 1);
 
@@ -988,7 +988,6 @@ async function runFusedSpectralMaskChain(
 
   let prefetch = null;
   const fusedMask = new Float32Array(batchMax * bins);
-  const hfStart = Math.floor(bins * 0.35);
   // Temporal mask smoothing across frames suppresses zipper/musical-noise
   // clicks when adjacent frames disagree after aggressive ML masks.
   // First frame is applied as-is (no seed of 1.0) so a true all-zero mask
@@ -1050,15 +1049,11 @@ async function runFusedSpectralMaskChain(
       const off = b * bins;
       for (let k = 0; k < bins; k++) {
         let m = fusedMask[off + k];
-        // One-pole temporal smooth (per bin) before HF taper — after first frame.
+        // One-pole temporal smooth (per bin) — after the first frame.
         if (hasPrevMask) {
           m = maskSmooth * prevMask[k] + (1 - maskSmooth) * m;
         }
         prevMask[k] = m;
-        if (k >= hfStart) {
-          const t = (k - hfStart) / Math.max(1, bins - 1 - hfStart);
-          m *= 1 - t * 0.55;
-        }
         re[k] = cur.batchRe[off + k] * m;
         im[k] = cur.batchIm[off + k] * m;
       }
@@ -1110,7 +1105,7 @@ function mirrorIndex(idx, len) {
 /**
  * Sample of `x` outside [0, len) by odd (point) reflection about the nearest
  * edge sample: x(−k) = 2·x(0) − x(k). Value and slope stay continuous, so the
- * padding adds no step or kink for the fixed HF taper to react to.
+ * padding adds no step or kink for the STFT to smear across the boundary.
  * @param {Float32Array} x
  * @param {number} idx
  */

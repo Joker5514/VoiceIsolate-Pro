@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { siSdr, sdr } = require('../scripts/quality/lib/metrics.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const SR = 48000;
@@ -65,7 +66,7 @@ function sessionReturning(value) {
   };
 }
 
-/** Two tones below the fused path's fixed HF taper (starts ≈ 8.4 kHz). */
+/** Mid tones. A unity mask must reconstruct them, including above 8 kHz. */
 function tones(len) {
   const x = new Float32Array(len);
   for (let i = 0; i < len; i++) {
@@ -119,16 +120,26 @@ describe.each([
     expect(Number.isFinite(one[0])).toBe(true);
   });
 
-  test('impulse keeps its position (amplitude reflects only the fixed HF taper)', async () => {
+  test('impulse keeps its sample and its amplitude', async () => {
     const x = new Float32Array(SR);
     x[12345] = 0.8;
     const y = await run(x);
     let peakAt = 0;
     for (let i = 1; i < y.length; i++) if (Math.abs(y[i]) > Math.abs(y[peakAt])) peakAt = i;
     expect(peakAt).toBe(12345);
-    // The taper removes up to 55% of the bins above ~8.4 kHz from a broadband click.
-    expect(y[12345]).toBeGreaterThan(0.6);
-    expect(y[12345]).toBeLessThanOrEqual(0.8);
+    // Unity mask, no spectral shelf: the click comes back at its own amplitude.
+    expect(Math.abs(y[12345] - 0.8)).toBeLessThan(1e-6);
+    expect(maxAbsErr(x, y, 0, x.length)).toBeLessThan(1e-6);
+  });
+
+  test.each([12000, 16000])('unity mask keeps a %i Hz tone (SI-SDR and SDR > 60 dB)', async (freq) => {
+    const x = new Float32Array(SR);
+    for (let i = 0; i < x.length; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * freq * i) / SR);
+    const y = await run(x);
+    // Scale-invariant SI-SDR forgives a flat gain. Plain SDR does not, so a
+    // shelf that only turns the tone down still fails this test.
+    expect(siSdr(y, x)).toBeGreaterThan(60);
+    expect(sdr(y, x)).toBeGreaterThan(60);
   });
 });
 

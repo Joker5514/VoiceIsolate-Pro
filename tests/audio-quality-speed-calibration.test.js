@@ -42,8 +42,13 @@ describe('Anti high-pitch / smear', () => {
     expect(appJs).toMatch(/await this\._applyPostIsolationCleanup\(clean/);
   });
 
-  test('ML worker softens high-frequency mask contribution', () => {
-    expect(mlWorker).toMatch(/hfStart|anti-whistle|bins \* 0\.35/);
+  test('ML worker does not apply an unconditional high-frequency mask taper', () => {
+    // Removed: a ramp from floor(bins * 0.35) (~8.4 kHz) to 0.45 at Nyquist
+    // darkened every mask, including unity. Transparency is pinned by
+    // tests/mlworker-ola-edges.test.js (12 kHz and 16 kHz, SI-SDR and SDR).
+    expect(mlWorker).not.toMatch(/hfStart/);
+    expect(mlWorker).not.toMatch(/bins \* 0\.35/);
+    expect(mlWorker).not.toMatch(/1 - t \* 0\.55/);
   });
 
   test('wienerMMSE uses higher floor toward Nyquist', () => {
