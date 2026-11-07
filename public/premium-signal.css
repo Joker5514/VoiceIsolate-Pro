@@ -6,7 +6,7 @@
 @import url('/src/ui/tokens/design-tokens.css');
 
 :root {
-  --vip-hero-gradient: linear-gradient(105deg, #f4f7fa 15%, #a88cff 58%, #2ed5e5);
+  --vip-hero-gradient: linear-gradient(105deg, #f4f7fa 15%, #ff8fa3 58%, #ff2d55);
   --vip-hero-bg: radial-gradient(ellipse 60% 50% at 20% 10%, rgba(155,108,255,0.18), transparent 60%),
                  radial-gradient(ellipse 50% 40% at 80% 20%, rgba(46,213,229,0.12), transparent 60%),
                  var(--vip-surface-root);
@@ -157,8 +157,8 @@
 }
 
 .vip-btn-premium--primary {
-  background: linear-gradient(135deg, #9b6cff, #7c3aed);
-  border-color: #9b6cff;
+  background: linear-gradient(135deg, #ff5c8a, #d90429);
+  border-color: #ff5c8a;
   color: white;
   box-shadow: 0 8px 24px rgba(124,58,237,0.25);
 }
@@ -250,7 +250,7 @@
   transform: translateX(-50%);
   display: none;
   padding: 8px 16px;
-  background: #9b6cff;
+  background: #ff5c8a;
   color: white;
   border: 0;
   border-radius: var(--vip-radius-full);

@@ -2,23 +2,23 @@
  * Mobile fit + Signal Glass polish.
  * Layout and paint only: no audio, checkout, or API behavior.
  *
- * Tokens: voice #22d3ee, background stem #f5b942, reference #c3cbd5,
- * canvas #0a0e14. Motion 150–300ms, expo-out. Touch targets are 44px
+ * Tokens: voice #d90429, background stem #ff8fa3, reference #e7dce0,
+ * canvas #070708. Motion 150–300ms, expo-out. Touch targets are 44px
  * from the viewport width, not pointer:coarse, so a resized desktop
  * window matches a phone.
  */
 
 :root {
-  --vip-voice: #22d3ee;
-  --vip-bgst: #f5b942;
-  --vip-ref: #c3cbd5;
-  --vip-canvas: #0a0e14;
-  --vip-ink: #061018;
+  --vip-voice: #d90429;
+  --vip-bgst: #ff8fa3;
+  --vip-ref: #e7dce0;
+  --vip-canvas: #070708;
+  --vip-ink: #ffffff;
   --vip-ease-expo: cubic-bezier(0.23, 1, 0.32, 1);
   --vip-motion: 220ms;
 }
 
-/* Play is the cyan pill on both surfaces. The collapse toggle stays glass. */
+/* Play is the deep-red pill on both surfaces. The collapse toggle stays glass. */
 #playBtn.v3-play,
 #tpPlay.btn-tp-play {
   width: 44px;
@@ -30,7 +30,7 @@
   border-color: transparent;
   background: var(--vip-voice);
   color: var(--vip-ink);
-  box-shadow: 0 6px 16px rgba(34, 211, 238, 0.22);
+  box-shadow: 0 6px 16px rgba(255, 45, 85, 0.28);
   transition:
     width var(--vip-motion) var(--vip-ease-expo),
     opacity 200ms var(--vip-ease-expo),
@@ -39,7 +39,7 @@
 }
 #playBtn.v3-play:hover:not(:disabled),
 #tpPlay.btn-tp-play:hover:not(:disabled) {
-  background: #67e4f4;
+  background: #d90429;
   color: var(--vip-ink);
 }
 
@@ -69,7 +69,7 @@
   flex: 0 0 auto;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
-.vip-play-toggle:hover { background: rgba(34, 211, 238, 0.1); color: var(--vip-voice); border-color: rgba(34, 211, 238, 0.45); }
+.vip-play-toggle:hover { background: rgba(255, 45, 85, 0.1); color: var(--vip-voice); border-color: rgba(255, 45, 85, 0.45); }
 .vip-play-toggle:focus-visible { outline: 2px solid var(--vip-voice); outline-offset: 2px; }
 .vip-play-toggle svg { transition: transform 200ms var(--vip-ease-expo); }
 .vip-play-slot.is-collapsed .vip-play-toggle svg { transform: rotate(-90deg); }

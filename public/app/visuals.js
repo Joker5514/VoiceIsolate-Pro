@@ -43,7 +43,7 @@
   // 8 perceptually distinct colors. Index 0 is the isolated target voice
   // and is the same cyan the rest of the app already uses for "processed".
   var SPEAKER_COLORS = [
-    '#22d3ee', // Speaker 0 — target / isolated  (cyan, matches app chrome)
+    '#ff2d55', // Speaker 0 — target / isolated  (cyan, matches app chrome)
     '#ff4081', // Speaker 1 — hot pink
     '#69ff47', // Speaker 2 — lime green
     '#ff9100', // Speaker 3 — amber

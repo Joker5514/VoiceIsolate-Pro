@@ -16,13 +16,13 @@ const mixer = fs.readFileSync(path.join(ROOT, 'src/pipeline/PlaybackMixer.js'), 
 const workletStatus = fs.readFileSync(path.join(ROOT, 'src/presentation/WorkletStatus.js'), 'utf8');
 
 describe('Engine pill ready styling', () => {
-  test('ready state is cyan/green, not error red', () => {
+  test('ready state is pearl, not the error red', () => {
     // Historical bug: data-state=ready used color:#ff1111 (looked broken)
     const readyRule = css.match(/\.engine-pill\[data-state="ready"\]\{[^}]+\}/);
     expect(readyRule).toBeTruthy();
     expect(readyRule[0]).not.toMatch(/color:\s*#ff1111/i);
     expect(readyRule[0]).not.toMatch(/color:\s*#ef4444/i);
-    expect(readyRule[0]).toMatch(/color:\s*#00ffe7/i);
+    expect(readyRule[0]).toMatch(/color:\s*#ff8fa3/i);
   });
 
   test('error state remains distinct red', () => {

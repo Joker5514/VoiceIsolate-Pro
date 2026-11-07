@@ -1,8 +1,8 @@
 /*
  * Landing v3 (Claude Design handoff "VoiceIsolate Pro v3").
  * Loads last; scoped to body.v3 so it wins over the legacy landing stack.
- * Colour rule (Signal Glass): cyan #22d3ee is the voice and the one filled
- * primary, gold #f5b942 is the background stem and rim, silver #c3cbd5 is
+ * Colour rule: pearlescent red is the voice and the one filled
+ * primary, gold #ff8fa3 is the background stem and rim, silver #c3cbd5 is
  * the original recording. No violet. Gold is not a button.
  */
 
@@ -27,9 +27,9 @@ body.v3 {
   --v3-fg-2: #c3cbd5;
   --v3-fg-3: #8d9aaa;
   --v3-fg-4: #7b8894;
-  --v3-cyan: #22d3ee;
-  --v3-cyan-hi: #67e4f4;
-  --v3-gold: #f5b942;
+  --v3-cyan: #ff2d55;
+  --v3-cyan-hi: #ff8fa3;
+  --v3-gold: #ff8fa3;
   --v3-room: #c9843a;
   --v3-air: #c3cbd5;
   --v3-violet: var(--v3-gold);
@@ -125,10 +125,10 @@ body.v3 .v3-btn {
 }
 body.v3 .v3-btn:active { transform: scale(0.97); }
 body.v3 .v3-btn--primary {
-  background: #22d3ee; color: #061018; border: 0; border-radius: 999px;
+  background: #d90429; color: #061018; border: 0; border-radius: 999px;
   box-shadow: none;
 }
-body.v3 .v3-btn--primary:hover { background: #67e4f4; color: #061018; box-shadow: none; }
+body.v3 .v3-btn--primary:hover { background: #ff5c8a; color: #061018; box-shadow: none; }
 body.v3 .v3-btn--ghost {
   border: 1px solid var(--v3-line-2); background: rgba(255, 255, 255, .02); color: var(--v3-fg); font-weight: 500;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
@@ -170,7 +170,7 @@ body.v3 #processBtn {
 }
 body.v3 .v3-workspace .vip-btn--primary:hover:not(:disabled),
 body.v3 .v3-workspace .btn-primary:hover,
-body.v3 #processBtn:hover:not(:disabled) { background: #67e4f4; color: #061018; border-color: transparent; }
+body.v3 #processBtn:hover:not(:disabled) { background: #ff5c8a; color: #061018; border-color: transparent; }
 body.v3 #processBtn, body.v3 #downloadBtn { height: 36px; padding: 0 16px; font-size: 13px; }
 body.v3 #processBtn:disabled { background: #17323a; color: #6f8a91; opacity: 1; box-shadow: none; }
 
@@ -196,10 +196,10 @@ body.v3 input[type='range']:not(.landing-seek-input) {
 }
 body.v3 input[type='range']::-webkit-slider-thumb { background: var(--v3-fg); border: 2px solid var(--v3-range); box-shadow: 0 0 8px color-mix(in srgb, var(--v3-range) 45%, transparent); }
 body.v3 input[type='range']::-moz-range-thumb { background: var(--v3-fg); border: 2px solid var(--v3-range); }
-body.v3 input[type='range'].landing-seek-input::-webkit-slider-thumb { background: var(--v3-fg); border: 2px solid var(--v3-cyan); box-shadow: 0 0 10px rgba(46, 213, 229, .45), 0 2px 5px rgba(0, 0, 0, .35); }
-body.v3 .tp-seek-fill { background: linear-gradient(90deg, #22c3d3, var(--v3-cyan)); box-shadow: 0 0 8px rgba(46, 213, 229, .35); }
-body.v3 .transport-seek:hover .tp-seek-fill { box-shadow: 0 0 12px rgba(46, 213, 229, .45); }
-body.v3 .transport-region-bar::before { background: linear-gradient(90deg, rgba(245, 185, 66, .28), rgba(34, 211, 238, .12)); border-color: rgba(245, 185, 66, .7); }
+body.v3 input[type='range'].landing-seek-input::-webkit-slider-thumb { background: var(--v3-fg); border: 2px solid var(--v3-cyan); box-shadow: 0 0 10px rgba(255, 45, 85, .45), 0 2px 5px rgba(0, 0, 0, .35); }
+body.v3 .tp-seek-fill { background: linear-gradient(90deg, #ff5c8a, var(--v3-cyan)); box-shadow: 0 0 8px rgba(255, 45, 85, .35); }
+body.v3 .transport-seek:hover .tp-seek-fill { box-shadow: 0 0 12px rgba(255, 45, 85, .45); }
+body.v3 .transport-region-bar::before { background: linear-gradient(90deg, rgba(255, 143, 163, .28), rgba(34, 211, 238, .12)); border-color: rgba(255, 143, 163, .7); }
 
 /* ── 01 · Hero ─────────────────────────────────────────────────────────── */
 body.v3 .v3-hero {
@@ -274,13 +274,13 @@ body.v3 .v3-tag {
   border-radius: 6px; border: 1px solid transparent;
   background:
     linear-gradient(rgba(20, 27, 36, .94), rgba(20, 27, 36, .94)) padding-box,
-    linear-gradient(135deg, rgba(34, 211, 238, .36), rgba(245, 185, 66, .30)) border-box;
+    linear-gradient(135deg, rgba(34, 211, 238, .36), rgba(255, 143, 163, .30)) border-box;
   font: 600 13px/1 var(--v3-sans); letter-spacing: 0; color: #f2f5f8; white-space: nowrap;
 }
 body.v3 .v3-sculpture[data-tier="HIGH"] .v3-tag {
   background:
     linear-gradient(rgba(20, 27, 36, .88), rgba(20, 27, 36, .88)) padding-box,
-    linear-gradient(135deg, rgba(34, 211, 238, .36), rgba(245, 185, 66, .30)) border-box;
+    linear-gradient(135deg, rgba(34, 211, 238, .36), rgba(255, 143, 163, .30)) border-box;
   -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
 }
 body.v3 .v3-tag__glyph { width: 14px; height: 14px; flex: 0 0 auto; font: 600 14px/14px var(--v3-sans); text-align: center; }
@@ -305,7 +305,7 @@ body.v3 .v3-tag--bg .v3-tag__glyph { color: var(--v3-gold); }
     /* Key light: cyan, upper left. Rim: gold, back right, low. */
     background:
       radial-gradient(ellipse 62% 70% at 12% -8%, rgba(34, 211, 238, .11), transparent 70%),
-      radial-gradient(ellipse 40% 34% at 100% calc(100% - 30vw), rgba(245, 185, 66, .09), transparent 72%);
+      radial-gradient(ellipse 40% 34% at 100% calc(100% - 30vw), rgba(255, 143, 163, .09), transparent 72%);
   }
   body.v3 .v3-sculpture__frame { left: auto; right: 0; top: auto; bottom: 0; width: 100cqw; transform: none; }
   body.v3 .v3-sculpture__leaders { display: block; }
@@ -342,7 +342,7 @@ body.v3 .v3-pipeline li {
   transform-origin: 50% 100%;
   transition: transform 260ms var(--v3-ease), border-color 200ms ease, box-shadow 260ms ease;
 }
-body.v3 .v3-pipeline li:hover { transform: translateY(-6px) rotateX(10deg); border-color: #2b4652; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 22px 34px -16px rgba(46, 213, 229, .35); }
+body.v3 .v3-pipeline li:hover { transform: translateY(-6px) rotateX(10deg); border-color: #2b4652; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 22px 34px -16px rgba(255, 45, 85, .35); }
 body.v3 .v3-pipeline span { font: 400 11px/1 var(--v3-mono); color: var(--v3-fg-4); }
 body.v3 .v3-pipeline__key span { color: var(--v3-cyan); }
 body.v3 .v3-pipeline h3 { margin: 0; font: 600 14px/1.3 var(--v3-sans); color: var(--v3-fg); }
@@ -364,7 +364,7 @@ body.v3 .v3-uses .vip-use-case__desc { margin: 0; font-size: 13px; line-height: 
 
 /* ── Sections 02 / 03 ──────────────────────────────────────────────────── */
 body.v3 .v3-section { border-top: 1px solid var(--v3-line); scroll-margin-top: 52px; }
-body.v3 .v3-section--stems { background: radial-gradient(70% 50% at 50% 0, rgba(46, 213, 229, .06), transparent 70%), var(--v3-bg-2); }
+body.v3 .v3-section--stems { background: radial-gradient(70% 50% at 50% 0, rgba(255, 45, 85, .06), transparent 70%), var(--v3-bg-2); }
 body.v3 .v3-wrap { max-width: 1180px; margin: 0 auto; padding: 72px 24px; display: flex; flex-direction: column; gap: 24px; }
 body.v3 .v3-section__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 body.v3 .v3-section__head > div { display: flex; flex-direction: column; gap: 8px; max-width: 620px; }
@@ -379,11 +379,11 @@ body.v3 .v3-card,
 body.v3 .v3-tilt {
   position: relative; margin: 0; padding: 16px;
   border: 1px solid var(--v3-line); border-radius: 14px; background: var(--v3-panel);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 40px 80px -40px rgba(0, 0, 0, .9), 0 0 0 1px rgba(46, 213, 229, .04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 40px 80px -40px rgba(0, 0, 0, .9), 0 0 0 1px rgba(255, 45, 85, .04);
   backdrop-filter: none; display: flex; flex-direction: column; gap: 12px;
 }
 body.v3 .v3-card::before, body.v3 .v3-card::after { content: none; animation: none; }
-body.v3 .v3-card:hover { border-color: var(--v3-line); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 40px 80px -40px rgba(0, 0, 0, .9), 0 0 0 1px rgba(46, 213, 229, .04); }
+body.v3 .v3-card:hover { border-color: var(--v3-line); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 40px 80px -40px rgba(0, 0, 0, .9), 0 0 0 1px rgba(255, 45, 85, .04); }
 body.v3 .v3-card[hidden] { display: none !important; }
 
 /* Upload */
@@ -470,9 +470,9 @@ body.v3 .v3-transport { display: flex; align-items: center; gap: 12px; flex-wrap
 body.v3 .v3-transport__keys { display: inline-flex; align-items: center; gap: 6px; }
 body.v3 .v3-workspace .v3-transport .vip-iconbtn { width: 32px; padding: 0; font-size: 12px; }
 body.v3 .v3-workspace .v3-transport .v3-play {
-  width: 36px; height: 36px; border: 0; border-radius: 999px; background: #22d3ee; color: #061018; font-size: 13px;
+  width: 36px; height: 36px; border: 0; border-radius: 999px; background: #d90429; color: #061018; font-size: 13px;
 }
-body.v3 .v3-workspace .v3-transport .v3-play:hover:not(:disabled) { background: #67e4f4; color: #061018; }
+body.v3 .v3-workspace .v3-transport .v3-play:hover:not(:disabled) { background: #ff5c8a; color: #061018; }
 body.v3 .v3-workspace .v3-transport .v3-play:active:not(:disabled) { transform: scale(0.95); }
 body.v3 .v3-transport .time-readout { font: 400 13px/1 var(--v3-mono); font-variant-numeric: tabular-nums; color: var(--v3-fg); white-space: nowrap; }
 body.v3 .v3-seek { position: relative; flex: 1 1 160px; min-width: 120px; margin: 0; padding: 0; }
@@ -515,7 +515,7 @@ body.v3 .v3-console-host { padding: 24px clamp(0px, 2vw, 24px) 24px; perspective
 body.v3 .v3-console {
   position: relative; display: block; overflow: hidden;
   border: 1px solid var(--v3-line); border-radius: 14px; background: var(--v3-bg-2);
-  box-shadow: 0 60px 120px -50px rgba(0, 0, 0, .95), 0 0 80px -30px rgba(46, 213, 229, .25);
+  box-shadow: 0 60px 120px -50px rgba(0, 0, 0, .95), 0 0 80px -30px rgba(255, 45, 85, .25);
   transform-origin: 50% 0; transition: transform 120ms linear, border-color 200ms ease;
   text-decoration: none;
 }
@@ -524,12 +524,12 @@ body.v3 .v3-console::after { content: ''; position: absolute; inset: 0; backgrou
 body.v3 .v3-console__cta {
   position: absolute; z-index: 1; left: 50%; bottom: 28px; transform: translateX(-50%);
   display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 20px; border-radius: 8px;
-  background: linear-gradient(180deg, #5fe4f0, #22c3d3); color: #03161a; font: 600 14px/1 var(--v3-sans); white-space: nowrap;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 8px 24px -8px rgba(46, 213, 229, .6);
+  background: linear-gradient(180deg, #5fe4f0, #ff5c8a); color: #03161a; font: 600 14px/1 var(--v3-sans); white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 8px 24px -8px rgba(255, 45, 85, .6);
   transition: box-shadow 200ms ease;
 }
 body.v3 .v3-console:hover { border-color: #2b4652; }
-body.v3 .v3-console:hover .v3-console__cta { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 12px 32px -8px rgba(46, 213, 229, .8); }
+body.v3 .v3-console:hover .v3-console__cta { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 12px 32px -8px rgba(255, 45, 85, .8); }
 
 body.v3 .v3-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin: 0; padding: 0; max-width: none; }
 body.v3 .v3-modes .v3-label { grid-column: 1 / -1; }
@@ -557,7 +557,7 @@ body.v3 .v3-close .vip-trust, body.v3 .v3-close .privacy-panel {
 }
 body.v3 .v3-badges { display: flex; gap: 8px; flex-wrap: wrap; }
 body.v3 .v3-badges span { padding: 6px 12px; border-radius: 999px; background: rgba(49, 207, 125, .12); border: 1px solid rgba(49, 207, 125, .2); font: 500 11px/1 var(--v3-mono); color: var(--v3-ok); }
-body.v3 .v3-badges .v3-badges__live { background: rgba(46, 213, 229, .12); border-color: rgba(46, 213, 229, .2); color: var(--v3-cyan); }
+body.v3 .v3-badges .v3-badges__live { background: rgba(255, 45, 85, .12); border-color: rgba(255, 45, 85, .2); color: var(--v3-cyan); }
 body.v3 .v3-close .privacy-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 body.v3 .v3-close .btn {
   display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 6px;
@@ -629,28 +629,28 @@ body.v3 .v3-workspace .v3-transport .vip-iconbtn { font-family: system-ui, sans-
 body.v3 .v3-close .vip-trust, body.v3 .v3-close .vip-trust * { text-align: left; }
 body.v3 .v3-close .v3-badges { justify-content: flex-start; }
 /* Category chips: no red outside the logo and destructive actions. */
-body.v3 .v3-modes .ps-chip--process { color: #f5b942; background: rgba(245, 185, 66, .12); border-color: rgba(245, 185, 66, .35); }
-body.v3 .v3-modes .ps-chip--live { color: var(--v3-cyan); background: rgba(46, 213, 229, .1); border-color: rgba(46, 213, 229, .3); }
+body.v3 .v3-modes .ps-chip--process { color: #ff8fa3; background: rgba(255, 143, 163, .12); border-color: rgba(255, 143, 163, .35); }
+body.v3 .v3-modes .ps-chip--live { color: var(--v3-cyan); background: rgba(255, 45, 85, .1); border-color: rgba(255, 45, 85, .3); }
 body.v3 #archBadgeMount { background: none; border: 0; padding: 0; box-shadow: none; }
-body.v3 #archBadgeMount .vip-badge { color: var(--v3-cyan); background: rgba(46, 213, 229, .08); border-color: rgba(46, 213, 229, .25); font-family: var(--v3-mono); }
+body.v3 #archBadgeMount .vip-badge { color: var(--v3-cyan); background: rgba(255, 45, 85, .08); border-color: rgba(255, 45, 85, .25); font-family: var(--v3-mono); }
 body.v3 #archBadgeMount .vip-badge__dot { background: var(--v3-cyan); box-shadow: 0 0 6px var(--v3-cyan); }
 
 /* Slider hint panels (landing.js wireSliderHints): v3 cyan instead of the legacy red. */
 body.v3 .slider-hint-btn:hover,
-body.v3 .slider-row.hint-open .slider-hint-btn { color: var(--v3-cyan); border-color: rgba(46, 213, 229, .5); background: rgba(46, 213, 229, .1); }
+body.v3 .slider-row.hint-open .slider-hint-btn { color: var(--v3-cyan); border-color: rgba(255, 45, 85, .5); background: rgba(255, 45, 85, .1); }
 body.v3 .slider-hint { background: rgba(7, 11, 16, .6); border: 1px solid var(--v3-line-2); border-radius: 8px; color: var(--v3-fg-3); }
 body.v3 .hint-body { color: var(--v3-fg-3); font-family: var(--v3-sans); }
-body.v3 .hint-toward { background: rgba(46, 213, 229, .08); color: var(--v3-fg-2); }
+body.v3 .hint-toward { background: rgba(255, 45, 85, .08); color: var(--v3-fg-2); }
 body.v3 .hint-toward em, body.v3 .hint-dir-both, body.v3 .hint-chip-both { color: var(--v3-cyan); }
-body.v3 .hint-dir-both, body.v3 .hint-chip-both { border-color: rgba(46, 213, 229, .3); background: rgba(46, 213, 229, .08); }
+body.v3 .hint-dir-both, body.v3 .hint-chip-both { border-color: rgba(255, 45, 85, .3); background: rgba(255, 45, 85, .08); }
 body.v3 .hint-range-thumb { border-color: var(--v3-cyan); }
-body.v3 .hint-example-pill { border-color: rgba(46, 213, 229, .3); background: rgba(46, 213, 229, .08); color: var(--v3-fg-2); }
-body.v3 .hint-example-pill:hover { background: rgba(46, 213, 229, .16); color: var(--v3-fg); }
+body.v3 .hint-example-pill { border-color: rgba(255, 45, 85, .3); background: rgba(255, 45, 85, .08); color: var(--v3-fg-2); }
+body.v3 .hint-example-pill:hover { background: rgba(255, 45, 85, .16); color: var(--v3-fg); }
 body.v3 .slider-hint-btn:focus-visible, body.v3 .hint-example-pill:focus-visible { outline: 2px solid var(--v3-cyan); outline-offset: 2px; box-shadow: none; }
 /* Direction cues: lower = violet, raise = cyan (no red outside destructive states). */
-body.v3 .hint-range-track { background: linear-gradient(90deg, rgba(245, 185, 66, .45), rgba(34, 211, 238, .45)); }
-body.v3 .hint-dir-down, body.v3 .hint-chip-down { color: #f5b942; border-color: rgba(245, 185, 66, .35); background: rgba(245, 185, 66, .1); }
-body.v3 .hint-dir-up, body.v3 .hint-chip-up { color: var(--v3-cyan); border-color: rgba(46, 213, 229, .35); background: rgba(46, 213, 229, .1); }
+body.v3 .hint-range-track { background: linear-gradient(90deg, rgba(255, 143, 163, .45), rgba(34, 211, 238, .45)); }
+body.v3 .hint-dir-down, body.v3 .hint-chip-down { color: #ff8fa3; border-color: rgba(255, 143, 163, .35); background: rgba(255, 143, 163, .1); }
+body.v3 .hint-dir-up, body.v3 .hint-chip-up { color: var(--v3-cyan); border-color: rgba(255, 45, 85, .35); background: rgba(255, 45, 85, .1); }
 
 /* ── Signal Glass actions ──────────────────────────────────────────────────
    Layout only was the workstation refresh. The one filled action is cyan
@@ -673,12 +673,12 @@ body.v3 .v3-link--solid:hover { background: rgba(34, 211, 238, .08); }
 /* One filled primary: cyan pill, dark ink. */
 body.v3 .v3-btn--primary,
 body.v3 .v3-console__cta {
-  background: #22d3ee; color: #061018;
+  background: #d90429; color: #061018;
   box-shadow: none;
   border-radius: 999px;
 }
-body.v3 .v3-btn--primary:hover { background: #67e4f4; color: #061018; box-shadow: none; }
-body.v3 .v3-console:hover .v3-console__cta { background: #67e4f4; box-shadow: none; }
+body.v3 .v3-btn--primary:hover { background: #ff5c8a; color: #061018; box-shadow: none; }
+body.v3 .v3-console:hover .v3-console__cta { background: #ff5c8a; box-shadow: none; }
 /* Hero CTAs: 150 ms cyan glow on the primary pill, and a visible focus halo. */
 body.v3 .v3-hero .v3-btn--primary { transition: background-color 150ms ease, box-shadow 150ms ease, transform 160ms var(--v3-ease); }
 body.v3 .v3-hero .v3-btn--primary:hover { box-shadow: 0 0 0 1px rgba(103, 228, 244, .5), 0 6px 24px -6px rgba(34, 211, 238, .55); }
@@ -690,20 +690,20 @@ body.v3 .v3-workspace .vip-btn--primary,
 body.v3 .v3-workspace .btn-primary,
 body.v3 #processBtn,
 body.v3 .v3-modes .ps-btn--process {
-  background: #22d3ee; color: #061018; border-color: transparent;
+  background: #d90429; color: #061018; border-color: transparent;
   box-shadow: none;
 }
 body.v3 .v3-workspace .vip-btn--primary:hover:not(:disabled),
 body.v3 .v3-workspace .btn-primary:hover,
 body.v3 #processBtn:hover:not(:disabled),
-body.v3 .v3-modes .ps-btn--process:hover { background: #67e4f4; color: #061018; }
+body.v3 .v3-modes .ps-btn--process:hover { background: #ff5c8a; color: #061018; }
 body.v3 #processBtn:disabled { background: #17323a; color: #6f8a91; }
 /* Segmented groups keep the neutral pressed style, not the action fill. */
 body.v3 .v3-workspace .v3-seg .vip-btn--primary { background: #161f29; color: var(--v3-fg); box-shadow: inset 0 -2px 0 var(--v3-cyan); }
 
 /* Explain: pipeline cards sit flat on a track, the separation step is keyed. */
 body.v3 .v3-pipeline { position: relative; perspective: none; padding-top: 22px; }
-body.v3 .v3-pipeline::before { content: ''; position: absolute; left: 18px; right: 18px; top: 10px; height: 1px; background: linear-gradient(90deg, var(--v3-line-3), rgba(46, 213, 229, .5), var(--v3-line-3)); }
+body.v3 .v3-pipeline::before { content: ''; position: absolute; left: 18px; right: 18px; top: 10px; height: 1px; background: linear-gradient(90deg, var(--v3-line-3), rgba(255, 45, 85, .5), var(--v3-line-3)); }
 body.v3 .v3-pipeline li { position: relative; border-radius: 8px; min-height: 140px; }
 body.v3 .v3-pipeline li::before { content: ''; position: absolute; left: 16px; top: -16px; width: 7px; height: 7px; border-radius: 50%; background: var(--v3-bg); border: 1px solid var(--v3-line-3); }
 body.v3 .v3-pipeline li:hover { transform: translateY(-2px); border-color: var(--v3-line-3); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 14px 26px -16px rgba(0, 0, 0, .9); }
@@ -716,8 +716,8 @@ body.v3 .v3-uses .vip-use-case {
   padding: 16px; border: 1px solid var(--v3-line); border-radius: 10px; background: var(--v3-panel);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
 }
-body.v3 .v3-principles > div { border-top: 2px solid rgba(46, 213, 229, .5); }
-body.v3 .v3-principles > div:nth-child(2) { border-top-color: rgba(245, 185, 66, .7); }
+body.v3 .v3-principles > div { border-top: 2px solid rgba(255, 45, 85, .5); }
+body.v3 .v3-principles > div:nth-child(2) { border-top-color: rgba(255, 143, 163, .7); }
 body.v3 .v3-principles > div:nth-child(3) { border-top-color: rgba(49, 207, 125, .6); }
 body.v3 .v3-uses { gap: 12px; }
 
@@ -788,7 +788,7 @@ body.v3 details > summary.v3-label::after {
   width: 0;
   height: 0;
   flex: none;
-  border-left: 5px solid var(--v3-cyan, #2ed5e5);
+  border-left: 5px solid var(--v3-cyan, #ff5c8a);
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
   transition: transform 0.15s ease;
@@ -806,7 +806,7 @@ body.v3 details.v3-block > summary::after {
   top: 0.85em;
   width: 0;
   height: 0;
-  border-left: 5px solid var(--v3-cyan, #2ed5e5);
+  border-left: 5px solid var(--v3-cyan, #ff5c8a);
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
   transition: transform 0.15s ease;

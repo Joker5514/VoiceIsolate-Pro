@@ -154,7 +154,7 @@ function drawWaveform(canvas, data) {
 
 function drawWavePeaks(ctx, peaks, w, mid) {
 
-  ctx.strokeStyle = '#22d3ee';
+  ctx.strokeStyle = '#ff2d55';
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = 0; x < w; x++) {
@@ -179,11 +179,11 @@ function drawWaveOverlays(ctx, w, h) {
     const x1 = Math.floor(normToViewX(state.selection.end, w));
     ctx.fillStyle = 'rgba(155,108,255,0.14)';
     ctx.fillRect(x0, 0, Math.max(2, x1 - x0), h);
-    ctx.strokeStyle = '#9b6cff';
+    ctx.strokeStyle = '#ff5c8a';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x0, 0, Math.max(2, x1 - x0), h);
     // Handles
-    ctx.fillStyle = '#9b6cff';
+    ctx.fillStyle = '#ff5c8a';
     ctx.fillRect(x0 - 3, 0, 6, h);
     ctx.fillRect(x1 - 3, 0, 6, h);
   }
@@ -301,7 +301,7 @@ function drawSpectrogramSelection(ctx, w, h) {
     const height = Math.abs(y1 - y0);
     ctx.fillStyle = 'rgba(155,108,255,0.18)';
     ctx.fillRect(left, top, width, height);
-    ctx.strokeStyle = '#9b6cff';
+    ctx.strokeStyle = '#ff5c8a';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(left, top, width, height);
   }

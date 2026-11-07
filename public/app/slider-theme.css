@@ -32,12 +32,12 @@
   --vip-accent-glow2:   rgba(255, 42, 61, 0.28);
 
   /* Cyan (real-time) accent */
-  --vip-rt:             #00ffe7;
-  --vip-rt-dim:         rgba(0, 140, 120, 0.55);
-  --vip-rt-tip:         #b8fff8;
-  --vip-rt-soft:        rgba(0, 255, 231, 0.18);
-  --vip-rt-glow:        rgba(0, 255, 231, 0.62);
-  --vip-rt-glow2:       rgba(0, 255, 231, 0.26);
+  --vip-rt:             #ff2d55;
+  --vip-rt-dim:         rgba(120, 16, 36, 0.55);
+  --vip-rt-tip:         #ff8fa3;
+  --vip-rt-soft:        rgba(255, 45, 85, 0.18);
+  --vip-rt-glow:        rgba(255, 45, 85, 0.62);
+  --vip-rt-glow2:       rgba(255, 92, 138, 0.26);
 
   /* Track geometry */
   --vip-track-empty:    rgba(255, 255, 255, 0.08);
@@ -601,14 +601,14 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
    LOCK BUTTON  — protects a slider from preset / reset changes
    ══════════════════════════════════════════════════════════════ */
 
-/* Cyan "protected" lock accent — must match style.css / slider-ticks.css */
+/* Pearl "protected" lock accent — must match style.css / slider-ticks.css */
 :root {
-  --vip-lock-accent: #67e8f9;
+  --vip-lock-accent: #ff8fa3;
   --vip-lock:        var(--vip-lock-accent);
-  --vip-lock-soft:   rgba(103, 232, 249, 0.14);
-  --vip-lock-glow:   rgba(103, 232, 249, 0.40);
-  --vip-lock-border: rgba(103, 232, 249, 0.55);
-  --vip-lock-text:   #a5f3fc;
+  --vip-lock-soft:   rgba(255, 143, 163, 0.14);
+  --vip-lock-glow:   rgba(255, 45, 85, 0.40);
+  --vip-lock-border: rgba(255, 45, 85, 0.55);
+  --vip-lock-text:   #ff8fa3;
 }
 
 .sr-lock-btn {

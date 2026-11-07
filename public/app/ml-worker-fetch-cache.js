@@ -504,14 +504,14 @@ function _ensureProgressPanel(keys) {
       .vip-mlp-fill {
         height: 100%;
         width: 0%;
-        background: linear-gradient(90deg, #00ffe7, #9d4dff);
+        background: linear-gradient(90deg, #ff8fa3, #ff2d55);
         border-radius: 99px;
         transition: width 0.25s ease;
       }
-      .vip-mlp-fill.absent { background: #f59e0b; width: 100%; }
+      .vip-mlp-fill.absent { background: #ff8fa3; width: 100%; }
       .vip-mlp-status { font-size: 10px; color: #555; text-align: right; white-space: nowrap; }
-      .vip-mlp-status.ready  { color: #00ffe7; }
-      .vip-mlp-status.absent { color: #f59e0b; }
+      .vip-mlp-status.ready  { color: #ff8fa3; }
+      .vip-mlp-status.absent { color: #ff8fa3; }
       .vip-mlp-footer {
         margin-top: 14px;
         padding-top: 10px;
@@ -761,7 +761,7 @@ function _ensureBanner(absentModels) {
   banner.setAttribute('aria-live', 'polite');
   banner.style.cssText = [
     'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:99999',
-    'background:#1c1a14', 'border-bottom:1px solid #f59e0b',
+    'background:#1c1a14', 'border-bottom:1px solid #ff8fa3',
     'color:#fde68a', 'font:500 12px/1.4 "Courier New",monospace',
     'padding:8px 12px', 'display:flex', 'align-items:flex-start',
     'gap:12px', 'max-height:160px', 'overflow-y:auto'
@@ -769,7 +769,7 @@ function _ensureBanner(absentModels) {
 
   const icon = document.createElement('span');
   icon.textContent = '⚠';
-  icon.style.cssText = 'color:#f59e0b;font-size:16px;flex-shrink:0;margin-top:1px;';
+  icon.style.cssText = 'color:#ff8fa3;font-size:16px;flex-shrink:0;margin-top:1px;';
 
   const body = document.createElement('div');
   body.style.cssText = 'flex:1;min-width:0;';
@@ -859,7 +859,7 @@ window._stampPipelineStages = function stampPipelineStages(manifest) {
     const badge = document.createElement('span');
     badge.className    = 'vip-stage-ml-status';
     badge.style.cssText =
-      `color:${isAbsent ? '#f59e0b' : isUnverified ? '#94a3b8' : '#34d399'};` +
+      `color:${isAbsent ? '#ff8fa3' : isUnverified ? '#94a3b8' : '#34d399'};` +
       'font-size:10px;font-weight:700;margin-left:4px;' +
       'cursor:help;vertical-align:middle;';
     badge.textContent  = isAbsent ? '⚠ DSP' : isUnverified ? '? Unverified' : '● ML';

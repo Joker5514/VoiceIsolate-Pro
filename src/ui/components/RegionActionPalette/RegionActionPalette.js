@@ -182,8 +182,8 @@ export class RegionActionPalette {
         padding: 6px 12px;
         font: 500 12px/1 ui-sans-serif;
         color: #c5ced6;
-        background: ${canonical === Actions.ISOLATE ? '#9b6cff' : '#121a23'};
-        border: 1px solid ${canonical === Actions.ISOLATE ? '#9b6cff' : '#26323d'};
+        background: ${canonical === Actions.ISOLATE ? '#d90429' : '#141114'};
+        border: 1px solid ${canonical === Actions.ISOLATE ? '#d90429' : '#2a2226'};
         border-radius: 6px;
         cursor: ${isUnsupported ? 'not-allowed' : 'pointer'};
         opacity: ${isUnsupported ? '0.5' : '1'};
@@ -198,11 +198,11 @@ export class RegionActionPalette {
       if (!isUnsupported) {
         btn.addEventListener('click', () => this._handleAction(canonical));
         btn.addEventListener('mouseenter', () => {
-          btn.style.borderColor = '#9b6cff';
+          btn.style.borderColor = '#ff2d55';
           btn.style.color = '#f4f7fa';
         });
         btn.addEventListener('mouseleave', () => {
-          btn.style.borderColor = canonical === Actions.ISOLATE ? '#9b6cff' : '#26323d';
+          btn.style.borderColor = canonical === Actions.ISOLATE ? '#d90429' : '#2a2226';
           btn.style.color = canonical === Actions.ISOLATE ? 'white' : '#c5ced6';
         });
       }
@@ -226,8 +226,8 @@ export class RegionActionPalette {
         padding: 12px 16px;
         font: 500 14px/1 ui-sans-serif;
         color: #f4f7fa;
-        background: ${canonical === Actions.ISOLATE ? '#9b6cff' : '#121a23'};
-        border: 1px solid ${canonical === Actions.ISOLATE ? '#9b6cff' : '#1d2a34'};
+        background: ${canonical === Actions.ISOLATE ? '#d90429' : '#141114'};
+        border: 1px solid ${canonical === Actions.ISOLATE ? '#d90429' : '#2a2226'};
         border-radius: 10px;
         cursor: ${isUnsupported ? 'not-allowed' : 'pointer'};
         opacity: ${isUnsupported ? '0.5' : '1'};

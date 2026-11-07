@@ -19,7 +19,7 @@
 }
 .vip-explain__q::before {
   content: "▸ ";
-  color: #22d3ee;
+  color: #ff2d55;
 }
 .vip-explain__q[aria-expanded="true"]::before {
   content: "▾ ";
@@ -33,7 +33,7 @@
 .vip-optimization {
   margin: 8px 0;
   padding: 10px 12px;
-  border: 1px solid rgba(34, 211, 238, 0.35);
+  border: 1px solid rgba(255, 45, 85, 0.35);
   border-radius: 8px;
   background: #10151c;
   color: #d5dee8;
