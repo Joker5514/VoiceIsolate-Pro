@@ -443,6 +443,20 @@ body.eng-console.neural-console .nc-preset[aria-pressed="true"] {
 body.eng-console.neural-console .hdr-stats .hs-lbl { color: var(--nc-mute); }
 body.eng-console.neural-console .hdr-stats .hs-val { color: var(--nc-pearl); }
 
+/* Hit area, not visual weight. Type size stays; border-box min size
+   brings Import, Export, mode tabs, and scene chips to 44px. */
+body.eng-console.neural-console .nc-btn,
+body.eng-console.neural-console .nc-tab,
+body.eng-console.neural-console .nc-preset {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
 @media (max-width: 1100px) {
   body.eng-console.neural-console #ncBottom { grid-template-columns: 1fr; }
   body.eng-console.neural-console .nc-file-chip { max-width: 100%; }
@@ -453,5 +467,8 @@ body.eng-console.neural-console .hdr-stats .hs-val { color: var(--nc-pearl); }
 @media (prefers-reduced-motion: reduce) {
   body.eng-console.neural-console .nc-btn,
   body.eng-console.neural-console .nc-tab,
-  body.eng-console.neural-console .nc-preset { transition: none; }
+  body.eng-console.neural-console .nc-preset {
+    transition: none;
+    animation: none;
+  }
 }

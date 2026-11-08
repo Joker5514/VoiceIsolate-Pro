@@ -1100,6 +1100,9 @@
     const tabs = el('div', 'nc-tabs');
     tabs.setAttribute('role', 'tablist');
     tabs.setAttribute('aria-label', 'Console mode');
+    const panel = document.querySelector('main.main-grid');
+    if (panel && !panel.id) panel.id = 'ncModePanel';
+    const panelId = panel?.id || 'ncModePanel';
     const modes = [
       ['studio', 'Live Mix'],
       ['creator', 'Quick Clean'],
@@ -1108,13 +1111,32 @@
     modes.forEach(([tier, label]) => {
       const btn = el('button', 'nc-tab', label);
       btn.type = 'button';
+      btn.id = `ncTab-${tier}`;
       btn.dataset.ncTier = tier;
       btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', 'false');
+      btn.setAttribute('aria-controls', panelId);
+      btn.tabIndex = -1;
       btn.addEventListener('click', () => {
         document.querySelector(`[data-hero-tier="${tier}"]`)?.click();
         syncNeuralTabs();
       });
       tabs.appendChild(btn);
+    });
+    tabs.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      const list = [...tabs.querySelectorAll('[role="tab"]')];
+      const current = list.indexOf(document.activeElement);
+      if (current < 0) return;
+      event.preventDefault();
+      let next = current;
+      if (event.key === 'ArrowRight') next = (current + 1) % list.length;
+      else if (event.key === 'ArrowLeft') next = (current - 1 + list.length) % list.length;
+      else if (event.key === 'Home') next = 0;
+      else next = list.length - 1;
+      const target = list[next];
+      target.focus();
+      target.click();
     });
     wrap.appendChild(tabs);
     const hdr = document.querySelector('.hdr');
@@ -1124,11 +1146,24 @@
   }
 
   function syncNeuralTabs() {
+    let selected = null;
     document.querySelectorAll('.nc-tab').forEach((tab) => {
       const source = document.querySelector(`[data-hero-tier="${tab.dataset.ncTier}"]`);
       const on = source?.getAttribute('aria-pressed') === 'true';
       tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      tab.tabIndex = on ? 0 : -1;
+      if (on) selected = tab;
     });
+    if (!selected) {
+      const first = document.querySelector('.nc-tab');
+      if (first) {
+        first.tabIndex = 0;
+        selected = first;
+      }
+    }
+    const panelId = selected?.getAttribute('aria-controls');
+    const panel = panelId ? document.getElementById(panelId) : null;
+    if (panel && selected?.id) panel.setAttribute('aria-labelledby', selected.id);
   }
 
   function tagNeuralColumns() {

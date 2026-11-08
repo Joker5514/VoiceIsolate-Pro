@@ -141,6 +141,19 @@ describe('filled action surfaces carry readable foregrounds', () => {
   });
 });
 
+describe('warning colour stays amber and readable', () => {
+  test('--state-warning is distinct from the pearl accent and clears AA on the dark console', () => {
+    const warning = token(dsTokens, '--state-warning');
+    expect(warning).toBe('#f0b541');
+    expect(warning).not.toBe(token(dsTokens, '--pearl'));
+    expect(contrast(warning, token(dsTokens, '--surface-root'))).toBeGreaterThanOrEqual(AA_NORMAL);
+    expect(contrast(warning, token(dsTokens, '--surface-panel'))).toBeGreaterThanOrEqual(AA_NORMAL);
+    expect(contrast(warning, '#1c1a14')).toBeGreaterThanOrEqual(AA_NORMAL);
+    expect(token(read('src/ui/tokens/design-tokens.css'), '--vip-warning')).toBe(warning);
+    expect(token(landing, '--state-warning')).toBe(warning);
+  });
+});
+
 describe('one-off dim hex is not reintroduced as text color', () => {
   test('style.css uses the token instead of #64748b for text', () => {
     const textUses = styleCss.match(/(?<!border-)color:\s*#64748b/g) || [];

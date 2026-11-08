@@ -16,7 +16,7 @@
   --red-glow: rgba(220,38,38,0.25);
   --cyan: #ff2a2a;
   --green: #ff5500;
-  --yellow: #ff8fa3;
+  --yellow: #f0b541;
   /* Historic name; the value is a red accent, not purple. Lightened from
      #d91818 (3.90:1) so `.btn-ab` / `.lufs-val` text clears WCAG AA. */
   --purple: #e84d4d;
@@ -1027,7 +1027,7 @@ details.slider-group[open] > .vip-section-summary .chevron{transform:rotate(0deg
 
 /* ── Voiceprint status ─────────────────────────────────────────── */
 .vp-idle      { color: var(--text-dim); }
-.vp-recording { color: #ff8fa3; animation: vip-blink .8s infinite; }
+.vp-recording { color: #f0b541; animation: vip-blink .8s infinite; }
 .vp-ready     { color: #10b981; }
 .vp-error     { color: #ef4444; }
 
@@ -1170,8 +1170,8 @@ details.slider-group[open] > .vip-section-summary .chevron{transform:rotate(0deg
 }
 .toast.show { opacity: 1; transform: translateX(0); }
 .toast.toast-error   { border-left-color: var(--red);    color: #fecaca; }
-.toast.toast-warn    { border-left-color: #ff8fa3;       color: #ff8fa3; }
-.toast.toast-warning { border-left-color: #ff8fa3;       color: #ff8fa3; }
+.toast.toast-warn    { border-left-color: #f0b541;       color: #f0b541; }
+.toast.toast-warning { border-left-color: #f0b541;       color: #f0b541; }
 .toast.toast-success { border-left-color: #10b981;       color: #a7f3d0; }
 .toast.toast-info    { border-left-color: var(--cyan);   color: var(--text); }
 .toast-close {

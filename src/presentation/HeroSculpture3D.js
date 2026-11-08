@@ -1,10 +1,10 @@
 /**
  * VoiceIsolate Pro — Landing hero sculpture, WebGL render (Layer 4: Presentation)
  *
- * Signal Glass L2 in real 3D: the cyan + gold braid and its two ribbons are
+ * Signal Glass L2 in real 3D: the neon-red + pearl braid and its two ribbons are
  * tube / strip meshes with a custom silk shader (emissive core, fresnel rim,
  * key + rim specular, energy flowing along the strand), the lens is a
- * transmissive MeshPhysicalMaterial disc with the 135 deg cyan-to-gold lit
+ * transmissive MeshPhysicalMaterial disc with the 135 deg red-to-pearl lit
  * edge, and the dust is a depth-of-field point field. Geometry comes from
  * src/core/HeroSculptureGeometry.js, the same source as the SVG still, so the
  * HTML tags stay on their ribbons.
@@ -73,7 +73,7 @@ const EDGE_FRAG = /* glsl */`
   uniform vec3 uVoice; uniform vec3 uGold; uniform vec2 uCenter; uniform float uProgress; uniform float uAt;
   varying vec3 vW;
   void main() {
-    // 135 deg glass edge: cyan 36 % at top left to gold 30 % at bottom right.
+    // 135 deg glass edge: neon red 36 % at top left to pearl 30 % at bottom right.
     float k = clamp(dot(normalize(vec2(1.0, -1.0)), vW.xy - uCenter) / 4.2 + 0.5, 0.0, 1.0);
     float on = smoothstep(uAt - 0.06, uAt + 0.06, uProgress);
     gl_FragColor = vec4(mix(uVoice, uGold, k), mix(0.62, 0.5, k) * on);
@@ -220,8 +220,8 @@ export async function mountHeroSculpture3D(stage, { win = window, budget, onFail
   const keep = (x) => { disposables.push(x); return x; };
   const C = (hex) => new THREE.Color(hex);
   const voiceC = C(SCULPTURE_COLORS.voice), goldC = C(SCULPTURE_COLORS.bgst), refC = C(SCULPTURE_COLORS.ref);
-  const keyDir = new THREE.Vector3(-0.62, 0.62, 0.48).normalize();   // cyan key, upper left, ~35 deg
-  const rimDir = new THREE.Vector3(0.82, 0.12, -0.56).normalize();   // gold rim, back right, low
+  const keyDir = new THREE.Vector3(-0.62, 0.62, 0.48).normalize();   // neon-red key, upper left, ~35 deg
+  const rimDir = new THREE.Vector3(0.82, 0.12, -0.56).normalize();   // pearl rim, back right, low
   const shared = { uTime: { value: 0 }, uProgress: { value: -0.05 } };
 
   const silk = (color, { opacity = 1, flow = 0.32, glow = false, transparent = false } = {}) => keep(new THREE.ShaderMaterial({
@@ -263,7 +263,7 @@ export async function mountHeroSculpture3D(stage, { win = window, budget, onFail
     });
     add(tube(THREE, pts, pts.map(() => 0.65 * WU), arcParam(pts, hubG + 0.01, 1), 6), silk(goldC, { flow: 0.2 }), 2);
   }
-  // Clean Voice ribbon: smooth translucent silk sheet around the cyan core.
+  // Clean Voice ribbon: smooth translucent silk sheet around the neon-red core.
   add(sheet(THREE, voice.slice(2), voiceHalfWidth, (c) => hubG + (1 - hubG) * c.t), silk(voiceC, { opacity: 0.34, flow: 0.5, transparent: true }), 4);
 
   // Silver sheath around the braid (fresnel-only glass shell).
@@ -302,7 +302,7 @@ export async function mountHeroSculpture3D(stage, { win = window, budget, onFail
   const R = LENS.ry * WU;
   // Physical transmission needs an opaque scene behind it (this canvas is transparent
   // over the page) and costs a second full render, so the glass is a custom lens
-  // shader instead: smoked body, biconvex normals so the cyan key and gold rim make
+  // shader instead: smoked body, biconvex normals so the neon-red key and pearl rim make
   // real moving highlights, fresnel edge, and an environment reflection term.
   const glass = keep(new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.FrontSide,
@@ -334,7 +334,7 @@ export async function mountHeroSculpture3D(stage, { win = window, budget, onFail
         float fres = 0.04 + 0.96 * pow(1.0 - ndv, 5.0);
         float sk = pow(max(dot(reflect(-uKeyDir, N), V), 0.0), 60.0);
         float sr = pow(max(dot(reflect(-uRimDir, N), V), 0.0), 24.0);
-        // Environment: dark room, cyan panel up-left, gold panel back-right.
+        // Environment: dark room, neon-red panel up-left, pearl panel back-right.
         vec3 R3 = reflect(-V, N);
         vec3 env = uKey * pow(max(dot(R3, normalize(vec3(-0.7, 0.6, 0.4))), 0.0), 6.0) * 0.5
                  + uRim * pow(max(dot(R3, normalize(vec3(0.8, 0.05, -0.5))), 0.0), 5.0) * 0.45

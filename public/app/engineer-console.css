@@ -13,7 +13,7 @@ body.eng-console {
   --ec-accent-2: #ff5c8a;
   --ec-warm: #ff8fa3;
   --ec-ok: #34d399;
-  --ec-warn: #ff8fa3;
+  --ec-warn: #f0b541;
   --ec-risk: #f87171;
   --ec-text: #e8edf5;
   --ec-muted: #8b95a8;
@@ -300,8 +300,8 @@ body.eng-console .ec-col-rack .vip-section-body {
 }
 .ec-status-pill[data-state="warn"] {
   color: var(--ec-warn);
-  border-color: rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(240, 181, 65, 0.35);
+  background: rgba(240, 181, 65, 0.08);
 }
 .ec-status-pill[data-state="risk"] {
   color: var(--ec-risk);
@@ -630,7 +630,7 @@ body.eng-console.ec-skin {
   --ws-red-solid: var(--action-process-solid, #d90429);
   --ws-cyan: var(--action-live, #ff5c8a);
   --ws-green: var(--state-success, #31cf7d);
-  --ws-amber: var(--state-warning, #ff8fa3);
+  --ws-amber: var(--state-warning, #f0b541);
   --ws-radius: 12px;
   background:
     radial-gradient(1200px 520px at 50% -180px, rgba(217, 4, 41, 0.16), transparent 70%),

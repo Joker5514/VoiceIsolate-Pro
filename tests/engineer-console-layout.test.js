@@ -26,11 +26,24 @@ describe('Engineer Console skin', () => {
     expect(js).toMatch(/getElementById\('saveProcBtn'\)/);
     expect(js).toMatch(/data-hero-tier/);
     expect(js).toMatch(/heroSceneSelect/);
+    expect(js).toMatch(/aria-controls/);
+    expect(js).toMatch(/aria-selected/);
+    expect(js).toMatch(/ArrowRight/);
     expect(js).not.toMatch(/getUserMedia/);
     expect(html).toContain('Live Mix');
     expect(html).toContain('Quick Clean');
     expect(html).toContain('id="fileInput"');
     expect(html).toContain('id="tpPlay"');
+  });
+
+  test('neural chrome hit targets stay at least 44px without resizing play', () => {
+    const skin = fs.readFileSync(path.join(ROOT, 'public/app/neural-console.css'), 'utf8');
+    const hit = /body\.eng-console\.neural-console \.nc-btn,[\s\S]*?\.nc-preset \{([^}]*)\}/.exec(skin);
+    expect(hit).not.toBeNull();
+    expect(hit[1]).toMatch(/min-height:\s*44px/);
+    expect(hit[1]).toMatch(/min-width:\s*44px/);
+    const play = /body\.eng-console\.neural-console #tpPlay\.btn-tp-play \{([^}]*)\}/.exec(skin);
+    expect(play[1]).not.toMatch(/\b(?:min-)?(?:width|height)\s*:/);
   });
 
   test('critical control IDs still present', () => {
