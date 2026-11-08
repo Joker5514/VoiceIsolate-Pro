@@ -93,7 +93,7 @@
 /* Severity color-coding */
 .diag-entry.info  { border-left-color: #00d4ff; color: #c9d1d9; }
 .diag-entry.pass  { border-left-color: #10b981; color: #6ee7b7; }
-.diag-entry.warn  { border-left-color: #ff8fa3; color: #ff8fa3; }
+.diag-entry.warn  { border-left-color: #f0b541; color: #f0b541; }
 .diag-entry.error { border-left-color: #ef4444; color: #fca5a5; }
 
 /* Timestamp prefix — dimmed */

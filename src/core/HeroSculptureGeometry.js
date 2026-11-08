@@ -6,14 +6,20 @@
  * (src/presentation/HeroSculpture3D.js), so the still, the 3D picture and the
  * HTML tags always agree. Pure: no DOM, no Web Audio, no I/O.
  *
- * The mixed recording enters at (0, 930) as a cyan + gold double helix, passes
+ * The mixed recording enters at (0, 930) as a neon-red + pearl double helix, passes
  * the glass lens (x 990-1240) and exits right as two single ribbons: Clean
- * Voice at y 300 and Background at y 690.
+ * Voice at y 300 and Background at y 690. Palette matches the landing page:
+ * #ff2d55 / #d90429 / #ff8fa3 / #ff5c8a.
  */
 'use strict';
 
 export const FRAME = Object.freeze({ width: 1920, height: 1200 });
-export const SCULPTURE_COLORS = Object.freeze({ voice: '#22d3ee', bgst: '#f5b942', ref: '#c3cbd5', instrument: '#e8eef5' });
+export const SCULPTURE_COLORS = Object.freeze({
+  voice: '#ff2d55',
+  bgst: '#ff8fa3',
+  ref: '#ff5c8a',
+  instrument: '#d90429',
+});
 export const LENS = Object.freeze({ cx: 1115, cy: 510, rx: 100, ry: 205, rot: 16 });
 export const HUB = Object.freeze([LENS.cx, LENS.cy]);
 export const HELIX_TURNS = 6.5;
@@ -58,7 +64,7 @@ export const voiceHalfWidth = (c) => (1.5 + 15 * Math.pow(c.t, 0.85)) * (0.4 + 0
 export const bgHalfWidth = (c) => 1.5 + 13 * Math.pow(c.t, 0.85);
 
 /**
- * One strand of the braid. sign +1 is cyan (continues as Clean Voice), -1 gold.
+ * One strand of the braid. sign +1 is neon red (continues as Clean Voice), -1 pearl.
  * `xy` is the frame position, `z` the depth toward the viewer in frame px,
  * `depth` its normalised sign (front when > 0).
  */

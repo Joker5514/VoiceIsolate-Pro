@@ -2,8 +2,8 @@
  * Landing v3 (Claude Design handoff "VoiceIsolate Pro v3").
  * Loads last; scoped to body.v3 so it wins over the legacy landing stack.
  * Colour rule: pearlescent red is the voice and the one filled
- * primary, gold #ff8fa3 is the background stem and rim, silver #c3cbd5 is
- * the original recording. No violet. Gold is not a button.
+ * primary (#ff2d55 / #d90429), pearl #ff8fa3 is the background stem and rim,
+ * shimmer #ff5c8a is the original-recording sheath. No violet, no cyan.
  */
 
 @font-face { font-family: 'Geist'; src: url('/fonts/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
@@ -274,17 +274,17 @@ body.v3 .v3-tag {
   border-radius: 6px; border: 1px solid transparent;
   background:
     linear-gradient(rgba(20, 27, 36, .94), rgba(20, 27, 36, .94)) padding-box,
-    linear-gradient(135deg, rgba(34, 211, 238, .36), rgba(255, 143, 163, .30)) border-box;
+    linear-gradient(135deg, rgba(255, 45, 85, .36), rgba(255, 143, 163, .30)) border-box;
   font: 600 13px/1 var(--v3-sans); letter-spacing: 0; color: #f2f5f8; white-space: nowrap;
 }
 body.v3 .v3-sculpture[data-tier="HIGH"] .v3-tag {
   background:
     linear-gradient(rgba(20, 27, 36, .88), rgba(20, 27, 36, .88)) padding-box,
-    linear-gradient(135deg, rgba(34, 211, 238, .36), rgba(255, 143, 163, .30)) border-box;
+    linear-gradient(135deg, rgba(255, 45, 85, .36), rgba(255, 143, 163, .30)) border-box;
   -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
 }
 body.v3 .v3-tag__glyph { width: 14px; height: 14px; flex: 0 0 auto; font: 600 14px/14px var(--v3-sans); text-align: center; }
-body.v3 .v3-tag--ref .v3-tag__glyph { color: var(--v3-air); }
+body.v3 .v3-tag--ref .v3-tag__glyph { color: #ff5c8a; }
 body.v3 .v3-tag--voice .v3-tag__glyph { color: var(--v3-cyan); }
 body.v3 .v3-tag--bg .v3-tag__glyph { color: var(--v3-gold); }
 
@@ -302,9 +302,9 @@ body.v3 .v3-tag--bg .v3-tag__glyph { color: var(--v3-gold); }
   body.v3 .v3-stage.v3-sculpture {
     position: absolute; top: calc(-52px - clamp(48px, 9vw, 112px)); bottom: 0; left: 50%; right: auto;
     width: 100vw; height: auto; margin: 0; transform: translateX(-50%);
-    /* Key light: cyan, upper left. Rim: gold, back right, low. */
+    /* Key light: neon red, upper left. Rim: pearl, back right, low. */
     background:
-      radial-gradient(ellipse 62% 70% at 12% -8%, rgba(34, 211, 238, .11), transparent 70%),
+      radial-gradient(ellipse 62% 70% at 12% -8%, rgba(255, 45, 85, .11), transparent 70%),
       radial-gradient(ellipse 40% 34% at 100% calc(100% - 30vw), rgba(255, 143, 163, .09), transparent 72%);
   }
   body.v3 .v3-sculpture__frame { left: auto; right: 0; top: auto; bottom: 0; width: 100cqw; transform: none; }

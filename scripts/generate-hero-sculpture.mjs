@@ -5,10 +5,10 @@
  *
  * The output is the prerendered still: it is what reduced-motion, Save-Data,
  * 2G, offline and CONSTRAINED-tier visitors see, and what every visitor sees
- * before landing-v3.js adds the 12 s drift. The cyan key (upper left) and gold
+ * before landing-v3.js adds the 12 s drift. The neon-red key (upper left) and pearl
  * rim (back right) light washes are CSS on the stage so they can outgrow the frame. Geometry is the 1920 x 1200 frame
  * from the Signal Glass spec: the mixed recording enters at (0, 930) as a
- * cyan + gold double helix, passes a glass lens spanning x 990-1240, and exits
+ * red + pearl double helix, passes a glass lens spanning x 990-1240, and exits
  * right as two single ribbons (Clean Voice at y 300, Background at y 690).
  *
  * Deterministic: the same source always writes the same bytes.
@@ -45,8 +45,8 @@ function band(samples, hw) {
 // Geometry lives in src/core/HeroSculptureGeometry.js (shared with the WebGL render).
 // The braid stays under the copy column (y >= 700 until x 900), then rises into the lens.
 const helix = helixSamples();
-const strandA = helixStrand(1, helix); // cyan: continues as the Clean Voice ribbon
-const strandB = helixStrand(-1, helix); // gold: continues as the Background ribbon
+const strandA = helixStrand(1, helix); // neon red: continues as the Clean Voice ribbon
+const strandB = helixStrand(-1, helix); // pearl: continues as the Background ribbon
 
 /** Sub-paths of a strand where it passes in front of the other. */
 function frontPath(s) {
@@ -122,7 +122,7 @@ const art = [
   `${i(4)}${lensEl('fill="url(#hsSheen)"')}`,
   `<ellipse cx="${LENS.cx}" cy="${LENS.cy}" rx="${LENS.rx - 7}" ry="${LENS.ry - 9}" fill="none" stroke="#e8eef5" stroke-opacity="0.08" stroke-width="1"/>`.replace(/^/, i(4)),
   `${i(4)}${lensEl('fill="none" stroke="url(#hsEdge)" stroke-width="2"')}`,
-  `${i(4)}<path d="${arc(Math.PI * 1.05, Math.PI * 1.42)}" fill="none" stroke="#cff6fc" stroke-opacity="0.5" stroke-width="2" stroke-linecap="round"/>`,
+  `${i(4)}<path d="${arc(Math.PI * 1.05, Math.PI * 1.42)}" fill="none" stroke="#ffe4ea" stroke-opacity="0.5" stroke-width="2" stroke-linecap="round"/>`,
   `${i(4)}<path d="${arc(Math.PI * 0.08, Math.PI * 0.4, 7)}" fill="none" stroke="${BGST}" stroke-opacity="0.45" stroke-width="2" stroke-linecap="round"/>`,
   `${i(2)}</g>`,
   `</svg>`,

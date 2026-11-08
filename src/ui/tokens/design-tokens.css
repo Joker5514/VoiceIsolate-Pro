@@ -43,9 +43,9 @@
   --vip-success-wash: rgba(49,207,125,0.12);
   --vip-success-glow: rgba(49,207,125,0.32);
 
-  /* Warning stays inside the red family (pearl), not a second hue. */
-  --vip-warning: #ff8fa3;
-  --vip-warning-wash: rgba(255,143,163,0.12);
+  /* Amber, distinct from the pearl accent (#ff8fa3). #f0b541 is 10.2:1 on #141114. */
+  --vip-warning: #f0b541;
+  --vip-warning-wash: rgba(240,181,65,0.12);
 
   --vip-critical: #ff2d55;
   --vip-critical-solid: #d90429;
