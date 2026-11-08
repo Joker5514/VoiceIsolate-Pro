@@ -15,6 +15,8 @@
  */
 'use strict';
 
+import { updateHintPanelValue } from './sliderHintSync.js';
+
 /** @typedef {import('./slider-map.js').SliderRegistryEntry} SliderRegistryEntry */
 
 /**
@@ -50,7 +52,7 @@ export function formatSliderDisplay(value, spec = {}) {
   let text;
   if (Number.isFinite(step) && step > 0 && step < 1) {
     const decimals = Math.min(4, Math.max(1, String(step).split('.')[1]?.length || 1));
-    text = n.toFixed(decimals);
+    text = n.toFixed(decimals).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   } else if (Number.isFinite(step) && step >= 1) {
     text = String(Math.round(n));
   } else {
@@ -303,14 +305,19 @@ export function createDspSliderRow(options) {
 
   function paint(v, { announce = true } = {}) {
     value = v;
+    const shown = formatSliderDisplay(v, { step, unit });
     range.value = String(v);
     number.value = String(v);
     const p = max > min ? ((v - min) / (max - min)) * 100 : 0;
     range.style.setProperty('--pct', `${p.toFixed(1)}%`);
     range.setAttribute('aria-valuenow', String(v));
+    number.setAttribute('aria-valuenow', String(v));
+    number.setAttribute('aria-valuetext', shown);
     if (announce) {
-      range.setAttribute('aria-valuetext', buildAriaValueText(label, v, unit));
+      range.setAttribute('aria-valuetext', `${buildAriaValueText(label, v, unit)}. ${shown}`);
     }
+    const hint = row.querySelector('.slider-hint');
+    if (hint) updateHintPanelValue(hint, { min, max, value: v, unit });
   }
 
   function commit(raw, source) {
@@ -345,6 +352,8 @@ export function createDspSliderRow(options) {
     number.classList.toggle('slider-input-locked', on);
     range.readOnly = on;
     number.readOnly = on;
+    range.setAttribute('aria-disabled', on ? 'true' : 'false');
+    number.setAttribute('aria-disabled', on ? 'true' : 'false');
     if (on) {
       range.setAttribute('aria-readonly', 'true');
       number.setAttribute('aria-readonly', 'true');
@@ -434,6 +443,7 @@ export function createDspSliderRow(options) {
   row.appendChild(lockBtn);
 
   setLocked(isLockedFn());
+  paint(value);
 
   return {
     row,

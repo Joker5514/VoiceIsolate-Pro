@@ -69,11 +69,15 @@ async function fetchAndCache(model) {
       const blob = new Blob(chunks);
       if (!await verifyCachedModel(model, await blob.arrayBuffer())) throw new Error(`Integrity verification failed for ${model.id}`);
       await cache.put(url, new Response(blob, {
-        headers: { 'Content-Type': 'application/octet-stream' },
+        headers: { 'Content-Type': 'application/octet-stream', 'X-VIP-Provider': 'same-origin' },
+      }));
+      await cache.put(`/vip-model-cache/${model.id}`, new Response(blob, {
+        headers: { 'Content-Type': 'application/octet-stream', 'X-VIP-Provider': 'same-origin' },
       }));
     } else {
       if (!await verifyCachedModel(model, await response.clone().arrayBuffer())) throw new Error(`Integrity verification failed for ${model.id}`);
       await cache.put(url, response.clone());
+      await cache.put(`/vip-model-cache/${model.id}`, response.clone());
     }
 
     broadcast('done', model.id, 100);

@@ -33,19 +33,19 @@
 /** @type {readonly ParamSpec[]} */
 export const PARAMETER_SCHEMA = Object.freeze([
   // ── Gate ──────────────────────────────────────────────────────────────
-  { id: 'gateThresh', label: 'Gate Threshold', category: 'gate', min: -120, max: 0, default: -42, step: 5, unit: 'dB', rt: true, path: 'audioParam', effect: 'Level below which the gate closes. Raise to cut more residual noise between phrases; lower to preserve quiet speech.', workletParam: 'threshold' },
+  { id: 'gateThresh', label: 'Gate Threshold', category: 'gate', min: -120, max: 0, default: -42, step: 1, unit: 'dB', rt: true, path: 'audioParam', effect: 'Level below which the gate closes. Raise to cut more residual noise between phrases; lower to preserve quiet speech.', workletParam: 'threshold' },
   { id: 'gateRange', label: 'Gate Range', category: 'gate', min: -120, max: 0, default: -60, step: 5, unit: 'dB', rt: true, path: 'audioParam', effect: 'Attenuation depth when the gate is closed (UI negative dB; mixer uses positive depth).', workletParam: 'range' },
   { id: 'gateAttack', label: 'Gate Attack', category: 'gate', min: 0, max: 200, default: 5, step: 5, unit: 'ms', rt: true, path: 'audioParam', effect: 'How fast the gate opens when speech exceeds threshold, in milliseconds. Live-Mix applies 0–200 ms (PlaybackMixer and the landing slider). Older 0–500 ms presets above 200 ms are migrated explicitly.', workletParam: 'attack' },
-  { id: 'gateRelease', label: 'Gate Release', category: 'gate', min: 10, max: 2000, default: 200, step: 50, unit: 'ms', rt: true, path: 'audioParam', effect: 'How fast the gate closes after speech falls below threshold.', workletParam: 'release' },
+  { id: 'gateRelease', label: 'Gate Release', category: 'gate', min: 10, max: 2000, default: 200, step: 10, unit: 'ms', rt: true, path: 'audioParam', effect: 'How fast the gate closes after speech falls below threshold.', workletParam: 'release' },
   { id: 'gateHold', label: 'Gate Hold', category: 'gate', min: 0, max: 500, default: 20, step: 25, unit: 'ms', rt: true, path: 'audioParam', effect: 'Minimum open time to reduce chattering on breathy speech.', workletParam: 'hold' },
   { id: 'gateLookahead', label: 'Gate Lookahead', category: 'gate', min: 0, max: 20, default: 2, step: 1, unit: 'ms', rt: true, path: 'audioParam', effect: 'Playback gate anticipatory delay. Adds up to 20 ms of Live-Mix latency so plosives open cleanly.', workletParam: 'lookahead' },
 
   // ── Noise reduction (offline spectral) ────────────────────────────────
-  { id: 'nrAmount', label: 'NR Amount', category: 'nr', min: 0, max: 100, default: 52, step: 5, unit: '%', rt: false, path: 'offlineOnly', effect: 'Process-time spectral noise reduction strength. Higher = cleaner but more artifacts; press Process to apply.' },
-  { id: 'nrSensitivity', label: 'NR Sensitivity', category: 'nr', min: 0, max: 100, default: 48, step: 5, unit: '%', rt: false, path: 'offlineOnly', effect: 'How aggressively noise PSD is tracked vs speech.' },
+  { id: 'nrAmount', label: 'NR Amount', category: 'nr', min: 0, max: 100, default: 52, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'Process-time spectral noise reduction strength. Higher = cleaner but more artifacts; press Process to apply.' },
+  { id: 'nrSensitivity', label: 'NR Sensitivity', category: 'nr', min: 0, max: 100, default: 48, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'How aggressively noise PSD is tracked vs speech.' },
   { id: 'nrSpectralSub', label: 'Spectral Subtraction', category: 'nr', min: 0, max: 100, default: 35, step: 5, unit: '%', rt: false, path: 'offlineOnly', effect: 'Oversubtraction factor for steady-state noise.' },
-  { id: 'nrFloor', label: 'NR Floor', category: 'nr', min: -120, max: -20, default: -68, step: 5, unit: 'dB', rt: false, path: 'offlineOnly', effect: 'Minimum residual noise floor after NR.' },
-  { id: 'nrSmoothing', label: 'NR Smoothing', category: 'nr', min: 0, max: 100, default: 32, step: 5, unit: '%', rt: false, path: 'offlineOnly', effect: 'Temporal smoothing of spectral gain to reduce musical noise.' },
+  { id: 'nrFloor', label: 'NR Floor', category: 'nr', min: -120, max: -20, default: -68, step: 1, unit: 'dB', rt: false, path: 'offlineOnly', effect: 'Minimum residual noise floor after NR.' },
+  { id: 'nrSmoothing', label: 'NR Smoothing', category: 'nr', min: 0, max: 100, default: 32, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'Temporal smoothing of spectral gain to reduce musical noise.' },
 
   // ── EQ ────────────────────────────────────────────────────────────────
   { id: 'eqSub', label: 'EQ Sub', category: 'eq', min: -24, max: 24, default: 0, step: 0.5, unit: 'dB', rt: true, path: 'audioParam', effect: 'Sub-bass shelf gain on the live-mix bus.' },
@@ -61,8 +61,8 @@ export const PARAMETER_SCHEMA = Object.freeze([
 
   // ── Dynamics ──────────────────────────────────────────────────────────
   { id: 'compThresh', label: 'Comp Threshold', category: 'dynamics', min: -60, max: 0, default: -24, step: 1, unit: 'dB', rt: true, path: 'audioParam', effect: 'Compressor onset level.' },
-  { id: 'compRatio', label: 'Comp Ratio', category: 'dynamics', min: 1, max: 20, default: 4, step: 0.5, unit: ':1', rt: true, path: 'audioParam', effect: 'Compression ratio above threshold.' },
-  { id: 'compAttack', label: 'Comp Attack', category: 'dynamics', min: 0.1, max: 200, default: 10, step: 5, unit: 'ms', rt: true, path: 'audioParam', effect: 'Compressor attack time.' },
+  { id: 'compRatio', label: 'Comp Ratio', category: 'dynamics', min: 1, max: 20, default: 4, step: 0.1, unit: ':1', rt: true, path: 'audioParam', effect: 'Compression ratio above threshold.' },
+  { id: 'compAttack', label: 'Comp Attack', category: 'dynamics', min: 0.1, max: 200, default: 10, step: 0.1, unit: 'ms', rt: true, path: 'audioParam', effect: 'Compressor attack time.' },
   { id: 'compRelease', label: 'Comp Release', category: 'dynamics', min: 10, max: 2000, default: 150, step: 50, unit: 'ms', rt: true, path: 'audioParam', effect: 'Compressor release time.' },
   { id: 'compKnee', label: 'Comp Knee', category: 'dynamics', min: 0, max: 24, default: 6, step: 1, unit: 'dB', rt: true, path: 'audioParam', effect: 'Soft-knee width.' },
   { id: 'compMakeup', label: 'Makeup Gain', category: 'dynamics', min: -12, max: 24, default: 0, step: 0.5, unit: 'dB', rt: true, path: 'audioParam', effect: 'Post-compressor makeup.' },

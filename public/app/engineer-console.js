@@ -501,9 +501,18 @@
     const memory = document.getElementById('memoryProfile');
     if (memory && memory.dataset.pacPlan !== '1') {
       memory.dataset.pacPlan = '1';
-      memory.addEventListener('change', (event) => {
-        const app = window._vipApp;
-        if (app && typeof app._recomputeChunkPlan === 'function') app._recomputeChunkPlan(event.target.value);
+      import('/src/core/UiPersistence.js').then(({ bindMemoryProfileSelect }) => {
+        bindMemoryProfileSelect(memory, {
+          onChange: (value) => {
+            const app = window._vipApp;
+            if (app && typeof app._recomputeChunkPlan === 'function') app._recomputeChunkPlan(value);
+          },
+        });
+      }).catch(() => {
+        memory.addEventListener('change', (event) => {
+          const app = window._vipApp;
+          if (app && typeof app._recomputeChunkPlan === 'function') app._recomputeChunkPlan(event.target.value);
+        });
       });
     }
   }
@@ -1190,8 +1199,8 @@
     if (!grid || document.getElementById('ncBottom')) return;
     const bottom = el('div', 'nc-bottom');
     bottom.id = 'ncBottom';
-    const voice = channelCard('Voice', 'Isolated stem · bus A', 'ncVoiceFill', 'ncVoiceDb');
-    const music = channelCard('Music', 'Residual bed · bus B', 'ncMusicFill', 'ncMusicDb');
+    const voice = channelCard('Voice', 'Level readout · balance with Voice Isolation', 'ncVoiceFill', 'ncVoiceDb');
+    const music = channelCard('Music', 'Level readout · balance with BG Suppress', 'ncMusicFill', 'ncMusicDb');
     const scenes = el('div', 'nc-scenes glass');
     scenes.appendChild(el('div', 'title', 'Scene'));
     [
@@ -1222,7 +1231,9 @@
 
   function channelCard(name, sub, fillId, dbId) {
     const card = el('div', 'nc-channel glass');
-    card.innerHTML = `<div class="nc-level"><div class="fill" id="${fillId}"></div></div>
+    card.setAttribute('role', 'group');
+    card.setAttribute('aria-label', `${name} level readout. Not a mix control.`);
+    card.innerHTML = `<div class="nc-level" role="meter" aria-readonly="true" aria-label="${name} level readout"><div class="fill" id="${fillId}"></div></div>
       <div><div class="name"></div><div class="sub"></div></div>
       <div class="db" id="${dbId}">—</div>`;
     card.querySelector('.name').textContent = name;

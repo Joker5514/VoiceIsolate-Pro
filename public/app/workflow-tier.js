@@ -134,9 +134,13 @@ const WorkflowTier = (() => {
     if (!sel) return;
     const allowed = tier.presets;
     for (const opt of sel.options) {
-      const show = !allowed || allowed.includes(opt.value || opt.textContent);
+      const custom = opt.dataset?.custom === '1';
+      const show = custom
+        ? !!tier.showSaveCustom
+        : (!allowed || allowed.includes(opt.value || opt.textContent));
       opt.hidden = !show;
       opt.disabled = !show;
+      opt.setAttribute('aria-disabled', show ? 'false' : 'true');
     }
     if (tier.showPresetSelect && tier.defaultPreset) {
       const has = [...sel.options].some((o) => !o.hidden && (o.value === tier.defaultPreset || o.textContent === tier.defaultPreset));
@@ -192,8 +196,16 @@ const WorkflowTier = (() => {
 
     const saveCustom = $('openPresetModalBtn');
     if (saveCustom) {
-      saveCustom.hidden = !tier.showSaveCustom;
-      saveCustom.style.display = tier.showSaveCustom ? '' : 'none';
+      const showSave = !!tier.showSaveCustom;
+      saveCustom.hidden = !showSave;
+      saveCustom.style.display = showSave ? '' : 'none';
+      saveCustom.disabled = !showSave;
+      saveCustom.setAttribute('aria-disabled', showSave ? 'false' : 'true');
+    }
+
+    if (presetSel) {
+      const selectOff = !tier.showPresetSelect;
+      presetSel.setAttribute('aria-disabled', selectOff ? 'true' : 'false');
     }
 
     const searchRow = document.querySelector('.control-search-row');

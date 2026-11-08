@@ -1,3 +1,5 @@
+import { mountedRangeSliders, summarizeSliderMount } from './debug-slider-count.js';
+
 /**
  * VoiceIsolate Pro — debug-audit.js
  * ==============================================
@@ -51,12 +53,15 @@ async function runVipAudit() {
   }
 
   // ── 1. Slider DOM ─────────────────────────────────────────────────────
-  const EXPECTED_SLIDER_COUNT = 52;
-  const sliderEls = document.querySelectorAll('input[type="range"].slider');
-  if (sliderEls.length >= EXPECTED_SLIDER_COUNT) {
-    log('pass', 1, `${sliderEls.length} slider elements found`);
+  const sliderMount = summarizeSliderMount(document, window.VIP_SLIDER_REGISTRY);
+  const sliderEls = mountedRangeSliders(document);
+  if (sliderMount.expected == null) {
+    log('fail', 1, `${sliderMount.found} controls mounted and the slider registry is not exposed`,
+        'VIP_SLIDER_REGISTRY must be set before the audit can pass');
+  } else if (sliderMount.ok) {
+    log('pass', 1, `${sliderMount.found} slider controls found`);
   } else {
-    log('fail', 1, `Only ${sliderEls.length}/${EXPECTED_SLIDER_COUNT} sliders in DOM`,
+    log('fail', 1, `Only ${sliderMount.found}/${sliderMount.expected} sliders in DOM`,
         'buildPanels may not have run');
   }
 
@@ -140,7 +145,9 @@ async function runVipAudit() {
     const pct = el.style.getPropertyValue('--pct');
     if (!pct) noPct++;
   });
-  if (noPct === 0) {
+  if (sliderEls.length === 0) {
+    log('fail', 10, 'No range sliders mounted to check --pct');
+  } else if (noPct === 0) {
     log('pass', 10, '--pct set on all sliders');
   } else {
     log('fail', 10, `${noPct} sliders missing --pct custom property`,
@@ -155,7 +162,9 @@ async function runVipAudit() {
     const mx = parseFloat(el.max);
     if (v < mn || v > mx) oobCount++;
   });
-  if (oobCount === 0) {
+  if (sliderEls.length === 0) {
+    log('fail', 11, 'No range sliders mounted to check bounds');
+  } else if (oobCount === 0) {
     log('pass', 11, 'All slider values within min/max');
   } else {
     log('fail', 11, `${oobCount} sliders have out-of-bound values`);
@@ -247,7 +256,7 @@ async function runVipAudit() {
   }
 
   // ── 20. VIP_PARAMS ────────────────────────────────────────────────────
-  const testSlider = document.querySelector('input[type="range"].slider');
+  const testSlider = document.querySelector('input[type="range"].dsp-slider, input[type="range"][data-slider-id]');
   if (testSlider) {
     testSlider.dispatchEvent(new Event('input', { bubbles: true }));
     if (window.VIP_PARAMS && Object.keys(window.VIP_PARAMS).length > 0) {

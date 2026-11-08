@@ -3,6 +3,8 @@
  * Direction badges, range meter, toward-chips, and example pills.
  */
 
+export { updateHintPanelValue } from '../../src/presentation/sliderHintSync.js';
+
 const UP_VERBS = new Set(['raise', 'push', 'boost', 'add', 'increase', 'lengthen', 'widen']);
 const DOWN_VERBS = new Set(['lower', 'pull', 'cut', 'decrease', 'shorten', 'narrow', 'ease']);
 

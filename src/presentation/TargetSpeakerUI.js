@@ -94,7 +94,7 @@ export function mountTargetSpeakerUI(opts) {
     {
       n: '3',
       t: 'Enroll',
-      d: 'Creates a local voiceprint from that region: an ECAPA-TDNN speaker embedding when that model is installed, otherwise a mel-band voiceprint. Nothing leaves the device.',
+      d: 'Creates a local voiceprint from that region: an ECAPA-TDNN speaker embedding when that model is installed, otherwise the 24-D basic voiceprint (mel-band). A fallback enrollment is not an ECAPA enrollment. Nothing leaves the device.',
     },
     {
       n: '4',
@@ -184,7 +184,7 @@ export function mountTargetSpeakerUI(opts) {
     'p',
     'vip-ts-privacy hint',
     'Privacy: the voiceprint stays in this browser session only. It uses the ECAPA speaker model '
-    + 'when it is installed on this device, otherwise a basic mel-band voiceprint. Nothing is uploaded.',
+    + 'when it is installed on this device, otherwise the 24-D basic voiceprint. Nothing is uploaded.',
   );
 
   form.append(regionHead, fields, durationReadout, quick, actions, status, privacy);
@@ -298,7 +298,7 @@ export function mountTargetSpeakerUI(opts) {
     let fallbackNote = '';
     const host = ecapaHost();
     if (!host) {
-      fallbackNote = ' (speaker-embedding worker unavailable; using the basic voiceprint)';
+      fallbackNote = ' (speaker-embedding worker unavailable; using the basic voiceprint — 24-D, not ECAPA)';
     } else {
       enrollBtn.disabled = true;
       status.textContent = 'Computing speaker embedding (local)…';
@@ -307,11 +307,11 @@ export function mountTargetSpeakerUI(opts) {
         if (await host.ready()) {
           ecapa = await host.embed(sliceSeconds(mono, sr, range), sr);
         } else {
-          fallbackNote = ` (ECAPA unavailable: ${host.unavailableReason || 'unknown'}; using the basic voiceprint)`;
+          fallbackNote = ` (ECAPA unavailable: ${host.unavailableReason || 'unknown'}; using the basic voiceprint — 24-D, not ECAPA)`;
         }
       } catch (err) {
         console.warn('[VIP][TargetSpeakerUI] ECAPA enrollment failed, using mel voiceprint:', err);
-        fallbackNote = ` (ECAPA failed: ${err?.message || err}; using the basic voiceprint)`;
+        fallbackNote = ` (ECAPA failed: ${err?.message || err}; using the basic voiceprint — 24-D, not ECAPA)`;
       } finally {
         enrollBtn.disabled = false;
       }
@@ -334,11 +334,18 @@ export function mountTargetSpeakerUI(opts) {
     clearBtn.disabled = false;
     status.classList.remove('vip-ts-status--error');
     status.classList.add('vip-ts-status--ok');
-    const kind = method === 'ecapa-tdnn' ? `${dims}-D ECAPA speaker embedding` : `${dims}-D local voiceprint`;
+    const kind = method === 'ecapa-tdnn'
+      ? `${dims}-D ECAPA speaker embedding`
+      : `${dims}-D basic voiceprint`;
     status.textContent = `Enrolled ${range.startSec.toFixed(2)}–${range.endSec.toFixed(2)} s · `
       + `${kind}${fallbackNote} · speech ~${(result.meta.speechRatio * 100).toFixed(0)}%. `
       + 'Next: click Isolate target speaker.';
-    notify('Target speaker enrolled (local only)', 'ok');
+    notify(
+      method === 'ecapa-tdnn'
+        ? 'Target speaker enrolled with ECAPA (local only)'
+        : 'Target speaker enrolled with the 24-D basic voiceprint (not ECAPA)',
+      'ok',
+    );
   });
 
   /** ECAPA gain curve; null (no ECAPA enrollment) or { error } fall back to the mel voiceprint. */
@@ -376,7 +383,7 @@ export function mountTargetSpeakerUI(opts) {
       return { gain, matchNote: `${matchNote} · ECAPA` };
     } catch (err) {
       console.warn('[VIP][TargetSpeakerUI] ECAPA isolation failed, using mel voiceprint:', err);
-      notify('Speaker model failed; using the basic voiceprint', 'warn');
+      notify('Speaker model failed; using the 24-D basic voiceprint (not ECAPA)', 'warn');
       return { error: err?.message || String(err) };
     }
   }
@@ -401,7 +408,7 @@ export function mountTargetSpeakerUI(opts) {
       const ecapa = await ecapaGain(mono, sr, segs, clusters.size);
       const viaEcapa = ecapa?.gain ? ecapa : null;
       let targetSpeakerId = null;
-      let matchNote = ecapa?.error ? ` · ECAPA failed (${ecapa.error}); basic voiceprint used` : '';
+      let matchNote = ecapa?.error ? ` · ECAPA failed (${ecapa.error}); 24-D basic voiceprint used (not ECAPA)` : '';
       if (viaEcapa) {
         matchNote = viaEcapa.matchNote;
       } else if (clusters.size === 1) {

@@ -36,6 +36,19 @@ export function setImportMode(mode) {
   if (sel && sel.value !== mode) sel.value = mode;
 }
 
+function ensureExportPackStatus(exportBtn) {
+  const existing = document.getElementById('exportPackStatus');
+  if (existing) return existing;
+  const status = document.createElement('p');
+  status.id = 'exportPackStatus';
+  status.className = 'hint';
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  const host = exportBtn?.parentElement || document.body;
+  host.appendChild(status);
+  return status;
+}
+
 /**
  * @param {object} app VoiceIsolatePro instance
  */
@@ -86,6 +99,8 @@ export function mountFileLibraryUI(app) {
         projectId = projects[0]?.projectId || null;
       }
       if (!projectId) {
+        const status = ensureExportPackStatus(exportBtn);
+        status.textContent = 'Create or select a project first';
         app.showNotification?.('Create or select a project first', 'warn');
         return;
       }
@@ -102,10 +117,23 @@ export function mountFileLibraryUI(app) {
         }
         const proj = await ProjectStore.getProject(projectId);
         const safe = (proj?.name || 'project').replace(/[^\w.-]+/g, '_').slice(0, 48);
-        downloadPackBlob(blob, `${safe}.vippack`);
-        app.showNotification?.('Project pack downloaded — share to another device to import', 'info');
+        const status = ensureExportPackStatus(exportBtn);
+        status.textContent = 'Checking the project pack…';
+        const result = await downloadPackBlob(blob, `${safe}.vippack`);
+        if (!result.verified || !result.downloaded) {
+          const fail = result.reason || 'Project pack was not downloaded.';
+          status.textContent = fail;
+          app.showNotification?.(fail, 'error');
+          return;
+        }
+        const ok = `Downloaded ${result.filename} (${result.bytes} bytes, archive verified, ${result.files} file${result.files === 1 ? '' : 's'}).`;
+        status.textContent = ok;
+        app.showNotification?.(ok, 'info');
       } catch (err) {
-        app.showNotification?.(err.message || 'Export failed', 'error');
+        const fail = err?.message || 'Export failed';
+        const status = document.getElementById('exportPackStatus');
+        if (status) status.textContent = fail;
+        app.showNotification?.(fail, 'error');
       } finally {
         exportBtn.disabled = false;
       }

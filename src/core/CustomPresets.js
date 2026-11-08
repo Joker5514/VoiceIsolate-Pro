@@ -98,6 +98,12 @@ export function isBuiltInPresetName(name, builtInNames) {
  * select it. `doc` is injectable so tests can pass a stub document.
  * Returns true when an option was added, false when it already existed.
  */
+function markCustomPresetOption(option) {
+  if (!option || typeof option !== 'object') return;
+  if (!option.dataset || typeof option.dataset !== 'object') option.dataset = {};
+  option.dataset.custom = '1';
+}
+
 export function upsertPresetOption(selectEl, name, { select = true, doc = undefined } = {}) {
   if (!selectEl) return false;
   const options = selectEl.options ? [...selectEl.options] : [];
@@ -108,9 +114,12 @@ export function upsertPresetOption(selectEl, name, { select = true, doc = undefi
     const option = documentRef.createElement('option');
     option.value = name;
     option.textContent = name;
+    markCustomPresetOption(option);
     if (typeof selectEl.appendChild === 'function') selectEl.appendChild(option);
     else if (Array.isArray(selectEl.options)) selectEl.options.push(option);
     else return false;
+  } else {
+    markCustomPresetOption(options.find((o) => o && o.value === name));
   }
   if (select) {
     try {
