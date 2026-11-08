@@ -7,6 +7,7 @@ const STATUS_CONFIG = {
   loading:  { label: '⟳ Loading…',                       cls: 'vip-pill--amber' },
   pending:  { label: 'Lazy — loads on first drop',       cls: 'vip-pill--grey'  },
   optional: { label: 'Optional — not shipped',           cls: 'vip-pill--grey'  },
+  shipped:  { label: '✓ Shipped locally',                cls: 'vip-pill--green' },
   missing:  { label: '✗ Missing (place ONNX in /models)', cls: 'vip-pill--red'   },
   error:    { label: '✗ All failed',                     cls: 'vip-pill--red'   },
   unknown:  { label: '? Unknown',                        cls: 'vip-pill--grey'  },
@@ -38,6 +39,9 @@ export class ModelStatusUI {
     this._pollingTimer = null;
     this._healthTimer = null;
     this._loadingCount = 0;
+    this._inflight = new Set();
+    this._probes = new Map();
+    this._listenForLoads();
     this._render();
     this._renderHealth();
     this._startHealthPolling();
@@ -106,6 +110,7 @@ export class ModelStatusUI {
    * @param {string} [provider] – which local source served the model (same-origin | cache)
    */
   setStatus(key, status, pct, provider) {
+    this._publish(key, status);
     const pill = this._pills[key];
     if (!pill) return;
 
@@ -150,8 +155,51 @@ export class ModelStatusUI {
     this.refreshHealth();
   }
 
+  _publish(key, status) {
+    const root = typeof window !== 'undefined' ? window : null;
+    if (!root) return;
+    if (!root.VIP_MODEL_STATUS || typeof root.VIP_MODEL_STATUS !== 'object') {
+      root.VIP_MODEL_STATUS = {};
+    }
+    root.VIP_MODEL_STATUS[key] = status;
+  }
+
+  _listenForLoads() {
+    if (typeof BroadcastChannel === 'undefined') return;
+    try {
+      const channel = new BroadcastChannel('vip-model-progress');
+      channel.onmessage = (ev) => {
+        const { type, model } = ev.data || {};
+        if (!model) return;
+        if (type === 'start' || type === 'progress') {
+          this._inflight.add(model);
+          this.setStatus(model, 'loading', ev.data.progress);
+        } else if (type === 'done' || type === 'cached') {
+          this._inflight.delete(model);
+          this._probes.set(model, 'present');
+          this.setStatus(model, 'cached', undefined, 'same-origin');
+        } else if (type === 'error') {
+          this._inflight.delete(model);
+          this.setStatus(model, 'error');
+        }
+      };
+    } catch { /* BroadcastChannel unavailable */ }
+  }
+
+  async _probeModel(key, url) {
+    try {
+      const res = await fetch(url, { method: 'HEAD', credentials: 'omit' });
+      this._probes.set(key, res.ok ? 'present' : 'missing');
+      this.setStatus(key, res.ok ? 'shipped' : 'missing');
+    } catch {
+      this._probes.set(key, 'error');
+      this.setStatus(key, 'error');
+    }
+  }
+
   /**
    * Refresh all model statuses by reading from Cache API and manifest.
+   * Eager + cache miss is not "loading" unless a fetch is actually in flight.
    */
   async refreshStatus() {
     let manifest = null;
@@ -167,18 +215,34 @@ export class ModelStatusUI {
     for (const key of this._keys) {
       try {
         const cache = await caches.open('vip-models-v1');
-        const match = await cache.match(`/vip-model-cache/${key}`);
+        const entry = manifestModels && manifestModels[key];
+        const sourceUrl = entry?.sources?.[0]?.url
+          || (entry?.filename ? `/app/models/${entry.filename}` : null);
+        const alias = await cache.match(`/vip-model-cache/${key}`);
+        const fileHit = !alias && sourceUrl ? await cache.match(sourceUrl) : null;
+        const match = alias || fileHit;
         if (match) {
           const provider = match.headers.get('X-VIP-Provider') || 'cache';
+          this._inflight.delete(key);
           this.setStatus(key, 'cached', undefined, provider);
-        } else if (manifestModels && manifestModels[key]) {
-          if (manifestModels[key].optional || manifestModels[key].shipped === false) {
-            this.setStatus(key, 'optional');
-          } else if (manifestModels[key].eager || manifestModels[key].load_priority === 'eager') {
+        } else if (entry && (entry.optional || entry.shipped === false)) {
+          this.setStatus(key, 'optional');
+        } else if (this._inflight.has(key)) {
+          this.setStatus(key, 'loading');
+          hasLoading = true;
+        } else if (entry && sourceUrl) {
+          const probed = this._probes.get(key);
+          if (probed === 'present') this.setStatus(key, 'shipped');
+          else if (probed === 'missing') this.setStatus(key, 'missing');
+          else if (probed === 'error') this.setStatus(key, 'error');
+          else if (probed === 'checking') {
             this.setStatus(key, 'loading');
             hasLoading = true;
           } else {
-            this.setStatus(key, 'pending');
+            this._probes.set(key, 'checking');
+            this.setStatus(key, 'loading');
+            hasLoading = true;
+            void this._probeModel(key, sourceUrl);
           }
         } else {
           this.setStatus(key, 'pending');

@@ -42,7 +42,8 @@ import { copyFloat32Channel, createYieldBudget } from '/src/pipeline/ui-yield.js
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
-import { buildHintPanel } from '/app/slider-hint-ui.js';
+import { buildHintPanel, updateHintPanelValue } from '/app/slider-hint-ui.js';
+import { bindMemoryProfileSelect } from '/src/core/UiPersistence.js';
 import * as FileLibrary from '/src/core/FileLibrary.js';
 import {
   beginJob,
@@ -765,7 +766,10 @@ function updateDownloadButton() {
   const ready = hasProcessed && Boolean(mixer?.cleanBuffer);
   const busy = downloadInFlight || processingInFlight || ingestInFlight;
   for (const control of [...ui.mixSliders, ui.presetSelect, ui.muteVoiceBtn, ui.muteNoiseBtn]) {
-    if (control) control.disabled = !ready || busy;
+    if (!control) continue;
+    const off = !ready || busy;
+    control.disabled = off;
+    control.setAttribute('aria-disabled', off ? 'true' : 'false');
   }
   if (ui.exportRow) ui.exportRow.hidden = !ready;
   if (ui.downloadBtn) {
@@ -799,11 +803,41 @@ function setDownloadHint(msg) {
   if (ui.downloadStatus) ui.downloadStatus.textContent = msg || '';
 }
 
+function paintDriveConfigNote(report) {
+  const text = report?.message || '';
+  for (const id of ['openDriveBtn', 'saveDriveBtn']) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    let note = btn.parentElement?.querySelector(`[data-drive-status-for="${id}"]`);
+    if (!note) {
+      note = document.createElement('p');
+      note.className = 'hint vip-drive-status';
+      note.dataset.driveStatusFor = id;
+      note.setAttribute('role', 'status');
+      btn.insertAdjacentElement('afterend', note);
+    }
+    note.textContent = text;
+  }
+}
+
+async function showDriveConfigStatus() {
+  try {
+    const { describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
+    paintDriveConfigNote(describeDriveConfiguration());
+  } catch (err) {
+    paintDriveConfigNote({
+      message: `Google Drive status could not be read (${err?.message || 'unavailable'}). Local WAV export still works.`,
+    });
+  }
+}
+
 async function onOpenFromDrive() {
   try {
-    const { openMediaFileFromDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
-    if (!isDriveConfigured()) {
-      setStatus('Google Drive not configured — see docs/guides/GOOGLE_DRIVE.md', 'error');
+    const { openMediaFileFromDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
+    const driveReport = describeDriveConfiguration();
+    paintDriveConfigNote(driveReport);
+    if (!driveReport.configured) {
+      setStatus(driveReport.message, 'error');
       return;
     }
     setStatus('Sign in to Google Drive to pick a file…', 'warn');
@@ -912,8 +946,10 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
     // Primary audio/video artifact is ALWAYS delivered first; if the save is
     // cancelled or fails, no orphan sidecar is published or downloaded.
     if (drive) {
-      const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
-      if (!isDriveConfigured()) throw new Error('Google Drive is not configured. Use Export mix as WAV.');
+      const { saveBlobToDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
+      const driveReport = describeDriveConfiguration();
+      paintDriveConfigNote(driveReport);
+      if (!driveReport.configured) throw new Error(`${driveReport.message} Use Export mix as WAV.`);
       throwIfAborted(signal);
       // Drive's API has no abort support: disable Cancel before the explicit external file transfer.
       setLandingCancelVisible(false);
@@ -1363,10 +1399,25 @@ function wireReadouts() {
     // non-destructive: same id/range, so SliderUI binding + presets still apply.
     slider.classList.add('vip-slider__input');
     paintSliderFill(slider);
-    slider.addEventListener('input', () => {
+    const sync = () => {
       val.textContent = fmt(slider.value);
       paintSliderFill(slider);
-    });
+      const label = slider.labels?.[0]?.textContent || slider.getAttribute('aria-label') || slider.id;
+      slider.setAttribute('aria-valuenow', slider.value);
+      slider.setAttribute('aria-valuetext', `${label}, ${val.textContent}`);
+      const described = slider.getAttribute('aria-describedby');
+      const hint = described ? document.getElementById(described) : null;
+      if (hint) {
+        updateHintPanelValue(hint, {
+          min: Number(slider.min),
+          max: Number(slider.max),
+          value: Number(slider.value),
+          unit: '',
+        });
+      }
+    };
+    sync();
+    slider.addEventListener('input', sync);
   }
 }
 
@@ -2276,7 +2327,10 @@ window.addEventListener('unhandledrejection', (event) => {
   if (classified.status) setStatus(classified.status, 'error');
 });
 ui.processBtn.addEventListener('click', onProcess);
-document.getElementById('memoryProfile')?.addEventListener('change', () => { recomputeMemoryPlan(); });
+bindMemoryProfileSelect(document.getElementById('memoryProfile'), {
+  onChange: () => { recomputeMemoryPlan(); },
+});
+void showDriveConfigStatus();
 foldParagraph(document.getElementById('outcomeHelp'), 'What happens after import?', 'outcome-help');
 mountExplainBullets(document.getElementById('quickCleanStatus')?.parentElement, INGESTION_EXPLAINS);
 (() => {

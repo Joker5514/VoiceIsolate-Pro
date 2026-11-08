@@ -531,6 +531,7 @@
             <div class="file-library-toolbar">
               <button id="libraryRefreshBtn" class="btn btn-outline" type="button">Refresh</button>
               <button id="exportProjectPackBtn" class="btn btn-outline" type="button" title="Export .vippack for desktop/Android handoff">Export pack</button>
+              <p id="exportPackStatus" class="hint" role="status" aria-live="polite"></p>
               <button id="importProjectPackBtn" class="btn btn-outline" type="button" title="Import .vippack">Import pack</button>
               <input type="file" id="importProjectPackInput" accept=".vippack,application/octet-stream" class="visually-hidden-file" tabindex="-1" aria-hidden="true" />
               <span id="libraryBackendHint" class="file-library-backend hint" aria-live="polite"></span>
@@ -799,6 +800,7 @@
         <button id="saveDriveBtn" class="btn btn-outline" type="button" disabled title="Upload the processed export to Google Drive (only when you choose — processing stays local)">Save to Drive</button>
         <button id="exportBtn" class="btn btn-save-proc vip-export-alias" type="button" disabled hidden aria-hidden="true">Export WAV</button>
         <p class="hint" style="margin:8px 0 0;font-size:12px;opacity:.75;">Google Drive is optional. Processing never uses Drive — files leave the device only when you tap Save to Drive.</p>
+        <p id="driveConfigStatus" class="hint" role="status" aria-live="polite" style="margin:4px 0 0;font-size:12px;"></p>
         </div>
       </details>
 

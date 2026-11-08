@@ -99,6 +99,13 @@
   async function boot() {
     injectStyles();
     ensurePanel();
+    try {
+      const persist = await import('/src/core/UiPersistence.js');
+      persist.bindCheckbox($('vipResearchEnable'), persist.RESEARCH_ENABLE_KEY);
+      persist.bindCheckbox($('vipResearchDeterministic'), persist.RESEARCH_DETERMINISTIC_KEY);
+    } catch (err) {
+      console.warn('[VIP] research checkbox persistence unavailable', err);
+    }
     const mods = await loadModules();
     const { beginResearchSession, getActiveResearchSession, endResearchSession } = mods.research;
     const { globalBenchmark } = mods.bench;

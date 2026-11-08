@@ -88,7 +88,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px 8px;
+  position: relative;
+  padding: 10px 52px 8px 14px;
+  overflow: visible;
   border-bottom: 1px solid rgba(0, 255, 180, 0.1);
   background: rgba(0, 255, 180, 0.03);
   flex-shrink: 0;
@@ -110,16 +112,25 @@
   letter-spacing: 0.05em;
 }
 .dbg-close {
-  background: none;
-  border: none;
-  /* 0.4 alpha was 2.46:1 for this 14px glyph; 0.68 is 4.98:1. */
-  color: rgba(176, 184, 200, 0.68);
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(176, 184, 200, 0.35);
+  color: rgba(232, 236, 244, 0.92);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
-  padding: 2px 4px;
-  border-radius: 3px;
-  transition: color 0.15s;
+  padding: 0;
+  border-radius: 8px;
+  pointer-events: auto;
+  flex-shrink: 0;
 }
 .dbg-close:hover { color: #ff4444; }
 

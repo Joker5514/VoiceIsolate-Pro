@@ -270,7 +270,7 @@ const RAW_SLIDER_REGISTRY = [
   // ── Noise Gate (6 sliders) ─────────────────────────────────────────────────
   {
     id: 'gateThresh', key: 'gateThresh', label: 'Gate Threshold',
-    min: -120, max: 0, step: 5, default: -42, unit: 'dB',
+    min: -120, max: 0, step: 1, default: -42, unit: 'dB',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-gate',
     tip: 'RMS level below which the gate closes and mutes the signal. –42 dB suits most voice recordings.'
   },
@@ -288,7 +288,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'gateRelease', key: 'gateRelease', label: 'Gate Release',
-    min: 10, max: 2000, step: 50, default: 200, unit: 'ms',
+    min: 10, max: 2000, step: 10, default: 200, unit: 'ms',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-gate',
     tip: 'How fast the gate closes after signal drops below threshold. Longer = smoother tail.'
   },
@@ -308,13 +308,13 @@ const RAW_SLIDER_REGISTRY = [
   // ── Noise Reduction (5 sliders) ────────────────────────────────────────────
   {
     id: 'nrAmount', key: 'nrAmount', label: 'NR Amount',
-    min: 0, max: 100, step: 5, default: 52, unit: '%',
+    min: 0, max: 100, step: 1, default: 52, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
     tip: 'Strength of spectral noise reduction. Captured at Process; 0 = off, 100 = maximum suppression. Start at 70–80% for hiss/fan noise.'
   },
   {
     id: 'nrSensitivity', key: 'nrSensitivity', label: 'NR Sensitivity',
-    min: 0, max: 100, step: 5, default: 48, unit: '%',
+    min: 0, max: 100, step: 1, default: 48, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
     tip: 'How aggressively the noise profile is estimated. Higher = more bins treated as noise.'
   },
@@ -326,13 +326,13 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'nrFloor', key: 'nrFloor', label: 'NR Floor',
-    min: -120, max: -20, step: 5, default: -68, unit: 'dB',
+    min: -120, max: -20, step: 1, default: -68, unit: 'dB',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
     tip: 'Minimum gain any bin may be reduced to by the Process-time spectral chain. Prevents over-suppression artifacts from stacked aggressive settings.'
   },
   {
     id: 'nrSmoothing', key: 'nrSmoothing', label: 'NR Smoothing',
-    min: 0, max: 100, step: 5, default: 32, unit: '%',
+    min: 0, max: 100, step: 1, default: 32, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
     tip: 'Temporal smoothing. Lower = less smear/faster; higher can blur consonants.'
   },
@@ -408,13 +408,13 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'compRatio', key: 'compRatio', label: 'Comp Ratio',
-    min: 1, max: 20, step: 0.5, default: 4, unit: ':1',
+    min: 1, max: 20, step: 0.1, default: 4, unit: ':1',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-dyn',
     tip: 'Compression ratio above threshold. 4:1 = for every 4 dB over, output rises 1 dB.'
   },
   {
     id: 'compAttack', key: 'compAttack', label: 'Comp Attack',
-    min: 0.1, max: 200, step: 5, default: 10, unit: 'ms',
+    min: 0.1, max: 200, step: 0.1, default: 10, unit: 'ms',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-dyn',
     tip: 'Time for compressor to reach full gain reduction after threshold crossing.'
   },
@@ -770,6 +770,10 @@ function attachSliderHints(entries) {
 
 /** Calibrated registry with Part 3 transfer functions + Part 1 examples + hints */
 export const SLIDER_REGISTRY = calibrateRegistry(attachSliderHints(RAW_SLIDER_REGISTRY));
+
+if (typeof window !== 'undefined') {
+  window.VIP_SLIDER_REGISTRY = SLIDER_REGISTRY;
+}
 
 /**
  * TICK CONFIGURATION  — used by slider-ticks.js to render tick marks.

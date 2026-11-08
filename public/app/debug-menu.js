@@ -5,9 +5,44 @@
  * the panel UI is only shown when toggled. Always loaded after app boot by index.html.
  */
 
+import { summarizeSliderMount } from './debug-slider-count.js';
+
 const DBG_VERSION = '1.0.0';
 const REFRESH_MS  = 500;
 const LOG_MAX     = 200;
+const DISMISS_KEY = 'vip-debug-dismissed';
+
+function userDismissedDebug() {
+  try { return sessionStorage.getItem(DISMISS_KEY) === '1'; } catch { return false; }
+}
+
+function rememberDebugDismissed(on) {
+  try {
+    if (on) sessionStorage.setItem(DISMISS_KEY, '1');
+    else sessionStorage.removeItem(DISMISS_KEY);
+  } catch { /* private mode */ }
+}
+
+function ortDebugLabel() {
+  const snap = typeof window !== 'undefined' ? window.__vipOrtStatus : null;
+  if (snap && snap.provider && snap.provider !== 'unknown') {
+    if (snap.provider === 'wasm') return ['warn', 'WASM fallback'];
+    if (snap.provider === 'webgpu') return ['ok', 'WebGPU active'];
+    if (snap.provider === 'probing') return ['warn', 'Probing GPU…'];
+    if (snap.provider === 'error') return ['err', snap.detail ? `ORT error: ${snap.detail}` : 'ORT error'];
+  }
+  if (typeof window.ort !== 'undefined') return ['warn', 'runtime present · provider idle'];
+  return ['dim', 'not loaded'];
+}
+
+function modelDebugState(status) {
+  if (status === 'cached' || status === 'shipped' || status === 'loaded') return ['ok', status];
+  if (status === 'loading') return ['warn', 'loading'];
+  if (status === 'missing' || status === 'error') return ['err', status];
+  if (status === 'optional') return ['dim', 'optional'];
+  if (status === 'pending') return ['dim', 'not loaded'];
+  return ['dim', 'not reported'];
+}
 
 /* ── Internal log buffer ─────────────────────────────────────────────── */
 const _log = [];
@@ -244,9 +279,8 @@ function refresh() {
   const aw = typeof AudioWorkletNode !== 'undefined';
   cls(document.getElementById('dbgWorklet'), aw ? 'ok' : 'err', badge(aw ? 'ok' : 'err', aw ? 'available' : 'missing'));
 
-  // ONNX Runtime (use window.ort to avoid TDZ shadow in strict ESM)
-  const ortLoaded = typeof window.ort !== 'undefined';
-  cls(document.getElementById('dbgORT'), ortLoaded ? 'ok' : 'warn', badge(ortLoaded ? 'ok' : 'warn', ortLoaded ? 'loaded' : 'not yet'));
+  const [ortCls, ortText] = ortDebugLabel();
+  cls(document.getElementById('dbgORT'), ortCls, badge(ortCls, ortText));
 
   // Three.js
   const three = typeof THREE !== 'undefined' || typeof window.THREE !== 'undefined';
@@ -271,9 +305,9 @@ function refresh() {
   cls(document.getElementById('dbgRunPipe'), app && typeof app.runPipeline === 'function' ? 'ok' : 'err',
     badge(app && typeof app.runPipeline === 'function' ? 'ok' : 'err', app && typeof app.runPipeline === 'function' ? 'ok' : 'missing'));
 
-  const sliders = document.querySelectorAll('input[type="range"].slider').length;
-  cls(document.getElementById('dbgSliders'), sliders >= 52 ? 'ok' : sliders > 0 ? 'warn' : 'err',
-    `${sliders} / 52`);
+  const sliderMount = summarizeSliderMount(document, window.VIP_SLIDER_REGISTRY);
+  const sliderLabel = `${sliderMount.found} / ${sliderMount.expected == null ? '—' : sliderMount.expected}`;
+  cls(document.getElementById('dbgSliders'), sliderMount.ok ? 'ok' : sliderMount.found > 0 ? 'warn' : 'err', sliderLabel);
 
   const params = window.VIP_PARAMS ? Object.keys(window.VIP_PARAMS).length : 0;
   cls(document.getElementById('dbgParams'), params > 0 ? 'ok' : 'warn', String(params));
@@ -317,19 +351,17 @@ function refresh() {
   if (grid) {
     const modelNames = [
       ['silero_vad', 'Silero VAD'],
-      ['silero_vad_int8', 'VAD int8'],
+      ['vad_int8', 'VAD int8'],
       ['rnnoise', 'RNNoise'],
       ['bsrnn', 'BSRNN'],
       ['demucs', 'Demucs v4'],
-      ['voicefixer', 'VoiceFixer'],
     ];
-    const cache = window._vipModelCache || window.VIP_MODEL_STATUS || {};
+    const cache = window.VIP_MODEL_STATUS || window._vipModelCache || {};
     grid.innerHTML = modelNames.map(([key, label]) => {
-      const status = cache[key];
-      const dotCls = status === 'loaded' ? 'ok' : status === 'loading' ? 'warn' : 'dim';
+      const [dotCls, text] = modelDebugState(cache[key]);
       return `<div class="dbg-model-item">
         <div class="dbg-model-dot ${dotCls}"></div>
-        <span class="dbg-model-name" title="${label}">${label}</span>
+        <span class="dbg-model-name" title="${label}: ${text}">${label} · ${text}</span>
       </div>`;
     }).join('');
   }
@@ -400,8 +432,10 @@ function refresh() {
 }
 
 /* ── Open / Close ──────────────────────────────────────────────────────── */
-function openPanel() {
+function openPanel(reason) {
+  if (reason !== 'user' && userDismissedDebug()) return;
   if (!_panel || _open) return;
+  rememberDebugDismissed(false);
   _open = true;
   _panel.classList.remove('hidden');
   if (_btn) _btn.classList.add('active');
@@ -413,6 +447,7 @@ function openPanel() {
 }
 
 function closePanel() {
+  rememberDebugDismissed(true);
   _open = false;
   if (_panel) _panel.classList.add('hidden');
   if (_btn) _btn.classList.remove('active');
@@ -420,7 +455,7 @@ function closePanel() {
 }
 
 function togglePanel() {
-  if (_open) closePanel(); else openPanel();
+  if (_open) closePanel(); else openPanel('user');
 }
 
 /* ── Section collapse ──────────────────────────────────────────────────── */
@@ -439,7 +474,7 @@ function initDrag(panel) {
   if (!handle) return;
   let ox = 0, oy = 0, startX = 0, startY = 0, dragging = false;
   handle.addEventListener('mousedown', e => {
-    if (e.target.id === 'dbgClose') return;
+    if (e.target.closest && e.target.closest('#dbgClose')) return;
     dragging = true;
     const rect = panel.getBoundingClientRect();
     ox = rect.left; oy = rect.top;
@@ -485,7 +520,13 @@ function initResize(panel) {
 
 /* ── Footer buttons ──────────────────────────────────────────────────────── */
 function initButtons() {
-  document.getElementById('dbgClose').addEventListener('click', closePanel);
+  const closeBtn = document.getElementById('dbgClose');
+  closeBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+  closeBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closePanel();
+  });
 
   document.getElementById('dbgRunAudit').addEventListener('click', () => {
     if (typeof window.VIP_runAudit === 'function') {
@@ -524,7 +565,7 @@ function initButtons() {
       },
       app: {
         present:  !!app,
-        sliders:  document.querySelectorAll('input[type="range"].slider').length,
+        sliders:  summarizeSliderMount(document, window.VIP_SLIDER_REGISTRY),
         params:   window.VIP_PARAMS ? Object.keys(window.VIP_PARAMS).length : 0,
         forensic: app && Array.isArray(app.forensicLog) ? app.forensicLog.length : null,
       },
@@ -539,8 +580,10 @@ function initButtons() {
     const a    = document.createElement('a');
     a.href = url;
     a.download = `vip-debug-${Date.now()}.json`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
     showToast('Debug report exported');
   });
 
@@ -609,7 +652,18 @@ function init() {
   }
 }
 
+function enforceDebugDismissed() {
+  if (!userDismissedDebug() || !_panel) return;
+  _open = false;
+  _panel.classList.add('hidden');
+  if (_btn) _btn.classList.remove('active');
+  clearInterval(_timer);
+}
+
+window.addEventListener('vip:fileLoaded', enforceDebugDismissed);
+window.addEventListener('vip:processingDone', enforceDebugDismissed);
+
 init();
 
-// Expose for DevTools
-window.VIP_DEBUG_MENU = { toggle: togglePanel, open: openPanel, close: closePanel, log: _log };
+// Expose for DevTools. open() is an explicit user action.
+window.VIP_DEBUG_MENU = { toggle: togglePanel, open: () => openPanel('user'), close: closePanel, log: _log };

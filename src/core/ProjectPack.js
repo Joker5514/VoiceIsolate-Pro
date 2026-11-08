@@ -128,11 +128,24 @@ export function buildPackBlob(manifest, entries) {
  * @param {ArrayBuffer|Blob} input
  * @returns {Promise<{ manifest: object, files: Map<string, Uint8Array> }>}
  */
+function isArrayBuffer(value) {
+  return Object.prototype.toString.call(value) === '[object ArrayBuffer]';
+}
+
+function asLocalArrayBuffer(buffer) {
+  if (buffer instanceof ArrayBuffer) return buffer;
+  const view = new Uint8Array(buffer);
+  const copy = new Uint8Array(view.byteLength);
+  copy.set(view);
+  return copy.buffer;
+}
+
 export async function parseProjectPack(input) {
-  const ab = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
-  if (!(ab instanceof ArrayBuffer) || ab.byteLength < HEADER_BYTES) {
+  const raw = isArrayBuffer(input) ? input : await input.arrayBuffer();
+  if (!isArrayBuffer(raw) || raw.byteLength < HEADER_BYTES) {
     throw new Error('[VIP][ProjectPack] truncated header');
   }
+  const ab = asLocalArrayBuffer(raw);
   const view = new DataView(ab);
   if (view.getUint32(0, true) !== MAGIC) {
     throw new Error('[VIP][ProjectPack] invalid magic — not a .vippack file');
@@ -304,16 +317,70 @@ export async function importProjectPack(input) {
  * @param {Blob} blob
  * @param {string} filename
  */
-export function downloadPackBlob(blob, filename = 'project.vippack') {
+/**
+ * Confirm the blob is a parseable .vippack before any download is claimed.
+ * @param {Blob} blob
+ */
+export async function verifyPackBlob(blob) {
+  if (!blob || typeof blob.arrayBuffer !== 'function') {
+    throw new Error('[VIP][ProjectPack] export produced an empty archive');
+  }
+  const bytes = await blob.arrayBuffer();
+  if (!bytes || bytes.byteLength < 12) {
+    throw new Error('[VIP][ProjectPack] export produced an empty archive');
+  }
+  const parsed = await parseProjectPack(bytes);
+  if (parsed?.manifest?.format !== 'vippack') {
+    throw new Error('[VIP][ProjectPack] integrity check failed — archive is not a vippack');
+  }
+  return {
+    verified: true,
+    bytes: bytes.byteLength,
+    files: parsed.files instanceof Map ? parsed.files.size : 0,
+  };
+}
+
+/**
+ * Verify the archive, then start a browser download from an in-document anchor.
+ * Blob creation alone is not success. Returns downloaded:false when no document
+ * can receive the click. Callers must show result.filename / result.reason.
+ * @param {Blob} blob
+ * @param {string} [filename]
+ */
+export async function downloadPackBlob(blob, filename = 'project.vippack') {
+  const integrity = await verifyPackBlob(blob);
+  const safeName = String(filename || 'project.vippack').endsWith('.vippack')
+    ? String(filename || 'project.vippack')
+    : `${filename}.vippack`;
+  if (typeof document === 'undefined' || !document.body) {
+    return {
+      downloaded: false,
+      verified: true,
+      bytes: integrity.bytes,
+      files: integrity.files,
+      filename: safeName,
+      reason: 'No document is available to start the download.',
+    };
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = safeName;
   a.rel = 'noopener';
+  a.dataset.vipDownload = 'project-pack';
   document.body.appendChild(a);
-  a.click();
+  const attached = document.body.contains(a);
+  if (attached) a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return {
+    downloaded: attached,
+    verified: true,
+    bytes: integrity.bytes,
+    files: integrity.files,
+    filename: safeName,
+    reason: attached ? '' : 'The download link was not attached to the page.',
+  };
 }
 
 export default {
@@ -322,5 +389,6 @@ export default {
   parseProjectPack,
   sanitizePackManifest,
   buildPackBlob,
+  verifyPackBlob,
   downloadPackBlob,
 };

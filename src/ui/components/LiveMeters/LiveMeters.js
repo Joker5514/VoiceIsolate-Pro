@@ -47,7 +47,7 @@ export class LiveMeters {
     this.container.innerHTML = `
       <div class="vip-meters-header" style="display:flex; align-items:center; justify-content:space-between;">
         <span style="font:600 11px/1 ${Tokens.font.mono}; letter-spacing:0.08em; text-transform:uppercase; color:${Tokens.text.dim};">Live Metrics</span>
-        <button data-action="toggleAdvanced" style="font:500 10px/1 ${Tokens.font.ui}; color:${Tokens.text.secondary}; background:transparent; border:1px solid ${Tokens.border.subtle}; border-radius:4px; padding:4px 8px; cursor:pointer;">Advanced</button>
+        <button type="button" data-action="toggleAdvanced" aria-expanded="false" aria-controls="vip-meters-advanced" style="font:500 10px/1 ${Tokens.font.ui}; color:${Tokens.text.secondary}; background:transparent; border:1px solid ${Tokens.border.subtle}; border-radius:4px; padding:4px 8px; cursor:pointer;">Advanced</button>
       </div>
       <div class="vip-meters-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
         <div data-meter="voiceClarity" class="vip-meter-card"></div>
@@ -55,7 +55,7 @@ export class LiveMeters {
         <div data-meter="whisperRetention" class="vip-meter-card"></div>
         <div data-meter="outputLevel" class="vip-meter-card"></div>
       </div>
-      <div data-advanced="true" class="vip-meters-advanced" style="display:none; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid ${Tokens.border.subtle};">
+      <div id="vip-meters-advanced" data-advanced="true" class="vip-meters-advanced" style="display:none; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid ${Tokens.border.subtle};">
         <div style="font:600 10px/1 ${Tokens.font.mono}; color:${Tokens.text.dim}; text-transform:uppercase;">Forensic Inspector</div>
         <div data-advanced-grid style="display:grid; gap:8px; font:10px/1.4 ${Tokens.font.mono}; color:${Tokens.text.secondary};"></div>
       </div>
@@ -65,10 +65,12 @@ export class LiveMeters {
     this._els.advanced = this.container.querySelector('[data-advanced="true"]');
     this._els.advancedGrid = this.container.querySelector('[data-advanced-grid]');
 
-    // Bind toggle
-    this.container.querySelector('[data-action="toggleAdvanced"]').addEventListener('click', () => {
+    const advancedBtn = this.container.querySelector('[data-action="toggleAdvanced"]');
+    advancedBtn.addEventListener('click', () => {
       this.options.showAdvanced = !this.options.showAdvanced;
       this._els.advanced.style.display = this.options.showAdvanced ? 'flex' : 'none';
+      advancedBtn.setAttribute('aria-expanded', this.options.showAdvanced ? 'true' : 'false');
+      this._updateDOM();
     });
 
     // Init meter cards

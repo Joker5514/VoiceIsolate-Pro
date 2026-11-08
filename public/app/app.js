@@ -624,19 +624,19 @@ const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * 5; // FLAG_SLOTS = 5
 // Ranges narrowed here were preventing preset values from reaching the DSP.
 const SLIDERS = {
   gate: [
-    { id:'gateThresh', label:'Threshold', min:-120, max:0, val:-42, step:5, unit:' dB', rt:true, desc:'Audio quieter than this level is treated as silence and turned down.', example:'Raise toward -30 dB to mute the room tone between sentences in a voice memo; lower toward -60 dB so soft speech is never cut off.' },
+    { id:'gateThresh', label:'Threshold', min:-120, max:0, val:-42, step:1, unit:' dB', rt:true, desc:'Audio quieter than this level is treated as silence and turned down.', example:'Raise toward -30 dB to mute the room tone between sentences in a voice memo; lower toward -60 dB so soft speech is never cut off.' },
     { id:'gateRange', label:'Range', min:-120, max:0, val:-60, step:5, unit:' dB', rt:true, desc:'How far the gated (silent) sections are turned down.', example:'-60 dB fully silences gaps; set -12 dB to just soften background hiss instead of killing it, keeping a natural ambience.' },
     { id:'gateAttack', label:'Attack', min:0, max:200, val:5, step:5, unit:' ms', rt:true, desc:'How fast the gate opens when speech starts.', example:'Keep at ~5 ms so the start of each word ("Hello") is not clipped; longer values soften hard consonants. Live-Mix applies at most 200 ms.' },
-    { id:'gateRelease', label:'Release', min:10, max:2000, val:200, step:50, unit:' ms', rt:true, desc:'How fast the gate closes after sound stops.', example:'~200 ms feels natural for speech; raise to 800 ms so the tail of a sung note or reverb is not chopped off abruptly.' },
+    { id:'gateRelease', label:'Release', min:10, max:2000, val:200, step:10, unit:' ms', rt:true, desc:'How fast the gate closes after sound stops.', example:'~200 ms feels natural for speech; raise to 800 ms so the tail of a sung note or reverb is not chopped off abruptly.' },
     { id:'gateHold', label:'Hold', min:0, max:500, val:20, step:25, unit:' ms', rt:true, desc:'Minimum time the gate stays open after a sound.', example:'Set ~80 ms to stop the gate "chattering" open and shut during a stuttered or breathy phrase.' },
     { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:2, step:1, unit:' ms', rt:true, desc:'Delays the Live-Mix gate path so its detector can open before a sound arrives.', example:'5–10 ms preserves a plosive attack; higher values add the same amount of preview latency.' },
   ],
   nr: [
-    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:52, step:5, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~50–55% cleans steady hiss without high-pitch musical noise; push past 85% only for heavy noise (can sound underwater).' },
-    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:48, step:5, unit:'%', rt:false, desc:'How aggressively the noise floor is detected and learned.', example:'Raise to ~80% when noise is loud and constant (traffic); lower to ~40% to avoid mistaking quiet speech for noise.' },
+    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:52, step:1, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~50–55% cleans steady hiss without high-pitch musical noise; push past 85% only for heavy noise (can sound underwater).' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:48, step:1, unit:'%', rt:false, desc:'How aggressively the noise floor is detected and learned.', example:'Raise to ~80% when noise is loud and constant (traffic); lower to ~40% to avoid mistaking quiet speech for noise.' },
     { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:35, step:5, unit:'%', rt:false, desc:'Extra subtraction of the learned noise spectrum.', example:'Bump to ~70% to scrub tonal hum/whine; high values can add a "musical noise" warble, so back off if you hear bubbling.' },
-    { id:'nrFloor', label:'NR Floor', min:-120, max:-20, val:-68, step:5, unit:' dB', rt:false, desc:'How deep the quietest residual noise is allowed to drop. -68 dB is transparent; presets may reach -80 dB for heavy extraction.', example:'-68 dB is transparent; set -40 dB to leave a faint natural noise bed so dialogue does not sound unnaturally dead.' },
-    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:32, step:5, unit:'%', rt:false, desc:'Averages noise estimates over time to reduce artifacts.', example:'~30–40% reduces smear; high values blur consonants and can smear the voice.' },
+    { id:'nrFloor', label:'NR Floor', min:-120, max:-20, val:-68, step:1, unit:' dB', rt:false, desc:'How deep the quietest residual noise is allowed to drop. -68 dB is transparent; presets may reach -80 dB for heavy extraction.', example:'-68 dB is transparent; set -40 dB to leave a faint natural noise bed so dialogue does not sound unnaturally dead.' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:32, step:1, unit:'%', rt:false, desc:'Averages noise estimates over time to reduce artifacts.', example:'~30–40% reduces smear; high values blur consonants and can smear the voice.' },
   ],
   eq: [
     { id:'eqSub', label:'Sub', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Lowest rumble band (20–60 Hz).', example:'Cut -6 dB to remove desk thumps and AC rumble from a podcast; rarely boosted for voice.' },
@@ -652,8 +652,8 @@ const SLIDERS = {
   ],
   dyn: [
     { id:'compThresh', label:'Threshold', min:-60, max:0, val:-24, step:1, unit:' dB', rt:true, desc:'Level where the compressor starts evening out volume.', example:'Set ~-24 dB so loud and soft words sit closer together; lower it to compress more of the performance.' },
-    { id:'compRatio', label:'Ratio', min:1, max:20, val:4, step:0.5, unit:':1', rt:true, desc:'How hard volume above the threshold is reduced.', example:'4:1 is a natural podcast setting; 10:1+ acts almost like a limiter for very uneven phone audio.' },
-    { id:'compAttack', label:'Attack', min:0.1, max:200, val:10, step:5, unit:' ms', rt:true, desc:'How quickly compression clamps down on a loud peak.', example:'~10 ms keeps speech punchy; very fast (1 ms) squashes transients for a denser, controlled sound.' },
+    { id:'compRatio', label:'Ratio', min:1, max:20, val:4, step:0.1, unit:':1', rt:true, desc:'How hard volume above the threshold is reduced.', example:'4:1 is a natural podcast setting; 10:1+ acts almost like a limiter for very uneven phone audio.' },
+    { id:'compAttack', label:'Attack', min:0.1, max:200, val:10, step:0.1, unit:' ms', rt:true, desc:'How quickly compression clamps down on a loud peak.', example:'~10 ms keeps speech punchy; very fast (1 ms) squashes transients for a denser, controlled sound.' },
     { id:'compRelease', label:'Release', min:10, max:2000, val:150, step:50, unit:' ms', rt:true, desc:'How quickly compression lets go after a peak.', example:'~150 ms breathes naturally with speech; too short can cause an audible pumping on sustained notes.' },
     { id:'compKnee', label:'Knee', min:0, max:24, val:6, step:1, unit:' dB', rt:true, desc:'How gradually compression eases in around the threshold.', example:'A soft 6 dB knee is gentle and transparent for voice; 0 dB (hard knee) is more obvious and aggressive.' },
     { id:'compMakeup', label:'Makeup', min:-12, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Volume added back after compression lowers the level. Negative values reduce the post-compressor level.', example:'Add +3 dB so the compressed voice is as loud as before but more consistent and present.' },
@@ -1197,6 +1197,8 @@ class VoiceIsolatePro {
         this._warmupMLModels().catch(() => {});
       });
     }
+
+    void this._paintDriveConfigStatus();
 
     window.__vipAppReady = true;
     if (typeof CustomEvent !== 'undefined' && typeof window.dispatchEvent === 'function') {
@@ -4327,13 +4329,31 @@ class VoiceIsolatePro {
    * User-initiated: pick a media file from Google Drive and load it locally.
    * Processing remains on-device — Drive is only the source of the file bytes.
    */
+  _writeDriveStatus(report) {
+    const slot = typeof document !== 'undefined' ? document.getElementById('driveConfigStatus') : null;
+    if (!slot || !report) return;
+    slot.textContent = report.message;
+    slot.dataset.configured = report.configured ? '1' : '0';
+  }
+
+  async _paintDriveConfigStatus() {
+    try {
+      const { describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
+      this._writeDriveStatus(describeDriveConfiguration());
+    } catch {
+      this._writeDriveStatus({
+        configured: false,
+        message: 'Google Drive status could not be read. Local WAV export still works.',
+      });
+    }
+  }
+
   async _openFromGoogleDrive() {
-    const { openMediaFileFromDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
-    if (!isDriveConfigured()) {
-      this.showNotification(
-        'Google Drive is not configured — see docs/guides/GOOGLE_DRIVE.md',
-        'warn',
-      );
+    const { openMediaFileFromDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
+    const driveReport = describeDriveConfiguration();
+    this._writeDriveStatus(driveReport);
+    if (!driveReport.configured) {
+      this.showNotification(driveReport.message, 'warn');
       return;
     }
     this.showNotification('Sign in to Google Drive to pick a file…', 'info');
@@ -4479,13 +4499,12 @@ class VoiceIsolatePro {
       this.showNotification('Nothing to save yet — process a file first.', 'info');
       return;
     }
-    const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
+    const { saveBlobToDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
     const { encodeWav } = await import('/src/pipeline/ExportManager.js');
-    if (!isDriveConfigured()) {
-      this.showNotification(
-        'Google Drive is not configured — see docs/guides/GOOGLE_DRIVE.md',
-        'warn',
-      );
+    const driveReport = describeDriveConfiguration();
+    this._writeDriveStatus(driveReport);
+    if (!driveReport.configured) {
+      this.showNotification(driveReport.message, 'warn');
       return;
     }
     // Same crop and snapshot as the WAV download: Drive gets what the user hears.

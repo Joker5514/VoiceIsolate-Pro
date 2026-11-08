@@ -39,16 +39,44 @@ export function getDriveConfig() {
   };
 }
 
+function driveValuePresent(value) {
+  if (value == null) return false;
+  const text = String(value).trim();
+  return text.length > 0 && !text.includes('YOUR_');
+}
+
+function authDomainPresent(g) {
+  if (driveValuePresent(g.FIREBASE_AUTH_DOMAIN)) return true;
+  const desktop = g.vipDesktop;
+  return !!(desktop && typeof desktop === 'object' && driveValuePresent(desktop.firebaseAuthDomain));
+}
+
+/**
+ * Names the window globals the owner must inject. Values are never returned.
+ * GOOGLE_API_KEY may be the same string as FIREBASE_API_KEY (Picker developer key).
+ * GOOGLE_OAUTH_CLIENT_ID stays optional because Firebase Google sign-in can supply it.
+ */
+export function describeDriveConfiguration(globals) {
+  const g = globals || (typeof globalThis !== 'undefined' ? globalThis : {});
+  const checks = [
+    ['FIREBASE_API_KEY', driveValuePresent(g.FIREBASE_API_KEY)],
+    ['FIREBASE_AUTH_DOMAIN', authDomainPresent(g)],
+    ['FIREBASE_PROJECT_ID', driveValuePresent(g.FIREBASE_PROJECT_ID)],
+    ['FIREBASE_APP_ID', driveValuePresent(g.FIREBASE_APP_ID)],
+    ['GOOGLE_API_KEY', driveValuePresent(g.GOOGLE_API_KEY) || driveValuePresent(g.FIREBASE_API_KEY)],
+  ];
+  const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
+  const optionalMissing = driveValuePresent(g.GOOGLE_OAUTH_CLIENT_ID) ? [] : ['GOOGLE_OAUTH_CLIENT_ID'];
+  const configured = missing.length === 0;
+  const message = configured
+    ? 'Google Drive is configured on this page. Sign-in still uses your Google account. Local WAV export does not need Drive.'
+    : `Google Drive is not configured. Missing window settings: ${missing.join(', ')}. `
+      + 'Local WAV export still works. The owner sets these at runtime (never in git) — see docs/guides/GOOGLE_DRIVE.md.';
+  return { configured, missing, optionalMissing, message };
+}
+
 export function isDriveConfigured() {
-  const { apiKey } = getDriveConfig();
-  // Picker needs API key; upload/download need access token (from Firebase).
-  // Allow auth-only path when Firebase is configured even if Picker key missing
-  // (import will fail until key is set; export can still work).
-  const g = typeof globalThis !== 'undefined' ? globalThis : {};
-  const firebaseReady = Boolean(
-    g.FIREBASE_API_KEY && String(g.FIREBASE_API_KEY) !== 'YOUR_API_KEY',
-  );
-  return Boolean(apiKey || firebaseReady);
+  return describeDriveConfiguration().configured;
 }
 
 export function getDriveScope() {

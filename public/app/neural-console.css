@@ -381,6 +381,8 @@ body.eng-console.neural-console .nc-level {
   border: 1px solid var(--nc-hairline);
   position: relative;
   overflow: hidden;
+  pointer-events: none;
+  cursor: default;
 }
 body.eng-console.neural-console .nc-level .fill {
   position: absolute;
