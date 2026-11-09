@@ -30,6 +30,9 @@ let FFT_SIZE         = DEFAULT_FFT_SIZE;
 let HOP_SIZE         = FFT_SIZE / 4;       // 75% overlap
 let HALF_BINS        = FFT_SIZE / 2 + 1;   // 1025
 const STAGES         = 32;
+// Complex float64 frames: frameCount * FFT_SIZE * 2 * 8 bytes. Same 192 MiB
+// ceiling as DSPCore.MAX_STFT_SPECTRUM_BYTES, checked before allocation.
+const MAX_OFFLINE_STFT_BYTES = 192 * 1024 * 1024;
 
 // Blackman-Harris window coefficients
 const A0 = 0.35875, A1 = 0.48829, A2 = 0.14128, A3 = 0.01168;
@@ -165,6 +168,16 @@ function forwardSTFT(pcm) {
   const hopCount = pcm.length > 0
     ? Math.floor((pcm.length - 1 + pad) / HOP_SIZE) + 1
     : 0;
+  const spectrumBytes = hopCount * FFT_SIZE * 16;
+  if (spectrumBytes > MAX_OFFLINE_STFT_BYTES) {
+    const bytesPerFrame = FFT_SIZE * 16;
+    const maxFrames = Math.floor(MAX_OFFLINE_STFT_BYTES / bytesPerFrame);
+    const maxSamples = maxFrames > 0 ? (maxFrames - 1) * HOP_SIZE + FFT_SIZE : 0;
+    throw new RangeError(
+      `Offline STFT would allocate ${spectrumBytes} bytes (limit ${MAX_OFFLINE_STFT_BYTES}, ` +
+      `about ${maxSamples} samples at fft=${FFT_SIZE} hop=${HOP_SIZE}). Shorten the file.`
+    );
+  }
   const frames   = [];
 
   for (let h = 0; h < hopCount; h++) {

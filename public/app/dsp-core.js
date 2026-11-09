@@ -196,6 +196,13 @@ const DSPCore = {
   HOP_SIZE: 1024,
   SAMPLE_RATE: 48000,
 
+  // Full-spectrum STFT retains mag and phase for every frame. 192 MiB of
+  // float32 payload (mag + phase, not JS object headers) is checked before
+  // those arrays are allocated. Longer files use processChunked(), which
+  // keeps one chunk of spectra plus the PCM overlap-add buffers.
+  // Assumption: halfN = fftSize/2+1, 4 bytes × 2 arrays, no extra copies.
+  MAX_STFT_SPECTRUM_BYTES: 192 * 1024 * 1024,
+
   // ===== WINDOWING =====
 
   // Cache for hannWindow — keyed by N so identical sizes are only computed once.
@@ -229,8 +236,11 @@ const DSPCore = {
       : 0;
   },
 
-  _analysisFrames(length, fftSize, hopSize) {
-    const pad = length > 0 ? this._edgePad(fftSize, hopSize) : 0;
+  _analysisFrames(length, fftSize, hopSize, padOverride) {
+    const naturalPad = length > 0 ? this._edgePad(fftSize, hopSize) : 0;
+    // Explicit 0 keeps historic whole-window framing. Untagged synthesis
+    // must not invent the edge pad; callers that want it pass pad metadata.
+    const pad = padOverride === 0 ? 0 : naturalPad;
     if (pad > 0) {
       return { frameCount: Math.floor((length - 1 + pad) / hopSize) + 1, pad };
     }
@@ -279,8 +289,26 @@ const DSPCore = {
     return (frameCount - 1) * hopSize + fftSize;
   },
 
+  _untaggedPadWarned: false,
+
+  _resolvePadOverride(opts) {
+    if (!opts || typeof opts !== 'object') return undefined;
+    if (opts.pad === 0 || opts.padded === false) return 0;
+    return undefined;
+  },
+
   _synthesisPad(mag, fftSize, hopSize) {
-    return Number.isFinite(mag.pad) ? mag.pad : this._edgePad(fftSize, hopSize);
+    if (mag && Number.isFinite(mag.pad)) return mag.pad;
+    // Untagged frames do not silently assume edge-padded geometry.
+    if (!this._untaggedPadWarned) {
+      this._untaggedPadWarned = true;
+      if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+        console.warn('[DSPCore] inverse STFT: magnitude frames have no pad metadata; using pad=0. Tag frames via forwardSTFT or set mag.pad explicitly.');
+      }
+    }
+    void fftSize;
+    void hopSize;
+    return 0;
   },
 
   _olaAdd(output, windowSum, real, window, windowSq, offset) {
@@ -294,21 +322,38 @@ const DSPCore = {
   },
 
   /**
-   * Padded framing puts every output sample at the steady-state window² sum,
-   * so the divisor is that sum. The half-peak floor only remains for the
-   * non-overlapping analysis geometry, where a partial edge would otherwise
-   * divide by a near-zero Hann sample.
+   * Overlap-add normalisation.
+   * output[i] = accumulated[i] / windowSum[i] when the sample is covered.
+   * A half-peak floor is not applied — it attenuates real low-amplitude and
+   * edge samples. Uncovered samples (window sum <= 1e-12) are set to 0.
    */
-  _normalizeOla(output, windowSum, padded) {
+  _normalizeOla(output, windowSum) {
     const len = output.length;
-    if (padded) {
-      for (let i = 0; i < len; i++) output[i] /= Math.max(windowSum[i], 1e-12);
-      return;
+    for (let i = 0; i < len; i++) {
+      const w = windowSum[i];
+      if (w > 1e-12) output[i] /= w;
+      else output[i] = 0;
     }
-    let maxNorm = 0;
-    for (let i = 0; i < len; i++) if (windowSum[i] > maxNorm) maxNorm = windowSum[i];
-    const floorNorm = Math.max(1e-12, 0.5 * maxNorm);
-    for (let i = 0; i < len; i++) output[i] /= Math.max(windowSum[i], floorNorm);
+  },
+
+  spectrumPayloadBytes(frameCount, fftSize) {
+    const frames = Math.max(0, frameCount | 0);
+    const halfN = (fftSize >> 1) + 1;
+    return frames * halfN * 8;
+  },
+
+  _assertSpectrumBudget(frameCount, fftSize, hopSize) {
+    const bytes = this.spectrumPayloadBytes(frameCount, fftSize);
+    if (bytes <= this.MAX_STFT_SPECTRUM_BYTES) return;
+    const halfN = (fftSize >> 1) + 1;
+    const bytesPerFrame = halfN * 8;
+    const maxFrames = Math.floor(this.MAX_STFT_SPECTRUM_BYTES / Math.max(1, bytesPerFrame));
+    const maxSamples = maxFrames > 0 ? Math.max(0, (maxFrames - 1) * hopSize + fftSize) : 0;
+    throw new RangeError(
+      `STFT would allocate ${bytes} bytes of spectra (limit ${this.MAX_STFT_SPECTRUM_BYTES} bytes, ` +
+      `about ${maxSamples} samples at fft=${fftSize} hop=${hopSize}). ` +
+      'Shorten the recording or use DSPCore.processChunked(), which keeps a bounded frame chunk.'
+    );
   },
 
   // ===== STFT / iSTFT =====
@@ -321,7 +366,7 @@ const DSPCore = {
    * @param {number} hopSize - hop between frames (default 1024)
    * @returns {{ mag: Float32Array[], phase: Float32Array[], frameCount: number }}
    */
-  forwardSTFT(data, fftSize = 4096, hopSize = 1024) {
+  forwardSTFT(data, fftSize = 4096, hopSize = 1024, opts) {
     if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
       throw new RangeError(`forwardSTFT: fftSize must be a power of two >= 2 (got ${fftSize})`);
     }
@@ -329,8 +374,10 @@ const DSPCore = {
     const halfN = fftSize / 2 + 1;
     // Edge-covering frames: start fftSize−hop before sample 0 and run past the
     // end (odd reflection), so the inverse overlap-add covers every sample.
+    // opts.pad === 0 or opts.padded === false selects whole-window framing.
     // Clips with hop >= fftSize keep the historic whole-window count.
-    const { frameCount, pad } = this._analysisFrames(data.length, fftSize, hopSize);
+    const { frameCount, pad } = this._analysisFrames(data.length, fftSize, hopSize, this._resolvePadOverride(opts));
+    this._assertSpectrumBudget(frameCount, fftSize, hopSize);
     const mag = [];
     const phase = [];
 
@@ -380,7 +427,8 @@ const DSPCore = {
     const shouldAbort = typeof opts.shouldAbort === 'function' ? opts.shouldAbort : null;
     const window = this.hannWindow(fftSize);
     const halfN = fftSize / 2 + 1;
-    const { frameCount, pad } = this._analysisFrames(data.length, fftSize, hopSize);
+    const { frameCount, pad } = this._analysisFrames(data.length, fftSize, hopSize, this._resolvePadOverride(opts));
+    this._assertSpectrumBudget(frameCount, fftSize, hopSize);
     const mag = new Array(frameCount);
     const phase = new Array(frameCount);
     const real = new Float32Array(fftSize);
@@ -481,7 +529,7 @@ const DSPCore = {
         await yieldUI();
       }
     }
-    this._normalizeOla(output, windowSum, pad > 0);
+    this._normalizeOla(output, windowSum);
     if (onProgress) onProgress(1);
     return output;
   },
@@ -538,8 +586,86 @@ const DSPCore = {
 
     // Padded framing already gives every sample its steady-state window² sum.
     // Dividing by that sum (not by max(sum, 0.5·peak)) keeps the file edges.
-    this._normalizeOla(output, windowSum, pad > 0);
+    this._normalizeOla(output, windowSum);
 
+    return output;
+  },
+
+  /**
+   * Bounded-frame STFT → optional in-place spectral edit → iSTFT.
+   * The PCM overlap-add accumulators cover the whole file (required for a
+   * deterministic result). Spectra are allocated for at most `chunkFrames`
+   * frames and discarded after each chunk, including a short final chunk.
+   * With no onChunk (or a frame-local edit), the result matches full
+   * forwardSTFT + inverseSTFT for every chunk size.
+   *
+   * @param {Float32Array} data
+   * @param {number} [fftSize]
+   * @param {number} [hopSize]
+   * @param {{ chunkFrames?: number, pad?: number, padded?: boolean, onChunk?: Function }} [opts]
+   * @returns {Float32Array}
+   */
+  processChunked(data, fftSize = 4096, hopSize = 1024, opts = {}) {
+    if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
+      throw new RangeError(`processChunked: fftSize must be a power of two >= 2 (got ${fftSize})`);
+    }
+    const chunkFrames = Math.max(1, (opts.chunkFrames | 0) || 64);
+    const { frameCount, pad } = this._analysisFrames(
+      data.length, fftSize, hopSize, this._resolvePadOverride(opts)
+    );
+    const halfN = fftSize / 2 + 1;
+    const len = data.length;
+    const output = new Float32Array(len);
+    const windowSum = new Float32Array(len);
+    const window = this.hannWindow(fftSize);
+    const windowSq = this._hannSqCache(fftSize, window);
+    const onChunk = typeof opts.onChunk === 'function' ? opts.onChunk : null;
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
+    for (let f0 = 0; f0 < frameCount; f0 += chunkFrames) {
+      const n = Math.min(chunkFrames, frameCount - f0);
+      const mag = new Array(n);
+      const phase = new Array(n);
+      for (let j = 0; j < n; j++) {
+        const offset = (f0 + j) * hopSize - pad;
+        imag.fill(0);
+        this._fillWindowed(data, offset, fftSize, window, real);
+        this._fft(real, imag, false);
+        const m = new Float32Array(halfN);
+        const p = new Float32Array(halfN);
+        for (let k = 0; k < halfN; k++) {
+          m[k] = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+          p[k] = Math.atan2(imag[k], real[k]);
+        }
+        mag[j] = m;
+        phase[j] = p;
+      }
+      this._tagFrames(mag, data.length, pad);
+      mag.frameOffset = f0;
+      if (onChunk) onChunk(mag, phase, { frameOffset: f0, frameCount, pad, fftSize, hopSize });
+
+      for (let j = 0; j < n; j++) {
+        const offset = (f0 + j) * hopSize - pad;
+        const magF = mag[j];
+        const phaseF = phase[j];
+        for (let k = 0; k < halfN; k++) {
+          const rawM = magF[k];
+          const m = (rawM >= 0 && rawM < Infinity) ? rawM : 0;
+          const ph = phaseF[k];
+          real[k] = m * Math.cos(ph);
+          imag[k] = m * Math.sin(ph);
+        }
+        for (let k = halfN; k < fftSize; k++) {
+          real[k] = real[fftSize - k];
+          imag[k] = -imag[fftSize - k];
+        }
+        this._fft(real, imag, true);
+        this._olaAdd(output, windowSum, real, window, windowSq, offset);
+      }
+    }
+
+    this._normalizeOla(output, windowSum);
     return output;
   },
 
@@ -1136,16 +1262,22 @@ const DSPCore = {
    *
    * @param {number} [hopSize=1024] STFT hop size, used to derive the per-frame
    *   IIR coefficient. Defaults to 1024 (matches the offline pipeline).
+   * @param {{ prevGain?: Float32Array }} [state] Optional smoother carried
+   *   across chunked calls. Omit it for a one-shot full-buffer gate.
    */
-  spectralGate(mag, floorDb, sr, hopSize = 1024) {
+  spectralGate(mag, floorDb, sr, hopSize = 1024, state = null) {
     const numFrames = mag.length;
     if (numFrames === 0) return mag;
     const numBins = mag[0]?.length || 2049;
     const erbBands = this._computeERBBands(32, sr, numBins);
     const floorLin = Math.pow(10, floorDb / 20);
 
-    // Per-band smoothed gain carried across frames.
-    const prevGain = new Float32Array(erbBands.length).fill(1);
+    // Per-band smoothed gain carried across frames (and across chunks when
+    // the caller passes the same state object).
+    const prevGain = (state && state.prevGain && state.prevGain.length === erbBands.length)
+      ? state.prevGain
+      : new Float32Array(erbBands.length).fill(1);
+    if (state) state.prevGain = prevGain;
     // Translate a 60 ms gain-smoothing time constant into the per-frame IIR
     // memory coefficient: α = exp(-hopSeconds / tau). At sr=48k, hop=1024
     // this is ≈ 0.71, matching the previous hand-tuned value.
@@ -1630,34 +1762,100 @@ const DSPCore = {
 
   // ===== NOISE PROFILE =====
 
-  /** Estimate noise profile from silent segments */
+  /**
+   * Average magnitude of the lowest-energy frames. Bin count matches `mag`,
+   * so the profile can be passed straight to wienerMMSE.
+   * @param {Float32Array[]} mag
+   * @param {{ fraction?: number }} [opts] fraction of frames treated as noise (default 0.2)
+   * @returns {Float32Array}
+   */
+  noiseProfileFromMagnitudes(mag, opts = {}) {
+    const frames = mag?.length || 0;
+    const bins = frames ? (mag[0]?.length || 0) : 0;
+    const profile = new Float32Array(bins);
+    if (!frames || !bins) return profile;
+    const fraction = Math.min(1, Math.max(0.05, Number(opts.fraction) || 0.2));
+    const energy = new Float32Array(frames);
+    for (let f = 0; f < frames; f++) {
+      let e = 0;
+      const frame = mag[f];
+      const n = Math.min(bins, frame?.length || 0);
+      for (let k = 0; k < n; k++) e += frame[k] * frame[k];
+      energy[f] = e;
+    }
+    const order = new Array(frames);
+    for (let f = 0; f < frames; f++) order[f] = f;
+    order.sort((a, b) => energy[a] - energy[b] || a - b);
+    const take = Math.max(1, Math.round(frames * fraction));
+    for (let i = 0; i < take; i++) {
+      const frame = mag[order[i]];
+      for (let k = 0; k < bins; k++) profile[k] += frame[k] || 0;
+    }
+    for (let k = 0; k < bins; k++) profile[k] /= take;
+    return profile;
+  },
+
+  /**
+   * Estimate a noise magnitude profile using the same padded analysis
+   * geometry as forwardSTFT (fftSize, hop, edge pad, odd reflection).
+   * With a VAD curve, only frames whose confidence is <= 0.3 contribute.
+   * Without VAD, the lowest-energy 20% of frames are used — a missing VAD
+   * must not return an all-zero profile that makes Wiener a no-op.
+   */
   estimateNoiseProfile(data, vadConfidence, fftSize = 4096, hopSize = 1024) {
     const window = this.hannWindow(fftSize);
     const halfN = fftSize / 2 + 1;
     const profile = new Float32Array(halfN);
-    let count = 0;
+    const { frameCount, pad } = this._analysisFrames(data.length, fftSize, hopSize);
+    if (frameCount <= 0 || !data || data.length === 0) return profile;
 
-    const framesPerVad = Math.floor(fftSize / 512); // VAD window ratio
-
-    // Reuse real/imag buffers across frames to avoid per-frame GC pressure.
     const real = new Float32Array(fftSize);
     const imag = new Float32Array(fftSize);
+    const useVad = !!(vadConfidence && vadConfidence.length);
 
-    for (let f = 0; ; f++) {
-      const offset = f * hopSize;
-      if (offset + fftSize > data.length) break;
-
-      // Check if this frame is silence (low VAD confidence)
-      const vadIdx = Math.min(f * (hopSize / 512), (vadConfidence?.length || 1) - 1);
-      const confidence = vadConfidence ? vadConfidence[Math.floor(vadIdx)] : 0.5;
-      if (confidence > 0.3) continue; // skip voiced frames
-
+    const analyze = (f) => {
+      const offset = f * hopSize - pad;
       imag.fill(0);
-      for (let i = 0; i < fftSize; i++) {
-        real[i] = data[offset + i] * window[i];
-      }
+      this._fillWindowed(data, offset, fftSize, window, real);
       this._fft(real, imag, false);
+      let energy = 0;
+      for (let k = 0; k < halfN; k++) {
+        const m2 = real[k] * real[k] + imag[k] * imag[k];
+        energy += m2;
+      }
+      return energy;
+    };
 
+    let selected;
+    if (useVad) {
+      selected = [];
+      for (let f = 0; f < frameCount; f++) {
+        const center = f * hopSize - pad + fftSize / 2;
+        const vadIdx = Math.min(
+          vadConfidence.length - 1,
+          Math.max(0, Math.floor(center / 512))
+        );
+        const confidence = vadConfidence[vadIdx] || 0;
+        if (confidence > 0.3) continue;
+        selected.push(f);
+      }
+    } else {
+      const energy = new Float32Array(frameCount);
+      for (let f = 0; f < frameCount; f++) energy[f] = analyze(f);
+      const order = new Array(frameCount);
+      for (let f = 0; f < frameCount; f++) order[f] = f;
+      order.sort((a, b) => energy[a] - energy[b] || a - b);
+      const take = Math.max(1, Math.round(frameCount * 0.2));
+      selected = order.slice(0, take);
+    }
+
+    let count = 0;
+    for (let s = 0; s < selected.length; s++) {
+      const f = selected[s];
+      const offset = f * hopSize - pad;
+      imag.fill(0);
+      this._fillWindowed(data, offset, fftSize, window, real);
+      this._fft(real, imag, false);
       for (let k = 0; k < halfN; k++) {
         profile[k] += Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
       }

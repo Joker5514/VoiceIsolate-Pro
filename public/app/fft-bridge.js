@@ -176,6 +176,18 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
 }
 
 /** Odd reflection. Same formula as src/core/stft-math.js paddedSample. */
+let _untaggedPadWarned = false;
+function _synthesisPad(magnitudes) {
+  if (Number.isFinite(magnitudes.pad)) return magnitudes.pad;
+  if (!_untaggedPadWarned) {
+    _untaggedPadWarned = true;
+    if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+      console.warn('[fft-bridge] reconstructISTFT: magnitudes have no pad metadata; using pad=0.');
+    }
+  }
+  return 0;
+}
+
 function _reflectSample(x, idx) {
   const len = x.length;
   if (idx >= 0 && idx < len) return x[idx];
@@ -204,9 +216,7 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
 
   const halfBins   = (fftSize >> 1) + 1;
   const numFrames  = magnitudes.length;
-  const pad        = Number.isFinite(magnitudes.pad)
-    ? magnitudes.pad
-    : (hopSize < fftSize ? fftSize - hopSize : 0);
+  const pad        = _synthesisPad(magnitudes);
   const outputLen  = Number.isFinite(magnitudes.inputLength) && magnitudes.inputLength >= 0
     ? magnitudes.inputLength
     : Math.max(0, (numFrames - 1) * hopSize + fftSize - pad);
@@ -243,10 +253,10 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     }
   }
 
-  // The pad puts every sample at its steady-state window² sum. Divide by
-  // that sum; a half-peak floor would push the file edges toward 0.
+  // Divide by the actual window² sum. Uncovered samples (sum <= 1e-12) stay silent.
   for (let i = 0; i < outputLen; i++) {
-    output[i] /= Math.max(norm[i], 1e-12);
+    if (norm[i] > 1e-12) output[i] /= norm[i];
+    else output[i] = 0;
   }
 
   return output;

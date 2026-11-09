@@ -140,23 +140,30 @@ async function handleProcess(payload) {
     }
   }
 
-  // Single Forward STFT — do not add a second one anywhere in this function.
-  // Pass the input length so the padded inverse crops back to the file,
-  // including the samples that used to fall off the last full window.
-  const { mag, phase } = dspCore.forwardSTFT(processed);
-
-  // In-place spectral operations on mag/phase arrays
-  if (params) {
-    // ERB spectral gate using noise floor parameter
-    dspCore.spectralGate(mag, params.nrFloor ?? -60, sampleRate);
-    // Wiener noise subtraction (no pre-computed profile available at worker level)
-    if ((params.nrAmount ?? 0) > 0) {
-      dspCore.wienerMMSE(mag, null, params.nrAmount);
+  // Single spectral pass. Spectra are produced in bounded chunks so a long
+  // file cannot allocate a whole-file STFT. Overlap-add state stays inside
+  // processChunked. Wiener uses a real noise profile (lowest-energy frames
+  // of the same 4096/1024 padded geometry); a null profile is not a reduction.
+  const FFT = 4096;
+  const HOP = 1024;
+  let noiseProfile = null;
+  if (params && (params.nrAmount ?? 0) > 0) {
+    noiseProfile = dspCore.estimateNoiseProfile(processed, null, FFT, HOP);
+    const expectBins = FFT / 2 + 1;
+    if (!noiseProfile || noiseProfile.length !== expectBins) {
+      throw new Error(`Wiener noise profile length ${noiseProfile ? noiseProfile.length : 0} != ${expectBins}`);
     }
   }
-
-  // Single Inverse STFT — do not add a second one anywhere
-  const output = dspCore.inverseSTFT(mag, phase, 4096, 1024, processed.length);
+  const gateState = params ? {} : null;
+  const output = dspCore.processChunked(processed, FFT, HOP, {
+    chunkFrames: 48,
+    onChunk: params
+      ? (mag) => {
+          dspCore.spectralGate(mag, params.nrFloor ?? -60, sampleRate, HOP, gateState);
+          if (noiseProfile) dspCore.wienerMMSE(mag, noiseProfile, params.nrAmount);
+        }
+      : null,
+  });
 
   return {
     processedData: output.buffer,

@@ -138,20 +138,27 @@ function loadBootstrap() {
 }
 
 function loadWorkerRoundtrip() {
+  const loaded = new Set();
   const sandbox = {
     console: { info() {}, warn() {}, error() {}, log() {} },
-    Math, Float32Array, Float64Array, ArrayBuffer, Uint8Array, Int32Array,
+    Math, Float32Array, Float64Array, ArrayBuffer, Uint8Array, Int32Array, DataView,
     Map, Object, Array, Error, Number, String, JSON, Infinity, isFinite, NaN,
     setTimeout, clearTimeout, performance,
-    importScripts() {
-      vm.runInContext(
-        fs.readFileSync(path.join(ROOT, 'public/app/dsp-core.js'), 'utf8'),
-        sandbox,
-        { filename: 'dsp-core.js' },
-      );
-    },
   };
+  sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
+  sandbox.importScripts = function importScripts(...urls) {
+    for (const url of urls) {
+      const name = String(url).split('?')[0].split('/').pop();
+      if (loaded.has(name)) continue;
+      let file;
+      if (name === 'dsp-core.js') file = path.join(ROOT, 'public/app/dsp-core.js');
+      else if (name === 'wav-encoder-impl.js') file = path.join(ROOT, 'src/core/wav-encoder-impl.js');
+      else throw new Error(`importScripts: no loader for ${url}`);
+      vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, { filename: name });
+      loaded.add(name);
+    }
+  };
   vm.createContext(sandbox);
   const src = `${fs.readFileSync(path.join(ROOT, 'public/app/dsp-worker.js'), 'utf8')}
     self.__roundtrip = async function (pcm) {
