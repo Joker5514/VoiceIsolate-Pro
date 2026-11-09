@@ -179,7 +179,11 @@
 
     globalThis.DSP.inverseSTFT = function inverseSTFT(mag, phase, fftSize, hopSize, outputLength) {
       const win = _hannWindow(fftSize); // AUDIT-FIX #12: periodic Hann
-      const pad = Number.isFinite(mag.pad) ? mag.pad : (hopSize < fftSize ? fftSize - hopSize : 0);
+      const pad = Number.isFinite(mag.pad) ? mag.pad : 0;
+      if (!Number.isFinite(mag.pad) && !globalThis.__vipUntaggedPadWarned) {
+        globalThis.__vipUntaggedPadWarned = true;
+        console.warn('[DSP-Bootstrap] inverseSTFT: magnitude frames have no pad metadata; using pad=0.');
+      }
       const len = outputLength > 0
         ? outputLength
         : (Number.isFinite(mag.inputLength) ? mag.inputLength : 0);
@@ -213,7 +217,10 @@
         }
       }
 
-      for (let i = 0; i < len; i++) out[i] /= Math.max(env[i], 1e-12);
+      for (let i = 0; i < len; i++) {
+        if (env[i] > 1e-12) out[i] /= env[i];
+        else out[i] = 0;
+      }
 
       return out;
     };
