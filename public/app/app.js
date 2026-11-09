@@ -4465,7 +4465,18 @@ class VoiceIsolatePro {
    * returns { ok: false } and the caller still saves the audio.
    * The record is not a certification.
    */
-  async _attachExportProvenance({ blob, filename, format, signal, options, detail }) {
+  _queueSidecarDeliver() {
+    const pending = [];
+    return {
+      pending,
+      deliver: (sideBlob, sideName) => { pending.push([sideBlob, sideName]); },
+      flush() {
+        for (const [sideBlob, sideName] of pending) triggerBlobDownload(sideBlob, sideName);
+      },
+    };
+  }
+
+  async _attachExportProvenance({ blob, filename, format, signal, options, detail, deliver }) {
     let parameters = null;
     try {
       parameters = snapshotParams(this.getEffectiveParams(window.VIP_PARAMS || this.params || {}));
@@ -4487,6 +4498,7 @@ class VoiceIsolatePro {
       parameters,
       modelIds: this._exportModelIds(),
       operations: [{ id: engine, status: 'completed', detail: detail || null }],
+      ...(typeof deliver === 'function' ? { deliver } : {}),
     });
   }
 
@@ -4633,6 +4645,7 @@ class VoiceIsolatePro {
           if (typeof this.updateProcessingOverlay === 'function') {
             this.updateProcessingOverlay('Writing integrity record…', 92, 30, job?.id || null);
           }
+          const sidecar = this._queueSidecarDeliver();
           const prov = await this._attachExportProvenance({
             blob: result.blob,
             filename: result.filename,
@@ -4644,6 +4657,7 @@ class VoiceIsolatePro {
               region: { in: cropIn, out: cropOut },
             },
             detail: 'Processed audio remuxed into the source video',
+            deliver: sidecar.deliver,
           });
           if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
           if (isDesktopShell()) {
@@ -4657,6 +4671,7 @@ class VoiceIsolatePro {
           } else {
             triggerBlobDownload(result.blob, result.filename);
           }
+          sidecar.flush();
           await this._recordExportProvenance({
             outputBlob: result.blob,
             filename: result.filename,
@@ -4711,6 +4726,7 @@ class VoiceIsolatePro {
       if (typeof this.updateProcessingOverlay === 'function') {
         this.updateProcessingOverlay('Writing integrity record…', 96, 30, job?.id || null);
       }
+      const sidecar = this._queueSidecarDeliver();
       const prov = await this._attachExportProvenance({
         blob,
         filename,
@@ -4724,6 +4740,7 @@ class VoiceIsolatePro {
           region: { in: cropIn, out: cropOut },
         },
         detail: bitDepth === 32 ? 'Engineer Live-Mix rendered to 32-bit float WAV' : `Engineer Live-Mix rendered to ${bitDepth}-bit WAV`,
+        deliver: sidecar.deliver,
       });
       if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
       if (isDesktopShell()) {
@@ -4739,6 +4756,7 @@ class VoiceIsolatePro {
       } else {
         triggerBlobDownload(blob, filename);
       }
+      sidecar.flush();
       await this._recordExportProvenance({
         outputBlob: blob,
         filename,

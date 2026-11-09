@@ -136,8 +136,20 @@ async function exportProcessedWav(page) {
     const b = document.getElementById('saveProcBtn');
     return b && !b.disabled && !b.hasAttribute('aria-busy');
   }, null, { timeout: 60000 });
+  const downloads = [];
+  const onDownload = (download) => { downloads.push(download); };
+  page.on('download', onDownload);
   const [download] = await Promise.all([
-    page.waitForEvent('download', { timeout: 60000 }),
+    (async () => {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const wav = downloads.find((item) => item.suggestedFilename().toLowerCase().endsWith('.wav'));
+        if (wav) return wav;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      const names = downloads.map((item) => item.suggestedFilename()).join(', ') || 'none';
+      throw new Error(`processed WAV download did not arrive (saw: ${names})`);
+    })(),
     page.evaluate(() => {
       const app = window._vipApp;
       if (!app.__smokeNotify) {

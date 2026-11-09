@@ -541,6 +541,9 @@ describe('build.gradle — app namespace and applicationId', () => {
     expect(buildGradle).toContain('ANDROID_KEY_ALIAS');
     expect(buildGradle).toContain('ANDROID_KEY_PASSWORD');
     expect(buildGradle).toContain('signingConfig signingConfigs.release');
+    expect(buildGradle).toContain('Release signing is incomplete');
+    expect(buildGradle).toContain("task.name == 'assembleRelease'");
+    expect(buildGradle).toContain("task.name == 'bundleRelease'");
   });
 });
 

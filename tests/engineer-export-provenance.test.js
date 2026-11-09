@@ -17,6 +17,10 @@ describe('Engineer export provenance wiring', () => {
     expect(download.match(/_attachExportProvenance\(/g).length).toBe(2);
     expect(download.indexOf('_attachExportProvenance(')).toBeLessThan(download.indexOf('triggerBlobDownload(result.blob'));
     expect(download.lastIndexOf('_attachExportProvenance(')).toBeLessThan(download.lastIndexOf('triggerBlobDownload(blob, filename)'));
+    const videoDownload = download.indexOf('triggerBlobDownload(result.blob, result.filename)');
+    const wavDownload = download.indexOf('triggerBlobDownload(blob, filename)');
+    expect(download.indexOf('sidecar.flush()', videoDownload)).toBeGreaterThan(videoDownload);
+    expect(download.indexOf('sidecar.flush()', wavDownload)).toBeGreaterThan(wavDownload);
     const drive = app.slice(app.indexOf('async _saveProcessedToGoogleDrive()'), app.indexOf('async _downloadProcessed()'));
     expect(drive).toContain('_attachExportProvenance(');
     expect(drive.indexOf('_attachExportProvenance(')).toBeLessThan(drive.indexOf('saveBlobToDrive('));
