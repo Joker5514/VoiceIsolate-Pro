@@ -72,6 +72,11 @@ export function createMediaTransport({ onEnded } = {}) {
       const dur = Number.isFinite(audio.duration) ? audio.duration : seconds;
       audio.currentTime = Math.max(0, Math.min(seconds, dur));
     },
+    setRate(rate) {
+      const next = Number(rate);
+      if (!audio || !Number.isFinite(next) || next <= 0) return;
+      audio.playbackRate = next;
+    },
     close() {
       if (audio) {
         audio.pause();

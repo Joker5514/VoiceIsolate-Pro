@@ -13,6 +13,7 @@ const html = fs.readFileSync(path.join(ROOT, 'public/app/index.html'), 'utf8');
 const app = fs.readFileSync(path.join(ROOT, 'public/app/app.js'), 'utf8');
 const js = fs.readFileSync(path.join(ROOT, 'public/app/engineer-console.js'), 'utf8');
 const css = fs.readFileSync(path.join(ROOT, 'public/app/premium-audio-control.css'), 'utf8');
+const shared = fs.readFileSync(path.join(ROOT, 'src/presentation/PremiumAudioControl.js'), 'utf8');
 
 function transportBlock() {
   const start = html.indexOf('id="section-transport"');
@@ -56,7 +57,8 @@ describe('premium audio control module', () => {
   test('collapse does not reset the engine and selection text mirrors the crop', () => {
     expect(app).toMatch(/id === 'section-transport'/);
     expect(app).toMatch(/pacSelection/);
-    expect(app).toMatch(/Full file/);
+    expect(app).toMatch(/formatTransportSelection/);
+    expect(shared).toMatch(/Full file/);
     expect(app).not.toMatch(/section-transport[\s\S]{0,180}AudioContext/);
   });
 
@@ -69,6 +71,12 @@ describe('premium audio control module', () => {
     const pin = js.match(/function pinEngineerDock\(\) \{[\s\S]*?\n  \}/);
     expect(pin).toBeTruthy();
     expect(pin[0]).not.toMatch(/\.open\s*=\s*true/);
+  });
+
+  test('engineer chrome still goes through the shared module', () => {
+    expect(js).toMatch(/guardTransportSummary/);
+    expect(js).toMatch(/readBadgeStatus/);
+    expect(shared).toMatch(/pac-bar/);
   });
 
   test('stylesheet restores the summary and retires the duplicate mobile process bar', () => {

@@ -194,6 +194,12 @@ async function main() {
     console.log('Page load:');
     await page.goto(`${BASE}/`, { waitUntil: 'load' });
     await waitForLandingBoot(page);
+    // Process, pause, and stop live in the expanded transport, same as Engineer.
+    // The collapsed bar keeps play, the clock, and seek.
+    await page.evaluate(() => {
+      const transport = document.getElementById('landingTransport');
+      if (transport) transport.open = true;
+    });
     // Title updated with the #820/#821 unified signal-first UX (previous:
     // 'VoiceIsolate Pro — Local voice isolation · Stem-Split & Live-Mix').
     check(await page.title() === 'VoiceIsolate Pro — Bring the voice forward · 100% On-Device', 'title correct');
