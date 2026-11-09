@@ -172,6 +172,32 @@ const SPECTRAL_IDS = Object.freeze([
   'breathControl', 'roomCorrection', 'subHarmonic',
 ]);
 
+describe('formant shift preserves bins it cannot source', () => {
+  test('a −12 st shift does not erase the upper half of the spectrum', () => {
+    const helper = loadSpectralControlHelper();
+    const frames = synthFrames({ frames: 2, speechDb: -18, noiseDb: -36, seed: 3 });
+    const base = defaults();
+    Object.assign(base, {
+      nrAmount: 0, nrSpectralSub: 0, whisperMode: 0, whisperLift: 0,
+      breathControl: 0, derevAmt: 0, roomCorrection: 0, reverbStrip: 0,
+      musicKill: 0, crowdNull: 0, bassCrush: 0, voiceTunnel: 0,
+      harmRecov: 0, transientShaper: 0, subHarmonic: 0, formantShift: 0,
+    });
+    const flat = run(helper, base, frames);
+    const down = run(helper, { ...base, formantShift: -12 }, frames);
+    let kept = 0;
+    let original = 0;
+    for (let k = 1025; k < GEOMETRY.bins; k++) {
+      const a = magnitude(flat[0].re, flat[0].im, k);
+      const b = magnitude(down[0].re, down[0].im, k);
+      original += a * a;
+      kept += b * b;
+    }
+    expect(original).toBeGreaterThan(0);
+    expect(kept / original).toBeGreaterThan(0.9);
+  });
+});
+
 describe('Engineer spectral controls — every control changes the output', () => {
   const helper = loadSpectralControlHelper();
   const frames = synthFrames({ frames: 60, onFrames: 20, period: 30 });

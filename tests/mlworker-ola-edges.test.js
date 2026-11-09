@@ -42,7 +42,7 @@ function loadWorker(userAgent) {
   };
   vm.createContext(sandbox);
   const code = fs.readFileSync(path.join(ROOT, 'src/workers/MLWorker.js'), 'utf8')
-    + '\nself.__fused = runFusedSpectralMaskChain; self.__hop = adaptiveHopSize;';
+    + '\nself.__fused = runFusedSpectralMaskChain; self.__hop = adaptiveHopSize; self.__residual = residual; self.__mask = finiteUnitMask;';
   vm.runInContext(code, sandbox);
   return self;
 }
@@ -140,6 +140,42 @@ describe.each([
     // shelf that only turns the tone down still fails this test.
     expect(siSdr(y, x)).toBeGreaterThan(60);
     expect(sdr(y, x)).toBeGreaterThan(60);
+  });
+});
+
+describe('MLWorker mask and residual contract', () => {
+  const worker = loadWorker('node-test X11');
+
+  test('a non-finite mask keeps the input instead of writing NaN', async () => {
+    const x = tones(SR);
+    const y = await worker.__fused(
+      [{ entry: ENTRY, session: sessionReturning(NaN) }], x, () => {}, null, SR, null,
+    );
+    expect(y.some((s) => !Number.isFinite(s))).toBe(false);
+    expect(maxAbsErr(x, y, FADE, SR - FADE)).toBeLessThan(1e-5);
+  });
+
+  test('a mask above 1 does not amplify the stem', async () => {
+    const x = tones(4096);
+    const y = await worker.__fused(
+      [{ entry: ENTRY, session: sessionReturning(4) }], x, () => {}, null, SR, null,
+    );
+    expect(maxAbsErr(x, y, FADE, 4096 - FADE)).toBeLessThan(1e-5);
+  });
+
+  test('a short clean stem leaves a finite residual of the missing tail', () => {
+    const input = Float32Array.of(0.5, -0.25, 0.125, 0.0625);
+    const clean = Float32Array.of(0.5, NaN);
+    const [noise] = worker.__residual([input], [clean]);
+    expect(Array.from(noise)).toEqual([0, -0.25, 0.125, 0.0625]);
+    expect(noise.every((s) => Number.isFinite(s))).toBe(true);
+  });
+
+  test('finiteUnitMask passes speech through on NaN and clamps the unit interval', () => {
+    expect(worker.__mask(NaN)).toBe(1);
+    expect(worker.__mask(-0.2)).toBe(0);
+    expect(worker.__mask(1.4)).toBe(1);
+    expect(worker.__mask(0.25)).toBe(0.25);
   });
 });
 

@@ -239,8 +239,10 @@
         for (let k = 0; k < maxBins; k++) {
           const pos = k / formantRatio;
           const i0 = Math.floor(pos);
+          // A downward shift asks for source bins past Nyquist. Zeroing those
+          // destination bins deleted consonants and air. Keep the bin.
           if (i0 < 0 || i0 >= maxBins) {
-            warpMagnitude[k] = 0;
+            warpMagnitude[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
             continue;
           }
           const i1 = Math.min(maxBins - 1, i0 + 1);

@@ -27,7 +27,8 @@ describe('MLWorker fused spectral production path', () => {
     expect(ml).toContain('serial-mixed');
   });
 
-  test('fuses masks by product in-domain', () => {
-    expect(ml).toMatch(/fusedMask\[i\]\s*\*=\s*mask\[i\]/);
+  test('fuses masks by product in-domain after a finite unit clamp', () => {
+    expect(ml).toContain('function finiteUnitMask');
+    expect(ml).toMatch(/fusedMask\[i\]\s*\*=\s*finiteUnitMask\(mask\[i\]\)/);
   });
 });
