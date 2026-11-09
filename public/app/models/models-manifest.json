@@ -17,7 +17,7 @@
       "status": "committed",
       "optional": false,
       "shipped": true,
-      "license": null
+      "license": "MIT"
     },
     {
       "id": "vad_int8",
@@ -34,7 +34,7 @@
       "status": "committed",
       "optional": false,
       "shipped": true,
-      "license": null
+      "license": "MIT"
     },
     {
       "id": "rnnoise",
@@ -51,7 +51,7 @@
       "status": "committed",
       "optional": false,
       "shipped": true,
-      "license": null
+      "license": "BSD-3-Clause-Derived (first-party spectral export)"
     },
     {
       "id": "demucs_v4",
@@ -68,7 +68,7 @@
       "status": "not-shipped",
       "optional": true,
       "shipped": false,
-      "license": null
+      "license": "MIT"
     },
     {
       "id": "bsrnn_vocals",
@@ -85,7 +85,7 @@
       "status": "committed",
       "optional": false,
       "shipped": true,
-      "license": null
+      "license": "First-Party-Weights (Band-Split RNN spectral export)"
     },
     {
       "id": "bsrnn_vocals_complex",
@@ -102,7 +102,7 @@
       "status": "not-shipped",
       "optional": true,
       "shipped": false,
-      "license": null
+      "license": "MIT (unshipped)"
     },
     {
       "id": "dfn3_enc",
@@ -184,7 +184,7 @@
       "status": "not-shipped",
       "optional": true,
       "shipped": false,
-      "license": null
+      "license": "SAM-License (unshipped)"
     },
     {
       "id": "universal_separator",
@@ -197,11 +197,11 @@
       "sample_rate": 48000,
       "strategy": "universal-query",
       "load_priority": "lazy",
-      "delivery": "repo_committed",
-      "status": "committed",
-      "optional": false,
-      "shipped": true,
-      "license": null
+      "delivery": "optional",
+      "status": "not-shipped",
+      "optional": true,
+      "shipped": false,
+      "license": "Apache-2.0 (unshipped)"
     }
   ],
   "delivery_notes": [
