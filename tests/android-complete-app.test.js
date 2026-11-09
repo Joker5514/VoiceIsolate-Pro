@@ -3,6 +3,7 @@
  */
 'use strict';
 
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -44,8 +45,47 @@ describe('Android complete app pipeline', () => {
   test('win + package scripts run prepare + verify', () => {
     expect(winBuild).toContain('prepare-android-complete.mjs');
     expect(winBuild).toContain('verify-android-complete.mjs');
+    expect(winBuild).toContain('assembleDebug');
     expect(pkg.scripts['android:prepare']).toContain('prepare-android-complete');
     expect(pkg.scripts['android:verify']).toContain('verify-android-complete');
+  });
+
+  test('windows release scripts fail closed and keep a distinct artifact name', () => {
+    expect(winBuild).toContain("process.argv.includes('--release')");
+    expect(winBuild).toContain('assembleRelease');
+    expect(winBuild).toContain('bundleRelease');
+    expect(winBuild).toContain('ANDROID_KEYSTORE_PATH');
+    expect(winBuild).toContain('ANDROID_KEYSTORE_PASSWORD');
+    expect(winBuild).toContain('ANDROID_KEY_ALIAS');
+    expect(winBuild).toContain('ANDROID_KEY_PASSWORD');
+    expect(winBuild).toContain('app-release-unsigned.apk');
+    expect(winBuild).toContain('android-release.apk');
+    expect(winBuild).toContain('android-release.aab');
+    expect(pkg.scripts['android:release:win']).toBe('node scripts/android-build-win.mjs --release');
+    expect(pkg.scripts['android:bundle:win']).toBe('node scripts/android-build-win.mjs --release --bundle');
+    expect(pkg.scripts['android:build:win']).toBe('node scripts/android-build-win.mjs');
+  });
+
+  test('windows release mode exits before the web build when signing is absent', () => {
+    const env = { ...process.env };
+    for (const key of [
+      'ANDROID_KEYSTORE_PATH',
+      'ANDROID_KEYSTORE_PASSWORD',
+      'ANDROID_KEY_ALIAS',
+      'ANDROID_KEY_PASSWORD',
+    ]) {
+      delete env[key];
+    }
+    const result = spawnSync(process.execPath, ['scripts/android-build-win.mjs', '--release'], {
+      cwd: ROOT,
+      env,
+      encoding: 'utf8',
+    });
+    const output = `${result.stdout || ''}${result.stderr || ''}`;
+    expect(result.status).toBe(1);
+    expect(output).toMatch(/Release signing is incomplete/);
+    expect(output).not.toMatch(/prepare-android-complete/);
+    expect(output).not.toMatch(/assembleRelease/);
   });
 
   test('gradle does not compress onnx/wasm/js', () => {

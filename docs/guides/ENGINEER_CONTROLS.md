@@ -174,6 +174,7 @@ Every slider row (range + number + reset + lock, built by `createDspSliderRow` i
 | Control | Parameter / action | Entry point |
 |---|---|---|
 | `processBtn`, `reprocessBtn`, `mobileProcessBtn`, `mobileReprocessBtn` | Run / re-run the full pipeline on current settings | `runPipeline()` |
+| `memoryProfile` | Memory tier for the chunk plan (AUTO / LOW / BALANCED / HIGH). Does not start inference. | `bindMemoryProfileSelect` → `_recomputeChunkPlan()` → `resolveIngestionPlan`. No-op while a job is running or before a file has a known plan. |
 | `procCancelBtn` (processing overlay) | Cancel the running job | `processing-overlay.requestCancel()` → `JobController.cancelCurrent('user')` + `abortFlag` + `cancelActiveJobs()` |
 | `mobileStopBtn` | Stop from the mobile bar | `abortFlag = true` + `cancelActiveJobs()` |
 | `heroCtaProcess` (landing hero) | Process from the landing hero | `runPipeline()` when enabled |
@@ -210,6 +211,7 @@ Every slider row (range + number + reset + lock, built by `createDspSliderRow` i
 | Control | Parameter / action | Entry point |
 |---|---|---|
 | `tpPlay` / `tpPause` / `tpStop` | Playback transport | `togglePlayback()` / `pause()` / `stop()` |
+| `tpPlayCollapseToggle` | Show or hide the play button. Does not start, stop, or reroute playback. | `play-collapse.js` (`data-vip-play-toggle`) persists `vip-play-collapsed` and toggles `.vip-play-slot.is-collapsed` |
 | `tpRew` / `tpFwd` | Seek −10 s / +10 s | `seekDelta(∓10)` |
 | `tpSeek` (range) | Seek position | Seek handler on the transport range input |
 | `tpSpeed` / `tpSpeedDown` / `tpSpeedUp` | Playback rate | Transport speed handling |

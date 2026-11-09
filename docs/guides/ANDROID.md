@@ -37,19 +37,26 @@ pnpm android:build:win     # Windows host + JDK 21 + Android SDK
 pnpm android:build         # Unix
 ```
 
+Signed release builds need the four signing variables in
+[the release runbook](../releases/RELEASE_RUNBOOK.md). The Windows commands
+exit before Gradle when those variables or the keystore file are missing.
+They write a versioned artifact under `dist/android/` and do not replace
+`VoiceIsolate-Pro-android-debug.apk`.
+
+```bash
+pnpm android:release:win   # signed APK, Windows
+pnpm android:bundle:win    # signed AAB, Windows
+pnpm android:release       # signed APK, Unix
+pnpm android:bundle        # signed AAB, Unix
+```
+
 Pipeline:
 
 1. `pnpm build` → `build/`
 2. `scripts/prepare-android-complete.mjs` prepares the offline web payload and validates required assets.
 3. `npx cap sync android`
 4. `verify-worklets` + `verify-android-complete`
-5. Gradle produces the debug APK.
-
-Release AAB:
-
-```bash
-pnpm android:bundle
-```
+5. Gradle produces the debug APK (`assembleDebug`). The release commands use the same prepare steps, then `assembleRelease` or `bundleRelease`.
 
 ## Runtime contract
 

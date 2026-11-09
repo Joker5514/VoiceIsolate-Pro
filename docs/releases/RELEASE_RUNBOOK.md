@@ -41,8 +41,13 @@ keytool -genkeypair -v -keystore release-keystore.jks -alias voiceisolate \
 
 Local signed build: export `ANDROID_KEYSTORE_PATH`,
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`
-(`android/app/build.gradle` reads them), then `pnpm android:release` (APK)
-or `pnpm android:bundle` (AAB).
+(`android/app/build.gradle` reads them). On Windows use
+`pnpm android:release:win` (APK) or `pnpm android:bundle:win` (AAB). On Unix
+use `pnpm android:release` or `pnpm android:bundle`. Gradle refuses
+`assembleRelease` and `bundleRelease` when any of those four values is blank
+or the keystore path is not a file. The Windows release output is
+`dist/android/VoiceIsolate-Pro-<version>-android-release.apk` (or `.aab`)
+plus a sibling `.sha256` file. It does not overwrite the debug sideload name.
 
 An unsigned release APK is not an option: Android refuses to install it. Until
 a keystore exists the published asset stays the debug APK. Backup and device
