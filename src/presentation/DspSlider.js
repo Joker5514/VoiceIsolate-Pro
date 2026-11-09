@@ -265,7 +265,10 @@ export function createDspSliderRow(options) {
   number.id = `val_${id}`;
   number.min = String(min);
   number.max = String(max);
-  number.step = String(step);
+  // Binary step 0.1 makes Chrome flag legal values (for example 1.3 with
+  // min 1) as stepMismatch / :invalid. Keep the range on the real grid.
+  // commit() still clampSnaps, so the DSP value cannot drift off-step.
+  number.step = step === 0.1 ? 'any' : String(step);
   number.value = String(value);
   number.setAttribute('aria-label', `${label} value`);
   number.inputMode = step < 1 ? 'decimal' : 'numeric';

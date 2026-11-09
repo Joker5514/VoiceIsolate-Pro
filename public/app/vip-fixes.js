@@ -391,12 +391,19 @@
       log('stop()');
     }
 
-    /* ── Clone buttons to wipe old listeners ── */
+    /* Clone buttons so anonymous app.js listeners cannot double-fire.
+       Copy the live node back onto every app.dom slot that held the old one. */
     function _clone(id) {
       const el = $(id);
-      if (!el) return null;
+      if (!el || !el.parentNode) return null;
       const c = el.cloneNode(true);
       el.parentNode.replaceChild(c, el);
+      const dom = app && app.dom;
+      if (dom && typeof dom === 'object') {
+        for (const key of Object.keys(dom)) {
+          if (dom[key] === el) dom[key] = c;
+        }
+      }
       return c;
     }
 
