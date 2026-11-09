@@ -3,14 +3,18 @@
 // Also renders a "Local Model Health" panel populated by window.ModelCDNLoader.getProviderHealthReport().
 
 const STATUS_CONFIG = {
-  cached:   { label: '✓ Cached',                         cls: 'vip-pill--green' },
-  loading:  { label: '⟳ Loading…',                       cls: 'vip-pill--amber' },
-  pending:  { label: 'Lazy — loads on first drop',       cls: 'vip-pill--grey'  },
-  optional: { label: 'Optional — not shipped',           cls: 'vip-pill--grey'  },
-  shipped:  { label: '✓ Shipped locally',                cls: 'vip-pill--green' },
-  missing:  { label: '✗ Missing (place ONNX in /models)', cls: 'vip-pill--red'   },
-  error:    { label: '✗ All failed',                     cls: 'vip-pill--red'   },
-  unknown:  { label: '? Unknown',                        cls: 'vip-pill--grey'  },
+  cached:      { label: '✓ Cached',                          cls: 'vip-pill--green' },
+  loading:     { label: '⟳ Loading…',                        cls: 'vip-pill--amber' },
+  pending:     { label: 'Lazy — loads on first drop',        cls: 'vip-pill--grey'  },
+  optional:    { label: 'Optional — not shipped',            cls: 'vip-pill--grey'  },
+  shipped:     { label: '✓ Shipped locally',                 cls: 'vip-pill--green' },
+  missing:     { label: '✗ Missing (place ONNX in /models)', cls: 'vip-pill--red'   },
+  error:       { label: '✗ All failed',                      cls: 'vip-pill--red'   },
+  unknown:     { label: '? Unknown',                         cls: 'vip-pill--grey'  },
+  // Runtime dispositions from the worker. These must not read as "loaded".
+  fallback:    { label: 'Fallback active — model did not run', cls: 'vip-pill--amber' },
+  unavailable: { label: 'Unavailable — not loaded',            cls: 'vip-pill--grey'  },
+  unsupported: { label: 'Unsupported — not runnable',          cls: 'vip-pill--red'   },
 };
 
 const PROVIDER_BADGE = {
@@ -41,6 +45,7 @@ export class ModelStatusUI {
     this._loadingCount = 0;
     this._inflight = new Set();
     this._probes = new Map();
+    this._runtimeStatus = new Map();
     this._listenForLoads();
     this._render();
     this._renderHealth();
@@ -108,9 +113,15 @@ export class ModelStatusUI {
    * @param {'cached'|'loading'|'pending'|'error'} status
    * @param {number} [pct]    – progress percentage for 'loading' state
    * @param {string} [provider] – which local source served the model (same-origin | cache)
+   * @param {{ title?: string, using?: string }} [detail]
    */
-  setStatus(key, status, pct, provider) {
+  setStatus(key, status, pct, provider, detail) {
     this._publish(key, status);
+    if (status === 'fallback' || status === 'unavailable' || status === 'unsupported') {
+      this._runtimeStatus.set(key, { status, detail: detail || null });
+    } else if (status === 'cached' || status === 'shipped' || status === 'loading' || status === 'error') {
+      this._runtimeStatus.delete(key);
+    }
     const pill = this._pills[key];
     if (!pill) return;
 
@@ -119,8 +130,19 @@ export class ModelStatusUI {
 
     if (status === 'loading' && pct !== undefined) {
       pill.textContent = `⟳ ${key} ${Math.round(pct)}%`;
+    } else if (status === 'fallback') {
+      const using = detail && detail.using;
+      pill.textContent = using
+        ? `${key} did not run — fallback: ${using}`
+        : `${key} did not run — fallback active`;
+    } else if (status === 'unavailable' || status === 'unsupported') {
+      pill.textContent = `${key} ${cfg.label}`;
     } else {
       pill.textContent = `${key} ${cfg.label}`;
+    }
+    if (detail && detail.title) pill.title = detail.title;
+    else if (status === 'fallback' || status === 'unavailable' || status === 'unsupported') {
+      pill.title = `${key} ${cfg.label}. The advanced model did not run.`;
     }
 
     // Update provider badge
@@ -168,6 +190,7 @@ export class ModelStatusUI {
     if (typeof BroadcastChannel === 'undefined') return;
     try {
       const channel = new BroadcastChannel('vip-model-progress');
+      this._modelChannel = channel;
       channel.onmessage = (ev) => {
         const { type, model } = ev.data || {};
         if (!model) return;
@@ -181,6 +204,14 @@ export class ModelStatusUI {
         } else if (type === 'error') {
           this._inflight.delete(model);
           this.setStatus(model, 'error');
+        } else if (type === 'fallback' || type === 'unavailable' || type === 'unsupported') {
+          this._inflight.delete(model);
+          const using = ev.data.using || '';
+          const reason = ev.data.reason || '';
+          const title = type === 'fallback'
+            ? `${model} did not run. Fallback active${using ? `: ${using}` : ''}.${reason ? ' ' + reason : ''}`
+            : `${model} is ${type} and did not run.${reason ? ' ' + reason : ''}`;
+          this.setStatus(model, type, undefined, undefined, { title, using });
         }
       };
     } catch { /* BroadcastChannel unavailable */ }
@@ -221,7 +252,10 @@ export class ModelStatusUI {
         const alias = await cache.match(`/vip-model-cache/${key}`);
         const fileHit = !alias && sourceUrl ? await cache.match(sourceUrl) : null;
         const match = alias || fileHit;
-        if (match) {
+        const runtime = this._runtimeStatus.get(key);
+        if (runtime && (runtime.status === 'fallback' || runtime.status === 'unavailable' || runtime.status === 'unsupported')) {
+          this.setStatus(key, runtime.status, undefined, undefined, runtime.detail);
+        } else if (match) {
           const provider = match.headers.get('X-VIP-Provider') || 'cache';
           this._inflight.delete(key);
           this.setStatus(key, 'cached', undefined, provider);
@@ -339,6 +373,10 @@ export class ModelStatusUI {
     if (this._healthTimer) {
       clearInterval(this._healthTimer);
       this._healthTimer = null;
+    }
+    if (this._modelChannel) {
+      try { this._modelChannel.close(); } catch { /* already closed */ }
+      this._modelChannel = null;
     }
   }
 }

@@ -80,11 +80,86 @@ function modelRegistry() {
   if (!registry?.models || !registry?.aliases) throw new Error('Generated model registry unavailable');
   return registry;
 }
-function resolveModelEntry(modelId) {
+function resolveModelEntry(modelId, opts) {
+  const explicit = !!(opts && opts.explicit);
   const registry = modelRegistry();
   const key = registry.aliases[modelId] || modelId;
   const entry = registry.models[key];
-  return entry && entry.shipped !== false && entry.optional !== true ? entry : null;
+  if (!entry) return null;
+  // Default warmup must not pull optional or unshipped graphs.
+  if (!explicit && (entry.shipped === false || entry.optional === true)) return null;
+  // An explicit request is allowed only when the file can be checksum-verified
+  // (or the entry is a composite of pinned parts). Dead branches with no pin
+  // stay rejected so the UI cannot claim they ran.
+  if (explicit && entry.sha256 == null && entry.composite !== true && entry.shipped !== true) return null;
+  return entry;
+}
+
+function explainModelRejection(modelId) {
+  let registry;
+  try { registry = modelRegistry(); }
+  catch (err) { return `model registry unavailable (${err.message})`; }
+  const key = registry.aliases[modelId] || modelId;
+  const entry = registry.models[key];
+  if (!entry) return `unknown model '${modelId}'`;
+  if (entry.sha256 == null && entry.composite !== true && entry.shipped !== true) {
+    return `${key} has no checksum and is not loadable`;
+  }
+  if (entry.optional === true || entry.shipped === false) {
+    return `${key} is optional and was not explicitly requested`;
+  }
+  return `${key} was rejected`;
+}
+
+function loadVoiceprint() {
+  if (self.VIPVoiceprint && typeof self.VIPVoiceprint.extractLocalVoiceprint === 'function') {
+    return self.VIPVoiceprint;
+  }
+  try { importScripts('/app/voiceprint-mel.js'); }
+  catch {
+    try { importScripts('./voiceprint-mel.js'); }
+    catch { return null; }
+  }
+  return (self.VIPVoiceprint && typeof self.VIPVoiceprint.extractLocalVoiceprint === 'function')
+    ? self.VIPVoiceprint
+    : null;
+}
+
+function frameMaxNormalize(magnitudes) {
+  let peak = 0;
+  const n = magnitudes.length;
+  for (let k = 0; k < n; k++) if (magnitudes[k] > peak) peak = magnitudes[k];
+  const scale = peak > 1e-8 ? peak : 1;
+  const out = new Float32Array(n);
+  for (let k = 0; k < n; k++) out[k] = magnitudes[k] / scale;
+  return out;
+}
+
+function maskPow(value, exponent) {
+  const v = value > 0 ? value : 0;
+  if (exponent === 1) return v;
+  if (exponent === 0.5) return Math.sqrt(v);
+  return Math.pow(v, exponent);
+}
+
+function publishModelStatus(type, modelId, extra) {
+  const payload = Object.assign({ type: type, model: modelId }, extra || {});
+  try {
+    if (typeof BroadcastChannel === 'function') {
+      const ch = new BroadcastChannel('vip-model-progress');
+      ch.postMessage(payload);
+      ch.close();
+    }
+  } catch { /* workers without BroadcastChannel still postMessage */ }
+  try {
+    self.postMessage({
+      type: type === 'fallback' ? 'model_fallback' : 'model_status',
+      modelId: modelId,
+      status: type,
+      using: payload.using || null,
+      reason: payload.reason || '',
+    });
+  } catch { /* teardown */ }
 }
 
 // Optional Object-URL overrides keyed by canonical alias. Set by the
@@ -649,32 +724,75 @@ self.onmessage = async (ev) => {
     // ── enrollVoiceprint ───────────────────────────────────────────────────────
     case 'enrollVoiceprint': {
       try {
-        const { signal, pcm: rawPcm, speakerId = 'manual' } = payload || {};
+        const { signal, pcm: rawPcm, speakerId = 'manual', sampleRate = 48000, mode = 'mel' } = payload || {};
+        if (mode === 'ecapa') {
+          const loaded = !!(sessions && (sessions.ecapa_tdnn || sessions.ecapa));
+          if (!loaded) {
+            self.postMessage({
+              type: 'voiceprintUnavailable',
+              payload: {
+                speakerId,
+                status: 'unavailable',
+                model: 'ecapa_tdnn',
+                reason: 'ECAPA-TDNN is not loaded. Mel enrollment was not reported as ECAPA.',
+              },
+            });
+            publishModelStatus('fallback', 'ecapa_tdnn', {
+              using: '24-D mel voiceprint',
+              reason: 'ECAPA-TDNN unavailable',
+            });
+            break;
+          }
+        }
         const source = signal || rawPcm;
         if (!source) {
           self.postMessage({ type: 'error', msg: 'enrollVoiceprint: no signal' });
           break;
         }
-
         const pcm = source instanceof Float32Array ? source : new Float32Array(source);
         if (!pcm.length) {
           self.postMessage({ type: 'error', msg: 'enrollVoiceprint: empty signal' });
           break;
         }
-
         let hasFiniteSample = false;
         for (let i = 0; i < pcm.length; i++) {
-          if (Number.isFinite(pcm[i])) {
-            hasFiniteSample = true;
-            break;
-          }
+          if (Number.isFinite(pcm[i])) { hasFiniteSample = true; break; }
         }
         if (!hasFiniteSample) {
           self.postMessage({ type: 'error', msg: 'enrollVoiceprint: invalid signal' });
           break;
         }
-
-        self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+        const api = loadVoiceprint();
+        if (!api) {
+          self.postMessage({
+            type: 'voiceprintUnavailable',
+            payload: { speakerId, status: 'unavailable', reason: 'mel voiceprint module is not loaded' },
+          });
+          break;
+        }
+        const gate = api.validateEnrollment(pcm, sampleRate);
+        if (!gate.ok) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + gate.reason });
+          break;
+        }
+        const embedding = api.extractLocalVoiceprint(pcm, sampleRate);
+        if (!embedding || embedding.length !== api.BANDS || !embedding.every((v) => Number.isFinite(v))) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: invalid embedding' });
+          break;
+        }
+        if (!self.__vipVoiceprints) self.__vipVoiceprints = new Map();
+        const stored = new Float32Array(embedding);
+        self.__vipVoiceprints.set(String(speakerId), stored);
+        self.postMessage({
+          type: 'voiceprintEnrolled',
+          payload: {
+            speakerId,
+            status: 'enrolled',
+            method: 'mel-24',
+            dims: stored.length,
+            embedding: Array.from(stored),
+          },
+        });
       } catch (err) {
         self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
       }
@@ -683,13 +801,84 @@ self.onmessage = async (ev) => {
 
     // ── enrollFromDiarization ──────────────────────────────────────────────────
     case 'enrollFromDiarization': {
-      const { speakerId } = payload || {};
-      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+      try {
+        const { speakerId, signal, pcm: rawPcm, sampleRate = 48000, segments } = payload || {};
+        const source = signal || rawPcm;
+        const api = loadVoiceprint();
+        if (!api) {
+          self.postMessage({
+            type: 'voiceprintUnavailable',
+            payload: { speakerId, status: 'unavailable', reason: 'mel voiceprint module is not loaded' },
+          });
+          break;
+        }
+        if (!source) {
+          self.postMessage({ type: 'error', msg: 'enrollFromDiarization: no signal' });
+          break;
+        }
+        const pcm = source instanceof Float32Array ? source : new Float32Array(source);
+        let slice = pcm;
+        if (Array.isArray(segments) && segments.length && speakerId != null) {
+          const sr = sampleRate || 48000;
+          const parts = [];
+          let total = 0;
+          for (const seg of segments) {
+            if (seg.speakerId != null && String(seg.speakerId) !== String(speakerId)) continue;
+            const a = Math.max(0, Math.floor((seg.start || 0) * sr));
+            const b = Math.min(pcm.length, Math.ceil((seg.end || 0) * sr));
+            if (b > a) { parts.push(pcm.subarray(a, b)); total += b - a; }
+          }
+          if (!total) {
+            self.postMessage({ type: 'error', msg: 'enrollFromDiarization: no samples for speaker' });
+            break;
+          }
+          slice = new Float32Array(total);
+          let o = 0;
+          for (const part of parts) { slice.set(part, o); o += part.length; }
+        }
+        const gate = api.validateEnrollment(slice, sampleRate);
+        if (!gate.ok) {
+          self.postMessage({ type: 'error', msg: 'enrollFromDiarization: ' + gate.reason });
+          break;
+        }
+        const embedding = api.extractLocalVoiceprint(slice, sampleRate);
+        if (!embedding || embedding.length !== api.BANDS) {
+          self.postMessage({ type: 'error', msg: 'enrollFromDiarization: invalid embedding' });
+          break;
+        }
+        if (!self.__vipVoiceprints) self.__vipVoiceprints = new Map();
+        const stored = new Float32Array(embedding);
+        self.__vipVoiceprints.set(String(speakerId), stored);
+        self.postMessage({
+          type: 'voiceprintEnrolled',
+          payload: { speakerId, status: 'enrolled', method: 'mel-24', dims: stored.length, embedding: Array.from(stored) },
+        });
+      } catch (err) {
+        self.postMessage({ type: 'error', msg: 'enrollFromDiarization: ' + err.message });
+      }
+      break;
+    }
+
+    case 'getVoiceprint': {
+      const speakerId = payload && payload.speakerId;
+      const stored = self.__vipVoiceprints && self.__vipVoiceprints.get(String(speakerId));
+      if (!stored) {
+        self.postMessage({ type: 'error', msg: 'getVoiceprint: not enrolled' });
+        break;
+      }
+      self.postMessage({
+        type: 'voiceprint',
+        payload: { speakerId, dims: stored.length, embedding: Array.from(stored), method: 'mel-24' },
+      });
       break;
     }
 
     // ── clearVoiceprint ────────────────────────────────────────────────────────
     case 'clearVoiceprint': {
+      if (self.__vipVoiceprints) {
+        if (payload && payload.speakerId != null) self.__vipVoiceprints.delete(String(payload.speakerId));
+        else self.__vipVoiceprints.clear();
+      }
       self.postMessage({ type: 'voiceprintCleared' });
       break;
     }
@@ -876,9 +1065,12 @@ async function loadModels(basePath, providers, modelList) {
   const modelStatus = {};
 
   for (const modelId of modelList) {
-    const entry = resolveModelEntry(modelId);
+    const entry = resolveModelEntry(modelId, { explicit: true });
     if (!entry) {
       modelStatus[modelId] = false;
+      const reason = explainModelRejection(modelId);
+      self.postMessage({ type: 'log', level: 'warn', msg: reason });
+      publishModelStatus(reason.includes('checksum') ? 'unsupported' : 'unavailable', modelId, { reason: reason });
       continue;
     }
 
@@ -905,6 +1097,13 @@ async function loadModels(basePath, providers, modelList) {
         : `Failed to load ${modelId}: ${err.message}`;
       self.postMessage({ type: 'log', level: 'warn', msg: errMsg });
       console.warn(`[ml-worker] ${errMsg}`);
+      const corrupt = /SHA-256 mismatch|No SHA-256 pin/i.test(errMsg);
+      const missing = /HTTP \d+|SHA-256 verification unavailable|Failed to fetch|not found/i.test(errMsg);
+      const kind = corrupt ? 'unsupported' : missing ? 'unavailable' : 'fallback';
+      publishModelStatus(kind, modelId, {
+        using: kind === 'fallback' ? (entry.fallback || 'classical DSP') : null,
+        reason: errMsg,
+      });
     }
   }
 
@@ -1159,34 +1358,44 @@ async function buildMask(magnitudes, pcmChunk = null) {
     }
   }
 
-  // BSRNN band-split vocal separation mask
+  // BSRNN band-split vocal separation mask.
+  // Shipped spectral heads were trained on frame-max normalised magnitudes
+  // and applied as mask^0.5 (ModelManifest). A following RNNoise head uses
+  // chainMaskExponent 0.15 so the product does not erase fricatives.
+  let bsrnnApplied = false;
   const bsrnnSess = sessions['bsrnn'] || sessions['bsrnn_vocals'];
   if (bsrnnSess && allowedStages >= 10) {
     try {
-      const bsrnnIn = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const normMag = frameMaxNormalize(magnitudes);
+      const bsrnnIn = new ort.Tensor('float32', normMag, [1, numBins]);
       const result = await bsrnnSess.run({ input: bsrnnIn });
       const vocalMask = result.vocal_mask?.data || result.output?.data || null;
       if (vocalMask && vocalMask.length >= numBins) {
         for (let k = 0; k < numBins; k++) {
-          mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
+          mask[k] = Math.min(mask[k], maskPow(vocalMask[k], 0.5));
         }
+        bsrnnApplied = true;
       }
     } catch (e) {
       console.warn('[ml-worker] bsrnn error:', e.message);
+      publishModelStatus('fallback', 'bsrnn_vocals', { using: 'classical DSP', reason: e.message });
     }
   }
 
   // RNNoise residual noise suppression
   if (sessions['rnnoise'] && allowedStages >= 8) {
     try {
-      const rnIn   = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const normMag = frameMaxNormalize(magnitudes);
+      const rnIn   = new ort.Tensor('float32', normMag, [1, numBins]);
       const result = await sessions['rnnoise'].run({ input: rnIn });
       const rnMask = result.output.data;
+      const exponent = bsrnnApplied ? 0.15 : 0.5;
       for (let k = 0; k < numBins; k++) {
-        mask[k] *= Math.max(0.01, rnMask[k]); // floor prevents total silence
+        mask[k] *= Math.max(0.01, maskPow(rnMask[k], exponent));
       }
     } catch (e) {
       console.warn('[ml-worker] rnnoise error:', e.message);
+      publishModelStatus('fallback', 'rnnoise', { using: 'spectral cleanup', reason: e.message });
     }
   }
 
