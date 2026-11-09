@@ -159,3 +159,37 @@ describe('createDspSliderRow', () => {
     expect(() => widget.dispose()).not.toThrow();
   });
 });
+
+describe('0.1-step number inputs', () => {
+  test('number uses step=any while the range and commit stay on the 0.1 grid', () => {
+    const changes = [];
+    const widget = createDspSliderRow({
+      document,
+      spec: {
+        id: 'compRatio',
+        label: 'Comp Ratio',
+        min: 1,
+        max: 20,
+        step: 0.1,
+        val: 4,
+        default: 4,
+        unit: ':1',
+      },
+      value: 4,
+      onChange: (_id, value) => changes.push(value),
+    });
+    expect(widget.range.step).toBe('0.1');
+    expect(widget.number.step).toBe('any');
+    expect(widget.number.validity.stepMismatch).toBe(false);
+    widget.number.value = '1.3';
+    expect(widget.number.validity.stepMismatch).toBe(false);
+    widget.number.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changes.at(-1)).toBeCloseTo(1.3, 5);
+    expect(widget.value).toBeCloseTo(1.3, 5);
+    widget.number.value = '1.26';
+    widget.number.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(widget.value).toBeCloseTo(1.3, 5);
+    widget.dispose();
+  });
+});
+

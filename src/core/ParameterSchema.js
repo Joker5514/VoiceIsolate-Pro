@@ -37,7 +37,7 @@ export const PARAMETER_SCHEMA = Object.freeze([
   { id: 'gateRange', label: 'Gate Range', category: 'gate', min: -120, max: 0, default: -60, step: 5, unit: 'dB', rt: true, path: 'audioParam', effect: 'Attenuation depth when the gate is closed (UI negative dB; mixer uses positive depth).', workletParam: 'range' },
   { id: 'gateAttack', label: 'Gate Attack', category: 'gate', min: 0, max: 200, default: 5, step: 5, unit: 'ms', rt: true, path: 'audioParam', effect: 'How fast the gate opens when speech exceeds threshold, in milliseconds. Live-Mix applies 0–200 ms (PlaybackMixer and the landing slider). Older 0–500 ms presets above 200 ms are migrated explicitly.', workletParam: 'attack' },
   { id: 'gateRelease', label: 'Gate Release', category: 'gate', min: 10, max: 2000, default: 200, step: 10, unit: 'ms', rt: true, path: 'audioParam', effect: 'How fast the gate closes after speech falls below threshold.', workletParam: 'release' },
-  { id: 'gateHold', label: 'Gate Hold', category: 'gate', min: 0, max: 500, default: 20, step: 25, unit: 'ms', rt: true, path: 'audioParam', effect: 'Minimum open time to reduce chattering on breathy speech.', workletParam: 'hold' },
+  { id: 'gateHold', label: 'Gate Hold', category: 'gate', min: 0, max: 500, default: 20, step: 5, unit: 'ms', rt: true, path: 'audioParam', effect: 'Minimum open time to reduce chattering on breathy speech.', workletParam: 'hold' },
   { id: 'gateLookahead', label: 'Gate Lookahead', category: 'gate', min: 0, max: 20, default: 2, step: 1, unit: 'ms', rt: true, path: 'audioParam', effect: 'Playback gate anticipatory delay. Adds up to 20 ms of Live-Mix latency so plosives open cleanly.', workletParam: 'lookahead' },
 
   // ── Noise reduction (offline spectral) ────────────────────────────────
@@ -63,17 +63,17 @@ export const PARAMETER_SCHEMA = Object.freeze([
   { id: 'compThresh', label: 'Comp Threshold', category: 'dynamics', min: -60, max: 0, default: -24, step: 1, unit: 'dB', rt: true, path: 'audioParam', effect: 'Compressor onset level.' },
   { id: 'compRatio', label: 'Comp Ratio', category: 'dynamics', min: 1, max: 20, default: 4, step: 0.1, unit: ':1', rt: true, path: 'audioParam', effect: 'Compression ratio above threshold.' },
   { id: 'compAttack', label: 'Comp Attack', category: 'dynamics', min: 0.1, max: 200, default: 10, step: 0.1, unit: 'ms', rt: true, path: 'audioParam', effect: 'Compressor attack time.' },
-  { id: 'compRelease', label: 'Comp Release', category: 'dynamics', min: 10, max: 2000, default: 150, step: 50, unit: 'ms', rt: true, path: 'audioParam', effect: 'Compressor release time.' },
+  { id: 'compRelease', label: 'Comp Release', category: 'dynamics', min: 10, max: 2000, default: 150, step: 10, unit: 'ms', rt: true, path: 'audioParam', effect: 'Compressor release time.' },
   { id: 'compKnee', label: 'Comp Knee', category: 'dynamics', min: 0, max: 24, default: 6, step: 1, unit: 'dB', rt: true, path: 'audioParam', effect: 'Soft-knee width.' },
   { id: 'compMakeup', label: 'Makeup Gain', category: 'dynamics', min: -12, max: 24, default: 0, step: 0.5, unit: 'dB', rt: true, path: 'audioParam', effect: 'Post-compressor makeup.' },
   { id: 'limThresh', label: 'Limiter Threshold', category: 'dynamics', min: -24, max: 0, default: -1, step: 1, unit: 'dB', rt: true, path: 'audioParam', effect: 'Brickwall limiter ceiling.' },
-  { id: 'limRelease', label: 'Limiter Release', category: 'dynamics', min: 1, max: 500, default: 50, step: 10, unit: 'ms', rt: true, path: 'audioParam', effect: 'Limiter recovery time.' },
+  { id: 'limRelease', label: 'Limiter Release', category: 'dynamics', min: 1, max: 500, default: 50, step: 1, unit: 'ms', rt: true, path: 'audioParam', effect: 'Limiter recovery time.' },
 
   // ── Filters ───────────────────────────────────────────────────────────
   { id: 'hpFreq', label: 'Highpass', category: 'filter', min: 10, max: 1000, default: 80, step: 10, unit: 'Hz', rt: true, path: 'audioParam', effect: 'Removes rumble / subsonic energy below cutoff.' },
-  { id: 'hpQ', label: 'HP Q', category: 'filter', min: 0.5, max: 10, default: 0.707, step: 0.5, unit: '', rt: true, path: 'audioParam', effect: 'Highpass resonance / slope character.' },
+  { id: 'hpQ', label: 'HP Q', category: 'filter', min: 0.5, max: 10, default: 0.707, step: 0.001, unit: '', rt: true, path: 'audioParam', effect: 'Highpass resonance / slope character.' },
   { id: 'lpFreq', label: 'Lowpass', category: 'filter', min: 1000, max: 20000, default: 14000, step: 500, unit: 'Hz', rt: true, path: 'audioParam', effect: 'Removes hiss / extreme highs above cutoff.' },
-  { id: 'lpQ', label: 'LP Q', category: 'filter', min: 0.5, max: 10, default: 0.707, step: 0.5, unit: '', rt: true, path: 'audioParam', effect: 'Lowpass resonance.' },
+  { id: 'lpQ', label: 'LP Q', category: 'filter', min: 0.5, max: 10, default: 0.707, step: 0.001, unit: '', rt: true, path: 'audioParam', effect: 'Lowpass resonance.' },
 
   // ── De-esser ──────────────────────────────────────────────────────────
   { id: 'deEssFreq', label: 'De-Ess Freq', category: 'deess', min: 2000, max: 16000, default: 6500, step: 500, unit: 'Hz', rt: true, path: 'audioParam', effect: 'Sibilance detection band center.', workletParam: 'frequency' },
@@ -92,8 +92,8 @@ export const PARAMETER_SCHEMA = Object.freeze([
   { id: 'phaseCorr', label: 'Mono Correlation', category: 'spatial', min: 0, max: 100, default: 0, step: 5, unit: '%', rt: false, path: 'offlineOnly', effect: 'Process-time stereo midpoint blend for a more mono-stable result; it does not estimate a channel delay.' },
 
   // ── Isolation ─────────────────────────────────────────────────────────
-  { id: 'voiceIso', label: 'Voice Isolation', category: 'isolation', min: 0, max: 100, default: 72, step: 5, unit: '%', rt: true, path: 'audioParam', effect: 'Live-Mix clean-stem balance after a single ML separation.' },
-  { id: 'bgSuppress', label: 'Background Suppress', category: 'isolation', min: 0, max: 100, default: 38, step: 5, unit: '%', rt: true, path: 'audioParam', effect: 'Live-Mix residual/noise-stem attenuation after a single ML separation.' },
+  { id: 'voiceIso', label: 'Voice Isolation', category: 'isolation', min: 0, max: 100, default: 72, step: 1, unit: '%', rt: true, path: 'audioParam', effect: 'Live-Mix clean-stem balance after a single ML separation.' },
+  { id: 'bgSuppress', label: 'Background Suppress', category: 'isolation', min: 0, max: 100, default: 38, step: 1, unit: '%', rt: true, path: 'audioParam', effect: 'Live-Mix residual/noise-stem attenuation after a single ML separation.' },
   { id: 'voiceFocusLo', label: 'Voice Focus Lo', category: 'isolation', min: 50, max: 1000, default: 100, step: 25, unit: 'Hz', rt: false, path: 'offlineOnly', effect: 'Lower edge of offline voice focus band.' },
   { id: 'voiceFocusHi', label: 'Voice Focus Hi', category: 'isolation', min: 1000, max: 16000, default: 4500, step: 500, unit: 'Hz', rt: false, path: 'offlineOnly', effect: 'Upper edge of offline voice focus band.' },
   { id: 'crosstalkCancel', label: 'Crosstalk Cancel', category: 'isolation', min: 0, max: 100, default: 0, step: 5, unit: '%', rt: false, path: 'offlineOnly', effect: 'Stereo channel bleed reduction (skipped on mid-only path).' },

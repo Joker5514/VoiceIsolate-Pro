@@ -294,7 +294,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'gateHold', key: 'gateHold', label: 'Gate Hold',
-    min: 0, max: 500, step: 25, default: 20, unit: 'ms',
+    min: 0, max: 500, step: 5, default: 20, unit: 'ms',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-gate',
     tip: 'Minimum time gate stays open after signal drops. Prevents chattering during pauses.'
   },
@@ -420,7 +420,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'compRelease', key: 'compRelease', label: 'Comp Release',
-    min: 10, max: 2000, step: 50, default: 150, unit: 'ms',
+    min: 10, max: 2000, step: 10, default: 150, unit: 'ms',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-dyn',
     tip: 'Time for compressor to return to unity gain after level drops below threshold.'
   },
@@ -444,7 +444,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'limRelease', key: 'limRelease', label: 'Limiter Release',
-    min: 1, max: 500, step: 10, default: 50, unit: 'ms',
+    min: 1, max: 500, step: 1, default: 50, unit: 'ms',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-dyn',
     tip: 'Recovery time for the brickwall limiter. Faster = more transparent but risks distortion.'
   },
@@ -458,7 +458,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'hpQ', key: 'hpQ', label: 'HP Q',
-    min: 0.5, max: 10, step: 0.5, default: 0.707, unit: '',
+    min: 0.5, max: 10, step: 0.001, default: 0.707, unit: '',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'High-pass filter resonance (Q). 0.707 = Butterworth (flat); higher = ringing peak at cutoff.'
   },
@@ -470,7 +470,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'lpQ', key: 'lpQ', label: 'LP Q',
-    min: 0.5, max: 10, step: 0.5, default: 0.707, unit: '',
+    min: 0.5, max: 10, step: 0.001, default: 0.707, unit: '',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'Low-pass filter resonance (Q). 0.707 = flat Butterworth response.'
   },
@@ -540,13 +540,13 @@ const RAW_SLIDER_REGISTRY = [
   // ── Separation (6 sliders) ─────────────────────────────────────────────────
   {
     id: 'voiceIso', key: 'voiceIso', label: 'Voice Isolation',
-    min: 0, max: 100, step: 5, default: 72, unit: '%',
+    min: 0, max: 100, step: 1, default: 72, unit: '%',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-sep',
     tip: 'Live-Mix clean-stem balance after one ML separation. ~70% is clean without over-processing.'
   },
   {
     id: 'bgSuppress', key: 'bgSuppress', label: 'BG Suppress',
-    min: 0, max: 100, step: 5, default: 38, unit: '%',
+    min: 0, max: 100, step: 1, default: 38, unit: '%',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-sep',
     tip: 'Live-Mix residual-stem attenuation after one ML separation. Moderate values avoid thin/hollow speech.'
   },

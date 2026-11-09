@@ -20,6 +20,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getDriveAccessToken, onDriveAccessToken, setDriveAccessToken } from '/src/core/DriveSession.js';
 
 const firebaseConfig = {
   apiKey: window.FIREBASE_API_KEY || 'YOUR_API_KEY',
@@ -69,20 +70,16 @@ export async function signInWithGoogleDrive() {
   if (!accessToken) {
     throw new Error('Google Drive permission was not granted (missing access token).');
   }
-  try {
-    if (typeof globalThis !== 'undefined') {
-      globalThis.__vipGoogleDriveAccessToken = accessToken;
-    }
-  } catch { /* ignore */ }
+  setDriveAccessToken(accessToken);
   return { user: result.user, accessToken, credential, result };
 }
 
 export function signOutUser() {
-  try {
-    if (typeof globalThis !== 'undefined') delete globalThis.__vipGoogleDriveAccessToken;
-  } catch { /* ignore */ }
+  setDriveAccessToken(null);
   return signOut(auth);
 }
+
+export { getDriveAccessToken, onDriveAccessToken };
 
 // Hook used by GoogleDriveBridge.ensureGoogleDriveAuth()
 if (typeof globalThis !== 'undefined') {

@@ -8,6 +8,8 @@
  */
 'use strict';
 
+import { onDriveAccessToken, setDriveAccessToken } from './DriveSession.js';
+
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -16,6 +18,7 @@ const PICKER_SCRIPT = 'https://apis.google.com/js/api.js';
 
 /** @type {string|null} */
 let _accessToken = null;
+onDriveAccessToken((token) => { _accessToken = token; });
 /** @type {string|null} */
 let _appFolderId = null;
 /** @type {Promise<void>|null} */
@@ -84,7 +87,7 @@ export function getDriveScope() {
 }
 
 export function setAccessToken(token) {
-  _accessToken = token ? String(token) : null;
+  setDriveAccessToken(token);
 }
 
 export function getAccessToken() {
@@ -92,8 +95,8 @@ export function getAccessToken() {
 }
 
 export function clearDriveSession() {
-  _accessToken = null;
   _appFolderId = null;
+  setDriveAccessToken(null);
 }
 
 /**
@@ -122,10 +125,6 @@ async function resolveDriveSignIn(explicit) {
 
 export async function ensureGoogleDriveAuth(opts = {}) {
   if (!opts.force && _accessToken) return _accessToken;
-  if (!opts.force && typeof globalThis !== 'undefined' && globalThis.__vipGoogleDriveAccessToken) {
-    _accessToken = String(globalThis.__vipGoogleDriveAccessToken);
-    return _accessToken;
-  }
   const signIn = await resolveDriveSignIn(opts.signIn);
   if (!signIn) {
     throw new Error(

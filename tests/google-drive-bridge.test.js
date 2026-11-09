@@ -84,6 +84,22 @@ describe('GoogleDriveBridge', () => {
       .rejects.toMatchObject({ code: 'DRIVE_AUTH' });
   });
 
+  test('ensureGoogleDriveAuth reads the closure token, not window', async () => {
+    const session = await import(pathToFileURL(path.join(ROOT, 'src/core/DriveSession.js')).href);
+    globalThis.__vipGoogleDriveAccessToken = 'window-token-must-not-be-used';
+    drive.clearDriveSession();
+    globalThis.__vipGoogleDriveAccessToken = 'window-token-must-not-be-used';
+    await expect(drive.ensureGoogleDriveAuth()).rejects.toThrow(/sign-in is not available/);
+    expect(globalThis.__vipGoogleDriveAccessToken).toBe('window-token-must-not-be-used');
+    session.setDriveAccessToken('closure-token');
+    expect(globalThis.__vipGoogleDriveAccessToken).toBeUndefined();
+    await expect(drive.ensureGoogleDriveAuth()).resolves.toBe('closure-token');
+    expect(drive.getAccessToken()).toBe('closure-token');
+    drive.clearDriveSession();
+    expect(drive.getAccessToken()).toBeNull();
+    expect(session.getDriveAccessToken()).toBeNull();
+  });
+
   test('blobToFile preserves name', () => {
     const blob = new Blob(['abc'], { type: 'audio/wav' });
     const file = drive.blobToFile(blob, 'clip.wav', 'audio/wav');
@@ -122,5 +138,14 @@ describe('Drive UI wiring (structural)', () => {
 
   test('privacy copy present on Engineer save row', () => {
     expect(engHtml).toMatch(/Processing never uses Drive/i);
+  });
+
+  test('Drive access token is not assigned on window', () => {
+    expect(firebase).not.toMatch(/__vipGoogleDriveAccessToken\s*=/);
+    expect(firebase).toMatch(/setDriveAccessToken/);
+    expect(firebase).toMatch(/__vipSignInGoogleDrive/);
+    const bridge = fs.readFileSync(path.join(ROOT, 'src/core/GoogleDriveBridge.js'), 'utf8');
+    expect(bridge).not.toMatch(/__vipGoogleDriveAccessToken/);
+    expect(bridge).toMatch(/setDriveAccessToken/);
   });
 });
