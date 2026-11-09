@@ -1042,11 +1042,11 @@ async function runFusedSpectralMaskChain(
       // to its calibrated exponent.
       const p = maskExponents[h];
       if (p === 1) {
-        for (let i = 0; i < count * bins; i++) fusedMask[i] *= mask[i];
+        for (let i = 0; i < count * bins; i++) fusedMask[i] *= finiteUnitMask(mask[i]);
       } else if (p === 0.5) {
-        for (let i = 0; i < count * bins; i++) fusedMask[i] *= Math.sqrt(mask[i]);
+        for (let i = 0; i < count * bins; i++) fusedMask[i] *= Math.sqrt(finiteUnitMask(mask[i]));
       } else {
-        for (let i = 0; i < count * bins; i++) fusedMask[i] *= Math.pow(mask[i], p);
+        for (let i = 0; i < count * bins; i++) fusedMask[i] *= Math.pow(finiteUnitMask(mask[i]), p);
       }
     }
 
@@ -1086,7 +1086,10 @@ async function runFusedSpectralMaskChain(
   // only existed to hide the uncovered edges; a unity mask now reconstructs
   // the whole input and the clean stem starts and ends where the input does.
   for (let i = 0; i < out.length; i++) {
-    out[i] /= Math.max(norm[i], 1e-12);
+    const y = out[i] / Math.max(norm[i], 1e-12);
+    // A non-finite frame is a numeric failure, not a mute. Keep the input
+    // sample so the clean stem cannot drop speech to NaN.
+    out[i] = Number.isFinite(y) ? y : (Number.isFinite(samples[i]) ? samples[i] : 0);
   }
   checkCancelled(requestId);
   onProgress(1);
@@ -1227,12 +1230,47 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress, 
 
 // ─── Stem assembly ───────────────────────────────────────────────────────────
 
-/** noise = input − clean, computed sample-wise per channel. */
+/**
+ * Sigmoid masks are in [0, 1]. A non-finite sample is not a separation
+ * decision: treat it as 1 so that bin keeps the model input instead of
+ * becoming NaN (which the overlap-add then writes through the stem).
+ * Values outside [0, 1] are clamped. Negatives are not a phase invert.
+ * @param {number} sample
+ * @returns {number}
+ */
+function finiteUnitMask(sample) {
+  const n = +sample;
+  if (!Number.isFinite(n)) return 1;
+  if (n <= 0) return 0;
+  if (n >= 1) return 1;
+  return n;
+}
+
+/**
+ * noise = input − clean, per channel. A short clean buffer does not write
+ * NaN into the tail: those samples stay in the residual (clean contributed
+ * nothing). A non-finite clean sample contributes 0, so the input is kept
+ * in the residual instead of poisoning playback.
+ */
 function residual(channelData, cleanChannels) {
+  if (!channelData || !cleanChannels || cleanChannels.length !== channelData.length) {
+    throw new Error('[VIP][MLWorker] clean stem channel count does not match the input.');
+  }
   return channelData.map((input, ch) => {
     const clean = cleanChannels[ch];
+    if (!clean || typeof clean.length !== 'number') {
+      throw new Error('[VIP][MLWorker] clean stem is missing a channel.');
+    }
     const noise = new Float32Array(input.length);
-    for (let i = 0; i < input.length; i++) noise[i] = input[i] - clean[i];
+    const n = Math.min(input.length, clean.length);
+    for (let i = 0; i < n; i++) {
+      const s = Number.isFinite(input[i]) ? input[i] : 0;
+      const c = Number.isFinite(clean[i]) ? clean[i] : 0;
+      noise[i] = s - c;
+    }
+    for (let i = n; i < input.length; i++) {
+      noise[i] = Number.isFinite(input[i]) ? input[i] : 0;
+    }
     return noise;
   });
 }
