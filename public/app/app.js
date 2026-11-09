@@ -93,6 +93,7 @@ import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
+import { formatTransportSelection } from '/src/presentation/PremiumAudioControl.js';
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
 import { getAudioSessionStore } from '/src/state/audioSessionStore.js';
 import {
@@ -8614,12 +8615,7 @@ class VoiceIsolatePro {
       onChange: (region) => {
         const el = document.getElementById('pacSelection');
         if (!el || !region) return;
-        if (!mixer.hasCrop()) {
-          el.textContent = 'Full file';
-          return;
-        }
-        const span = Math.max(0, region.out - region.in);
-        el.textContent = `${fmtTime(region.in)} – ${fmtTime(region.out)} · ${fmtTime(span)}`;
+        el.textContent = formatTransportSelection(region, mixer.hasCrop());
       },
     });
   }

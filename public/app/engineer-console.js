@@ -448,42 +448,26 @@
     try { window.dispatchEvent(new Event('resize')); } catch { /* cosmetic */ }
   }
 
+  const premiumTransport = import('/src/presentation/PremiumAudioControl.js');
+
   function wirePremiumAudioChrome(card) {
     if (!card || card.dataset.pacWired === '1') return;
     card.dataset.pacWired = '1';
-    card.addEventListener('click', (event) => {
-      if (!event.target.closest('.pac-bar')) return;
-      if (event.target.closest('button, input, select, textarea, a, label')) event.preventDefault();
+    premiumTransport.then((mod) => {
+      mod.guardTransportSummary(card);
+      mod.watchTransportStatus({
+        ready: document.getElementById('pacReady'),
+        status: document.getElementById('pacStatus'),
+        sources: ['vip-proc-badge', 'pipeDetail', 'stat-status']
+          .map((id) => document.getElementById(id)),
+        read: () => mod.readBadgeStatus(
+          document.getElementById('vip-proc-badge'),
+          document.getElementById('pipeDetail'),
+        ),
+      });
+    }).catch((err) => {
+      console.warn('[VIP] premium transport chrome failed', err);
     });
-    const paint = () => {
-      const badge = document.getElementById('vip-proc-badge');
-      const detail = document.getElementById('pipeDetail');
-      const ready = document.getElementById('pacReady');
-      const status = document.getElementById('pacStatus');
-      const text = (detail?.textContent || badge?.querySelector('.vip-pb-label')?.textContent || 'Ready')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const state = badge?.dataset.state || 'idle';
-      if (ready) {
-        ready.dataset.state = state;
-        ready.textContent = text.length > 48 ? `${text.slice(0, 46)}…` : text;
-      }
-      if (status && status.textContent !== text) status.textContent = text;
-    };
-    paint();
-    const sources = ['vip-proc-badge', 'pipeDetail', 'stat-status']
-      .map((id) => document.getElementById(id))
-      .filter(Boolean);
-    if (sources.length && typeof MutationObserver !== 'undefined') {
-      const obs = new MutationObserver(paint);
-      sources.forEach((node) => obs.observe(node, {
-        childList: true,
-        characterData: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['data-state'],
-      }));
-    }
   }
 
   function pinEngineerDock() {

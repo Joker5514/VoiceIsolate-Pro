@@ -73,6 +73,19 @@ describe('PlaybackMixer loop + crop', () => {
     expect(mixer.isLoopEnabled()).toBe(true);
   });
 
+  test('playback rate scales the playhead and leaves 1x on the unscaled clock', async () => {
+    const ctx = mockCtx();
+    const mixer = new PlaybackMixer({ context: ctx });
+    mixer.loadStems([new Float32Array(48000 * 8)], [new Float32Array(48000 * 8)], 48000);
+    await mixer.play();
+    ctx.currentTime = 1.01;
+    expect(mixer.currentTime()).toBeCloseTo(1, 2);
+    expect(mixer.setPlaybackRate(2)).toBe(2);
+    ctx.currentTime = 2.01;
+    expect(mixer.currentTime()).toBeCloseTo(3, 2);
+    expect(mixer.setPlaybackRate(99)).toBe(2);
+  });
+
   test('stop rewinds to crop in-point', () => {
     const mixer = new PlaybackMixer({ context: mockCtx() });
     mixer.loadStems([new Float32Array(48000 * 5)], [new Float32Array(48000 * 5)], 48000);

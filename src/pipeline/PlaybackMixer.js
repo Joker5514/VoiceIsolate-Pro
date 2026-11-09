@@ -591,6 +591,7 @@ export class PlaybackMixer {
     this._isPlaying = false;
     this._startedAt = 0;    // ctx.currentTime when playback began
     this._offset = 0;       // seconds into the stems
+    this._playbackRate = 1;
     this._loopEnabled = false;
     this._cropIn = 0;
     /** @type {number|null} null = end of file */
@@ -984,10 +985,12 @@ export class PlaybackMixer {
     this._cleanSource = this.ctx.createBufferSource();
     this._cleanSource.buffer = this.cleanBuffer;
     this._cleanSource.connect(this.speakerGain);
+    this._applySourceRate(this._cleanSource);
 
     this._noiseSource = this.ctx.createBufferSource();
     this._noiseSource.buffer = this.noiseBuffer;
     this._noiseSource.connect(this.noiseGain);
+    this._applySourceRate(this._noiseSource);
 
     const when = this.ctx.currentTime + 0.01;
     const startAt = this._offset;
@@ -1101,6 +1104,7 @@ export class PlaybackMixer {
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
     src.connect(lane === 'original' ? this._compare.originalDelay : this._compare.removedDelay);
+    this._applySourceRate(src);
     src.start(when, offset, end - offset);
     this[key] = src;
   }
@@ -1637,10 +1641,39 @@ export class PlaybackMixer {
 
   duration() { return this.cleanBuffer ? this.cleanBuffer.duration : 0; }
 
+  getPlaybackRate() { return this._playbackRate || 1; }
+
+  /**
+   * Sample-locked rate for every live stem source. Captures the playhead
+   * first so a change mid-playback does not jump. 1× matches the unscaled clock.
+   */
+  setPlaybackRate(rate) {
+    const next = Number(rate);
+    if (!Number.isFinite(next) || next < 0.25 || next > 2) return this.getPlaybackRate();
+    if (this._isPlaying) {
+      const pos = this.currentTime();
+      this._offset = pos;
+      this._playbackRate = next;
+      this._startedAt = this.ctx.currentTime - pos;
+    } else {
+      this._playbackRate = next;
+    }
+    for (const src of [this._cleanSource, this._noiseSource, this._originalSource, this._removedSource]) {
+      this._applySourceRate(src);
+    }
+    return this._playbackRate;
+  }
+
+  _applySourceRate(src) {
+    if (src?.playbackRate) src.playbackRate.value = this._playbackRate || 1;
+  }
+
   currentTime() {
     if (!this._isPlaying) return this._offset;
-    const elapsed = this.ctx.currentTime - this._startedAt;
-    return Math.max(this._offset, Math.min(elapsed, this.duration()));
+    const rate = this._playbackRate || 1;
+    const linear = this.ctx.currentTime - this._startedAt;
+    const pos = rate === 1 ? linear : (this._offset * (1 - rate)) + (linear * rate);
+    return Math.max(this._offset, Math.min(pos, this.duration()));
   }
 
   /** AnalyserNode for visualizers (post-EQ, post-master). */

@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="/landing-v3.css">
   <link rel="stylesheet" href="/vip-workstation.css">
   <link rel="stylesheet" href="/mobile-fit.css">
+  <link rel="stylesheet" href="/app/premium-audio-control.css">
 </head>
 <body class="ps-shell v3">
   <a class="ps-skip-link" href="#workspace">Skip to audio workspace</a>
@@ -349,12 +350,6 @@
                     <option value="residual-monitor">Residual Monitor (hear what was removed)</option>
                     <option value="original">Original (bypass)</option>
                   </select>
-                  <span class="landing-transport-extras v3-seg">
-                    <button id="loopBtn" class="btn-tp-region btn-tp-loop" type="button" disabled aria-pressed="false" title="Loop playback">Loop</button>
-                    <button id="cropInBtn" class="btn-tp-region" type="button" disabled title="Set crop in-point at playhead">In</button>
-                    <button id="cropOutBtn" class="btn-tp-region" type="button" disabled title="Set crop out-point at playhead">Out</button>
-                    <button id="cropClearBtn" class="btn-tp-region" type="button" disabled title="Clear crop region">Clear</button>
-                  </span>
                 </span>
               </div>
 
@@ -394,41 +389,85 @@
                 </div>
               </div>
 
-              <div class="v3-transport">
-                <span class="v3-transport__keys">
+              <div class="slider-row v3-volume">
+                <label for="volumeSlider">Output</label>
+                <input type="range" id="volumeSlider" min="0" max="100" value="100" step="1" disabled>
+                <span class="slider-val" id="volumeVal">100%</span>
+              </div>
+
+              <details class="v3-transport transport-card pac" id="landingTransport" open aria-label="Playback transport">
+                <summary class="pac-bar" aria-label="Playback transport">
                   <span class="vip-play-slot" id="playSlot">
                     <button id="playCollapseToggle" class="vip-play-toggle" type="button" data-vip-play-toggle aria-expanded="true" aria-controls="playBtn" aria-label="Collapse play button">
                       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3 5.25 L7 9.25 L11 5.25" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
                     <span class="vip-play-target">
-                      <button id="playBtn" class="vip-iconbtn v3-play" type="button" disabled aria-label="Play" title="Play">▶</button>
+                      <button id="playBtn" class="btn btn-tp btn-tp-play vip-iconbtn v3-play" type="button" disabled aria-label="Play (Space)" title="Play (Space)"><span aria-hidden="true">&#9654;</span></button>
                     </span>
                   </span>
-                  <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">⏸</button>
-                  <button id="stopBtn" class="vip-iconbtn" type="button" disabled aria-label="Stop" title="Stop">■</button>
-                </span>
-                <span id="timeReadout" class="time-readout">0:00 / 0:00</span>
-                <div class="transport-seek v3-seek">
-                  <div id="landingRegionBar" class="transport-region-bar" hidden aria-hidden="true"></div>
-                  <div class="tp-seek-rail" aria-hidden="true"><span class="tp-seek-fill" id="landingSeekFill"></span></div>
-                  <input type="range" id="seekSlider" class="landing-seek-input" min="0" max="1000" value="0" disabled aria-label="Playback position">
+                  <span id="timeReadout" class="tp-time-wrap time-readout">0:00 / 0:00</span>
+                  <span class="transport-seek v3-seek pac-bar__seek">
+                    <span id="landingRegionBar" class="transport-region-bar" hidden aria-hidden="true"></span>
+                    <span class="tp-seek-rail" aria-hidden="true"><span class="tp-seek-fill" id="landingSeekFill"></span></span>
+                    <input type="range" id="seekSlider" class="tp-seek landing-seek-input" min="0" max="1000" value="0" disabled aria-label="Playback position">
+                  </span>
+                  <span id="landingReady" class="pac-ready" data-state="idle">Ready</span>
+                  <span class="pac-chevron" aria-hidden="true"></span>
+                </summary>
+                <div class="pac-panel">
+                  <div class="pac-groups">
+                    <section class="pac-group" aria-label="Transport">
+                      <h3 class="pac-label">Transport</h3>
+                      <div class="tp-buttons" role="group" aria-label="Playback controls">
+                        <button id="pauseBtn" class="btn btn-tp" type="button" disabled aria-label="Pause (Space)" title="Pause (Space)"><span aria-hidden="true">&#9208;</span></button>
+                        <button id="stopBtn" class="btn btn-tp" type="button" disabled aria-label="Stop" title="Stop"><span aria-hidden="true">&#9209;</span></button>
+                        <button id="landingRew" class="btn btn-tp" type="button" disabled aria-label="Rewind" title="Rewind"><span aria-hidden="true">&#9664;&#9664;</span></button>
+                        <button id="landingFwd" class="btn btn-tp" type="button" disabled aria-label="Fast Forward" title="Fast Forward"><span aria-hidden="true">&#9654;&#9654;</span></button>
+                      </div>
+                      <div class="tp-speed">
+                        <label for="landingSpeed">Speed</label>
+                        <button id="landingSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
+                        <select id="landingSpeed" aria-label="Playback speed">
+                          <option value="0.25">0.25x</option>
+                          <option value="0.5">0.5x</option>
+                          <option value="0.75">0.75x</option>
+                          <option value="1" selected>1x</option>
+                          <option value="1.25">1.25x</option>
+                          <option value="1.5">1.5x</option>
+                          <option value="1.75">1.75x</option>
+                          <option value="2">2x</option>
+                        </select>
+                        <button id="landingSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
+                      </div>
+                    </section>
+                    <section class="pac-group" aria-label="Timeline and selection">
+                      <h3 class="pac-label">Timeline</h3>
+                      <div class="tp-region-group">
+                        <button id="loopBtn" class="btn btn-tp btn-tp-region btn-tp-loop" type="button" disabled aria-pressed="false" title="Loop playback (L)">Loop</button>
+                        <button id="cropInBtn" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop in-point at playhead ([)">In</button>
+                        <button id="cropOutBtn" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop out-point at playhead (])">Out</button>
+                        <button id="cropClearBtn" class="btn btn-tp btn-tp-region" type="button" disabled title="Clear crop">Clr</button>
+                      </div>
+                      <p id="landingSelection" class="pac-selection">Full file</p>
+                      <div class="compare-row__ab v3-seg" role="group" aria-label="Listen to original or cleaned">
+                        <button id="compareOriginalBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Raw</button>
+                        <button id="compareCleanedBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Processed</button>
+                        <button id="compareRemovedBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Removed</button>
+                      </div>
+                    </section>
+                    <section class="pac-group" aria-label="Processing">
+                      <h3 class="pac-label">Processing</h3>
+                      <div class="pac-process vip-dock-process" id="landingProcessSlot"></div>
+                      <p id="landingTransportStatus" class="pac-status" role="status">Ready</p>
+                    </section>
+                  </div>
                 </div>
-                <div class="slider-row v3-volume">
-                  <label for="volumeSlider">Output</label>
-                  <input type="range" id="volumeSlider" min="0" max="100" value="100" step="1" disabled>
-                  <span class="slider-val" id="volumeVal">100%</span>
-                </div>
-              </div>
+              </details>
 
               <!-- Raw / Processed / Removed comparison -->
               <details class="compare-row v3-compare" id="compareRow" open aria-labelledby="compareLabel">
                 <summary id="compareLabel" class="v3-label">Compare · Raw / Processed / Removed</summary>
                 <div class="compare-row__controls">
-                  <div class="compare-row__ab v3-seg" role="group" aria-label="Listen to original or cleaned">
-                    <button id="compareOriginalBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Raw</button>
-                    <button id="compareCleanedBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Processed</button>
-                    <button id="compareRemovedBtn" class="vip-btn vip-btn--ab vip-tap" type="button" disabled aria-pressed="false">Removed</button>
-                  </div>
                   <div class="export-row" id="exportRow" hidden>
                     <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled title="Download isolated voice">Download Processed</button>
                     <button id="downloadVideoBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled title="Download video with isolated audio track">Download Video</button>

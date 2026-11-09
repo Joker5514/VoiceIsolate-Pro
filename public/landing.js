@@ -41,6 +41,14 @@ import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKeyAsync 
 import { copyFloat32Channel, createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
+import {
+  bindTransportOpen,
+  formatTransportSelection,
+  guardTransportSummary,
+  readQuickCleanStatus,
+  stepSelect,
+  watchTransportStatus,
+} from '/src/presentation/PremiumAudioControl.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel, updateHintPanelValue } from '/app/slider-hint-ui.js';
 import { bindMemoryProfileSelect } from '/src/core/UiPersistence.js';
@@ -117,6 +125,11 @@ const ui = {
   playBtn: $('playBtn'),
   pauseBtn: $('pauseBtn'),
   stopBtn: $('stopBtn'),
+  rewBtn: $('landingRew'),
+  fwdBtn: $('landingFwd'),
+  speedSelect: $('landingSpeed'),
+  speedDownBtn: $('landingSpeedDown'),
+  speedUpBtn: $('landingSpeedUp'),
   muteVoiceBtn: $('muteVoiceBtn'),
   muteNoiseBtn: $('muteNoiseBtn'),
   // Live-Mix sliders: disabled in markup until stems exist, then enabled in
@@ -1003,6 +1016,8 @@ function syncVideo() {
   const target = mixer.currentTime();
   if (mixer.isPlaying()) {
     if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target;
+    const rate = mixer.getPlaybackRate?.() || 1;
+    if (v.playbackRate !== rate) v.playbackRate = rate;
     // Muted playback is allowed to start without a user gesture.
     if (v.paused) v.play().catch(() => {});
   } else {
@@ -1479,7 +1494,7 @@ async function ingestFrom(file) {
   getAnalysisInsights()?.reset();
   mixer?.stop();
   quickClean.setState('importing', 'Reading the recording on this device…');
-  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ...ui.mixSliders]) if (el) el.disabled = true;
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.rewBtn, ui.fwdBtn, ...ui.mixSliders]) if (el) el.disabled = true;
   resetTimings();
   clearStemCache();
   lastProvenance = null;
@@ -1765,7 +1780,7 @@ function presentChunkedImport(next, file) {
     document.getElementById('audioOptimization').textContent += execution;
   }
   setStatus('Chunked processing selected. Source preserved. Press Process.', 'active');
-  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.seekSlider]) if (el) el.disabled = false;
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.rewBtn, ui.fwdBtn, ui.seekSlider]) if (el) el.disabled = false;
   writeTimeReadout(0, next.duration || 0);
 }
 
@@ -1840,7 +1855,7 @@ async function processChunked() {
     hideSpinner();
     endJob(job.id, 'completed');
     window.__vipLandingJobId = null;
-    for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.seekSlider, ui.downloadBtn, ui.compareOriginalBtn, ui.compareCleanedBtn]) {
+    for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.rewBtn, ui.fwdBtn, ui.seekSlider, ui.downloadBtn, ui.compareOriginalBtn, ui.compareCleanedBtn]) {
       if (el) el.disabled = false;
     }
     if (ui.compareRemovedBtn) ui.compareRemovedBtn.disabled = true;
@@ -2040,7 +2055,7 @@ async function installStems({ requestId, clean, noise, sampleRate, passthrough, 
     window.dispatchEvent(new CustomEvent('vip:processed', { detail: { clean, noise, sampleRate } }));
   } catch {}
 
-  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.rewBtn, ui.fwdBtn,
     ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect,
     ui.seekSlider, ui.loopBtn, ui.cropInBtn, ui.cropOutBtn, ui.cropClearBtn,
     ui.downloadBtn,
@@ -2092,7 +2107,11 @@ function syncTransportRegionUi() {
     cropClearBtn: ui.cropClearBtn,
     seekEl: ui.seekSlider,
     regionBar: ui.regionBar,
-    onChange: () => visualizer?.invalidate?.(),
+    onChange: (region) => {
+      visualizer?.invalidate?.();
+      const el = document.getElementById('landingSelection');
+      if (el) el.textContent = formatTransportSelection(region, mixer?.hasCrop?.());
+    },
   });
 }
 
@@ -2190,20 +2209,79 @@ function chunkedMediaActive() {
   return ingested?.strategy === 'chunked' && !mixer?.cleanBuffer;
 }
 
+function applyTransportRate(rate) {
+  const next = Number(rate);
+  if (!Number.isFinite(next)) return;
+  mixer?.setPlaybackRate?.(next);
+  mediaTransport.setRate?.(next);
+  if (ui.videoPlayer) ui.videoPlayer.playbackRate = next;
+}
+
+function transportClock() {
+  if (chunkedMediaActive()) {
+    const dur = mediaTransport.duration() || ingested?.duration || 0;
+    const cur = mediaTransport.active() ? mediaTransport.currentTime() : (pendingMediaFrac || 0) * dur;
+    return { cur, dur };
+  }
+  if (!mixer) return { cur: 0, dur: 0 };
+  return { cur: mixer.currentTime(), dur: mixer.duration() };
+}
+
+async function seekToFraction(frac, { fromSlider = false } = {}) {
+  const clamped = Math.max(0, Math.min(1, Number(frac) || 0));
+  if (ui.seekSlider && !fromSlider) ui.seekSlider.value = String(Math.round(clamped * 1000));
+  if (chunkedMediaActive()) {
+    pendingMediaFrac = clamped;
+    const dur = mediaTransport.duration() || ingested?.duration || 0;
+    if (mediaTransport.active()) mediaTransport.seek(clamped * dur);
+    writeTimeReadout(clamped * dur, dur);
+    paintSeekFill(ui.seekSlider, clamped * dur, dur);
+    return;
+  }
+  if (!mixer) return;
+  try {
+    await mixer.seek(clamped * mixer.duration());
+    syncVideo();
+    writeTimeReadout(mixer.currentTime(), mixer.duration());
+    paintSeekFill(ui.seekSlider, mixer.currentTime(), mixer.duration());
+  } catch (err) {
+    console.warn('[VIP][landing] seek failed:', err);
+  }
+}
+
+async function seekBy(delta) {
+  const { cur, dur } = transportClock();
+  if (!dur) return;
+  await seekToFraction((cur + delta) / dur);
+}
+
 function wireTransport() {
   ui.playBtn.addEventListener('click', async () => {
     try {
       if (chunkedMediaActive()) {
+        if (mediaTransport.isPlaying()) {
+          pendingMediaFrac = mediaTransport.duration()
+            ? mediaTransport.currentTime() / mediaTransport.duration()
+            : pendingMediaFrac;
+          mediaTransport.pause();
+          return;
+        }
         mixer?.stop();
         const processed = mediaTransport.source() === 'processed' && chunkedExportFile;
-        const src = processed ? chunkedExportFile : (chunkedExportFile && mediaTransport.source() === 'processed' ? chunkedExportFile : sourceFile);
         const useProcessed = processed;
         await mediaTransport.use(useProcessed ? chunkedExportFile : sourceFile, useProcessed ? 'processed' : 'original');
         if (pendingMediaFrac) mediaTransport.seek(pendingMediaFrac * (mediaTransport.duration() || ingested.duration || 0));
+        applyTransportRate(ui.speedSelect?.value || 1);
         await mediaTransport.play();
         return;
       }
+      if (mixer?.isPlaying()) {
+        mixer.pause();
+        syncVideo();
+        return;
+      }
       if (mediaTransport.isPlaying()) mediaTransport.pause();
+      applyTransportRate(ui.speedSelect?.value || 1);
       await mixer.play();
       syncVideo();
     } catch (err) { setStatus(err.message, 'error'); }
@@ -2223,22 +2301,34 @@ function wireTransport() {
     }
     if (mixer) { mixer.stop(); syncVideo(); }
   });
+  ui.rewBtn?.addEventListener('click', () => { void seekBy(-10); });
+  ui.fwdBtn?.addEventListener('click', () => { void seekBy(10); });
+  ui.speedSelect?.addEventListener('change', () => applyTransportRate(ui.speedSelect.value));
+  ui.speedDownBtn?.addEventListener('click', () => stepSelect(ui.speedSelect, -1));
+  ui.speedUpBtn?.addEventListener('click', () => stepSelect(ui.speedSelect, 1));
 
-  ui.seekSlider?.addEventListener('input', async (e) => {
-    const frac = Number(e.target.value) / 1000;
-    if (chunkedMediaActive()) {
-      pendingMediaFrac = frac;
-      const dur = mediaTransport.duration() || ingested?.duration || 0;
-      if (mediaTransport.active()) mediaTransport.seek(frac * dur);
-      writeTimeReadout(frac * dur, dur);
+  ui.seekSlider?.addEventListener('input', (e) => {
+    void seekToFraction(Number(e.target.value) / 1000, { fromSlider: true });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    const target = event.target;
+    if (!target) return;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
+    if (tag === 'BUTTON' || target.closest?.('[role="tablist"]')) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === 'k' || event.key === 'K') {
+      event.preventDefault();
+      if (ui.playBtn && !ui.playBtn.disabled) ui.playBtn.click();
       return;
     }
-    if (!mixer) return;
-    try {
-      await mixer.seek(frac * mixer.duration());
-      syncVideo();
-    } catch (err) {
-      console.warn('[VIP][landing] seek failed:', err);
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      void seekBy(-5);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      void seekBy(5);
     }
   });
 
@@ -2334,29 +2424,24 @@ void showDriveConfigStatus();
 foldParagraph(document.getElementById('outcomeHelp'), 'What happens after import?', 'outcome-help');
 mountExplainBullets(document.getElementById('quickCleanStatus')?.parentElement, INGESTION_EXPLAINS);
 (() => {
-  const transport = document.querySelector('.v3-transport');
+  const transport = document.getElementById('landingTransport');
   if (!transport) return;
+  const slot = document.getElementById('landingProcessSlot');
   const btn = ui.processBtn;
-  if (btn && !btn.closest('.v3-transport')) {
-    const slot = document.createElement('div');
-    slot.className = 'vip-dock-process';
-    slot.append(btn);
-    transport.append(slot);
-  }
-  const source = document.querySelector('.compare-row__ab');
-  if (source && !transport.contains(source)) {
-    const hold = document.createElement('div');
-    hold.className = 'vip-dock-source';
-    hold.setAttribute('role', 'group');
-    hold.setAttribute('aria-label', 'Original or processed');
-    hold.append(source);
-    const slot = transport.querySelector('.vip-dock-process');
-    transport.insertBefore(hold, slot);
-  }
-  // Volume stays in the mixer. The dock keeps transport, source, and Process.
-  const volume = transport.querySelector('.v3-volume');
-  const tilt = document.querySelector('#stemsTilt');
-  if (volume && tilt) tilt.append(volume);
+  if (slot && btn && !slot.contains(btn)) slot.append(btn);
+  guardTransportSummary(transport);
+  let store = null;
+  try { store = globalThis.localStorage; } catch { store = null; }
+  bindTransportOpen(transport, store, 'vip.landing.transportOpen');
+  watchTransportStatus({
+    ready: document.getElementById('landingReady'),
+    status: document.getElementById('landingTransportStatus'),
+    sources: ['quickCleanStatus', 'statusText'].map((id) => document.getElementById(id)),
+    read: () => readQuickCleanStatus(
+      document.getElementById('quickCleanStatus'),
+      document.getElementById('statusText'),
+    ),
+  });
   // Leave the tilted mixer. perspective on that card would trap position:fixed.
   if (transport.parentElement !== document.body) document.body.append(transport);
 })();
