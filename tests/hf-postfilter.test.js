@@ -158,11 +158,27 @@ describe('HF post-filter: uncertain mask (fused 0.8)', () => {
     }
   });
 
+  test('weak HF content under a loud 1-7 kHz passage keeps most of its level (frame term)', async () => {
+    // 2.5 s floor, then 0.8 s of band noise 1-7 kHz (about +25 dB) with a weak
+    // HF bed (about +6 dB, below the per-bin presence ramp), the way a
+    // spoken word carries a faint air band. Without the frame term the bed
+    // is cut as noise.
+    const len = 4 * SR; const s0 = Math.round(2.5 * SR); const s1 = s0 + Math.round(0.8 * SR);
+    const x = white(len, 0.001, 31);
+    const lo = white(len, 1, 32); const hi = white(len, 1, 33);
+    for (let i = s0; i < s1; i++) {
+      x[i] += 0.02 * (lo[i] + lo[i - 1] + lo[i - 2] + lo[i - 3]) * 0.25 + 0.0006 * (hi[i] - hi[i - 1]);
+    }
+    const y = await run(on, x, V);
+    const z = await run(off, x, V);
+    expect(dbBand(z, 16000, 24000, s0 + 2400, s1 - 2400) - dbBand(y, 16000, 24000, s0 + 2400, s1 - 2400)).toBeLessThan(0.5); // 0.89 dB without the frame term
+  });
+
   test('opening on HF content is not treated as noise during warm-up', async () => {
     const x = white(2 * SR, 0.03, 13);
     const y = await run(on, x, V);
     const z = await run(off, x, V);
-    // First 100 ms: the depth ramps in over ~0.75 s, so < 1.5 dB cut.
+    // First 100 ms: the depth ramps in over 1.5 s, so < 1.5 dB cut.
     expect(dbBand(z, 9000, 24000, 0, 4800) - dbBand(y, 9000, 24000, 0, 4800)).toBeLessThan(1.5);
   });
 });

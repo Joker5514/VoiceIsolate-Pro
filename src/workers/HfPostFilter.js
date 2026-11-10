@@ -17,9 +17,9 @@
  *
  * Noise tracker: minima-controlled recursive averaging (MCRA; Cohen &
  * Berdugo, IEEE SPL 9(1), 2002; Martin, IEEE TSAP 9(5), 2001): the input
- * power is smoothed over 3 bins and ~100 ms, its minimum tracked over two
- * sub-windows of ~0.75 s, and the noise estimate is the bias-corrected
- * minimum. Speech presence is a soft decision on the smoothed a posteriori
+ * power is smoothed over 3 bins and 60 ms, its minimum tracked over two
+ * sub-windows of 1.5 s (long enough to span a sentence without a pause),
+ * and the noise estimate is the bias-corrected minimum. Speech presence is a soft decision on the smoothed a posteriori
  * SNR, smoothed again over time (the MCRA indicator/averaging, used here as
  * a soft-decision SPP as in OM-LSA, Cohen & Berdugo, Signal Processing
  * 81(11), 2001, and Gerkmann & Hendriks, IEEE TASLP 20(4), 2012).
@@ -42,14 +42,29 @@
   /** Soft speech-presence decision on the a posteriori SNR (dB). */
   const SPP_LO_DB = 7;
   const SPP_HI_DB = 14;
+  /**
+   * Frame-level speech presence (OM-LSA's "frame" term, Cohen & Berdugo
+   * 2001): when the 1-7 kHz band, where speech energy sits, is well above
+   * its own tracked floor, HF bins in that frame keep most of their level,
+   * so the weak air band of real speech (16-24 kHz, often under the
+   * microphone's floor) is not thinned while a word is being spoken.
+   */
+  const FRAME_LO_HZ = 1000;
+  const FRAME_HI_HZ = 7000;
+  const FRAME_PROTECT = 0.8;
   /** Instantaneous-power margin (dB) for the fast onset path. */
   const ONSET_MARGIN_DB = 6;
-  /** Minimum-statistics bias correction (Martin 2001; MCRA Bmin ≈ 1.66). */
-  const MIN_BIAS = 1.66;
+  /**
+   * Minimum-statistics bias correction. MCRA uses Bmin ≈ 1.66 for its ~1 s
+   * window; the minimum of a longer window sits lower (Martin 2001), and 2.3
+   * is what holds the measured false-alarm rate on Gaussian noise at the
+   * 3 s window (tests/hf-postfilter.test.js, musical-noise case).
+   */
+  const MIN_BIAS = 2.3;
   /** Time constants (s): power smoothing, SPP smoothing, minimum window. */
   const POWER_TAU = 0.06;
   const SPP_TAU = 0.06;
-  const MIN_WINDOW = 1.5;
+  const MIN_WINDOW = 3;
   /** Bounded gain decay per 10 ms (RNNoise caps decay at 0.6 per 10 ms frame). */
   const DECAY_PER_10MS = 0.6;
 
@@ -89,6 +104,9 @@
     const sure = new Uint8Array(n);
     const pf = new Float64Array(n);
     let frames = 0;
+    const fb0 = Math.max(1, Math.floor(FRAME_LO_HZ / binHz));
+    const fb1 = Math.min(bins - 1, Math.ceil(FRAME_HI_HZ / binHz));
+    let bandS = 0; let bandMinCur = 0; let bandMinPrev = 0; let bandSpp = 0;
 
     /**
      * Apply in place to one masked frame.
@@ -113,6 +131,21 @@
       // minimum sub-window so an opening is never mistaken for noise.
       const depth = Math.min(1, frames / subFrames) * (1 - GAIN_FLOOR);
       const roll = !first && frames % subFrames === 0;
+      // Frame speech presence from the same MCRA recursion on the band power.
+      let bp = 0;
+      for (let k = fb0; k <= fb1; k++) bp += mags[off + k] * mags[off + k];
+      bandS = first ? bp : aPow * bandS + (1 - aPow) * bp;
+      if (first) { bandMinCur = bandS; bandMinPrev = bandS; }
+      else if (roll) { bandMinPrev = bandMinCur; bandMinCur = bandS; }
+      else if (bandS < bandMinCur) bandMinCur = bandS;
+      const bandNoise = MIN_BIAS * Math.min(bandMinCur, bandMinPrev) + 1e-20;
+      const qb = Math.max(
+        smoothStep(10 * Math.log10(bandS / bandNoise + 1e-12), SPP_LO_DB, SPP_HI_DB),
+        smoothStep(10 * Math.log10(bp / bandNoise + 1e-12) - ONSET_MARGIN_DB, SPP_LO_DB, SPP_HI_DB),
+      );
+      const heldB = first ? qb : aSpp * bandSpp + (1 - aSpp) * qb;
+      bandSpp = qb > heldB ? qb : heldB;
+      const frameDepth = depth * (1 - FRAME_PROTECT * bandSpp);
       for (let i = 0; i < n; i++) {
         const s = first ? pf[i] : aPow * smoothed[i] + (1 - aPow) * pf[i];
         smoothed[i] = s;
@@ -134,7 +167,7 @@
         // Uncertainty is 0 for a confident mask: those bins are never touched.
         const unsure = 1 - smoothStep(mask[k0 + i], MASK_UNSURE, MASK_SURE);
         sure[i] = unsure === 0 ? 1 : 0;
-        raw[i] = 1 - weight[i] * unsure * (1 - spp[i]) * depth;
+        raw[i] = 1 - weight[i] * unsure * (1 - spp[i]) * frameDepth;
       }
       frames++;
       // 3-tap frequency smoothing, then a bounded decay over time (rises are

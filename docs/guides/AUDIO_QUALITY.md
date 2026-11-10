@@ -174,34 +174,49 @@ before the Engineer frame processor; no extra STFT). Per bin above 7 kHz
   by `tests/hf-postfilter.test.js`).
 - `p` is a soft speech-presence probability from a minima-controlled
   recursive-averaging noise tracker on the unmasked input power: 3-bin and
-  60 ms smoothing, minimum over two 0.75 s sub-windows, bias 1.66 (Cohen and
-  Berdugo, IEEE SPL 9(1), 2002; Martin, IEEE TSAP 9(5), 2001), mapped through
+  60 ms smoothing, minimum over two 1.5 s sub-windows (a 0.75 s window took
+  the floor of a pause-free sentence for noise and thinned its air band),
+  bias 2.3 (MCRA's 1.66 is for a ~1 s window; 2.3 holds the false-alarm
+  rate on Gaussian noise at 3 s) (Cohen and Berdugo, IEEE SPL 9(1), 2002;
+  Martin, IEEE TSAP 9(5), 2001), mapped through
   a 7-14 dB a posteriori SNR ramp (60 ms smoothing; a strong onset opens at
   once), as
   OM-LSA uses its speech-presence probability (Cohen and Berdugo, Signal
   Processing 81(11), 2001; Gerkmann and Hendriks, IEEE TASLP 20(4), 2012).
   A strong onset (instantaneous SNR 6 dB past the ramp) counts from its
   first frame.
+- A frame term (OM-LSA's frame-level speech presence): the same tracker on
+  the 1-7 kHz band power; while that band shows speech, the HF depth is cut
+  by up to 80 %, so the weak air band of a spoken word is kept.
 - The gain is smoothed over 3 bins (an isolated pass-through bin is pulled
   down to its neighbours) and its decay is capped at 0.6 per 10 ms, the cap
-  RNNoise uses (Valin, MMSP 2018). The depth ramps in over the first 0.75 s
+  RNNoise uses (Valin, MMSP 2018). The depth ramps in over the first 1.5 s
   so a file that opens on speech is not taken for noise.
 - Floor 0.15 (-16.5 dB). RNNoise and DeepFilterNet3 (Schröter et al.,
   Interspeech 2023) apply band gains up to 20/24 kHz; this is the same idea
   gated by the separation mask.
 
 Gate (synthetic, 4 s), PR #911 -> this filter (pre-#895 in brackets):
-white 5 dB SI-SDR delta landing -2.13 -> -0.51 (-1.00), engineer -1.35 ->
--0.51 (-0.73), maximum 0.16 -> 0.55 (0.46); noise-only suppression 3.26 ->
-5.98 (5.00), 6.14 -> 7.81 (7.26), 9.08 -> 10.07 (9.75); whisper in white
-10 dB landing -0.03 -> +1.35 (0.95); clean speech 6.40 -> 6.40 (6.38).
-Speech-level pins on noisy fixtures fell (white 5 dB landing -1.81 -> -2.33)
-because that metric includes the residual noise: the projected speech
+white 5 dB SI-SDR delta landing -2.13 -> -0.66 (-1.00), engineer -1.35 ->
+-0.57 (-0.73), maximum 0.16 -> 0.53 (0.46); noise-only suppression 3.26 ->
+5.70 (5.00), 6.14 -> 7.65 (7.26), 9.08 -> 9.99 (9.75); whisper in white
+10 dB landing -0.03 -> +1.15 (0.95); clean speech 6.40 -> 6.40 (6.38).
+Speech-level pins on noisy fixtures fell (white 5 dB landing -1.81 -> -2.29)
+because that metric includes the residual noise; the projected speech
 component moved by at most 0.06 dB (see the PR's re-pin table).
 
-Limits: the tracker treats any HF content that stays steady for over ~1 s
-under an uncertain mask (a held cymbal, a steady HF tone) as noise; a
-confident mask still protects it. The recorded corpus is all 16 kHz, so it
+Fullband check (48 kHz VCTK clean speech through the default chain, frames
+whose 16-24 kHz input is >= 10 dB above the clip's floor): the air band
+changes by -0.00 to -0.09 dB on 5 of 6 clips; the sixth opens on speech at
+t = 0 and loses 0.52 dB, almost all in its first second (cold start).
+
+Limits: the tracker treats any HF content that stays steady for over
+~1.5-3 s under an uncertain mask (a held cymbal, a steady HF tone) as noise;
+a confident mask still protects it. A file that opens on speech with no
+pause in its first ~1.5 s can lose up to a few dB of 16-24 kHz air in that
+span while the tracker learns the floor. Right after a word, HF noise is
+let through for ~50-130 ms while speech presence releases (a short hiss
+tail; measured, not tuned away). The recorded corpus is all 16 kHz, so it
 has nothing above 8 kHz and cannot show this filter; fullband checks used
 48 kHz VCTK recordings (CC BY 4.0) with synthetic noise.
 
