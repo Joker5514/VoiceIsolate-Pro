@@ -1562,8 +1562,12 @@ describe('DSPCore.inverseSTFT — STFT roundtrip', () => {
     const original = makeSine(N_SAMPLES);
     const { mag, phase } = DSPCore.forwardSTFT(original, FFT_SIZE, HOP);
 
-    // Halve all magnitudes (6 dB attenuation)
+    // Halve all magnitudes (6 dB attenuation). Array.map drops the pad
+    // metadata forwardSTFT attaches; inverseSTFT then synthesises with pad 0
+    // and the midpoint ratio flips sign (−0.505 instead of 0.500).
     const scaledMag = mag.map(frame => frame.map(v => v * 0.5));
+    scaledMag.pad = mag.pad;
+    scaledMag.inputLength = mag.inputLength;
 
     const orig_out  = DSPCore.inverseSTFT(mag, phase, FFT_SIZE, HOP, original.length);
     const scaled_out = DSPCore.inverseSTFT(scaledMag, phase, FFT_SIZE, HOP, original.length);
