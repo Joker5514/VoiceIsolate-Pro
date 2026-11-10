@@ -124,6 +124,7 @@ import {
 } from '/src/presentation/FileLibraryUI.js';
 import { persistAppSession, restoreAppSession } from './session-persist.js';
 import { migrateParamSnapshot } from '/src/core/ParamMigration.js';
+import { createLoudnessMeter, measureIntegratedLufs } from '/src/core/Loudness.js';
 import {
   exportVideoWithProcessedAudio,
   triggerBlobDownload,
@@ -140,6 +141,8 @@ import {
   getWhisperPlatformProfile,
   maskConfidence,
 } from './whisper-hunter.js';
+globalThis.VIPLoudness = { measureIntegratedLufs, createLoudnessMeter };
+
 /**
  * Local preset redirect (mirrors src/core/PresetCalibration.js).
  * Kept in-app so Jest eval helpers that strip ESM imports still work.
@@ -8348,8 +8351,15 @@ class VoiceIsolatePro {
       }
 
       const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
-      // Simplified ungated LUFS (moment-based; K-weighting omitted).
-      const lufs = Math.max(-120, Math.min(0, -0.691 + 10 * Math.log10(pSum / Math.max(1, pCount) + 1e-12)));
+      // ITU-R BS.1770-4 integrated loudness (K-weighted, gated). Channel 0,
+      // plus channel 1 when the processed buffer is stereo. Not the export limiter.
+      const lufsChannels = [p.subarray(0, n)];
+      if (proc.numberOfChannels > 1) {
+        const right = cachedChannelData(proc, 1);
+        lufsChannels.push(right.subarray(0, Math.min(n, right.length)));
+      }
+      const lufsRaw = measureIntegratedLufs(lufsChannels, sampleRate);
+      const lufs = Number.isFinite(lufsRaw) ? Math.max(-120, Math.min(5, lufsRaw)) : -70;
 
       // Voices: distinct diarization speakers when available, otherwise a
       // speech-energy presence call.

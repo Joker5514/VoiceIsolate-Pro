@@ -25,6 +25,13 @@
   let _specX = 0;
   let _lufsShortBuf = [];
   let _lufsIntBuf = [];
+  let _loudnessMeter = null;
+  function _bs1770Meter() {
+    const api = global.VIPLoudness;
+    if (!api || typeof api.createLoudnessMeter !== 'function') return null;
+    if (!_loudnessMeter) _loudnessMeter = api.createLoudnessMeter();
+    return _loudnessMeter;
+  }
   let _syntheticDiarHistory = [];
   let _lastDiarSpeaker = 0;
   let _lastDiarSegStart = 0;
@@ -533,13 +540,25 @@
 
     const meanShort = _lufsShortBuf.reduce((a, b) => a + b, 0) / Math.max(1, _lufsShortBuf.length);
     const meanInt = _lufsIntBuf.reduce((a, b) => a + b, 0) / Math.max(1, _lufsIntBuf.length);
+    const meter = _bs1770Meter();
+    if (meter) {
+      const floats = new Float32Array(timeBytes.length);
+      for (let i = 0; i < timeBytes.length; i++) floats[i] = (timeBytes[i] - 128) / 128;
+      meter.push(floats);
+    }
 
     // DOM meter updates at ~15–20 Hz is plenty; buffer math stays every frame.
     _lufsDomFrame = (_lufsDomFrame + 1) % 3;
     if (_lufsDomFrame !== 0) return;
 
-    const lufsShort = meanShort > 1e-12 ? 10 * Math.log10(meanShort) - 0.691 : -70;
-    const lufsInt = meanInt > 1e-12 ? 10 * Math.log10(meanInt) - 0.691 : -70;
+    // Header LUFS is BS.1770-4 once app.js has published VIPLoudness.
+    // The mean-square fallback covers the frames before that module loads.
+    const lufsShort = meter
+      ? meter.shortTerm()
+      : (meanShort > 1e-12 ? 10 * Math.log10(meanShort) - 0.691 : -70);
+    const lufsInt = meter
+      ? meter.integrated()
+      : (meanInt > 1e-12 ? 10 * Math.log10(meanInt) - 0.691 : -70);
 
     const sEl = $('lufsS');
     if (sEl) sEl.textContent = lufsShort.toFixed(1);
@@ -1195,6 +1214,7 @@
     window.addEventListener('vip:playStarted', () => {
       _lufsShortBuf = [];
       _lufsIntBuf = [];
+      if (_loudnessMeter) _loudnessMeter.reset();
       _syntheticDiarHistory = [];
       _lastDiarSegStart = _getPlayOffset();
       start();
