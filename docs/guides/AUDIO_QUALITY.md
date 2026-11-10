@@ -197,7 +197,7 @@ white 5 dB SI-SDR delta landing -2.13 -> -0.51 (-1.00), engineer -1.35 ->
 10 dB landing -0.03 -> +1.35 (0.95); clean speech 6.40 -> 6.40 (6.38).
 Speech-level pins on noisy fixtures fell (white 5 dB landing -1.81 -> -2.33)
 because that metric includes the residual noise: the projected speech
-component moved by at most 0.05 dB (see the PR's re-pin table).
+component moved by at most 0.06 dB (see the PR's re-pin table).
 
 Limits: the tracker treats any HF content that stays steady for over ~1 s
 under an uncertain mask (a held cymbal, a steady HF tone) as noise; a
