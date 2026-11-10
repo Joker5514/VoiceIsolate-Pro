@@ -194,8 +194,28 @@ async function main() {
     console.log('Page load:');
     await page.goto(`${BASE}/`, { waitUntil: 'load' });
     await waitForLandingBoot(page);
-    // Process, pause, and stop live in the expanded transport, same as Engineer.
-    // The collapsed bar keeps play, the clock, and seek.
+    // The dock starts closed. Isolate must already be on the bar, or Process
+    // cannot be reached.
+    const dock = await page.evaluate(() => {
+      const transport = document.getElementById('landingTransport');
+      const btn = document.getElementById('processBtn');
+      const bar = document.getElementById('landingProcessBar');
+      const rect = btn ? btn.getBoundingClientRect() : { width: 0, height: 0 };
+      const style = btn ? getComputedStyle(btn) : null;
+      return {
+        open: Boolean(transport?.open),
+        inBar: Boolean(bar?.contains(btn)),
+        w: rect.width,
+        h: rect.height,
+        display: style?.display || '',
+        visibility: style?.visibility || '',
+      };
+    });
+    check(!dock.open && dock.inBar && dock.w > 20 && dock.h > 20
+      && dock.display !== 'none' && dock.visibility !== 'hidden',
+      `Isolate stays on the collapsed bar (${Math.round(dock.w)}×${Math.round(dock.h)}, open=${dock.open})`);
+    // Pause and stop live in the expanded transport. Opening it moves Isolate
+    // into the Processing group; the click target is still #processBtn.
     await page.evaluate(() => {
       const transport = document.getElementById('landingTransport');
       if (transport) transport.open = true;

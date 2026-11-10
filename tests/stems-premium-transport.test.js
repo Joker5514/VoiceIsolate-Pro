@@ -37,7 +37,7 @@ describe('stems transport shares the engineer module', () => {
     const html = block(landing, 'landingTransport', 'compareRow');
     const summaryEnd = html.indexOf('</summary>');
     const summary = html.slice(0, summaryEnd);
-    for (const id of ['playBtn', 'playCollapseToggle', 'timeReadout', 'seekSlider', 'landingSeekFill', 'landingReady']) {
+    for (const id of ['playBtn', 'playCollapseToggle', 'timeReadout', 'seekSlider', 'landingSeekFill', 'landingReady', 'landingProcessBar']) {
       expect(summary).toContain(`id="${id}"`);
     }
     expect(summary).toContain('pac-bar');
@@ -92,6 +92,8 @@ describe('stems transport shares the engineer module', () => {
     expect(landingJs).toMatch(/seekBy\(10\)/);
     expect(landingJs).toMatch(/seekBy\(-5\)/);
     expect(landingJs).toMatch(/landingProcessSlot/);
+    expect(landingJs).toMatch(/landingProcessBar/);
+    expect(landingJs).toMatch(/placeProcessButton/);
     expect(landingJs).not.toMatch(/new AudioContext\(/);
     expect(landingJs).not.toMatch(/getUserMedia/);
     expect(landing).not.toMatch(/getUserMedia/);
@@ -185,6 +187,29 @@ describe('premium transport helpers', () => {
     };
     api.bindTransportOpen(again, mem, 'vip.landing.transportOpen');
     expect(again.open).toBe(true);
+  });
+
+  test('process stays on the bar while the dock is closed and moves when it opens', () => {
+    const button = { id: 'processBtn' };
+    const make = () => {
+      const el = {
+        children: [],
+        contains(node) { return this.children.includes(node); },
+        append(node) { this.children.push(node); },
+      };
+      return el;
+    };
+    const bar = make();
+    const slot = make();
+    expect(api.placeProcessButton({ open: false, bar, slot, button })).toBe(bar);
+    expect(bar.children).toEqual([button]);
+    expect(slot.children).toEqual([]);
+    expect(api.placeProcessButton({ open: false, bar, slot, button })).toBe(bar);
+    expect(bar.children).toEqual([button]);
+    expect(api.placeProcessButton({ open: true, bar, slot, button })).toBe(slot);
+    expect(slot.children).toEqual([button]);
+    expect(api.placeProcessButton({ open: true, bar: null, slot, button })).toBe(slot);
+    expect(api.placeProcessButton({ open: false, bar: null, slot, button })).toBe(slot);
   });
 
   test('speed steps stop at the ends and emit change', () => {

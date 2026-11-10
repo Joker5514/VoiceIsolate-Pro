@@ -45,6 +45,7 @@ import {
   bindTransportOpen,
   formatTransportSelection,
   guardTransportSummary,
+  placeProcessButton,
   readQuickCleanStatus,
   stepSelect,
   watchTransportStatus,
@@ -2426,13 +2427,20 @@ mountExplainBullets(document.getElementById('quickCleanStatus')?.parentElement, 
 (() => {
   const transport = document.getElementById('landingTransport');
   if (!transport) return;
-  const slot = document.getElementById('landingProcessSlot');
-  const btn = ui.processBtn;
-  if (slot && btn && !slot.contains(btn)) slot.append(btn);
+  const placeProcess = () => placeProcessButton({
+    open: transport.open,
+    bar: document.getElementById('landingProcessBar'),
+    slot: document.getElementById('landingProcessSlot'),
+    button: ui.processBtn,
+  });
+  transport.addEventListener('toggle', placeProcess);
   guardTransportSummary(transport);
   let store = null;
   try { store = globalThis.localStorage; } catch { store = null; }
   bindTransportOpen(transport, store, 'vip.landing.transportOpen');
+  // After the closed default. A toggle from that assignment also places it;
+  // this call covers browsers that do not fire toggle for the assignment.
+  placeProcess();
   watchTransportStatus({
     ready: document.getElementById('landingReady'),
     status: document.getElementById('landingTransportStatus'),
