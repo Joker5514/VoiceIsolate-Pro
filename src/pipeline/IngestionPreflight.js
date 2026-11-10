@@ -1,21 +1,21 @@
 /** Shared by Landing FileIngestion and the Engineer's deferred decode path. */
 import { readDeviceSignals, selectPerformanceTier } from '../core/PerformanceTier.js';
 import {
-  budgetError, chainChunkContract, estimateIngestionMemory, ingestionBudget, parseWavMetadata, resolveIngestionPlan,
+  budgetError, chainChunkContract, estimateIngestionMemory, ingestionBudget, resolveIngestionPlan,
 } from '../core/IngestionBudget.js';
+import { wavMetadataFor } from './ChunkedExtraction.js';
 import { probeMediaMetadata, runBounded } from './media-decode.js';
 
 export async function preflightIngestion(file, {
   signal, timeoutMs = 15000, onBudget = () => {}, profile = 'AUTO', modelIds = null,
 } = {}) {
   if (signal?.aborted) throw new DOMException('Ingestion cancelled', 'AbortError');
-  // Bounded header read, never blob.arrayBuffer() before the budget decision.
-  const header = await runBounded(() => file.slice(0, 1024 * 1024).arrayBuffer(), {
+  // Header walk, never blob.arrayBuffer() of the whole file before the budget decision.
+  let metadata = await runBounded(() => wavMetadataFor(file), {
     timeoutMs, signal, timeoutCode: 'INGESTION_HEADER_TIMEOUT', timeoutMessage: 'Audio header read timed out.',
   });
-  let metadata = parseWavMetadata(header, file.size);
-  const bytes = new Uint8Array(header);
-  const signature = bytes.length >= 4 ? String.fromCharCode(...bytes.subarray(0, 4)) : '';
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const signature = head.length >= 4 ? String.fromCharCode(head[0], head[1], head[2], head[3]) : '';
   if (!metadata && ['RIFF', 'RF64'].includes(signature)) {
     // Malformed PCM metadata is a decode error, not permission to allocate an
     // unbounded fallback capture. The browser decoder never sees this file.
