@@ -13,7 +13,7 @@ export async function preflightIngestion(file, {
   const header = await runBounded(() => file.slice(0, 1024 * 1024).arrayBuffer(), {
     timeoutMs, signal, timeoutCode: 'INGESTION_HEADER_TIMEOUT', timeoutMessage: 'Audio header read timed out.',
   });
-  let metadata = parseWavMetadata(header);
+  let metadata = parseWavMetadata(header, file.size);
   const bytes = new Uint8Array(header);
   const signature = bytes.length >= 4 ? String.fromCharCode(...bytes.subarray(0, 4)) : '';
   if (!metadata && ['RIFF', 'RF64'].includes(signature)) {
