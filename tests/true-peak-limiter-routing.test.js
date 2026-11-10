@@ -67,10 +67,13 @@ describe('true-peak limiter worklet routing', () => {
     const node = mixer.truePeakLimiter;
     expect(value(mixer, node, 'enabled')).toBe(0);
     mixer.setLimiterThreshold(-3);
-    mixer.setLimiterRelease(120);
+    mixer.setLimiterRelease(450);
     expect(value(mixer, node, 'enabled')).toBe(1);
     expect(value(mixer, node, 'ceiling')).toBe(-3);
-    expect(value(mixer, node, 'release')).toBeCloseTo(120, 6);
+    expect(value(mixer, node, 'release')).toBeCloseTo(450, 6);
+    // Below the 300 ms release floor the worklet gets the floor.
+    mixer.setLimiterRelease(120);
+    expect(value(mixer, node, 'release')).toBeCloseTo(300, 6);
     // Native limiter leg stays bypassed: no compressor make-up, no clip of overs.
     expect(mixer._parameterTargets.get(mixer.limiterEngagedGain.gain)).toBe(0);
     expect(mixer._parameterTargets.get(mixer.limiterBypassGain.gain)).toBe(1);

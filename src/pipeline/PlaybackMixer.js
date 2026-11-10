@@ -52,6 +52,20 @@ import { copyChannelsToAudioBuffer } from './ui-yield.js';
 import { limitTruePeak, measureTruePeak, truePeakLimiterLatencyFrames } from '../core/TruePeakLimiter.js';
 
 /** Crossfade duration (seconds) for speaker solo/mute/segment boundaries. */
+
+/**
+ * Release floor for the true-peak limiter (live worklet and export alike).
+ * Its fast follower never releases faster than this; the slow follower
+ * (60 ms attack, max(400 ms, 8x release)) holds through syllable-rate peaks.
+ * Round 2 measured the floor against no floor on Stage B exports: Engineer
+ * Whisper Boost SI-SDR -1.37 -> -1.11 dB, STOI 0.664 -> 0.685, new clicks
+ * 686 -> 665 (main with the native limiter: -1.33 dB, 0.676, 663).
+ */
+const LIMITER_MIN_RELEASE_MS = 300;
+/** Limiter release control (seconds) to the limiter's release in ms. */
+function limiterReleaseMs(releaseSec) {
+  return Math.max(LIMITER_MIN_RELEASE_MS, releaseSec * 1000);
+}
 const SPEAKER_RAMP_SEC = SPEAKER_GAIN_RAMP_SEC;
 
 /**
@@ -930,7 +944,7 @@ export class PlaybackMixer {
     };
     set('enabled', ceiling == null ? 0 : 1);
     if (ceiling != null) set('ceiling', ceiling);
-    set('release', (this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value) * 1000);
+    set('release', limiterReleaseMs(this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value));
   }
 
   /** WaveShaper curve: identity to ±CEILING_HEADROOM, or a clamp at the ceiling. */
@@ -1865,7 +1879,7 @@ export class PlaybackMixer {
     const safety = Number.isFinite(safetyCeilingDb) ? clamp(safetyCeilingDb, -24, 0) : this._safetyCeilingDb;
     const ceilingDb = this._ceilingDb != null ? this._ceilingDb : safety;
     const releaseSec = this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value;
-    const limiterReleaseMs = releaseSec * 1000;
+    const releaseMs = limiterReleaseMs(releaseSec);
     render._ceilingDb = this._ceilingDb;
     render._safetyCeilingDb = safety;
     render._applyCeilingCurve();
@@ -1939,7 +1953,7 @@ export class PlaybackMixer {
       const needsOffline = ceilingDb != null
         && (!render.truePeakLimiter || measureTruePeak(aligned) > Math.pow(10, ceilingDb / 20));
       const limited = needsOffline
-        ? (await limitTruePeak(aligned, SAMPLE_RATE, { ceilingDb, releaseMs: limiterReleaseMs, signal })).channels
+        ? (await limitTruePeak(aligned, SAMPLE_RATE, { ceilingDb, releaseMs, signal })).channels
         : aligned;
       if (signal?.aborted) throw cancelled();
       const out = createBufferLike(rendered, limited.length, regionFrames);
