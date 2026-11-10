@@ -1,8 +1,9 @@
 'use strict';
-let budget, preflight;
+let budget, preflight, chunked;
 beforeAll(async () => {
   budget = await import('../src/core/IngestionBudget.js');
   preflight = await import('../src/pipeline/IngestionPreflight.js');
+  chunked = await import('../src/pipeline/ChunkedExtraction.js');
 });
 function wavHeader({ seconds = 1, channels = 2, rate = 48000, bits = 16 } = {}) {
   const block = channels * bits / 8;
@@ -142,6 +143,118 @@ test('a recurrent model is not described as chunked when the full file does not 
   const plan = budget.resolveIngestionPlan(meta, 546816, balanced, { contract, profile: 'AUTO' });
   expect(plan.strategy).toBe('refuse');
   expect(budget.formatIngestionPlan(plan, 'this.m4a')).toMatch(/not split into windows/);
+});
+
+function pcm16(samples) {
+  const out = Buffer.alloc(samples.length * 2);
+  samples.forEach((s, i) => out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(s * 32767))), i * 2));
+  return out;
+}
+
+test('an unfinished data chunk stops before a trailing LIST instead of playing it', () => {
+  const tone = Array.from({ length: 64 }, (_, i) => Math.sin((2 * Math.PI * 1000 * i) / 48000) * 0.1);
+  const list = Buffer.concat([
+    Buffer.from('INFO'),
+    Buffer.from('ISFT'), Buffer.from([4, 0, 0, 0]), Buffer.from('DAW!'),
+  ]);
+  const fmt = Buffer.alloc(16);
+  fmt.writeUInt16LE(1, 0); fmt.writeUInt16LE(1, 2); fmt.writeUInt32LE(48000, 4);
+  fmt.writeUInt32LE(96000, 8); fmt.writeUInt16LE(2, 12); fmt.writeUInt16LE(16, 14);
+  const body = Buffer.concat([
+    Buffer.from('fmt '), Buffer.from([16, 0, 0, 0]), fmt,
+    Buffer.from('data'), Buffer.from([0, 0, 0, 0]), pcm16(tone),
+    Buffer.from('LIST'), Buffer.alloc(4), list,
+  ]);
+  body.writeUInt32LE(list.length, body.length - list.length - 4);
+  const file = Buffer.concat([
+    Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), body,
+  ]);
+  file.writeUInt32LE(file.length - 8, 4);
+  const meta = budget.parseWavMetadata(file, file.length);
+  const beforeFrames = Math.floor((file.length - meta.dataOffset) / meta.blockAlign);
+  const view = new DataView(file.buffer, file.byteOffset + meta.dataOffset, meta.dataBytes);
+  const pcm = chunked.decodeInterleavedPcm(view, meta.dataBytes / meta.blockAlign, meta);
+  let tailPeak = 0;
+  for (let i = tone.length; i < pcm[0].length; i++) tailPeak = Math.max(tailPeak, Math.abs(pcm[0][i]));
+  // Before this fix the parser consumed the LIST (72 frames, tail peak 0.66).
+  expect(meta.dataBytes).toBe(tone.length * 2);
+  expect(pcm[0].length).toBe(tone.length);
+  expect(tailPeak).toBe(0);
+  expect(beforeFrames).toBeGreaterThan(tone.length);
+});
+
+test('block align is the fmt field, and 24-bit samples in a 32-bit container stay left-justified', () => {
+  const fmt = Buffer.alloc(16);
+  fmt.writeUInt16LE(1, 0); fmt.writeUInt16LE(1, 2); fmt.writeUInt32LE(48000, 4);
+  fmt.writeUInt32LE(192000, 8); fmt.writeUInt16LE(4, 12); fmt.writeUInt16LE(24, 14);
+  const payload = Buffer.from([0x00, 0x00, 0x00, 0x40]);
+  const body = Buffer.concat([
+    Buffer.from('fmt '), Buffer.from([16, 0, 0, 0]), fmt,
+    Buffer.from('data'), Buffer.from([4, 0, 0, 0]), payload,
+  ]);
+  const file = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), body]);
+  file.writeUInt32LE(file.length - 8, 4);
+  const meta = budget.parseWavMetadata(file, file.length);
+  expect(meta.blockAlign).toBe(4);
+  expect(meta.bitDepth).toBe(24);
+  const view = new DataView(file.buffer, file.byteOffset + meta.dataOffset, meta.dataBytes);
+  const pcm = chunked.decodeInterleavedPcm(view, 1, meta);
+  expect(pcm[0][0]).toBeCloseTo(0.5, 5);
+});
+
+test('WAVE_FORMAT_EXTENSIBLE PCM 24-in-32 decodes, and a non-PCM subtype is refused', () => {
+  const guid = Buffer.from([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71]);
+  const fmt = Buffer.alloc(40);
+  fmt.writeUInt16LE(0xfffe, 0); fmt.writeUInt16LE(1, 2); fmt.writeUInt32LE(48000, 4);
+  fmt.writeUInt32LE(192000, 8); fmt.writeUInt16LE(4, 12); fmt.writeUInt16LE(32, 14);
+  fmt.writeUInt16LE(22, 16); fmt.writeUInt16LE(24, 18);
+  guid.copy(fmt, 24);
+  const payload = Buffer.from([0x00, 0x00, 0x00, 0x40]);
+  const body = Buffer.concat([
+    Buffer.from('fmt '), Buffer.from([40, 0, 0, 0]), fmt,
+    Buffer.from('data'), Buffer.from([4, 0, 0, 0]), payload,
+  ]);
+  const file = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), body]);
+  file.writeUInt32LE(file.length - 8, 4);
+  const meta = budget.parseWavMetadata(file, file.length);
+  expect(meta.format).toBe(1);
+  expect(meta.extensible).toBe(true);
+  expect(meta.blockAlign).toBe(4);
+  expect(meta.bitDepth).toBe(24);
+  const view = new DataView(file.buffer, file.byteOffset + meta.dataOffset, meta.dataBytes);
+  const pcm = chunked.decodeInterleavedPcm(view, 1, meta);
+  expect(pcm[0][0]).toBeCloseTo(0.5, 5);
+  const badFmt = Buffer.from(fmt);
+  badFmt.fill(0, 24, 40);
+  const badBody = Buffer.concat([
+    Buffer.from('fmt '), Buffer.from([40, 0, 0, 0]), badFmt,
+    Buffer.from('data'), Buffer.from([4, 0, 0, 0]), payload,
+  ]);
+  const bad = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), badBody]);
+  bad.writeUInt32LE(bad.length - 8, 4);
+  expect(budget.parseWavMetadata(bad, bad.length)).toBeNull();
+});
+
+test('a fmt chunk past the first 1 MiB is still a WAV plan', async () => {
+  const junk = Buffer.alloc(1024 * 1024 + 64);
+  const fmt = Buffer.alloc(16);
+  fmt.writeUInt16LE(1, 0); fmt.writeUInt16LE(1, 2); fmt.writeUInt32LE(48000, 4);
+  fmt.writeUInt32LE(96000, 8); fmt.writeUInt16LE(2, 12); fmt.writeUInt16LE(16, 14);
+  const body = Buffer.concat([
+    Buffer.from('JUNK'), Buffer.alloc(4), junk,
+    Buffer.from('fmt '), Buffer.from([16, 0, 0, 0]), fmt,
+    Buffer.from('data'), Buffer.from([4, 0, 0, 0]), Buffer.from([0, 0, 0, 0]),
+  ]);
+  body.writeUInt32LE(junk.length, 4);
+  const fileBytes = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), body]);
+  fileBytes.writeUInt32LE(fileBytes.length - 8, 4);
+  const file = new Blob([fileBytes], { type: 'audio/wav' });
+  Object.defineProperty(file, 'name', { value: 'long-header.wav' });
+  const viaWindow = await chunked.wavMetadataFor(file);
+  expect(viaWindow).toMatchObject({ sampleRate: 48000, dataBytes: 4, blockAlign: 2 });
+  const plan = await preflight.preflightIngestion(file);
+  expect(plan.strategy).not.toBe('refuse');
+  expect(plan.sampleRate).toBe(48000);
 });
 
 test('post-decode check catches a container that understated channels', () => {

@@ -7,6 +7,46 @@ import { PerformanceTier, detectPerformanceTier } from './PerformanceTier.js';
 import { MODEL_MANIFEST } from './ModelManifest.js';
 
 const MIB = 1024 * 1024;
+export const WAV_HEADER_WINDOW = MIB;
+export const WAV_HEADER_WALK_CAP = 32 * MIB;
+
+// WAVEFORMATEXTENSIBLE sub-format GUIDs, little-endian on disk.
+const PCM_SUBFORMAT = Object.freeze([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71]);
+const FLOAT_SUBFORMAT = Object.freeze([0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71]);
+const TRAILING_CHUNK_IDS = new Set(['LIST', 'fact', 'cue ', 'bext', 'iXML', 'FLLR', 'JUNK', 'PAD ', 'smpl', 'inst', 'plst', 'levl']);
+
+function sameBytes(bytes, at, expected) {
+  if (at < 0 || at + expected.length > bytes.length) return false;
+  for (let i = 0; i < expected.length; i++) if (bytes[at + i] !== expected[i]) return false;
+  return true;
+}
+
+function chunkChainEndsAt(bytes, view, tag, at, limit) {
+  let cursor = at;
+  for (let guard = 0; guard < 32 && cursor + 8 <= limit; guard++) {
+    const id = tag(cursor);
+    if (!TRAILING_CHUNK_IDS.has(id)) return false;
+    const size = view.getUint32(cursor + 4, true);
+    const next = cursor + 8 + size + (size % 2);
+    if (!Number.isSafeInteger(next) || next <= cursor || next > limit) return false;
+    cursor = next;
+  }
+  return cursor === limit;
+}
+
+/** PCM byte count before the first trailing metadata chunk that reaches `limit`. */
+function pcmBytesBeforeTrailing(bytes, view, tag, dataOffset, limit, blockAlign) {
+  if (limit > bytes.length || dataOffset < 0 || dataOffset >= limit) return null;
+  const start = dataOffset + (dataOffset % 2);
+  for (let at = start; at + 8 <= limit; at += 2) {
+    if (!TRAILING_CHUNK_IDS.has(tag(at))) continue;
+    if (!chunkChainEndsAt(bytes, view, tag, at, limit)) continue;
+    const pcm = at - dataOffset;
+    const aligned = pcm - (pcm % blockAlign);
+    return aligned > 0 ? aligned : null;
+  }
+  return null;
+}
 export const INGESTION_BUDGETS = Object.freeze({
   HIGH: Object.freeze({ workingBytes: 3072 * MIB, deviceMemoryFraction: 0.375 }),
   BALANCED: Object.freeze({ workingBytes: 768 * MIB, deviceMemoryFraction: 0.25 }),
@@ -44,12 +84,39 @@ function readWaveChunks(b, v, tag, riffEnd, fileSize) {
       if (Number.isSafeInteger(bytes) && bytes > 0) ds64DataBytes = bytes;
     }
     if (id === 'fmt ' && declared >= 16 && start + 16 <= riffEnd) {
-      fmt = {
-        format: v.getUint16(start, true),
-        channels: v.getUint16(start + 2, true),
-        sampleRate: v.getUint32(start + 4, true),
-        bitDepth: v.getUint16(start + 14, true),
-      };
+      const format = v.getUint16(start, true);
+      const channels = v.getUint16(start + 2, true);
+      const sampleRate = v.getUint32(start + 4, true);
+      const blockAlign = v.getUint16(start + 12, true);
+      const containerBits = v.getUint16(start + 14, true);
+      if (format === 0xfffe) {
+        const extensible = declared >= 40 && start + 40 <= riffEnd;
+        const cbSize = extensible ? v.getUint16(start + 16, true) : 0;
+        const validBits = extensible ? v.getUint16(start + 18, true) : 0;
+        const pcm = extensible && cbSize >= 22 && sameBytes(b, start + 24, PCM_SUBFORMAT);
+        const flt = extensible && cbSize >= 22 && sameBytes(b, start + 24, FLOAT_SUBFORMAT);
+        fmt = {
+          format: flt ? 3 : 1,
+          channels,
+          sampleRate,
+          bitDepth: validBits > 0 ? validBits : containerBits,
+          containerBits,
+          blockAlign,
+          extensible: true,
+          unsupported: !(pcm || flt),
+        };
+      } else {
+        fmt = {
+          format,
+          channels,
+          sampleRate,
+          bitDepth: containerBits,
+          containerBits,
+          blockAlign,
+          extensible: false,
+          unsupported: false,
+        };
+      }
     }
     if (id === 'data' && start <= riffEnd) {
       dataDeclared = declared;
@@ -63,12 +130,15 @@ function readWaveChunks(b, v, tag, riffEnd, fileSize) {
     if (!Number.isSafeInteger(next) || next <= at || next > riffEnd) break;
     at = next;
   }
-  if (!fmt || dataOffset === null || dataDeclared === null) return null;
+  if (!fmt || fmt.unsupported || dataOffset === null || dataDeclared === null) return null;
   if (fmt.channels < 1 || fmt.channels > 64 || fmt.sampleRate < 1 || fmt.sampleRate > 768000 || fmt.bitDepth < 1 || fmt.bitDepth > 64) return null;
-  const blockAlign = fmt.channels * Math.ceil(fmt.bitDepth / 8);
-  if (blockAlign <= 0) return null;
+  const blockAlign = fmt.blockAlign;
+  const containerBytes = blockAlign / fmt.channels;
+  if (!Number.isInteger(containerBytes) || containerBytes < 1 || containerBytes > 8) return null;
+  if (containerBytes * 8 < fmt.bitDepth) return null;
   let dataBytes = dataDeclared;
   let dataWindowable = dataDeclared !== 0 && dataDeclared !== 0xffffffff;
+  let unfinishedData = !dataWindowable && ds64DataBytes == null;
   if (!dataWindowable) {
     if (ds64DataBytes != null) {
       dataBytes = ds64DataBytes;
@@ -76,6 +146,16 @@ function readWaveChunks(b, v, tag, riffEnd, fileSize) {
     } else if (fileSize != null && fileSize > dataOffset) {
       const remain = fileSize - dataOffset;
       dataBytes = remain - (remain % blockAlign);
+      // A zero or 0xFFFFFFFF data size used to swallow a trailing LIST.
+      // When this buffer reaches EOF, stop at the first metadata chunk
+      // whose own chain ends at EOF.
+      if (b.length >= fileSize) {
+        const cut = pcmBytesBeforeTrailing(b, v, tag, dataOffset, fileSize, blockAlign);
+        if (cut != null) {
+          dataBytes = cut;
+          unfinishedData = false;
+        }
+      }
       dataWindowable = dataBytes > 0;
     } else {
       return null;
@@ -95,7 +175,41 @@ function readWaveChunks(b, v, tag, riffEnd, fileSize) {
     duration: Math.floor(dataBytes / blockAlign) / fmt.sampleRate,
     source: 'wav-header',
     complete: true,
+    unfinishedData,
   };
+}
+
+/**
+ * When the header window did not reach EOF, `tail` is the last bytes of the
+ * file. A metadata chunk at the end (LIST, bext, …) is not PCM.
+ * @param {object} meta
+ * @param {Uint8Array} tail
+ * @param {number} fileSize
+ */
+export function applyWavTail(meta, tail, fileSize) {
+  if (!meta?.unfinishedData || !tail?.length || !(fileSize > meta.dataOffset)) return meta;
+  const bytes = tail instanceof Uint8Array ? tail : new Uint8Array(tail);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tag = (at) => (at >= 0 && at + 4 <= bytes.length
+    ? String.fromCharCode(bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3])
+    : '');
+  const tailStart = fileSize - bytes.length;
+  for (let at = 0; at + 8 <= bytes.length; at += 2) {
+    if (!TRAILING_CHUNK_IDS.has(tag(at))) continue;
+    if (!chunkChainEndsAt(bytes, view, tag, at, bytes.length)) continue;
+    const absolute = tailStart + at;
+    if (absolute <= meta.dataOffset) continue;
+    const pcm = absolute - meta.dataOffset;
+    const aligned = pcm - (pcm % meta.blockAlign);
+    if (aligned <= 0) continue;
+    return {
+      ...meta,
+      dataBytes: aligned,
+      duration: Math.floor(aligned / meta.blockAlign) / meta.sampleRate,
+      unfinishedData: false,
+    };
+  }
+  return meta;
 }
 
 /** RIFF/RF64 WAV fmt + data metadata. Never trusts an unbounded chunk length.

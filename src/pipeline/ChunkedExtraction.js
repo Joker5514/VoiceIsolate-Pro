@@ -9,7 +9,7 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS } from '../core/audio-config.js';
-import { parseWavMetadata } from '../core/IngestionBudget.js';
+import { applyWavTail, parseWavMetadata, WAV_HEADER_WALK_CAP, WAV_HEADER_WINDOW } from '../core/IngestionBudget.js';
 import { interleaveFloat32, wavHeaderBytes } from '../core/WavEncoder.js';
 import { openCompressedReader } from './CompressedAudioReader.js';
 import { resampleWindow, sourceSpan } from './resample-window.js';
@@ -29,41 +29,38 @@ function fail(code, message, segment) {
   return error;
 }
 
+function readPcmSample(view, offset, meta) {
+  const container = meta.blockAlign / meta.channels;
+  const bits = meta.bitDepth;
+  if (meta.format === 3 && container === 4) return view.getFloat32(offset, true);
+  if (meta.format === 1 && container === 2 && bits === 16) return view.getInt16(offset, true) / 32768;
+  if (meta.format === 1 && container === 3 && bits === 24) {
+    let v = view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
+    if (v & 0x800000) v -= 0x1000000;
+    return v / 8388608;
+  }
+  if (meta.format === 1 && container === 4 && bits === 32) return view.getInt32(offset, true) / 2147483648;
+  // WAVEFORMATEXTENSIBLE stores the valid bits left-justified in the container.
+  if (meta.format === 1 && container === 4 && bits === 24) return (view.getInt32(offset, true) >> 8) / 8388608;
+  if (meta.format === 1 && container === 4 && bits === 16) return (view.getInt32(offset, true) >> 16) / 32768;
+  return null;
+}
+
 /** Interleaved PCM payload → planar float. Throws on a bit depth we do not read. */
 export function decodeInterleavedPcm(view, frames, meta) {
   const channels = meta.channels;
+  const container = meta.blockAlign / channels;
   const out = Array.from({ length: channels }, () => new Float32Array(frames));
-  const bits = meta.bitDepth;
-  if (meta.format === 3 && bits === 32) {
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < channels; c++) out[c][i] = view.getFloat32((i * channels + c) * 4, true);
-    }
-    return out;
-  }
-  if (meta.format === 1 && bits === 16) {
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < channels; c++) out[c][i] = view.getInt16((i * channels + c) * 2, true) / 32768;
-    }
-    return out;
-  }
-  if (meta.format === 1 && bits === 24) {
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < channels; c++) {
-        const o = (i * channels + c) * 3;
-        let v = view.getUint8(o) | (view.getUint8(o + 1) << 8) | (view.getUint8(o + 2) << 16);
-        if (v & 0x800000) v -= 0x1000000;
-        out[c][i] = v / 8388608;
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < channels; c++) {
+      const sample = readPcmSample(view, (i * channels + c) * container, meta);
+      if (sample == null) {
+        throw fail('CHUNK_CODEC', `[VIP][ChunkedExtraction] PCM ${meta.format}/${meta.bitDepth}-bit in a ${container}-byte container cannot be read in windows.`);
       }
+      out[c][i] = sample;
     }
-    return out;
   }
-  if (meta.format === 1 && bits === 32) {
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < channels; c++) out[c][i] = view.getInt32((i * channels + c) * 4, true) / 2147483648;
-    }
-    return out;
-  }
-  throw fail('CHUNK_CODEC', `[VIP][ChunkedExtraction] PCM ${meta.format}/${bits}-bit cannot be read in windows.`);
+  return out;
 }
 
 /**
@@ -347,8 +344,29 @@ export async function runChunkedExtraction(file, plan, options = {}) {
   }
 }
 
-/** Header parse used by tests and the WAV reader. Re-reads when the plan has no wav block. */
+/** Header parse used by tests and the WAV reader. Walks past the first 1 MiB
+ * until fmt and data are both found, capped at 32 MiB of front matter. An
+ * unfinished data size is trimmed when a metadata chunk ends the file. */
 export async function wavMetadataFor(file) {
-  const head = await file.slice(0, 1024 * 1024).arrayBuffer();
-  return parseWavMetadata(head, file?.size);
+  const size = Number(file?.size) || 0;
+  const cap = Math.min(size > 0 ? size : WAV_HEADER_WALK_CAP, WAV_HEADER_WALK_CAP);
+  let buf = new Uint8Array(0);
+  let meta = null;
+  while (buf.length < cap) {
+    const next = Math.min(cap, buf.length + WAV_HEADER_WINDOW);
+    const part = new Uint8Array(await file.slice(buf.length, next).arrayBuffer());
+    if (!part.length) break;
+    const joined = new Uint8Array(buf.length + part.length);
+    joined.set(buf, 0);
+    joined.set(part, buf.length);
+    buf = joined;
+    meta = parseWavMetadata(buf, size || buf.length);
+    if (meta) break;
+  }
+  if (meta?.unfinishedData && size > buf.length) {
+    const tailLen = Math.min(WAV_HEADER_WINDOW, size);
+    const tail = new Uint8Array(await file.slice(size - tailLen, size).arrayBuffer());
+    meta = applyWavTail(meta, tail, size);
+  }
+  return meta;
 }
