@@ -45,7 +45,7 @@ describe('Engineer processing speed path', () => {
 
   test('extreme noise-floor scan only runs when extreme path is active', () => {
     expect(appJs).toMatch(
-      /if \(runExtreme\) this\._extremeNoiseProfile = this\._estimateNoiseFloor\(mag\)/
+      /if \(runExtreme\) this\._extremeNoiseProfile = this\._trackNoiseFloor\(mag, sr, HOP\)/
     );
     // Must not re-estimate after the extreme loop on the fast path
     expect(appJs).not.toMatch(
