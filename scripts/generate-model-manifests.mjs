@@ -51,6 +51,21 @@ export function packagingModels(manifest = MODEL_MANIFEST) {
     const entry = manifest[id];
     if (entry && models[id]) models[alias] = deliveryEntry(entry, alias);
   }
+  // Unpinned complex BSRNN stays on its legacy key so the legacy worker still
+  // refuses it before fetch (no checksum). The canonical id is not a key.
+  const complex = manifest.bsrnn_complex;
+  if (complex && typeof complex.url === 'string') {
+    models.bsrnn_vocals_complex = {
+      modelId: complex.id,
+      filename: path.basename(complex.url),
+      sizeBytes: complex.sizeBytes,
+      sha256: complex.sha256,
+      eager: false,
+      optional: true,
+      shipped: false,
+      sources: [{ provider: 'same-origin', url: complex.url }],
+    };
+  }
   return models;
 }
 
@@ -106,7 +121,7 @@ export function generateModelManifests(root = ROOT) {
       'Android excludes optional Demucs and SAM weights; its required files come from the same canonical registry.',
     ],
   };
-  const compat = { models, aliases: { vad: 'vad', silero: 'vad', silero_vad: 'vad', 'silero-vad': 'vad', demucs: 'demucs', 'demucs-v4': 'demucs', demucs_v4: 'demucs', bsrnn: 'bsrnn_vocals', bsrnn_vocals: 'bsrnn_vocals' } };
+  const compat = { models, aliases: { vad: 'vad', silero: 'vad', silero_vad: 'vad', 'silero-vad': 'vad', demucs: 'demucs', 'demucs-v4': 'demucs', demucs_v4: 'demucs', bsrnn: 'bsrnn_vocals', bsrnn_vocals: 'bsrnn_vocals', bsrnn_complex: 'bsrnn_vocals_complex' } };
   return [
     [MODEL_MANIFEST_PATH, `${JSON.stringify(delivery, null, 2)}\n`],
     [MODEL_INVENTORY_PATH, `${JSON.stringify(inventory, null, 2)}\n`],

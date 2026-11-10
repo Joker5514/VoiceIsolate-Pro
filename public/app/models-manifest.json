@@ -166,6 +166,21 @@
           "url": "/app/models/bsrnn_vocals.onnx"
         }
       ]
+    },
+    "bsrnn_vocals_complex": {
+      "modelId": "bsrnn_complex",
+      "filename": "bsrnn_vocals_complex.onnx",
+      "sizeBytes": null,
+      "sha256": null,
+      "eager": false,
+      "optional": true,
+      "shipped": false,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/bsrnn_vocals_complex.onnx"
+        }
+      ]
     }
   },
   "_sha256_note": "Model hashes: pnpm models:manifests. Worklet hashes: pnpm worklets:hash (also regenerates this projection).",
