@@ -7,6 +7,10 @@
  * @class GateProcessor
  * @extends AudioWorkletProcessor
  */
+// The gate closes only once the envelope falls this far below the threshold.
+const GATE_HYSTERESIS_DB = 6;
+const GATE_HYSTERESIS_RATIO = 10 ** (-GATE_HYSTERESIS_DB / 20);
+
 class GateProcessor extends AudioWorkletProcessor {
   /**
    * Define the parameters exposed to the audio graph
@@ -79,6 +83,13 @@ class GateProcessor extends AudioWorkletProcessor {
 
     // Remaining hold time, in samples, for each channel
     this.holdCounter = [0, 0];
+
+    // Gate state for the hysteresis (linked across channels). Starts open so
+    // the first audio is never cut while the envelope warms up.
+    this.isOpen = true;
+    // Per-sample scratch (no allocation in the sample loop).
+    this._delayed = new Float32Array(2);
+    this._finite = [true, true];
 
     // Per-channel delay rings for the bounded (0–20 ms) lookahead path.
     // Allocated lazily once the AudioWorklet sample rate is known; never in
@@ -155,6 +166,7 @@ class GateProcessor extends AudioWorkletProcessor {
     this.envelopes = [0, 0];
     this.currentGain = [1, 1];
     this.holdCounter = [0, 0];
+    this.isOpen = true;
     this.delayIndexes = [0, 0];
     for (const delay of this.delayBuffers) delay?.fill(0);
   }
@@ -199,81 +211,79 @@ class GateProcessor extends AudioWorkletProcessor {
       Math.round(lookaheadMs * 0.001 * this.sampleRate),
     );
 
-    // Process each channel
+    // Stereo-linked: one detector (the louder channel) and one gain for both
+    // channels, so a gate decision never moves the stereo image. Hysteresis:
+    // the gate opens above `threshold` but only closes once the envelope is
+    // HYSTERESIS_DB below it, so a level hovering at the threshold (steady
+    // noise, a quiet tail) cannot flip the gate open/closed every few ms.
     const channelCount = Math.min(input.length, output.length, 2);
-
+    const closeLinear = thresholdLinear * GATE_HYSTERESIS_RATIO;
+    const ins = [];
+    const outs = [];
     for (let channel = 0; channel < channelCount; channel++) {
-      const inputChannel = input[channel];
-      const outputChannel = output[channel];
+      if (!input[channel] || !output[channel]) continue;
+      ins.push(input[channel]);
+      outs.push(output[channel]);
+    }
+    if (ins.length === 0) return true;
+    const blockSize = ins[0].length;
+    let envelope = this.envelopes[0];
+    let gain = this.currentGain[0];
+    let hold = this.holdCounter[0];
+    let isOpen = this.isOpen;
 
-      if (!inputChannel || !outputChannel) continue;
-
-      const blockSize = inputChannel.length;
-      const delay = this.delayBuffers[channel];
-      let delayIndex = this.delayIndexes[channel];
-
-      // Process each sample
-      for (let i = 0; i < blockSize; i++) {
-        const sample = inputChannel[i];
-
+    for (let i = 0; i < blockSize; i++) {
+      let level = 0;
+      for (let c = 0; c < ins.length; c++) {
+        const sample = ins[c][i];
+        const delay = this.delayBuffers[c];
+        const delayIndex = this.delayIndexes[c];
         // Detector sees the current sample; audible output is delayed by the
         // requested lookahead. With lookahead=0 this stays transparent.
         const delayedIndex = delayIndex - lookaheadSamples < 0
           ? delayIndex - lookaheadSamples + delay.length
           : delayIndex - lookaheadSamples;
-        const delayedSample = lookaheadSamples > 0 ? delay[delayedIndex] : sample;
-        delay[delayIndex] = Number.isFinite(sample) ? sample : 0;
-        delayIndex = (delayIndex + 1) % delay.length;
-
-        // Handle edge cases
-        if (!isFinite(sample)) {
-          outputChannel[i] = 0;
-          continue;
+        const finite = Number.isFinite(sample);
+        const delayedSample = lookaheadSamples > 0 ? delay[delayedIndex] : (finite ? sample : 0);
+        delay[delayIndex] = finite ? sample : 0;
+        this.delayIndexes[c] = (delayIndex + 1) % delay.length;
+        this._delayed[c] = delayedSample;
+        this._finite[c] = finite;
+        if (finite) {
+          const a = Math.abs(sample);
+          if (a > level) level = a;
         }
-
-        // Calculate envelope (absolute value for level detection)
-        const inputLevel = Math.abs(sample);
-
-        // Envelope follower with attack/release
-        if (inputLevel > this.envelopes[channel]) {
-          // Attack: signal is rising
-          this.envelopes[channel] = attackCoeff * this.envelopes[channel] +
-                                    (1 - attackCoeff) * inputLevel;
-        } else {
-          // Release: signal is falling
-          this.envelopes[channel] = releaseCoeff * this.envelopes[channel] +
-                                    (1 - releaseCoeff) * inputLevel;
-        }
-
-        // Gate open/closed decision, honouring the hold time. While the
-        // envelope is above threshold the gate is open and the hold timer is
-        // re-armed; once it drops, the gate stays open until the timer expires.
-        let open;
-        if (this.envelopes[channel] > thresholdLinear) {
-          this.holdCounter[channel] = holdSamples;
-          open = true;
-        } else if (this.holdCounter[channel] > 0) {
-          this.holdCounter[channel]--;
-          open = true;
-        } else {
-          open = false;
-        }
-
-        // Open → unity; closed → the range floor.
-        const targetGain = open ? 1 : floorGain;
-
-        // Smooth gain changes with the attack coefficient when opening and the
-        // release coefficient when closing, so the gate's timing controls
-        // shape the actual envelope (and avoid clicks).
-        const coeff = targetGain > this.currentGain[channel] ? attackCoeff : releaseCoeff;
-        this.currentGain[channel] = coeff * this.currentGain[channel] +
-                                    (1 - coeff) * targetGain;
-
-        // Apply gain to output
-        outputChannel[i] = delayedSample * this.currentGain[channel];
       }
-      this.delayIndexes[channel] = delayIndex;
+
+      // Envelope follower with attack/release.
+      const envCoeff = level > envelope ? attackCoeff : releaseCoeff;
+      envelope = envCoeff * envelope + (1 - envCoeff) * level;
+
+      // Open above threshold (re-arming hold); close below the hysteresis
+      // level once the hold time has run out.
+      if (envelope > thresholdLinear) {
+        isOpen = true;
+        hold = holdSamples;
+      } else if (isOpen && envelope < closeLinear) {
+        if (hold > 0) hold--;
+        else isOpen = false;
+      }
+
+      // Open → unity; closed → the range floor. Attack coefficient when
+      // opening, release when closing, so the timing controls shape the gain
+      // (and avoid clicks).
+      const targetGain = isOpen ? 1 : floorGain;
+      const coeff = targetGain > gain ? attackCoeff : releaseCoeff;
+      gain = coeff * gain + (1 - coeff) * targetGain;
+
+      for (let c = 0; c < ins.length; c++) {
+        outs[c][i] = this._finite[c] ? this._delayed[c] * gain : 0;
+      }
     }
+    this.envelopes[0] = envelope; this.envelopes[1] = envelope;
+    this.currentGain[0] = gain; this.currentGain[1] = gain;
+    this.holdCounter[0] = hold; this.holdCounter[1] = hold;
+    this.isOpen = isOpen;
 
     // Keep processor alive
     return true;
