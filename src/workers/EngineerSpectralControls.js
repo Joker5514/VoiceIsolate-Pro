@@ -61,6 +61,13 @@
     };
   }
 
+  /** Music Kill stability smoothing per frame (one-pole). */
+  const MUSIC_STABILITY_SMOOTH = 0.6;
+  /** Whisper-lift fade-in half width, in speech-confidence units. */
+  const WHISPER_LIFT_KNEE = 0.1;
+  /** Crowd Null confidence power smoothing per frame (one-pole, ≈1.4 hops). */
+  const CONFIDENCE_SMOOTH = 0.5;
+
   function smoothStep(value, edge0, edge1) {
     if (edge0 === edge1) return value >= edge1 ? 1 : 0;
     const x = clamp((value - edge0) / (edge1 - edge0), 0, 1);
@@ -84,6 +91,12 @@
     const previousGain = new Float32Array(bins);
     const reverbTail = new Float32Array(bins);
     const previousMagnitude = new Float32Array(bins);
+    // Per-bin stability, smoothed over frames, for Music Kill: the raw
+    // frame-to-frame ratio is random on noise and flickered the gain.
+    const musicStability = new Float32Array(bins);
+    // Per-bin power smoothed over frames for the Crowd Null confidence. On noise the instantaneous magnitude is
+    // Rayleigh-random, so a per-frame confidence flickered the gain.
+    const confidencePower = new Float32Array(bins);
     const warpMagnitude = new Float32Array(bins);
     let initialized = false;
 
@@ -163,6 +176,12 @@
         gain *= 1 - (below + above - below * above) * (1 - focusOutsideGain);
 
         // Tail prediction provides a low-cost dereverb/reverb-strip control.
+        const confPower = initialized
+          ? confidencePower[k] * CONFIDENCE_SMOOTH + mag * mag * (1 - CONFIDENCE_SMOOTH)
+          : mag * mag;
+        confidencePower[k] = confPower;
+        const confMag = Math.sqrt(confPower);
+
         const tail = reverbTail[k] * tailDecay;
         if (!preRoll) reverbTail[k] = Math.max(mag, tail);
         if (derevStrength > 0 || reverbStripStrength > 0) {
@@ -176,16 +195,22 @@
           gain *= 1 - bassStrength * (0.55 + 0.4 * (1 - hz / Math.max(1, 80 + bassStrength * 2000)));
         }
         if (crowdStrength > 0 && hz >= 200 && hz <= 2500) {
-          const confidence = mag / (mag + noiseFloor[k] * (1.2 - whisperSensitivity * 0.55) + EPSILON);
+          const confidence = confMag / (confMag + noiseFloor[k] * (1.2 - whisperSensitivity * 0.55) + EPSILON);
           gain *= 1 - crowdStrength * (1 - confidence) * 0.78;
         }
         if (musicStrength > 0) {
           const prior = previousMagnitude[k] || mag;
-          const stability = 1 - clamp(Math.abs(mag - prior) / Math.max(prior, EPSILON), 0, 1);
+          const raw = 1 - clamp(Math.abs(mag - prior) / Math.max(prior, EPSILON), 0, 1);
+          const stability = initialized ? musicStability[k] * MUSIC_STABILITY_SMOOTH + raw * (1 - MUSIC_STABILITY_SMOOTH) : raw;
+          musicStability[k] = stability;
           gain *= 1 - musicStrength * stability * 0.48;
         }
-        if (source < snrFloorAmp && (crowdStrength > 0 || musicStrength > 0 || s.whisperLift > 0)) {
-          gain *= 0.15 + (1 - crowdStrength) * 0.35;
+        if (crowdStrength > 0 || musicStrength > 0 || s.whisperLift > 0) {
+          // Soft knee one octave either side of the SNR floor: a hard switch
+          // flipped bins hovering at the floor between full and 0.15–0.5 gain
+          // every frame (musical noise).
+          const below = 1 - smoothStep(source, snrFloorAmp * 0.5, snrFloorAmp * 2);
+          if (below > 0) gain *= 1 - below * (1 - (0.15 + (1 - crowdStrength) * 0.35));
         }
         if (tunnelStrength > 0) {
           const f1 = Math.exp(-Math.pow((hz - 1200) / 560, 2));
@@ -210,13 +235,18 @@
           gain *= 1 - breathStrength * 0.72;
         }
 
+        // Whisper confidence stays on the instantaneous magnitude: smoothing it
+        // delayed soft onsets (measured −0.07 dB SI-SDR on Whisper Boost).
         const speechConfidence = mag / (mag + noiseFloor[k] * whisperThreshold + EPSILON);
         if (mode > 0 || s.whisperLift > 0) {
           const confidenceGain = clarityFloor + (1 - clarityFloor) * speechConfidence;
           gain *= confidenceGain;
-          if (speechConfidence > 0.35 - whisperSensitivity * 0.18) {
-            gain *= 1 + (whisperLift - 1) * speechConfidence;
-          }
+          // Lift fades in around the confidence threshold instead of
+          // switching on, so bins at the threshold do not jump by up to
+          // +12 dB between frames.
+          const liftOn = 0.35 - whisperSensitivity * 0.18;
+          const liftWeight = smoothStep(speechConfidence, liftOn - WHISPER_LIFT_KNEE, liftOn + WHISPER_LIFT_KNEE);
+          if (liftWeight > 0) gain *= 1 + (whisperLift - 1) * speechConfidence * liftWeight;
         }
 
         // nrFloor is the minimum gain any bin may be reduced to by this pass.

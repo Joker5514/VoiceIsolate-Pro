@@ -888,7 +888,9 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
     sliderUI?.flush();
     const region = mixer.getCropRegion();
     // Render full duration for video remux; its existing crop path trims audio and video together.
-    const full = await mixer.renderMix({ signal, ...(video ? {} : { startSec: region.in, endSec: region.out }) });
+    // −1 dBTP true-peak safety ceiling: hot presets (Whisper Boost, music under
+    // Voice Clarity) are limited cleanly instead of failing the clip check.
+    const full = await mixer.renderMix({ signal, safetyCeilingDb: -1, ...(video ? {} : { startSec: region.in, endSec: region.out }) });
     throwIfAborted(signal);
     const stats = await measureAudioBuffer(full, { signal });
     if (stats.clipped) throw new Error('The mix exceeds full scale. Lower Voice or Output Volume and export again.');

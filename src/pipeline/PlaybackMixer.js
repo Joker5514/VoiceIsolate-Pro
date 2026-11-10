@@ -49,6 +49,7 @@ import { PARAMETER_BY_ID } from '../core/ParameterSchema.js';
 
 import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/audio-config.js';
 import { copyChannelsToAudioBuffer } from './ui-yield.js';
+import { limitTruePeak } from '../core/TruePeakLimiter.js';
 
 /** Crossfade duration (seconds) for speaker solo/mute/segment boundaries. */
 const SPEAKER_RAMP_SEC = SPEAKER_GAIN_RAMP_SEC;
@@ -237,6 +238,8 @@ const MAX_DRY_DELAY_SEC = 0.1;
  * the stage is the identity for every realistic level until a ceiling is set.
  */
 const CEILING_HEADROOM = 16;
+/** Shortest release of the export true-peak limiter, ms (see renderMix). */
+const EXPORT_LIMITER_MIN_RELEASE_MS = 300;
 const CEILING_CURVE_POINTS = 4097;
 
 /** Engine DynamicsCompressor lookahead in frames, measured once per rate. */
@@ -280,6 +283,21 @@ export function measureCompressorLatency(sampleRate) {
   })().catch(() => fallback);
   _compressorLatency.set(sampleRate, probe);
   return probe;
+}
+
+/**
+ * A DynamicsCompressorNode adds automatic make-up gain, (1 / curve(1))^0.6
+ * (Web Audio spec; Chromium measured: +0.57 dB at −1 dB, 20:1). On a limiter
+ * that lifts everything under the ceiling and pushes more audio into it, so
+ * the engaged leg carries the inverse. Hard knee (the limiter's knee is 0).
+ * @param {number} thresholdDb
+ * @param {number} ratio
+ * @returns {number} linear gain ≤ 1
+ */
+export function limiterMakeupCompensation(thresholdDb, ratio) {
+  if (!(ratio > 1) || !Number.isFinite(thresholdDb)) return 1;
+  const t = Math.min(0, thresholdDb);
+  return Math.pow(10, (0.6 * t * (1 - 1 / ratio)) / 20);
 }
 
 export class PlaybackMixer {
@@ -812,7 +830,10 @@ export class PlaybackMixer {
     this._applyParam(this.compEngagedGain.gain, comp ? 1 : 0);
     this._applyParam(this.compBypassGain.gain, comp ? 0 : 1);
     const lim = engaged(this.limiter);
-    this._applyParam(this.limiterEngagedGain.gain, lim ? 1 : 0);
+    this._applyParam(this.limiterEngagedGain.gain, lim ? limiterMakeupCompensation(
+      this._parameterTargets.get(this.limiter.threshold) ?? this.limiter.threshold.value,
+      this._parameterTargets.get(this.limiter.ratio) ?? this.limiter.ratio.value,
+    ) : 0);
     this._applyParam(this.limiterBypassGain.gain, lim ? 0 : 1);
   }
 
@@ -1686,10 +1707,17 @@ export class PlaybackMixer {
    * `stems` renders other buffers (e.g. Engineer's processed stems while A/B
    * playback holds the original) through this graph's current settings. A
    * missing noise stem renders as silence, matching a single-buffer load.
+   * The export's ceiling is a 4× true-peak look-ahead limiter run on the
+   * rendered region (src/core/TruePeakLimiter.js), not the live graph's
+   * compressor + clip: the compressor's attack lets overs through to the clip,
+   * which flattened peaks, and its auto make-up gain lifted the whole mix.
+   * With the limiter engaged its ceiling and release are used; otherwise
+   * `safetyCeilingDb` (when given) caps the true peak, and without either the
+   * mix is returned as rendered (overs stay visible to the caller).
    * @param {{ signal?: AbortSignal, startSec?: number, endSec?: number,
-   *   stems?: { clean: AudioBuffer, noise?: AudioBuffer|null } }} [opts]
+   *   stems?: { clean: AudioBuffer, noise?: AudioBuffer|null }, safetyCeilingDb?: number }} [opts]
    */
-  async renderMix({ signal, startSec = 0, endSec, stems = null } = {}) {
+  async renderMix({ signal, startSec = 0, endSec, stems = null, safetyCeilingDb } = {}) {
     const Offline = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
     if (!Offline) throw new Error('Offline export is unavailable in this browser. Try a supported desktop browser.');
     const cleanBuffer = stems ? stems.clean : this.cleanBuffer;
@@ -1732,8 +1760,23 @@ export class PlaybackMixer {
     for (const [key, node] of this.graphicBands) copyNode(node, render.graphicBands.get(key));
     render._gateParams = { ...this._gateParams };
     render._deEsserParams = { ...this._deEsserParams };
-    render._ceilingDb = this._ceilingDb;
-    render._applyCeilingCurve();
+    // The in-graph limiter and clip stay out of the render (same latency via
+    // the bypass leg); the true-peak limiter below sets the ceiling instead.
+    const ceilingDb = this._ceilingDb != null
+      ? this._ceilingDb
+      : (Number.isFinite(safetyCeilingDb) ? Math.min(0, safetyCeilingDb) : null);
+    const releaseSec = this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value;
+    // Release floor: at the 45 ms preset release the gain rode every syllable
+    // of hot presets (Whisper Boost: −0.30 dB SI-SDR, −0.016 STOI vs the old
+    // clip); 300 ms measured level with the old path and with no flat tops.
+    const limiterReleaseMs = Math.max(EXPORT_LIMITER_MIN_RELEASE_MS, this._ceilingDb != null ? releaseSec * 1000 : 0);
+    for (const [param, value] of [[render.limiterEngagedGain.gain, 0], [render.limiterBypassGain.gain, 1]]) {
+      param.cancelScheduledValues(0);
+      param.setValueAtTime(value, 0);
+    }
+    // A null curve passes samples through unchanged (no ±CEILING_HEADROOM clamp).
+    render._ceilingDb = null;
+    render.ceilingShaper.curve = null;
     render._segments = this.getSpeakerSegments();
     render._speakers = new Map([...this._speakers].map(([id, state]) => [id, { ...state }]));
     render._soloId = this._soloId;
@@ -1779,8 +1822,12 @@ export class PlaybackMixer {
       for (let c = 0; c < rendered.numberOfChannels; c++) {
         aligned.push(rendered.getChannelData(c).subarray(latency, latency + regionFrames));
       }
-      const out = createBufferLike(rendered, aligned.length, regionFrames);
-      return await copyChannelsToAudioBuffer(out, aligned, { signal });
+      const limited = ceilingDb == null
+        ? aligned
+        : (await limitTruePeak(aligned, SAMPLE_RATE, { ceilingDb, releaseMs: limiterReleaseMs, signal })).channels;
+      if (signal?.aborted) throw cancelled();
+      const out = createBufferLike(rendered, limited.length, regionFrames);
+      return await copyChannelsToAudioBuffer(out, limited, { signal });
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);

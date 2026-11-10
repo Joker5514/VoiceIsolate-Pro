@@ -104,7 +104,7 @@
         {
           "provider": "same-origin",
           "url": "/src/workers/GateProcessor.js",
-          "sha256": "ed3a6075adb461f6872d1a7be693965c207e54f99542ca06435fdc63b7173368"
+          "sha256": "e835df2c2995bc857b92e060a611c89e9ff798c0bcd8348f54ba7ca931ce6200"
         }
       ]
     },

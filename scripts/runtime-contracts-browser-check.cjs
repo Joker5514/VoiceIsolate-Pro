@@ -11,7 +11,8 @@
  *   F08  dry/wet: a 50/50 blend of a transparent chain equals the input
  *        (no comb filter), with and without 20 ms gate lookahead
  *   F09  ceiling: no output sample exceeds the set ceiling under +24 dB trim,
- *        +24 dB makeup, 200% voice, 200% width and 50% dry
+ *        +24 dB makeup, 200% voice, 200% width and 50% dry (export true-peak
+ *        limiter); a −1 dBTP safety ceiling caps the true peak of a hot mix
  *   F07  preview/export: live playback captured from the graph equals
  *        renderMix for the same settings (mute, gains, EQ, dry/wet, speakers)
  *   F03  dispose with a hung worklet fetch resolves and closes the owned context
@@ -184,6 +185,12 @@ async function main() {
       const r = await mixer.renderMix({ stems: { clean: bufferFrom([x, xr]), noise: null } });
       const s = stats(r);
       check('F09 without a ceiling, over-full-scale samples remain visible', s.over > 0 && s.peak > 1.5, { peak: s.peak, over: s.over });
+      // Landing's export passes a −1 dBTP safety ceiling: the same hot mix is
+      // limited (4× true peak) instead of refused.
+      const { measureTruePeak } = await import('/src/core/TruePeakLimiter.js');
+      const safe = await mixer.renderMix({ stems: { clean: bufferFrom([x, xr]), noise: null }, safetyCeilingDb: -1 });
+      const tp = measureTruePeak([safe.getChannelData(0), safe.getChannelData(1)]);
+      check('F09 safety ceiling holds the true peak at -1 dBTP', tp <= 10 ** (-1 / 20) + 1e-6 && stats(safe).nonFinite === 0, { truePeak: tp });
       await mixer.dispose();
     }
 
