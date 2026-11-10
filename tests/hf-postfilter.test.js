@@ -107,6 +107,40 @@ describe('HF post-filter: uncertain mask (fused 0.8)', () => {
     expect(Math.abs(dbBand(z, 100, 6500, from) - dbBand(y, 100, 6500, from))).toBeLessThan(0.05);
   });
 
+  test('stationary noise: no new isolated HF peaks after warm-up (musical noise)', async () => {
+    // Gaussian noise: per-bin power is exponential, so cells 10 dB over the
+    // bin mean are rare (~5e-5). Pass-through flicker on noise bins shows up
+    // as many more of them (an earlier tuning measured 2e-3).
+    const len = 5 * SR;
+    const r = rng(17); const x = new Float32Array(len);
+    for (let i = 0; i < len; i += 2) {
+      const u = Math.max(1e-12, r()); const v = r(); const m = Math.sqrt(-2 * Math.log(u));
+      x[i] = 0.01 * m * Math.cos(2 * Math.PI * v); x[i + 1] = 0.01 * m * Math.sin(2 * Math.PI * v);
+    }
+    const y = await run(on, x, V);
+    const frac = (sig) => {
+      const N = 1024; const H = 512; const k0 = Math.ceil(10000 * N / SR); const k1 = Math.floor(18750 * N / SR);
+      const rows = [];
+      for (let s = 2 * SR; s + N <= len - N; s += H) {
+        const row = [];
+        for (let k = k0; k < k1; k += 2) {
+          let re = 0; let im = 0;
+          for (let n = 0; n < N; n++) {
+            const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / N); const a = (2 * Math.PI * k * n) / N;
+            re += sig[s + n] * w * Math.cos(a); im -= sig[s + n] * w * Math.sin(a);
+          }
+          row.push(re * re + im * im);
+        }
+        rows.push(row);
+      }
+      const mean = rows[0].map((_, k) => rows.reduce((a, rr) => a + rr[k], 0) / rows.length);
+      let c = 0; let n = 0;
+      for (const rr of rows) rr.forEach((v, k) => { n++; if (v > 10 * mean[k]) c++; });
+      return c / n;
+    };
+    expect(frac(y)).toBeLessThan(5e-4);
+  });
+
   test('HF bursts 20 dB above the noise floor keep their level (within 1.5 dB)', async () => {
     const len = 5 * SR;
     const x = white(len, 0.003, 5);

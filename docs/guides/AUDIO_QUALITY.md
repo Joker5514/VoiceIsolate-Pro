@@ -176,7 +176,8 @@ before the Engineer frame processor; no extra STFT). Per bin above 7 kHz
   recursive-averaging noise tracker on the unmasked input power: 3-bin and
   60 ms smoothing, minimum over two 0.75 s sub-windows, bias 1.66 (Cohen and
   Berdugo, IEEE SPL 9(1), 2002; Martin, IEEE TSAP 9(5), 2001), mapped through
-  a 4-12 dB a posteriori SNR ramp with instant attack and 60 ms release, as
+  a 7-14 dB a posteriori SNR ramp (60 ms smoothing; a strong onset opens at
+  once), as
   OM-LSA uses its speech-presence probability (Cohen and Berdugo, Signal
   Processing 81(11), 2001; Gerkmann and Hendriks, IEEE TASLP 20(4), 2012).
   A strong onset (instantaneous SNR 6 dB past the ramp) counts from its
@@ -190,11 +191,11 @@ before the Engineer frame processor; no extra STFT). Per bin above 7 kHz
   gated by the separation mask.
 
 Gate (synthetic, 4 s), PR #911 -> this filter (pre-#895 in brackets):
-white 5 dB SI-SDR delta landing -2.13 -> -0.52 (-1.00), engineer -1.35 ->
--0.50 (-0.73), maximum 0.16 -> 0.56 (0.46); noise-only suppression 3.26 ->
-5.92 (5.00), 6.14 -> 7.77 (7.26), 9.08 -> 10.06 (9.75); whisper in white
+white 5 dB SI-SDR delta landing -2.13 -> -0.51 (-1.00), engineer -1.35 ->
+-0.51 (-0.73), maximum 0.16 -> 0.55 (0.46); noise-only suppression 3.26 ->
+5.98 (5.00), 6.14 -> 7.81 (7.26), 9.08 -> 10.07 (9.75); whisper in white
 10 dB landing -0.03 -> +1.35 (0.95); clean speech 6.40 -> 6.40 (6.38).
-Speech-level pins on noisy fixtures fell (white 5 dB landing -1.81 -> -2.32)
+Speech-level pins on noisy fixtures fell (white 5 dB landing -1.81 -> -2.33)
 because that metric includes the residual noise: the projected speech
 component moved by at most 0.05 dB (see the PR's re-pin table).
 

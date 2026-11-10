@@ -40,8 +40,8 @@
   /** Deepest HF gain (−16.5 dB) where the bin is noise and the mask unsure. */
   const GAIN_FLOOR = 0.15;
   /** Soft speech-presence decision on the a posteriori SNR (dB). */
-  const SPP_LO_DB = 4;
-  const SPP_HI_DB = 12;
+  const SPP_LO_DB = 7;
+  const SPP_HI_DB = 14;
   /** Instantaneous-power margin (dB) for the fast onset path. */
   const ONSET_MARGIN_DB = 6;
   /** Minimum-statistics bias correction (Martin 2001; MCRA Bmin ≈ 1.66). */
@@ -120,17 +120,17 @@
         else if (roll) { minPrev[i] = minCur[i]; minCur[i] = s; }
         else if (s < minCur[i]) minCur[i] = s;
         const noise = MIN_BIAS * Math.min(minCur[i], minPrev[i]) + 1e-20;
-        // MCRA indicator on the smoothed power S / (Bmin * Smin): the
-        // smoothing keeps single-frame noise peaks from flipping a bin to
-        // "speech" (isolated pass-through bins are musical noise).
-        // A strong onset (instantaneous power 6 dB past the threshold, which
-        // stationary noise practically never reaches) counts from its first
-        // frame instead of waiting for S to rise.
-        const snrDb = Math.max(10 * Math.log10(s / noise + 1e-12), 10 * Math.log10(pf[i] / noise + 1e-12) - ONSET_MARGIN_DB);
-        const q = smoothStep(snrDb, SPP_LO_DB, SPP_HI_DB);
-        // Attack at once (onsets and sibilants pass), release over SPP_TAU.
-        const held = aSpp * spp[i] + (1 - aSpp) * q;
-        spp[i] = first || q > held ? q : held;
+        // MCRA indicator on the smoothed power S / (Bmin * Smin), averaged
+        // again over SPP_TAU both ways: a single-frame noise excursion only
+        // nudges it, so noise bins do not flip to pass-through (an isolated
+        // pass-through bin is musical noise).
+        const qSmooth = smoothStep(10 * Math.log10(s / noise + 1e-12), SPP_LO_DB, SPP_HI_DB);
+        // A strong onset (instantaneous power ONSET_MARGIN_DB past the ramp,
+        // which stationary noise practically never reaches) opens the bin at
+        // once, so onsets and sibilants are not dulled.
+        const qOnset = smoothStep(10 * Math.log10(pf[i] / noise + 1e-12) - ONSET_MARGIN_DB, SPP_LO_DB, SPP_HI_DB);
+        const held = first ? qSmooth : aSpp * spp[i] + (1 - aSpp) * qSmooth;
+        spp[i] = qOnset > held ? qOnset : held;
         // Uncertainty is 0 for a confident mask: those bins are never touched.
         const unsure = 1 - smoothStep(mask[k0 + i], MASK_UNSURE, MASK_SURE);
         sure[i] = unsure === 0 ? 1 : 0;
