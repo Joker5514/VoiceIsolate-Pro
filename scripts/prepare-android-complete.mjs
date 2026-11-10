@@ -70,6 +70,7 @@ const REQUIRED_PATHS = [
   // Worklets + ORT
   'src/workers/GateProcessor.js',
   'src/workers/DeEsserProcessor.js',
+  'src/workers/TruePeakLimiterProcessor.js',
   'src/workers/MLWorker.js',
   'src/workers/EngineerSpectralControls.js',
   'src/workers/MainsHumFilter.js',

@@ -88,12 +88,44 @@ test('gain moves smoothly: no step at a burst onset (no click)', async () => {
   for (let i = 0; i < SR / 2 - 300; i++) expect(r.channels[0][i]).toBe(x[i]);
 });
 
-test('release returns to unity after the burst', async () => {
-  const n = SR; const x = new Float32Array(n);
+test('release returns to unity after a sustained burst (slow follower)', async () => {
+  const n = 3 * SR; const x = new Float32Array(n);
   for (let i = 0; i < n; i++) x[i] = (i < SR / 4 ? 1.5 : 0.3) * Math.sin(2 * Math.PI * 200 * i / SR);
   const r = await lim.limitTruePeak([x], SR, { ceilingDb: -1, releaseMs: 50, yieldFn: noYield });
-  const i = n - 100; // 0.75 s after the burst, 15 time constants
-  expect(r.channels[0][i] / x[i]).toBeCloseTo(1, 4);
+  const i = n - 100; // 2.75 s after the burst, ~7 slow time constants (400 ms)
+  expect(r.channels[0][i] / x[i]).toBeCloseTo(1, 2);
+});
+
+test('program-dependent release: an isolated peak recovers at the fast rate', async () => {
+  const n = SR; const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) x[i] = 0.3 * Math.sin(2 * Math.PI * 200 * i / SR);
+  for (let i = 4800; i < 4900; i++) x[i] = 1.6 * Math.sign(x[i] || 1) * Math.abs(Math.sin(2 * Math.PI * 200 * i / SR)) + x[i];
+  const r = await lim.limitTruePeak([x], SR, { ceilingDb: -1, releaseMs: 50, yieldFn: noYield });
+  // 300 ms after the 2 ms peak: within 0.5 dB of unity (fixed 300 ms release would sit ~4 dB down).
+  const i = 4900 + Math.round(0.3 * SR);
+  let o = 0; let a = 0;
+  for (let k = i; k < i + 480; k++) { o += r.channels[0][k] ** 2; a += x[k] ** 2; }
+  expect(10 * Math.log10(o / a)).toBeGreaterThan(-0.5);
+});
+
+test('program-dependent release: syllable-rate limiting holds instead of pumping', async () => {
+  // 4 Hz bursts, each well over the ceiling: the gain between bursts should not
+  // swing back to unity every 250 ms the way a 50 ms release alone would.
+  const n = 3 * SR; const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const env = (i % (SR / 4)) < SR / 8 ? 1.8 : 0.5;
+    x[i] = env * Math.sin(2 * Math.PI * 220 * i / SR);
+  }
+  const r = await lim.limitTruePeak([x], SR, { ceilingDb: -1, releaseMs: 50, yieldFn: noYield });
+  const gains = [];
+  for (let b = 4; b < 12; b++) {
+    const k = b * (SR / 4) + SR / 8 + SR / 16; // middle of the quiet half
+    let o = 0; let a = 0;
+    for (let j = k - 240; j < k + 240; j++) { o += r.channels[0][j] ** 2; a += x[j] ** 2; }
+    gains.push(10 * Math.log10(o / a));
+  }
+  // Quiet halves stay ducked (held) rather than released to 0 dB.
+  for (const g of gains) expect(g).toBeLessThan(-2);
 });
 
 test('the ceiling at the file edges holds too', async () => {

@@ -5,12 +5,17 @@
  *     of switching per bin per frame;
  *   • Crowd Null confidence reads a per-bin power smoothed over frames, and
  *     Music Kill a smoothed stability, instead of the Rayleigh-random
- *     instantaneous magnitude of noise. (Smoothing the whisper confidence too
- *     cut flutter further but cost Whisper Boost 0.07 dB SI-SDR, so it is out.)
+ *     instantaneous magnitude of noise;
+ *   • the whisper confidence blends toward that smoothed power by the Crowd
+ *     Null strength, so Surveillance (Crowd Null 75) flutters less while
+ *     presets without Crowd Null keep the instantaneous confidence (smoothing
+ *     it everywhere cost Whisper Boost 0.07 dB SI-SDR).
  * Measured as the mean frame-to-frame change of each bin's applied gain on
  * stationary noise. Values before the fix (main ff1f009), same frames:
  *   Whisper Boost −50 dB 1.50, Forensic Extract −50 dB 1.48,
  *   Aggressive Isolate −60 dB 1.35, Surveillance −60 dB 2.15, Voice Clarity 0.40.
+ * Round 2 (vs main 6e60541): Surveillance −60 dB 2.09 → 1.67, −50 dB 3.06 → 2.67;
+ *   Whisper Boost 1.285 and Forensic Extract 1.222 unchanged.
  */
 'use strict';
 
@@ -75,6 +80,8 @@ test.each([
   ['Whisper Boost', -50, 1.35],
   ['Forensic Extract', -50, 1.35],
   ['Aggressive Isolate', -60, 1.0],
+  ['Surveillance', -60, 1.85],
+  ['Surveillance', -50, 2.85],
 ])('%s on noise at %d dB flutters less than %s dB per frame', (preset, db, limit) => {
   expect(flutterDb(preset, db)).toBeLessThan(limit);
 });
@@ -101,4 +108,12 @@ test('the SNR-floor cut is continuous in level (no step at the floor)', () => {
     prev = g;
   }
   expect(worst).toBeLessThan(0.5);
+});
+
+// Presets without Crowd Null keep the instantaneous whisper confidence.
+test.each([
+  ['Whisper Boost', 1.285],
+  ['Forensic Extract', 1.222],
+])('%s whisper confidence is not smoothed (flutter stays %s dB)', (preset, value) => {
+  expect(flutterDb(preset, -50)).toBeCloseTo(value, 2);
 });

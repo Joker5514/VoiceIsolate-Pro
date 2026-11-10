@@ -44,6 +44,7 @@ const REQUIRED = [
   'src/workers/SpeakerFeatures.js',
   'src/workers/GateProcessor.js',
   'src/workers/DeEsserProcessor.js',
+  'src/workers/TruePeakLimiterProcessor.js',
   'src/presentation/DspSlider.js',
   ...androidModelFiles().map((m) => m.url.replace(/^\//, '')),
 ];

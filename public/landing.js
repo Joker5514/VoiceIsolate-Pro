@@ -2015,6 +2015,9 @@ async function installStems({ requestId, clean, noise, sampleRate, passthrough, 
   if (!mixer) {
     try {
       mixer = new PlaybackMixer();
+      // −1 dBTP true-peak safety ceiling on playback too, so the preview is
+      // exactly what Export writes (renderMix applies the same limiter).
+      mixer.setSafetyCeiling(-1);
     } catch (err) {
       // AudioContext may fail on first load if the browser requires a user gesture
       // (autoplay policy) or if the Web Audio API is unavailable.

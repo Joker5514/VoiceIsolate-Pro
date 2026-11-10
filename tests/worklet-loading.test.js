@@ -36,6 +36,7 @@ describe('PlaybackMixer load path', () => {
   test('literal addModule paths remain for allowlist', () => {
     expect(mixer).toContain("addModule('/src/workers/GateProcessor.js')");
     expect(mixer).toContain("addModule('/src/workers/DeEsserProcessor.js')");
+    expect(mixer).toContain("addModule('/src/workers/TruePeakLimiterProcessor.js')");
   });
 
   test('a failed worklet load reconnects each bypass leg after the failure', async () => {

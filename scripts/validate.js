@@ -189,7 +189,9 @@ const offenders = [];
 // Playback-only DSP worklets explicitly permitted in src/ (NOT live-mic). See
 // CLAUDE.md §2.1. Any other worklet path — or a non-literal/dynamic module arg
 // — is still rejected, and getUserMedia stays banned outright.
-const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js', '/src/workers/DeEsserProcessor.js'];
+// Playback worklets (CLAUDE.md §Live-Mix worklets): gate, de-esser and the
+// true-peak output limiter. Rule change 2026-11-10 (owner-approved): was two.
+const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js', '/src/workers/DeEsserProcessor.js', '/src/workers/TruePeakLimiterProcessor.js'];
 // Vendored, minified third-party bundles (ORT, Three.js, design-system, React
 // shim). These are trusted build artifacts and a future upstream upgrade could
 // legitimately embed a string that looks like a CDN host, so the CDN-host scan

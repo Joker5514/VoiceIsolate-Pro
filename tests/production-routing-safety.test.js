@@ -72,9 +72,10 @@ describe('Production routing safety', () => {
     expect(mlHost).not.toMatch(/['"]\/app\/ml-worker\.js['"]/);
   });
 
-  test('playback worklets are Gate + DeEsser only', () => {
+  test('playback worklets are Gate + DeEsser + TruePeakLimiter only', () => {
     expect(playback).toContain('/src/workers/GateProcessor.js');
     expect(playback).toContain('/src/workers/DeEsserProcessor.js');
+    expect(playback).toContain('/src/workers/TruePeakLimiterProcessor.js');
   });
 
   test('microphone is denied in vercel Permissions-Policy', () => {

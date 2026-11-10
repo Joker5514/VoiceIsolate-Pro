@@ -22,6 +22,11 @@
  * chunks of CHUNK frames with LEFT frames of re-processed context for the
  * GRUs to settle. Feature normalisation is causal and carried across chunks,
  * so features equal a single full-length pass; memory is O(chunk).
+ *
+ * One deliberate difference from libDF (opts.preRoll, default PRE_ROLL): a
+ * 0.5 s mirrored lead-in is enhanced first and discarded, so the cold-started
+ * norms and GRUs settle before the file's first sample. preRoll: 0 is exact
+ * libDF (the libdf reference test runs that way).
  */
 'use strict';
 
@@ -216,14 +221,33 @@
   }
 
   /**
-   * @param {Float32Array} samples mono 48 kHz
+   * Reflected lead-in (samples at 48 kHz) run before the file and discarded.
+   * libDF starts its ERB / unit norms and GRU state cold, so the first second
+   * of a file is enhanced with transient state: speech that starts at t = 0
+   * lost up to 44 dB in its first 5 ms. A mirrored copy of the opening lets
+   * the network settle on the file's own signal first. 0 = exact libDF.
+   */
+  const PRE_ROLL = 24000;
+
+  /** Lead-in: input[pre..1] mirrored, then the input. */
+  function withPreRoll(input, pre) {
+    const out = new Float32Array(input.length + pre);
+    for (let i = 0; i < pre; i++) out[i] = input[pre - i];
+    out.set(input, pre);
+    return out;
+  }
+
+  /**
+   * @param {Float32Array} input mono 48 kHz
    * @param {(part: 'enc'|'erb_dec'|'df_dec', feeds: Record<string, { data: Float32Array, dims: number[] }>) => Promise<Record<string, Float32Array>>} run
-   * @param {{ onProgress?: (p: number) => void, yieldFn?: () => Promise<void>|void, chunkFrames?: number, leftFrames?: number }} [opts]
+   * @param {{ onProgress?: (p: number) => void, yieldFn?: () => Promise<void>|void, chunkFrames?: number, leftFrames?: number, preRoll?: number }} [opts]
    * @returns {Promise<Float32Array>} enhanced, same length as input
    */
-  async function runDeepFilterNet(samples, run, opts = {}) {
+  async function runDeepFilterNet(input, run, opts = {}) {
     const chunk = opts.chunkFrames || CHUNK;
     const left = opts.leftFrames ?? LEFT;
+    const pre = Math.max(0, Math.min(input.length - 1, Math.floor(opts.preRoll ?? PRE_ROLL)));
+    const samples = pre > 0 ? withPreRoll(input, pre) : input;
     const n = samples.length;
     // libDF enhance(): pad by FFT zeros, frames = floor(len / hop), trim the 480-sample delay.
     const padded = n + FFT;
@@ -333,12 +357,12 @@
       opts.onProgress?.(keepEnd / T);
       if (opts.yieldFn) await opts.yieldFn();
     }
-    return out.slice(FFT - HOP, FFT - HOP + n);
+    return out.slice(FFT - HOP + pre, FFT - HOP + n);
   }
 
   scope.runDeepFilterNet = runDeepFilterNet;
   scope.VipDeepFilterNet = Object.freeze({
-    SR, FFT, HOP, NB_ERB, NB_DF, ERB_WIDTHS, CHUNK, LEFT,
+    SR, FFT, HOP, NB_ERB, NB_DF, ERB_WIDTHS, CHUNK, LEFT, PRE_ROLL,
     // Exposed for tests only.
     _rfft960: (x, outR, outI) => rfft960(x, outR, outI, getPlan(), new Float64Array(M), new Float64Array(M)),
     _irfft960: (inR, inI, out) => irfft960(inR, inI, out, getPlan(), new Float64Array(M), new Float64Array(M)),

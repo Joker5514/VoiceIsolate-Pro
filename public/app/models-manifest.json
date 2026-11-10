@@ -121,6 +121,19 @@
         }
       ]
     },
+    "true_peak_limiter_processor": {
+      "filename": "TruePeakLimiterProcessor.js",
+      "processorName": "vip-true-peak-limiter",
+      "role": "active",
+      "contentType": "application/javascript",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/src/workers/TruePeakLimiterProcessor.js",
+          "sha256": "6189ea08a372da6cf77e52caf31247f65b70b186882edd58f8a3c7aa90f7c9b2"
+        }
+      ]
+    },
     "dsp_processor": {
       "filename": "dsp-processor.js",
       "processorName": "dsp-processor",

@@ -49,9 +49,23 @@ import { PARAMETER_BY_ID } from '../core/ParameterSchema.js';
 
 import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/audio-config.js';
 import { copyChannelsToAudioBuffer } from './ui-yield.js';
-import { limitTruePeak } from '../core/TruePeakLimiter.js';
+import { limitTruePeak, measureTruePeak, truePeakLimiterLatencyFrames } from '../core/TruePeakLimiter.js';
 
 /** Crossfade duration (seconds) for speaker solo/mute/segment boundaries. */
+
+/**
+ * Release floor for the true-peak limiter (live worklet and export alike).
+ * Its fast follower never releases faster than this; the slow follower
+ * (60 ms attack, max(400 ms, 8x release)) holds through syllable-rate peaks.
+ * Round 2 measured the floor against no floor on Stage B exports: Engineer
+ * Whisper Boost SI-SDR -1.37 -> -1.11 dB, STOI 0.664 -> 0.685, new clicks
+ * 686 -> 665 (main with the native limiter: -1.33 dB, 0.676, 663).
+ */
+const LIMITER_MIN_RELEASE_MS = 300;
+/** Limiter release control (seconds) to the limiter's release in ms. */
+function limiterReleaseMs(releaseSec) {
+  return Math.max(LIMITER_MIN_RELEASE_MS, releaseSec * 1000);
+}
 const SPEAKER_RAMP_SEC = SPEAKER_GAIN_RAMP_SEC;
 
 /**
@@ -84,6 +98,7 @@ const workletInflightByContext = new WeakMap();
 export const PLAYBACK_WORKLET_URLS = Object.freeze({
   gate: '/src/workers/GateProcessor.js',
   deEsser: '/src/workers/DeEsserProcessor.js',
+  limiter: '/src/workers/TruePeakLimiterProcessor.js',
 });
 
 function getLoadedWorkletModules(ctx) {
@@ -238,8 +253,6 @@ const MAX_DRY_DELAY_SEC = 0.1;
  * the stage is the identity for every realistic level until a ceiling is set.
  */
 const CEILING_HEADROOM = 16;
-/** Shortest release of the export true-peak limiter, ms (see renderMix). */
-const EXPORT_LIMITER_MIN_RELEASE_MS = 300;
 const CEILING_CURVE_POINTS = 4097;
 
 /** Engine DynamicsCompressor lookahead in frames, measured once per rate. */
@@ -590,6 +603,14 @@ export class PlaybackMixer {
     this._deEsserParams = { frequency: 6500, amount: 0 };
     this._deEsserLoadState = 'pending';
     this._deEsserPromise = this._loadDeEsser();
+    // Output ceiling: look-ahead true-peak limiter worklet (live + export).
+    // Until it loads (or where AudioWorklet is missing) the native
+    // compressor + clip path below stays the ceiling.
+    /** @type {AudioWorkletNode|null} */ this.truePeakLimiter = null;
+    /** Ceiling applied even with the Limiter control off (Landing: −1 dBTP); null = none. */
+    this._safetyCeilingDb = null;
+    this._limiterLoadState = 'pending';
+    this._limiterPromise = this._loadTruePeakLimiter();
 
     // Wet-path latency: the engine's compressor lookahead (assumed 6 ms until
     // measured) plus the gate lookahead once the gate is in the path.
@@ -734,9 +755,71 @@ export class PlaybackMixer {
     }
   }
 
-  /** Resolves when both playback worklets have loaded or gracefully bypassed. */
+  /**
+   * Load and splice in the true-peak limiter worklet (limiterOut → limiter →
+   * ceilingIn). Same graceful bypass contract: on failure the native
+   * compressor + clip ceiling stays in charge.
+   */
+  async _loadTruePeakLimiter() {
+    const aw = this.ctx.audioWorklet;
+    const NodeCtor = globalThis.AudioWorkletNode;
+    if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') {
+      this._limiterLoadState = 'bypassed';
+      return;
+    }
+    try {
+      try {
+        await ensureWorkletModule(this.ctx, '/src/workers/TruePeakLimiterProcessor.js');
+      } catch {
+        if (this.ctx.state === 'suspended') {
+          try { await this.ctx.resume(); } catch { /* ignore */ }
+        }
+        // Literal call for validate.js allowlist.
+        await this.ctx.audioWorklet.addModule('/src/workers/TruePeakLimiterProcessor.js');
+        getLoadedWorkletModules(this.ctx).add('/src/workers/TruePeakLimiterProcessor.js');
+      }
+      if (this._disposed) return;
+      const node = new NodeCtor(this.ctx, 'vip-true-peak-limiter', { outputChannelCount: [2] });
+      try { this.limiterOut.disconnect(this.ceilingIn); } catch { try { this.limiterOut.disconnect(); } catch { /* ignore */ } }
+      this.limiterOut.connect(node);
+      node.connect(this.ceilingIn);
+      this.truePeakLimiter = node;
+      this._limiterLoadState = 'loaded';
+      // Limiter legs only: the compressor leg is already routed, and in an
+      // offline render its ratio .value does not yet show the copied
+      // automation, so re-deriving it here would engage the compressor.
+      this._applyParam(this.limiterEngagedGain.gain, 0);
+      this._applyParam(this.limiterBypassGain.gain, 1);
+      this._syncLimiterWorklet();
+      this._applyCeilingCurve();
+      this._updateDryDelay();
+    } catch (err) {
+      if (this._disposed) return;
+      this._limiterLoadState = 'failed';
+      console.error('[VIP][PlaybackMixer] true-peak limiter worklet failed to load; native limiter stays.', err);
+      try { this.limiterOut.connect(this.ceilingIn); } catch { /* already connected */ }
+    }
+  }
+
+  /** Ceiling the output actually gets: the Limiter control, else the safety ceiling. */
+  _effectiveCeilingDb() {
+    return this._ceilingDb != null ? this._ceilingDb : this._safetyCeilingDb;
+  }
+
+  /**
+   * Ceiling applied even while the Limiter control is off (Landing passes
+   * −1 dBTP so hot presets are limited, not refused). null removes it.
+   * @param {number|null} db
+   */
+  setSafetyCeiling(db) {
+    this._safetyCeilingDb = Number.isFinite(db) ? clamp(db, -24, 0) : null;
+    this._updateCompressorRouting();
+    this._applyCeilingCurve();
+  }
+
+  /** Resolves when the playback worklets have loaded or gracefully bypassed. */
   workletsReady() {
-    return Promise.all([this._gatePromise, this._deEsserPromise]);
+    return Promise.all([this._gatePromise, this._deEsserPromise, this._limiterPromise]);
   }
 
   /** Snapshot of playback worklet load outcomes for diagnostics. */
@@ -744,6 +827,7 @@ export class PlaybackMixer {
     return {
       gate: { state: this._gateLoadState, node: this.gate !== null },
       deEsser: { state: this._deEsserLoadState, node: this.deEsser !== null },
+      limiter: { state: this._limiterLoadState, node: this.truePeakLimiter !== null },
     };
   }
 
@@ -792,7 +876,8 @@ export class PlaybackMixer {
    * limiter's own lookahead. renderMix() compensates exactly this much.
    */
   latencyFrames() {
-    return this._wetLatencyFrames() + this._compressorLatencyFrames;
+    const limiter = this.truePeakLimiter ? truePeakLimiterLatencyFrames(this.ctx.sampleRate) : 0;
+    return this._wetLatencyFrames() + this._compressorLatencyFrames + limiter;
   }
 
   /**
@@ -829,6 +914,14 @@ export class PlaybackMixer {
     const comp = engaged(this.compressor);
     this._applyParam(this.compEngagedGain.gain, comp ? 1 : 0);
     this._applyParam(this.compBypassGain.gain, comp ? 0 : 1);
+    if (this.truePeakLimiter) {
+      // The worklet is the ceiling: native limiter leg stays bypassed (same
+      // delay through the bypass leg, so latency does not change).
+      this._applyParam(this.limiterEngagedGain.gain, 0);
+      this._applyParam(this.limiterBypassGain.gain, 1);
+      this._syncLimiterWorklet();
+      return;
+    }
     const lim = engaged(this.limiter);
     this._applyParam(this.limiterEngagedGain.gain, lim ? limiterMakeupCompensation(
       this._parameterTargets.get(this.limiter.threshold) ?? this.limiter.threshold.value,
@@ -837,9 +930,29 @@ export class PlaybackMixer {
     this._applyParam(this.limiterBypassGain.gain, lim ? 0 : 1);
   }
 
+  /** Limiter worklet enable / ceiling / release from the current controls. */
+  _syncLimiterWorklet() {
+    const params = this.truePeakLimiter?.parameters;
+    if (!params) return;
+    const ceiling = this._effectiveCeilingDb();
+    const set = (name, value) => {
+      const param = params.get?.(name);
+      if (!param) return;
+      param.cancelScheduledValues?.(0);
+      param.value = value;
+      this._parameterTargets.set(param, value);
+    };
+    set('enabled', ceiling == null ? 0 : 1);
+    if (ceiling != null) set('ceiling', ceiling);
+    set('release', limiterReleaseMs(this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value));
+  }
+
   /** WaveShaper curve: identity to ±CEILING_HEADROOM, or a clamp at the ceiling. */
   _applyCeilingCurve() {
-    const c = this._ceilingDb == null ? Infinity : Math.pow(10, this._ceilingDb / 20);
+    // The backstop clamp follows the safety ceiling only behind the worklet;
+    // without it a safety-only clamp would hard-clip (the old artifact).
+    const ceiling = this.truePeakLimiter ? this._effectiveCeilingDb() : this._ceilingDb;
+    const c = ceiling == null ? Infinity : Math.pow(10, ceiling / 20);
     const curve = new Float32Array(CEILING_CURVE_POINTS);
     for (let k = 0; k < CEILING_CURVE_POINTS; k++) {
       const x = ((2 * k) / (CEILING_CURVE_POINTS - 1) - 1) * CEILING_HEADROOM;
@@ -1427,10 +1540,11 @@ export class PlaybackMixer {
     const ceiling = clamp(db, -24, 0);
     this._applyParam(this.limiter.ratio, 20);
     this._applyParam(this.limiter.threshold, ceiling);
-    this._updateCompressorRouting();
-    // The compressor's 20:1 ratio and finite attack let transients through;
-    // the clip stage makes the ceiling a hard guarantee.
+    // With the true-peak limiter worklet loaded it takes this ceiling and the
+    // clip is only a backstop; without it the compressor's 20:1 ratio and
+    // finite attack let transients through and the clip is the guarantee.
     this._ceilingDb = ceiling;
+    this._updateCompressorRouting();
     this._applyCeilingCurve();
   }
 
@@ -1440,6 +1554,7 @@ export class PlaybackMixer {
   /** Limiter release in milliseconds (1 … 500); stored as seconds. */
   setLimiterRelease(ms) {
     this._applyParam(this.limiter.release, clamp(ms, 1, 500) / 1000);
+    this._updateCompressorRouting();
   }
 
   /** Final output trim in dB (−24 … +24), applied as a linear gain. */
@@ -1707,13 +1822,13 @@ export class PlaybackMixer {
    * `stems` renders other buffers (e.g. Engineer's processed stems while A/B
    * playback holds the original) through this graph's current settings. A
    * missing noise stem renders as silence, matching a single-buffer load.
-   * The export's ceiling is a 4× true-peak look-ahead limiter run on the
-   * rendered region (src/core/TruePeakLimiter.js), not the live graph's
-   * compressor + clip: the compressor's attack lets overs through to the clip,
-   * which flattened peaks, and its auto make-up gain lifted the whole mix.
-   * With the limiter engaged its ceiling and release are used; otherwise
-   * `safetyCeilingDb` (when given) caps the true peak, and without either the
-   * mix is returned as rendered (overs stay visible to the caller).
+   * The ceiling is the same true-peak limiter worklet live playback uses
+   * (src/workers/TruePeakLimiterProcessor.js), so the export is what was
+   * previewed. The Limiter control's ceiling wins; else `safetyCeilingDb`
+   * (or the mixer's own safety ceiling); without either the mix is returned
+   * as rendered (overs stay visible to the caller). If the worklet is not
+   * available, or the rendered true peak is still over the ceiling, the
+   * offline limiter (src/core/TruePeakLimiter.js) is applied to the region.
    * @param {{ signal?: AbortSignal, startSec?: number, endSec?: number,
    *   stems?: { clean: AudioBuffer, noise?: AudioBuffer|null }, safetyCeilingDb?: number }} [opts]
    */
@@ -1760,23 +1875,14 @@ export class PlaybackMixer {
     for (const [key, node] of this.graphicBands) copyNode(node, render.graphicBands.get(key));
     render._gateParams = { ...this._gateParams };
     render._deEsserParams = { ...this._deEsserParams };
-    // The in-graph limiter and clip stay out of the render (same latency via
-    // the bypass leg); the true-peak limiter below sets the ceiling instead.
-    const ceilingDb = this._ceilingDb != null
-      ? this._ceilingDb
-      : (Number.isFinite(safetyCeilingDb) ? Math.min(0, safetyCeilingDb) : null);
+    // Ceiling and release are captured now (before the first await).
+    const safety = Number.isFinite(safetyCeilingDb) ? clamp(safetyCeilingDb, -24, 0) : this._safetyCeilingDb;
+    const ceilingDb = this._ceilingDb != null ? this._ceilingDb : safety;
     const releaseSec = this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value;
-    // Release floor: at the 45 ms preset release the gain rode every syllable
-    // of hot presets (Whisper Boost: −0.30 dB SI-SDR, −0.016 STOI vs the old
-    // clip); 300 ms measured level with the old path and with no flat tops.
-    const limiterReleaseMs = Math.max(EXPORT_LIMITER_MIN_RELEASE_MS, this._ceilingDb != null ? releaseSec * 1000 : 0);
-    for (const [param, value] of [[render.limiterEngagedGain.gain, 0], [render.limiterBypassGain.gain, 1]]) {
-      param.cancelScheduledValues(0);
-      param.setValueAtTime(value, 0);
-    }
-    // A null curve passes samples through unchanged (no ±CEILING_HEADROOM clamp).
-    render._ceilingDb = null;
-    render.ceilingShaper.curve = null;
+    const releaseMs = limiterReleaseMs(releaseSec);
+    render._ceilingDb = this._ceilingDb;
+    render._safetyCeilingDb = safety;
+    render._applyCeilingCurve();
     render._segments = this.getSpeakerSegments();
     render._speakers = new Map([...this._speakers].map(([id, state]) => [id, { ...state }]));
     render._soloId = this._soloId;
@@ -1799,6 +1905,28 @@ export class PlaybackMixer {
       // Preserve the actual live bypass state even when the offline context supports a worklet.
       if (!this.gate) render._setGateParam('range', 0);
       if (!this.deEsser) render._setDeEsserParam('amount', 0);
+      // Offline AudioParam .value does not reflect setValueAtTime before
+      // rendering, so the limiter worklet gets the captured values directly.
+      if (render.truePeakLimiter) {
+        // Only the worklet params: _updateCompressorRouting would re-derive the
+        // compressor leg from offline .value (not yet the copied automation)
+        // and engage the compressor at its default ratio.
+        render._parameterTargets.set(render.limiter.release, releaseSec);
+        render._syncLimiterWorklet();
+        render._applyCeilingCurve();
+        for (const [param, value] of [[render.limiterEngagedGain.gain, 0], [render.limiterBypassGain.gain, 1]]) {
+          param.cancelScheduledValues(0);
+          param.setValueAtTime(value, 0);
+        }
+      } else if (ceilingDb != null) {
+        // Native fallback in the render: keep its limiter out (no flat tops);
+        // the offline limiter below sets the ceiling.
+        for (const [param, value] of [[render.limiterEngagedGain.gain, 0], [render.limiterBypassGain.gain, 1]]) {
+          param.cancelScheduledValues(0);
+          param.setValueAtTime(value, 0);
+        }
+        render.ceilingShaper.curve = null;
+      }
       // Settle the dry-path delay for the render graph's own gate state.
       render._updateDryDelay();
       const latency = render.latencyFrames();
@@ -1822,9 +1950,11 @@ export class PlaybackMixer {
       for (let c = 0; c < rendered.numberOfChannels; c++) {
         aligned.push(rendered.getChannelData(c).subarray(latency, latency + regionFrames));
       }
-      const limited = ceilingDb == null
-        ? aligned
-        : (await limitTruePeak(aligned, SAMPLE_RATE, { ceilingDb, releaseMs: limiterReleaseMs, signal })).channels;
+      const needsOffline = ceilingDb != null
+        && (!render.truePeakLimiter || measureTruePeak(aligned) > Math.pow(10, ceilingDb / 20));
+      const limited = needsOffline
+        ? (await limitTruePeak(aligned, SAMPLE_RATE, { ceilingDb, releaseMs, signal })).channels
+        : aligned;
       if (signal?.aborted) throw cancelled();
       const out = createBufferLike(rendered, limited.length, regionFrames);
       return await copyChannelsToAudioBuffer(out, limited, { signal });
@@ -1866,11 +1996,13 @@ export class PlaybackMixer {
       if (!node) continue;
       try { node.disconnect(); } catch { /* already disconnected */ }
     }
-    for (const worklet of [this.gate, this.deEsser]) {
+    for (const worklet of [this.gate, this.deEsser, this.truePeakLimiter]) {
+      try { worklet?.disconnect?.(); } catch { /* already disconnected */ }
       try { worklet?.port?.close?.(); } catch { /* already closed */ }
     }
     this.gate = null;
     this.deEsser = null;
+    this.truePeakLimiter = null;
     // Drop stem references so a retained (or leaked) mixer pins no audio.
     this.cleanBuffer = null;
     this.noiseBuffer = null;

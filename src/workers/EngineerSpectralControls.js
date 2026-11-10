@@ -235,9 +235,14 @@
           gain *= 1 - breathStrength * 0.72;
         }
 
-        // Whisper confidence stays on the instantaneous magnitude: smoothing it
-        // delayed soft onsets (measured −0.07 dB SI-SDR on Whisper Boost).
-        const speechConfidence = mag / (mag + noiseFloor[k] * whisperThreshold + EPSILON);
+        // Whisper confidence: instantaneous magnitude by default (smoothing it
+        // delayed soft onsets, −0.07 dB SI-SDR on Whisper Boost). With Crowd
+        // Null on, murmur keeps bins hovering at the confidence threshold, so
+        // the confidence blends toward the smoothed magnitude by the Crowd
+        // Null strength (Surveillance: worst 19.3 → 12.3 gain flips/s; presets
+        // without Crowd Null are bit-identical).
+        const whisperMag = crowdStrength > 0 ? mag + (confMag - mag) * crowdStrength : mag;
+        const speechConfidence = whisperMag / (whisperMag + noiseFloor[k] * whisperThreshold + EPSILON);
         if (mode > 0 || s.whisperLift > 0) {
           const confidenceGain = clarityFloor + (1 - clarityFloor) * speechConfidence;
           gain *= confidenceGain;

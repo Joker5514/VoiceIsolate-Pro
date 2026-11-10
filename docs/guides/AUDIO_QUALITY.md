@@ -132,7 +132,15 @@ the reference contains it, so removing it costs SI-SDR against that reference.
 - **Improvement tier.** Scenarios tagged `improvementExpected` (white 5 dB,
   HVAC 5 dB, hum 10 dB, whisper in white 10 dB) list every scenario/profile
   pair that measures SI-SDR delta >= 0 in `improvementRequired`; those must
-  stay >= 0 dB with no tolerance, and `--update` refuses to drop one. Tagged
+  stay >= 0 dB with no tolerance, and `--update` refuses to drop one. The
+  one exit (rule change 2026-11-10, owner-approved) is an explicit entry in
+  the baseline's `improvementWaivers` (`{ key: reason }`): the gate prints it
+  on every run, `--update` keeps it, and the pair rejoins the tier and loses
+  the waiver as soon as it measures >= 0 dB. The first waiver is
+  `whisper-white-10db/landing/si-sdr-delta` (-0.03 dB) after PR #895 removed
+  the always-on 8.4 kHz shelf: the synthetic talker stops at 7 kHz, so the
+  restored air band scores as noise there while PESQ, STOI and the recorded
+  4-12 kHz band do not move. Tagged
   pairs still below 0 dB print as `improvement gap` on every run. On the
   synthetic fixtures the default and Engineer chains are still below 0 dB on
   white, HVAC and hum: the model alone scores only 6.4 dB SI-SDR on clean
@@ -173,14 +181,40 @@ On clean recorded speech DeepFilterNet3 changes level by -0.29 dB and the
 Node, WASM, one thread: 12.2x real time (default chain 12.4x).
 
 On the gate's synthetic fixtures it is far worse than either chain (pinned as
-the `enhance` profile, regressions only): clean synthetic speech -3.01 dB
-SI-SDR, whispered synthetic speech -13.07 dB SI-SDR with its level cut by
-21.1 dB, fricatives cut by 22-43 dB, every improvement-tier pair below 0 dB.
-Noise-only suppression is 42.46 dB. The synthetic talker is a formant buzz,
+the `enhance` profile, regressions only): clean synthetic speech -3.88 dB
+SI-SDR, whispered synthetic speech -13.90 dB SI-SDR with its level cut by
+23.6 dB, fricatives cut by up to 33 dB, every improvement-tier pair below
+0 dB (pins as of the 2026-11-10 pre-roll; they were -3.01, -13.07 and 21.1 dB
+while the cold start leaked the first second). Noise-only suppression is
+43.08 dB. The synthetic talker is a formant buzz,
 not speech, and the network treats it as noise; the recorded numbers above
 are the evidence for shipping it, and they include no whispered recordings.
 Do not describe it as whisper-safe, and do not make it the default from these
 numbers alone.
+
+### Pre-roll (2026-11-10)
+
+libDF starts its ERB / unit norms and the GRUs cold, so the opening second of
+every file was enhanced with transient state: speech that starts at t = 0 lost
+up to 44 dB in its first 5 ms, and the opening second of the synthetic
+fixtures leaked through almost untouched. `runDeepFilterNet` now enhances a
+0.5 s mirrored lead-in first and discards it (`opts.preRoll`, default
+`PRE_ROLL` = 24000 samples; `preRoll: 0` is exact libDF and is what the libdf
+reference test runs). Corpus eval (`corpus-eval.cjs --chain enhance`, 36
+recorded clips), mean SI-SDR change: whispered +8.77 dB, quiet +5.02, clean
++1.12, HVAC +0.21, babble +0.16, street -0.01, field +0.01; worst single clip
+-2.16 dB (ms-snsd-clean-004, 34.25 -> 32.09 dB). On the gate's synthetic
+fixtures the leak is gone, so the enhance pins moved down: whispered
+synthetic speech in white 10 dB -9.42 -> -19.08 dB SI-SDR delta (main kept
+the first second at -3.4 dB vs the reference and seconds 2-6 at -14 to
+-31 dB; now the first second is treated like the rest), clean synthetic
+-3.01 -> -3.88 dB. Noise-only suppression 42.46 -> 43.08 dB. The
+`librispeech-overlap-*` corpus clips do not contain speech: all four
+mixtures (and the 001 target, the one checked) are steady harmonic tone
+sequences with a click about once a second, not LibriSpeech utterances, so
+DeepFilterNet3 removing them (-11 to -18 dB SI-SDR out) is not a
+dropped-speech defect. The clips need re-provisioning before the
+overlapping-speakers class means anything.
 
 ## Re-running the recorded-speech check locally
 
