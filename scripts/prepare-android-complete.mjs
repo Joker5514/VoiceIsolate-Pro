@@ -73,6 +73,7 @@ const REQUIRED_PATHS = [
   'src/workers/TruePeakLimiterProcessor.js',
   'src/workers/MLWorker.js',
   'src/workers/EngineerSpectralControls.js',
+  'src/workers/HfPostFilter.js',
   'src/workers/MainsHumFilter.js',
   'src/workers/BandlimitedResampler.js',
   'src/workers/DeepFilterNet.js',
