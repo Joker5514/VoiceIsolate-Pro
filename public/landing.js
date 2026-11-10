@@ -1479,8 +1479,8 @@ async function ingestFrom(file) {
   }
   const seq = ++ingestSeq;
   requestSeq += 1;
-  processingInFlight = false;
   speakerDetectAbort?.abort();
+  processingInFlight = false;
   ingestInFlight = true;
   // The previous file's import analysis must not keep running or publish.
   if (autoAnalysisAbort) {
@@ -1821,6 +1821,7 @@ async function processChunked() {
   const job = beginJob('Chunked extraction', { kind: 'separate' });
   window.__vipLandingJobId = job.id;
   const id = ++requestSeq;
+  speakerDetectAbort?.abort();
   showSpinner('Extracting speech…');
   quickClean.setState('processing', 'Extracting speech in memory-sized windows…');
   try {
