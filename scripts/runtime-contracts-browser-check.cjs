@@ -300,6 +300,56 @@ async function main() {
       await ctx.close();
     }
 
+    // ── F10: compressor + makeup + limiter: export equals live at a quiet level ──
+    // The render's limiter-worklet setup must not re-derive the compressor leg
+    // from offline AudioParam .value (not yet the copied automation): that
+    // re-routed the compressor in export only (2.5-8.5 dB quieter exports)
+    // during round 2 development.
+    // The true-peak limiter worklet is the ceiling on both paths, so a hot
+    // mix limited live is what Export writes, with no flat tops either way.
+    {
+      const n = SR * 2;
+      const voice = new Float32Array(n);
+      for (let i = 0; i < n; i++) voice[i] = 0.01 * Math.sin((2 * Math.PI * (220 + 300 * (i / n)) * i) / SR) * (0.5 + 0.5 * rnd());
+      const ctx = new AudioContext({ sampleRate: SR });
+      await ctx.resume();
+      const mixer = new PlaybackMixer({ context: ctx });
+      await mixer.workletsReady();
+            mixer.loadStems([voice], [new Float32Array(n)]);
+      mixer.setCompThreshold(-20); mixer.setCompRatio(3); mixer.setMakeupGain(8); mixer.setOutputGain(0); mixer.setLimiterThreshold(-1);
+      const rec = `registerProcessor('vip-test-rec3', class extends AudioWorkletProcessor {
+        process(inputs) { const i = inputs[0]; if (i && i[0]) this.port.postMessage(i[0].slice(0)); return true; } });`;
+      await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([rec], { type: 'text/javascript' })));
+      const tap = new AudioWorkletNode(ctx, 'vip-test-rec3', { channelCount: 1, channelCountMode: 'explicit' });
+      const chunks = [];
+      tap.port.onmessage = (e) => chunks.push(e.data);
+      mixer.getAnalyser().connect(tap);
+      await mixer.play();
+      await new Promise((r) => setTimeout(r, 2600));
+      mixer.stop();
+      let total = 0; for (const c of chunks) total += c.length;
+      const live = new Float32Array(total); let o = 0; for (const c of chunks) { live.set(c, o); o += c.length; }
+      const rendered = (await mixer.renderMix({})).getChannelData(0);
+      const seg = rendered.subarray(SR * 0.2, SR * 0.2 + 9600);
+      let best = -Infinity; let lag = 0;
+      for (let k = 0; k + seg.length < live.length && k < SR; k++) {
+        let sum = 0; for (let i = 0; i < seg.length; i += 4) sum += seg[i] * live[k + i];
+        if (sum > best) { best = sum; lag = k; }
+      }
+      const offset = lag - SR * 0.2;
+      let err = 0; let ref = 0;
+      const from = Math.max(SR * 0.3, -offset); const to = Math.min(rendered.length, live.length - offset) - SR * 0.1;
+      for (let i = from; i < to; i++) { err += (live[i + offset] - rendered[i]) ** 2; ref += rendered[i] ** 2; }
+      const snr = 10 * Math.log10(ref / Math.max(err, 1e-20));
+            let le = 0; let re = 0;
+      for (let k = from; k < to; k++) { le += live[k + offset] ** 2; re += rendered[k] ** 2; }
+      const levelDiff = 10 * Math.log10(re / Math.max(le, 1e-30));
+      check('F10 compressor + makeup: quiet export equals live (compressor routing preserved in export)',
+        snr > 25 && Math.abs(levelDiff) < 0.2 && total > SR, { residualSnrDb: Number(snr.toFixed(1)), exportMinusLiveDb: Number(levelDiff.toFixed(2)) });
+      await mixer.dispose();
+      await ctx.close();
+    }
+
     // ── F03: dispose with a hung worklet fetch ──────────────────────────
     {
       const mixer = new PlaybackMixer();

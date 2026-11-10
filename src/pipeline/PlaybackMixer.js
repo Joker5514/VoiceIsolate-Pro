@@ -771,7 +771,12 @@ export class PlaybackMixer {
       node.connect(this.ceilingIn);
       this.truePeakLimiter = node;
       this._limiterLoadState = 'loaded';
-      this._updateCompressorRouting();
+      // Limiter legs only: the compressor leg is already routed, and in an
+      // offline render its ratio .value does not yet show the copied
+      // automation, so re-deriving it here would engage the compressor.
+      this._applyParam(this.limiterEngagedGain.gain, 0);
+      this._applyParam(this.limiterBypassGain.gain, 1);
+      this._syncLimiterWorklet();
       this._applyCeilingCurve();
       this._updateDryDelay();
     } catch (err) {
@@ -900,18 +905,7 @@ export class PlaybackMixer {
       // delay through the bypass leg, so latency does not change).
       this._applyParam(this.limiterEngagedGain.gain, 0);
       this._applyParam(this.limiterBypassGain.gain, 1);
-      const ceiling = this._effectiveCeilingDb();
-      const params = this.truePeakLimiter.parameters;
-      const set = (name, value) => {
-        const param = params?.get?.(name);
-        if (!param) return;
-        param.cancelScheduledValues?.(0);
-        param.value = value;
-        this._parameterTargets.set(param, value);
-      };
-      set('enabled', ceiling == null ? 0 : 1);
-      if (ceiling != null) set('ceiling', ceiling);
-      set('release', (this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value) * 1000);
+      this._syncLimiterWorklet();
       return;
     }
     const lim = engaged(this.limiter);
@@ -920,6 +914,23 @@ export class PlaybackMixer {
       this._parameterTargets.get(this.limiter.ratio) ?? this.limiter.ratio.value,
     ) : 0);
     this._applyParam(this.limiterBypassGain.gain, lim ? 0 : 1);
+  }
+
+  /** Limiter worklet enable / ceiling / release from the current controls. */
+  _syncLimiterWorklet() {
+    const params = this.truePeakLimiter?.parameters;
+    if (!params) return;
+    const ceiling = this._effectiveCeilingDb();
+    const set = (name, value) => {
+      const param = params.get?.(name);
+      if (!param) return;
+      param.cancelScheduledValues?.(0);
+      param.value = value;
+      this._parameterTargets.set(param, value);
+    };
+    set('enabled', ceiling == null ? 0 : 1);
+    if (ceiling != null) set('ceiling', ceiling);
+    set('release', (this._parameterTargets.get(this.limiter.release) ?? this.limiter.release.value) * 1000);
   }
 
   /** WaveShaper curve: identity to ±CEILING_HEADROOM, or a clamp at the ceiling. */
@@ -1883,8 +1894,11 @@ export class PlaybackMixer {
       // Offline AudioParam .value does not reflect setValueAtTime before
       // rendering, so the limiter worklet gets the captured values directly.
       if (render.truePeakLimiter) {
+        // Only the worklet params: _updateCompressorRouting would re-derive the
+        // compressor leg from offline .value (not yet the copied automation)
+        // and engage the compressor at its default ratio.
         render._parameterTargets.set(render.limiter.release, releaseSec);
-        render._updateCompressorRouting();
+        render._syncLimiterWorklet();
         render._applyCeilingCurve();
         for (const [param, value] of [[render.limiterEngagedGain.gain, 0], [render.limiterBypassGain.gain, 1]]) {
           param.cancelScheduledValues(0);
