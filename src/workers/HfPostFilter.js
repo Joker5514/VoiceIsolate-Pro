@@ -34,11 +34,11 @@
   const BAND_LO_HZ = 7000;
   const BAND_HI_HZ = 9000;
   /** Fused mask at or above this is "confident": no HF reduction at all. */
-  const MASK_SURE = 0.98;
+  const MASK_SURE = 0.995;
   /** Fused mask at or below this counts as fully uncertain. */
-  const MASK_UNSURE = 0.6;
-  /** Deepest HF gain (−12 dB) where the bin is noise and the mask unsure. */
-  const GAIN_FLOOR = 0.25;
+  const MASK_UNSURE = 0.9;
+  /** Deepest HF gain (−16.5 dB) where the bin is noise and the mask unsure. */
+  const GAIN_FLOOR = 0.15;
   /** Soft speech-presence decision on the a posteriori SNR (dB). */
   const SPP_LO_DB = 4;
   const SPP_HI_DB = 12;
@@ -84,6 +84,7 @@
     const spp = new Float32Array(n);
     const gain = new Float32Array(n).fill(1);
     const raw = new Float32Array(n);
+    const sure = new Uint8Array(n);
     const pf = new Float64Array(n);
     let frames = 0;
 
@@ -105,6 +106,10 @@
         pf[i] = 0.25 * l * l + 0.5 * c * c + 0.25 * r * r;
       }
       const first = frames === 0;
+      // Warm-up: the minimum starts at the first frame's power, which is
+      // speech when a file opens on speech. Ramp the depth in over one
+      // minimum sub-window so an opening is never mistaken for noise.
+      const depth = Math.min(1, frames / subFrames) * (1 - GAIN_FLOOR);
       const roll = !first && frames % subFrames === 0;
       for (let i = 0; i < n; i++) {
         const s = first ? pf[i] : aPow * smoothed[i] + (1 - aPow) * pf[i];
@@ -113,12 +118,18 @@
         else if (roll) { minPrev[i] = minCur[i]; minCur[i] = s; }
         else if (s < minCur[i]) minCur[i] = s;
         const noise = MIN_BIAS * Math.min(minCur[i], minPrev[i]) + 1e-20;
-        const snrDb = 10 * Math.log10(pf[i] / noise + 1e-12);
+        // MCRA indicator on the smoothed power S / (Bmin * Smin): the
+        // smoothing keeps single-frame noise peaks from flipping a bin to
+        // "speech" (isolated pass-through bins are musical noise).
+        const snrDb = 10 * Math.log10(s / noise + 1e-12);
         const q = smoothStep(snrDb, SPP_LO_DB, SPP_HI_DB);
-        spp[i] = first ? q : aSpp * spp[i] + (1 - aSpp) * q;
+        // Attack at once (onsets and sibilants pass), release over SPP_TAU.
+        const held = aSpp * spp[i] + (1 - aSpp) * q;
+        spp[i] = first || q > held ? q : held;
         // Uncertainty is 0 for a confident mask: those bins are never touched.
         const unsure = 1 - smoothStep(mask[k0 + i], MASK_UNSURE, MASK_SURE);
-        raw[i] = 1 - weight[i] * unsure * (1 - spp[i]) * (1 - GAIN_FLOOR);
+        sure[i] = unsure === 0 ? 1 : 0;
+        raw[i] = 1 - weight[i] * unsure * (1 - spp[i]) * depth;
       }
       frames++;
       // 3-tap frequency smoothing, then a bounded decay over time (rises are
@@ -126,10 +137,11 @@
       for (let i = 0; i < n; i++) {
         const l = i > 0 ? raw[i - 1] : raw[i];
         const r = i + 1 < n ? raw[i + 1] : raw[i];
-        // Never below the bin's own target: smoothing only lifts gains, so a
-        // bin that needs no reduction (raw 1) keeps exactly 1.
-        let g = Math.max(raw[i], 0.25 * l + 0.5 * raw[i] + 0.25 * r);
-        if (!first) g = Math.max(g, gain[i] * decay);
+        // A confident-mask bin keeps exactly 1. Others take the 3-tap
+        // average, which pulls an isolated pass-through bin down to its
+        // neighbours instead of leaving a lone spectral peak.
+        let g = sure[i] ? 1 : 0.25 * l + 0.5 * raw[i] + 0.25 * r;
+        if (!first && !sure[i]) g = Math.max(g, gain[i] * decay);
         if (g > 1) g = 1;
         gain[i] = g;
         if (g < 1) {
