@@ -19,6 +19,65 @@ test('WAV metadata uses declared data length, channels, rate and bit depth', () 
     .toMatchObject({ duration: 2, channels: 1, sampleRate: 44100, bitDepth: 24, source: 'wav-header' });
   expect(budget.parseWavMetadata(Buffer.from('RIFFbroken'))).toBeNull();
 });
+
+function wavFile({ seconds = 1, channels = 1, rate = 48000, bits = 16 } = {}) {
+  const header = wavHeader({ seconds, channels, rate, bits });
+  return Buffer.concat([header, Buffer.alloc(header.readUInt32LE(40))]);
+}
+
+test('a RIFF size of 0 still describes the fmt and data chunks Chrome can decode', () => {
+  const file = wavFile();
+  file.writeUInt32LE(0, 4);
+  expect(budget.parseWavMetadata(file, file.length)).toMatchObject({
+    duration: 1, channels: 1, sampleRate: 48000, dataBytes: 96000, dataOffset: 44,
+  });
+});
+
+test('an unfinished data size uses the file length and never the PCM as a 64-bit size', () => {
+  const file = wavFile();
+  file.writeUInt32LE(0, 40);
+  expect(budget.parseWavMetadata(file, file.length)).toMatchObject({ duration: 1, dataBytes: 96000 });
+  file.writeUInt32LE(0xffffffff, 40);
+  expect(budget.parseWavMetadata(file, file.length)).toMatchObject({ duration: 1, dataBytes: 96000 });
+  expect(budget.parseWavMetadata(file)).toBeNull();
+});
+
+test('RF64 reads the PCM length from ds64', () => {
+  const dataBytes = 96000;
+  const b = Buffer.alloc(80);
+  b.write('RF64', 0);
+  b.writeUInt32LE(b.length - 8, 4);
+  b.write('WAVE', 8);
+  b.write('ds64', 12);
+  b.writeUInt32LE(28, 16);
+  b.writeBigUInt64LE(BigInt(b.length - 8), 20);
+  b.writeBigUInt64LE(BigInt(dataBytes), 28);
+  b.writeBigUInt64LE(48000n, 36);
+  b.writeUInt32LE(0, 44);
+  b.write('fmt ', 48);
+  b.writeUInt32LE(16, 52);
+  b.writeUInt16LE(1, 56);
+  b.writeUInt16LE(1, 58);
+  b.writeUInt32LE(48000, 60);
+  b.writeUInt32LE(96000, 64);
+  b.writeUInt16LE(2, 68);
+  b.writeUInt16LE(16, 70);
+  b.write('data', 72);
+  b.writeUInt32LE(0xffffffff, 76);
+  expect(budget.parseWavMetadata(b)).toMatchObject({
+    duration: 1, dataBytes, dataOffset: 80, sampleRate: 48000,
+  });
+});
+
+test('a WAV whose RIFF size was left at 0 is planned instead of refused as undecodable', async () => {
+  const bytes = wavFile();
+  bytes.writeUInt32LE(0, 4);
+  const file = new Blob([bytes], { type: 'audio/wav' });
+  Object.defineProperty(file, 'name', { value: 'unfinished.wav' });
+  const plan = await preflight.preflightIngestion(file);
+  expect(plan.duration).toBe(1);
+  expect(plan.strategy).toBe('full');
+});
 test('device tiers have bounded working budgets and soft/hard decisions', () => {
   const high = budget.ingestionBudget({ deviceMemory: 8 }, 'HIGH');
   const balanced = budget.ingestionBudget({ deviceMemory: 4 }, 'BALANCED');

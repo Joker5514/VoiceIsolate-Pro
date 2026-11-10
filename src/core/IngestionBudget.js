@@ -21,44 +21,72 @@ export function ingestionBudget(signals = {}, tier = detectPerformanceTier()) {
   return { tier, workingBytes: Math.floor(Math.min(policy.workingBytes, deviceLimit)), deviceMemoryReported: Number.isFinite(reported) && reported > 0 };
 }
 
-/** RIFF/RF64 WAV fmt + data metadata. Never trusts an unbounded chunk length. */
-export function parseWavMetadata(buffer) {
-  const b = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  if (b.length < 12) return null;
-  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  const tag = (at) => String.fromCharCode(...b.subarray(at, at + 4));
-  if (!['RIFF', 'RF64'].includes(tag(0)) || tag(8) !== 'WAVE') return null;
-  const riffEnd = tag(0) === 'RIFF' ? Math.min(b.length, v.getUint32(4, true) + 8) : b.length;
+/**
+ * Read one WAVE chunk list.
+ * A data size of 0 or 0xFFFFFFFF is an unfinished header, not a 64-bit length
+ * stored in the PCM. ds64 supplies that length; otherwise `fileSize` is the
+ * measured file, and the bytes after the data header are the PCM.
+ * @returns {object|null}
+ */
+function readWaveChunks(b, v, tag, riffEnd, fileSize) {
   let fmt = null;
-  let dataBytes = null;
+  let dataDeclared = null;
   let dataOffset = null;
-  let dataWindowable = false;
+  let ds64DataBytes = null;
   for (let at = 12; at + 8 <= riffEnd;) {
     const id = tag(at);
     const declared = v.getUint32(at + 4, true);
-    let size = declared;
     const start = at + 8;
-    if (id === 'data' && size === 0xffffffff && start + 8 <= riffEnd) {
-      const low = v.getUint32(start, true), high = v.getUint32(start + 4, true);
-      size = low + high * 2 ** 32;
+    if (id === 'ds64' && start + 16 <= riffEnd) {
+      const low = v.getUint32(start + 8, true);
+      const high = v.getUint32(start + 12, true);
+      const bytes = low + high * 2 ** 32;
+      if (Number.isSafeInteger(bytes) && bytes > 0) ds64DataBytes = bytes;
     }
-    if (id === 'fmt ' && size >= 16 && start + 16 <= riffEnd) {
-      fmt = { format: v.getUint16(start, true), channels: v.getUint16(start + 2, true), sampleRate: v.getUint32(start + 4, true), bitDepth: v.getUint16(start + 14, true) };
+    if (id === 'fmt ' && declared >= 16 && start + 16 <= riffEnd) {
+      fmt = {
+        format: v.getUint16(start, true),
+        channels: v.getUint16(start + 2, true),
+        sampleRate: v.getUint32(start + 4, true),
+        bitDepth: v.getUint16(start + 14, true),
+      };
     }
-    if (id === 'data') {
-      dataBytes = size;
+    if (id === 'data' && start <= riffEnd) {
+      dataDeclared = declared;
       dataOffset = start;
-      // A 0xFFFFFFFF data size is an RF64 sentinel. Windowed reads stay off
-      // until that layout is parsed from the ds64 table, not guessed.
-      dataWindowable = declared !== 0xffffffff;
     }
-    if (fmt && dataBytes !== null) break;
-    const next = start + size + (size % 2);
-    if (!Number.isSafeInteger(next) || next <= at || next > riffEnd) return null;
+    const declaredKnown = dataDeclared !== null && dataDeclared !== 0 && dataDeclared !== 0xffffffff;
+    if (fmt && dataOffset !== null && (declaredKnown || ds64DataBytes != null)) break;
+    // The rest of an unfinished data chunk is PCM, so the walk cannot skip it.
+    if (declared === 0xffffffff || (id === 'data' && declared === 0)) break;
+    const next = start + declared + (declared % 2);
+    if (!Number.isSafeInteger(next) || next <= at || next > riffEnd) break;
     at = next;
   }
-  if (!fmt || dataBytes === null || fmt.channels < 1 || fmt.channels > 64 || fmt.sampleRate < 1 || fmt.sampleRate > 768000 || fmt.bitDepth < 1 || fmt.bitDepth > 64) return null;
+  if (!fmt || dataOffset === null || dataDeclared === null) return null;
+  if (fmt.channels < 1 || fmt.channels > 64 || fmt.sampleRate < 1 || fmt.sampleRate > 768000 || fmt.bitDepth < 1 || fmt.bitDepth > 64) return null;
   const blockAlign = fmt.channels * Math.ceil(fmt.bitDepth / 8);
+  if (blockAlign <= 0) return null;
+  let dataBytes = dataDeclared;
+  let dataWindowable = dataDeclared !== 0 && dataDeclared !== 0xffffffff;
+  if (!dataWindowable) {
+    if (ds64DataBytes != null) {
+      dataBytes = ds64DataBytes;
+      dataWindowable = true;
+    } else if (fileSize != null && fileSize > dataOffset) {
+      const remain = fileSize - dataOffset;
+      dataBytes = remain - (remain % blockAlign);
+      dataWindowable = dataBytes > 0;
+    } else {
+      return null;
+    }
+  }
+  if (!Number.isSafeInteger(dataBytes) || dataBytes <= 0) return null;
+  if (fileSize != null && fileSize > dataOffset && dataBytes > fileSize - dataOffset) {
+    const remain = fileSize - dataOffset;
+    dataBytes = remain - (remain % blockAlign);
+    if (!Number.isSafeInteger(dataBytes) || dataBytes <= 0) return null;
+  }
   return {
     ...fmt,
     blockAlign,
@@ -68,6 +96,31 @@ export function parseWavMetadata(buffer) {
     source: 'wav-header',
     complete: true,
   };
+}
+
+/** RIFF/RF64 WAV fmt + data metadata. Never trusts an unbounded chunk length.
+ * `fileSize` is the measured blob length. A RIFF size of 0 does not hide the
+ * chunks that follow it. Compressed containers do not come through here.
+ */
+export function parseWavMetadata(buffer, fileSize = null) {
+  const b = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (b.length < 12) return null;
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const tag = (at) => (at >= 0 && at + 4 <= b.length
+    ? String.fromCharCode(b[at], b[at + 1], b[at + 2], b[at + 3])
+    : '');
+  if (!['RIFF', 'RF64'].includes(tag(0)) || tag(8) !== 'WAVE') return null;
+  const measured = Number(fileSize);
+  const knownSize = Number.isFinite(measured) && measured > 0 ? measured : null;
+  const declaredEnd = tag(0) === 'RIFF' ? v.getUint32(4, true) + 8 : b.length;
+  const ends = [];
+  if (declaredEnd >= 44 && declaredEnd <= b.length) ends.push(declaredEnd);
+  if (!ends.includes(b.length)) ends.push(b.length);
+  for (const riffEnd of ends) {
+    const found = readWaveChunks(b, v, tag, riffEnd, knownSize);
+    if (found) return found;
+  }
+  return null;
 }
 
 export function estimateIngestionMemory(metadata, fileBytes, budget) {

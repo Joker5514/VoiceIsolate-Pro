@@ -350,5 +350,5 @@ export async function runChunkedExtraction(file, plan, options = {}) {
 /** Header parse used by tests and the WAV reader. Re-reads when the plan has no wav block. */
 export async function wavMetadataFor(file) {
   const head = await file.slice(0, 1024 * 1024).arrayBuffer();
-  return parseWavMetadata(head);
+  return parseWavMetadata(head, file?.size);
 }
