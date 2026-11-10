@@ -42,10 +42,12 @@
   /** Soft speech-presence decision on the a posteriori SNR (dB). */
   const SPP_LO_DB = 4;
   const SPP_HI_DB = 12;
+  /** Instantaneous-power margin (dB) for the fast onset path. */
+  const ONSET_MARGIN_DB = 6;
   /** Minimum-statistics bias correction (Martin 2001; MCRA Bmin ≈ 1.66). */
   const MIN_BIAS = 1.66;
   /** Time constants (s): power smoothing, SPP smoothing, minimum window. */
-  const POWER_TAU = 0.1;
+  const POWER_TAU = 0.06;
   const SPP_TAU = 0.06;
   const MIN_WINDOW = 1.5;
   /** Bounded gain decay per 10 ms (RNNoise caps decay at 0.6 per 10 ms frame). */
@@ -121,7 +123,10 @@
         // MCRA indicator on the smoothed power S / (Bmin * Smin): the
         // smoothing keeps single-frame noise peaks from flipping a bin to
         // "speech" (isolated pass-through bins are musical noise).
-        const snrDb = 10 * Math.log10(s / noise + 1e-12);
+        // A strong onset (instantaneous power 6 dB past the threshold, which
+        // stationary noise practically never reaches) counts from its first
+        // frame instead of waiting for S to rise.
+        const snrDb = Math.max(10 * Math.log10(s / noise + 1e-12), 10 * Math.log10(pf[i] / noise + 1e-12) - ONSET_MARGIN_DB);
         const q = smoothStep(snrDb, SPP_LO_DB, SPP_HI_DB);
         // Attack at once (onsets and sibilants pass), release over SPP_TAU.
         const held = aSpp * spp[i] + (1 - aSpp) * q;
