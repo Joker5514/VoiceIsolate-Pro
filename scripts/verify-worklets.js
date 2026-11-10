@@ -81,6 +81,7 @@ function verifyWorklets(options = {}) {
     const hash = sha256File(srcAbs);
     const manifestKey = entry.id === 'vip-gate' ? 'gate_processor'
       : entry.id === 'vip-deesser' ? 'deesser_processor'
+      : entry.id === 'vip-true-peak-limiter' ? 'true_peak_limiter_processor'
       : entry.id;
     const manifestEntry = modelsWorklets[manifestKey] || modelsWorklets[entry.id.replace(/-/g, '_')];
     if (manifestEntry) {

@@ -13,10 +13,11 @@ const ROOT = path.join(__dirname, '..');
 describe('AudioWorklet packaging (all platforms)', () => {
   const registry = loadWorkletManifest();
 
-  test('worklet-manifest.json lists exactly 3 worklets', () => {
-    expect(registry.worklets).toHaveLength(3);
+  // Rule change 2026-11-10 (owner-approved): + vip-true-peak-limiter.
+  test('worklet-manifest.json lists exactly 4 worklets', () => {
+    expect(registry.worklets).toHaveLength(4);
     const ids = registry.worklets.map((w) => w.id);
-    expect(ids).toEqual(['vip-gate', 'vip-deesser', 'dsp-processor']);
+    expect(ids).toEqual(['vip-gate', 'vip-deesser', 'vip-true-peak-limiter', 'dsp-processor']);
   });
 
   test('verify-worklets.js passes (source + manifest + precache)', () => {
@@ -93,14 +94,18 @@ describe('AudioWorklet packaging (all platforms)', () => {
     expect(engineer).toContain('href="/">Stem-Split</a>');
   });
 
-  test('PlaybackMixer allowlists only Gate + DeEsser for addModule', () => {
+  // Rule change 2026-11-10 (owner-approved): the true-peak output limiter is
+  // the third playback worklet (live preview = export ceiling).
+  test('PlaybackMixer allowlists only Gate + DeEsser + TruePeakLimiter for addModule', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src/pipeline/PlaybackMixer.js'), 'utf8');
     expect(src).toContain("addModule('/src/workers/GateProcessor.js')");
     expect(src).toContain("addModule('/src/workers/DeEsserProcessor.js')");
+    expect(src).toContain("addModule('/src/workers/TruePeakLimiterProcessor.js')");
     const matches = [...src.matchAll(/addModule\s*\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
     expect(matches).toEqual([
       '/src/workers/GateProcessor.js',
       '/src/workers/DeEsserProcessor.js',
+      '/src/workers/TruePeakLimiterProcessor.js',
     ]);
   });
 });

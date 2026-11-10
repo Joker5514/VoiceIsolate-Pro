@@ -19,6 +19,7 @@ const MODELS_MANIFEST = path.join(ROOT, 'public', 'app', 'models-manifest.json')
 
 const MANIFEST_KEYS = {
   'vip-gate': 'gate_processor',
+  'vip-true-peak-limiter': 'true_peak_limiter_processor',
   'vip-deesser': 'deesser_processor',
   'dsp-processor': 'dsp_processor',
 };

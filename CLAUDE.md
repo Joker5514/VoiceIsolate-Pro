@@ -271,7 +271,14 @@ Rules:
     the loaded stems, controlled by k-rate AudioParams so sliders drive them
     like any other Live-Mix control. Web Audio has no built-in gate/expander,
     and a built-in de-esser comb-filters (DynamicsCompressorNode lookahead), so
-    both must be worklets. These are **not** the removed live-mic pipeline: they
+    both must be worklets. `src/workers/TruePeakLimiterProcessor.js`
+    (`registerProcessor('vip-true-peak-limiter')`) is the third: the 4×
+    true-peak look-ahead output ceiling, run by both live playback and the
+    `renderMix` export render so the preview is exactly what is exported
+    (a DynamicsCompressor + WaveShaper clip let overs through to flat-topped
+    clipping and added auto make-up gain). **Rule change 2026-11-10,
+    owner-approved:** the allowlist grew from two worklets to these three.
+    These are **not** the removed live-mic pipeline: they
     never ingest a microphone and never re-run ML. They are the only worklets
     permitted in `src/`, allowlisted by `ALLOWED_WORKLETS` in
     `scripts/validate.js`; any other `audioWorklet.addModule` target (or a
@@ -417,7 +424,10 @@ raw-magnitude input or `mask^1` without new measurements. `pnpm test:quality`
 shipped models over deterministic fixtures and fails on any pinned metric
 dropping more than 0.5 dB; re-pin only with `node scripts/quality/quality-gate.cjs --update` and a
 reviewed baseline diff. Its improvement tier (`improvementRequired`) holds
-every listed pair at SI-SDR delta >= 0 dB and only grows. MLWorker first runs
+every listed pair at SI-SDR delta >= 0 dB and only grows, except through an
+explicit, reasoned `improvementWaivers` entry in the baseline (**rule change
+2026-11-10, owner-approved**; waived pairs print on every run and rejoin the
+tier once they measure >= 0 dB). MLWorker first runs
 `src/workers/MainsHumFilter.js`, an offline 50/60 Hz notch, once per channel per
 Process before the model chain (no slider; its detection FFTs are not a model
 STFT/iSTFT pass). Both shipped networks are single-frame and weak: the
@@ -615,7 +625,7 @@ const QUANTA_PER_HOP = HOP_SIZE / QUANTUM; // MUST be integer (4)
 1. `HOP_SIZE % QUANTUM === 0` — enforced by `validateRingBufferConstants()`.
 2. `QuantumHopBridge` accumulates exactly `QUANTA_PER_HOP` quanta before each hop advance.
 3. Analysis and synthesis use **symmetric periodic Hann**; reconstruction divides by the summed window² envelope (COLA).
-4. **Product is upload-only** (`Permissions-Policy: microphone=()`). Real-time AudioWorklets are **playback-only** Gate + DeEsser (`/src/workers/GateProcessor.js`, `DeEsserProcessor.js`) — **not** a full spectral Live-Mode mic path and **not** a sub-10 ms isolation claim.
+4. **Product is upload-only** (`Permissions-Policy: microphone=()`). Real-time AudioWorklets are **playback-only** Gate + DeEsser + TruePeakLimiter (`/src/workers/GateProcessor.js`, `DeEsserProcessor.js`, `TruePeakLimiterProcessor.js`; the third added 2026-11-10, owner-approved) — **not** a full spectral Live-Mode mic path and **not** a sub-10 ms isolation claim.
 5. Offline isolation STFT lives in **`src/workers/MLWorker.js`** (`fused-spectral-single-stft` for DEFAULT `bsrnn_vocals`; serial multi-STFT only for mixed/waveform chains e.g. Demucs). `EngineerSpectralControls.js` applies the Process snapshot inside that existing frame loop; the `app.js` `_spectralStageAsync` fallback still uses one STFT/iSTFT when ML is unavailable. That fallback, and the other fixed offline paths (`dsp-core`, `fft-bridge`, `dsp-bootstrap`, `offline-processor`, `reconstructPassThrough`), frame with `paddedFrameCount` / `paddedSample`: each frame starts at `f·hop − (N−hop)`, samples outside the file are odd-reflected, and overlap-add divides by the true window² sum. Do not go back to `floor((L−N)/H)+1` plus a half-peak divisor — that silenced about 85 ms at each end. `hop === fftSize` stays one analysis window (the static spectrogram); it is not a synthesis preset.
    The fused path transforms a **real** frame with `realFftForward` / `realFftInverse` — a half-length complex FFT plus untangle, ~1.8× faster than the n-point transform it replaced, and numerically pinned to it by `tests/mlworker-real-fft.test.js`. The mirrored negative-frequency half is never materialised; do not reintroduce it. `fftInPlace` remains the general complex transform these are built on.
    `EngineerSpectralControls.applyFrame` sees **un-normalised** STFT units (a −20 dBFS broadband frame measures ≈ 4, a −20 dBFS sine ≈ 102 at its bin), so no threshold in it may be a bare dBFS constant. `nrFloor` is the floor of the **combined** per-bin reduction (the NR term alone never cuts below 0.18), and `breathControl` detects breath frames relative to a slow speech-level tracker. `tests/engineer-spectral-control-sensitivity.test.js` pins both and checks every Process-time spectral id changes the output somewhere in its range.

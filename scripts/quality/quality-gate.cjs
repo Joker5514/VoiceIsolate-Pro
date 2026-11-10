@@ -17,6 +17,11 @@
  *      tagged pair that measures >= 0 and refuses to drop a listed pair that
  *      no longer does, so the list only grows. Tagged pairs still below 0 dB
  *      are printed as open gaps on every run.
+ *      Rule change 2026-11-10 (owner-approved): a listed pair may leave the
+ *      tier only through an explicit, reasoned entry in the baseline's
+ *      improvementWaivers ({ key: reason }). Waived pairs are printed on
+ *      every run, are kept by --update, and rejoin the tier (dropping the
+ *      waiver) as soon as they measure >= 0 dB again.
  *
  *   node scripts/quality/quality-gate.cjs            # check
  *   node scripts/quality/quality-gate.cjs --update   # re-pin after an intended change
@@ -89,13 +94,22 @@ async function main() {
   const rounded = Object.fromEntries(Object.entries(metrics).map(([k, v]) => [k, Math.round(v * 100) / 100]));
   const previous = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, 'utf8')) : null;
   const base = update ? null : previous;
-  const required = new Set(previous?.improvementRequired || []);
+  const waivers = previous?.improvementWaivers && typeof previous.improvementWaivers === 'object'
+    ? { ...previous.improvementWaivers }
+    : {};
+  for (const [k, reason] of Object.entries(waivers)) {
+    if (typeof reason !== 'string' || !reason.trim()) failures.push(`${k}: improvement waiver needs a reason`);
+    else if (!improvementKeys.includes(k)) failures.push(`${k}: waived but not a tagged improvement metric`);
+    // A waived pair that measures >= 0 again rejoins the tier.
+    if (metrics[k] >= 0) delete waivers[k];
+  }
+  const required = new Set((previous?.improvementRequired || []).filter((k) => !(k in waivers)));
   for (const k of required) {
     if (!improvementKeys.includes(k)) failures.push(`${k}: listed in improvementRequired but not a tagged improvement metric`);
     else if (metrics[k] < 0) failures.push(`${k}: ${metrics[k].toFixed(3)} dB < 0 dB (improvement tier)`);
   }
   // Compare unrounded values: rounding would turn -0.004 dB into -0 and pass.
-  const gaps = improvementKeys.filter((k) => !required.has(k) && metrics[k] < 0);
+  const gaps = improvementKeys.filter((k) => !required.has(k) && !(k in waivers) && metrics[k] < 0);
   const toleranceValue = Number(base?.toleranceDb);
   // A non-finite tolerance (e.g. 1e999 → Infinity) would disable every check.
   const tolerance = Number.isFinite(toleranceValue) && toleranceValue > 0 ? toleranceValue : DEFAULT_TOLERANCE_DB;
@@ -113,6 +127,7 @@ async function main() {
       toleranceDb: DEFAULT_TOLERANCE_DB,
       improvementNote: 'SI-SDR delta must stay >= 0 dB for these pairs; the list only grows.',
       improvementRequired: improvementKeys.filter((k) => metrics[k] >= 0),
+      ...(Object.keys(waivers).length ? { improvementWaivers: waivers } : {}),
       metrics: rounded,
     }, null, 2)}\n`);
     console.log(`[quality] baseline written: ${Object.keys(rounded).length} metrics`);
@@ -129,6 +144,9 @@ async function main() {
   }
   for (const [k, v] of Object.entries(rounded)) console.log(`  ${k.padEnd(42)} ${v.toFixed(2)} dB`);
   for (const k of gaps) console.log(`  improvement gap (not yet >= 0 dB): ${k} ${rounded[k].toFixed(2)} dB`);
+  for (const [k, reason] of Object.entries(waivers)) {
+    console.log(`  improvement WAIVED: ${k} ${rounded[k]?.toFixed(2)} dB — ${reason}`);
+  }
   if (failures.length) {
     console.error(`[quality] FAIL\n  ${failures.join('\n  ')}`);
     process.exit(1);

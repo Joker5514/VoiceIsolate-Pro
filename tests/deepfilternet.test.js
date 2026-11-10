@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const S = require('../scripts/quality/lib/signals.cjs');
 const M = require('../scripts/quality/lib/metrics.cjs');
+const { readWav, upsampleLinear } = require('../scripts/quality/corpus-eval.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const scope = {};
@@ -70,7 +71,8 @@ describe('DeepFilterNet3 helper', () => {
     const x = fixtureInput();
     const b = fs.readFileSync(path.join(__dirname, 'fixtures/dfn3-libdf-output.f32'));
     const ref = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
-    const y = await runDeepFilterNet(x, run);
+    // preRoll 0 is the exact libDF path; the default adds a discarded lead-in.
+    const y = await runDeepFilterNet(x, run, { preRoll: 0 });
     expect(y.length).toBe(x.length);
     expect(M.nonFinite(y)).toBe(0);
     expect(M.siSdr(y, ref)).toBeGreaterThan(40);
@@ -82,11 +84,11 @@ describe('DeepFilterNet3 helper', () => {
   it('chunked inference with warm-up context stays as close to the target as one pass', async () => {
     const v = S.talker({ seconds: 6, seed: 3 });
     const x = S.mixAtSnr(v.signal, S.whiteNoise(v.signal.length, 4), 5, v.active).mix;
-    const whole = await runDeepFilterNet(x, run);
+    const whole = await runDeepFilterNet(x, run, { preRoll: 0 });
     let progress = 0;
     let yields = 0;
     const chunked = await runDeepFilterNet(x, run, {
-      chunkFrames: 200, leftFrames: D.LEFT,
+      chunkFrames: 200, leftFrames: D.LEFT, preRoll: 0,
       onProgress: (p) => { progress = p; },
       yieldFn: () => { yields++; },
     });
@@ -94,6 +96,24 @@ describe('DeepFilterNet3 helper', () => {
     expect(yields).toBe(Math.ceil((Math.floor((x.length + D.FFT) / D.HOP)) / 200));
     expect(M.siSdr(chunked, whole)).toBeGreaterThan(15);
     expect(Math.abs(M.siSdr(chunked, v.signal) - M.siSdr(whole, v.signal))).toBeLessThan(0.5);
+  });
+
+  // Cold-started norms and GRUs cut speech that starts at t = 0 (round 2:
+  // -30.6 dB in the first 5 ms of real-quiet-speech-001). The mirrored
+  // lead-in lets the network settle before the file's first sample.
+  it('keeps a speech onset at t = 0 (pre-roll) and keeps the output length', async () => {
+    const clip = readWav(path.join(ROOT, 'scripts/quality/corpus/audio/real-quiet-speech-001.wav'));
+    const x = upsampleLinear(clip.samples.subarray(0, 16000 * 3), clip.sampleRate, D.SR);
+    const head = (y) => M.rmsDb(y.subarray(0, 240)) - M.rmsDb(x.subarray(0, 240));
+    const cold = await runDeepFilterNet(x, run, { preRoll: 0 });
+    const warm = await runDeepFilterNet(x, run);
+    expect(D.PRE_ROLL).toBe(24000);
+    expect(warm.length).toBe(x.length);
+    expect(M.nonFinite(warm)).toBe(0);
+    expect(head(cold)).toBeLessThan(-15);
+    expect(head(warm)).toBeGreaterThan(-10);
+    // The rest of the clip is not traded for the onset.
+    expect(M.siSdr(warm, x)).toBeGreaterThan(M.siSdr(cold, x) - 0.5);
   });
 
   it('keeps digital silence silent and short input the same length', async () => {

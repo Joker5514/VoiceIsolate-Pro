@@ -33,7 +33,7 @@ export function androidModelFiles(manifest = MODEL_MANIFEST) {
 }
 export function workletPackaging(root = ROOT) {
   const registry = JSON.parse(fs.readFileSync(path.join(root, 'scripts/worklet-manifest.json'), 'utf8'));
-  const keys = { 'vip-gate': 'gate_processor', 'vip-deesser': 'deesser_processor', 'dsp-processor': 'dsp_processor' };
+  const keys = { 'vip-gate': 'gate_processor', 'vip-deesser': 'deesser_processor', 'vip-true-peak-limiter': 'true_peak_limiter_processor', 'dsp-processor': 'dsp_processor' };
   return Object.fromEntries(registry.worklets.map((entry) => {
     const bytes = fs.readFileSync(path.join(root, entry.source));
     const sha256 = crypto.createHash('sha256').update(bytes.toString('utf8').replace(/\r\n/g, '\n')).digest('hex');

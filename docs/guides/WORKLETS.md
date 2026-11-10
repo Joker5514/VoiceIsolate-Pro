@@ -1,6 +1,8 @@
 # AudioWorklet Packaging
 
-VoiceIsolate Pro ships **three** AudioWorklet processor files on every platform (web, Android, desktop). Two are **active** at runtime; one is **legacy-shipped** for compatibility.
+VoiceIsolate Pro ships **four** AudioWorklet processor files on every platform (web, Android, desktop). Three are **active** at runtime; one is **legacy-shipped** for compatibility.
+
+> Rule change 2026-11-10 (owner-approved): the active playback set grew from two (gate, de-esser) to three with `vip-true-peak-limiter`, the look-ahead true-peak output ceiling. Live playback and the export render run the same worklet, so the preview is what Export writes. It replaces the native DynamicsCompressor + hard-clip ceiling (which clipped flat tops and added +0.57 dB auto make-up); that path remains only as the fallback where the worklet cannot load.
 
 ## Registry
 
@@ -10,6 +12,7 @@ Canonical list: [`scripts/worklet-manifest.json`](../../scripts/worklet-manifest
 |----|------|-----------|------|-----------------|
 | `vip-gate` | `src/workers/GateProcessor.js` | `vip-gate` | **Active, 0–20 ms lookahead** | `PlaybackMixer._loadGate()` |
 | `vip-deesser` | `src/workers/DeEsserProcessor.js` | `vip-deesser` | **Active** | `PlaybackMixer._loadDeEsser()` |
+| `vip-true-peak-limiter` | `src/workers/TruePeakLimiterProcessor.js` | `vip-true-peak-limiter` | **Active, fixed 5 ms + 16-frame latency** | `PlaybackMixer._loadTruePeakLimiter()` |
 | `dsp-processor` | `public/app/dsp-processor.js` | `dsp-processor` | **Legacy-shipped** | Not `addModule`-loaded (live SAB pipeline removed; see CLAUDE.md §1.1) |
 
 Active worklets run on **playback stems only** — never on a live microphone and never re-running ML.
@@ -33,6 +36,7 @@ It runs only on an explicit Enroll / Isolate click, never from a slider.
 ```
 src/workers/GateProcessor.js
 src/workers/DeEsserProcessor.js          ──► pnpm build ──► build/src/workers/*.js
+src/workers/TruePeakLimiterProcessor.js  ──►              ──► build/src/workers/*.js
 src/workers/EngineerSpectralControls.js  ──►              ──► build/src/workers/*.js
 src/workers/MainsHumFilter.js            ──►              ──► build/src/workers/*.js
 src/workers/DeepFilterNet.js             ──►              ──► build/src/workers/*.js

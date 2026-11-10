@@ -99,15 +99,18 @@ describe('PlaybackMixer.dispose (F03)', () => {
     await mixer.dispose();
     const connectsBefore = mixer.gateInput.connect.mock.calls.length;
     const deEsserBefore = mixer.deEsserInput.connect.mock.calls.length;
-    // Both module loads (gate and de-esser) settle after dispose.
-    expect(finishLoads).toHaveLength(2);
+    const limiterBefore = mixer.limiterOut.connect.mock.calls.length;
+    // All three module loads (gate, de-esser, true-peak limiter) settle after dispose.
+    expect(finishLoads).toHaveLength(3);
     finishLoads.forEach((r) => r());
     await new Promise((r) => setTimeout(r, 20));
     expect(globalThis.AudioWorkletNode).not.toHaveBeenCalled();
     expect(mixer.gateInput.connect.mock.calls.length).toBe(connectsBefore);
     expect(mixer.deEsserInput.connect.mock.calls.length).toBe(deEsserBefore);
+    expect(mixer.limiterOut.connect.mock.calls.length).toBe(limiterBefore);
     expect(mixer.gate).toBeNull();
     expect(mixer.deEsser).toBeNull();
+    expect(mixer.truePeakLimiter).toBeNull();
   });
 
   test('a worklet load that fails after dispose does not reconnect the bus', async () => {
@@ -118,11 +121,13 @@ describe('PlaybackMixer.dispose (F03)', () => {
     await mixer.dispose();
     const gateConnects = mixer.gateInput.connect.mock.calls.length;
     const deEsserConnects = mixer.deEsserInput.connect.mock.calls.length;
-    expect(failLoads).toHaveLength(2);
+    const limiterConnects = mixer.limiterOut.connect.mock.calls.length;
+    expect(failLoads).toHaveLength(3);
     failLoads.forEach((reject) => reject(new Error('network')));
     await new Promise((r) => setTimeout(r, 50));
     expect(mixer.gateInput.connect.mock.calls.length).toBe(gateConnects);
     expect(mixer.deEsserInput.connect.mock.calls.length).toBe(deEsserConnects);
+    expect(mixer.limiterOut.connect.mock.calls.length).toBe(limiterConnects);
   });
 });
 

@@ -7,7 +7,10 @@
  * length, then a one-pole release. Every sample in the averaging window is at
  * most the gain the peak needs, so the peak never passes the ceiling, and the
  * gain falls over the whole look-ahead instead of in one sample: no clipped
- * flat tops and no gain steps (clicks).
+ * flat tops and no gain steps (clicks). Release is program-dependent: the
+ * lower of a fast follower (the Release control) and a slow follower (60 ms
+ * attack, max(400 ms, 8× release) release), so isolated peaks recover fast
+ * and sustained limiting holds steadily instead of pumping.
  *
  * Offline: the input arrays are read at random, so the look-ahead adds no
  * output delay. Audio whose true peak stays under the ceiling is returned
@@ -19,6 +22,18 @@
 export const SAFETY_CEILING_DB = -1;
 
 const FACTOR = 4;
+// Shared with src/workers/TruePeakLimiterProcessor.js (live + export render);
+// tests/true-peak-limiter-worklet.test.js pins the two to the same output.
+const MARGIN_DB = 0.05;
+const LOOKAHEAD_MS = 5;
+const SLOW_ATTACK_MS = 60;
+const SLOW_RELEASE_FACTOR = 8;
+const MIN_SLOW_RELEASE_MS = 400;
+
+/** Fixed latency of the streaming limiter worklet, frames. */
+export function truePeakLimiterLatencyFrames(sampleRate) {
+  return Math.max(1, Math.round((LOOKAHEAD_MS / 1000) * sampleRate)) + 16;
+}
 const HALF = 16; // taps each side of the interpolated point
 const TAPS = 2 * HALF;
 
@@ -138,7 +153,7 @@ export async function limitTruePeak(channels, sampleRate, options = {}) {
   const frames = channels?.[0]?.length || 0;
   const ceilingDb = Number.isFinite(options.ceilingDb) ? Math.min(0, options.ceilingDb) : SAFETY_CEILING_DB;
   const releaseMs = Number.isFinite(options.releaseMs) ? Math.min(2000, Math.max(5, options.releaseMs)) : 60;
-  const lookaheadMs = Number.isFinite(options.lookaheadMs) ? Math.min(20, Math.max(0.5, options.lookaheadMs)) : 5;
+  const lookaheadMs = Number.isFinite(options.lookaheadMs) ? Math.min(20, Math.max(0.5, options.lookaheadMs)) : LOOKAHEAD_MS;
   const yieldEvery = options.yieldEvery || 1 << 16;
   const yieldFn = options.yieldFn || (() => new Promise((r) => setTimeout(r, 0)));
   const checkAbort = () => {
@@ -156,10 +171,13 @@ export async function limitTruePeak(channels, sampleRate, options = {}) {
   let maxReduction = 1;
   // Gain modulation can lift an inter-sample point a hair; re-run on the output
   // with the target lowered by that excess (converges in one extra pass).
-  let target = ceiling * dbToGain(-0.02);
+  let target = ceiling * dbToGain(-MARGIN_DB);
   for (let pass = 0; pass < 3; pass++) {
     const L = Math.max(1, Math.round((lookaheadMs / 1000) * sampleRate));
     const rel = Math.exp(-1 / ((releaseMs / 1000) * sampleRate));
+    const slowAttack = Math.exp(-1 / ((SLOW_ATTACK_MS / 1000) * sampleRate));
+    const slowRel = Math.exp(-1 / ((Math.max(MIN_SLOW_RELEASE_MS, releaseMs * SLOW_RELEASE_FACTOR) / 1000) * sampleRate));
+    let gSlow = 1;
     const out = source.map((ch) => new Float32Array(ch.length));
     const localMax = makeLocalMax(source, frames);
     // Ring of the last L+1 required gains (sliding min via monotone deque).
@@ -192,14 +210,16 @@ export async function limitTruePeak(channels, sampleRate, options = {}) {
       if (q < 0 || q >= frames) continue;
       const gatt = Math.min(1, ringSum / (L + 1));
       g = gatt < g ? gatt : g + (gatt - g) * (1 - rel);
-      if (g < maxReduction) maxReduction = g;
-      for (let c = 0; c < source.length; c++) out[c][q] = source[c][q] * g;
+      gSlow = gatt < gSlow ? gSlow + (gatt - gSlow) * (1 - slowAttack) : gSlow + (gatt - gSlow) * (1 - slowRel);
+      const gain = g < gSlow ? g : gSlow;
+      if (gain < maxReduction) maxReduction = gain;
+      for (let c = 0; c < source.length; c++) out[c][q] = source[c][q] * gain;
     }
     result = out;
     const outPeak = measureTruePeak(result);
     if (outPeak <= ceiling) break;
     source = result;
-    target = target * (ceiling / outPeak) * dbToGain(-0.02);
+    target = target * (ceiling / outPeak) * dbToGain(-MARGIN_DB);
   }
   const outputPeak = measureTruePeak(result);
   return {
@@ -211,4 +231,4 @@ export async function limitTruePeak(channels, sampleRate, options = {}) {
   };
 }
 
-export default { limitTruePeak, measureTruePeak, SAFETY_CEILING_DB };
+export default { limitTruePeak, measureTruePeak, truePeakLimiterLatencyFrames, SAFETY_CEILING_DB };

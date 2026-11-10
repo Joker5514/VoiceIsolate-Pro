@@ -26,6 +26,18 @@
       "platforms": ["web", "android", "desktop"]
     },
     {
+      "id": "vip-true-peak-limiter",
+      "name": "TruePeakLimiterProcessor",
+      "source": "src/workers/TruePeakLimiterProcessor.js",
+      "url": "/src/workers/TruePeakLimiterProcessor.js",
+      "buildPath": "build/src/workers/TruePeakLimiterProcessor.js",
+      "androidAssetPath": "android/app/src/main/assets/public/src/workers/TruePeakLimiterProcessor.js",
+      "processorName": "vip-true-peak-limiter",
+      "role": "active",
+      "loadedBy": "PlaybackMixer._loadTruePeakLimiter()",
+      "platforms": ["web", "android", "desktop"]
+    },
+    {
       "id": "dsp-processor",
       "name": "DSPProcessor",
       "source": "public/app/dsp-processor.js",
