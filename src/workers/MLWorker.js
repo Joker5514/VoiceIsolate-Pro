@@ -47,6 +47,9 @@ importScripts('/lib/ort.min.js');
 // the existing fused STFT/iSTFT. Do not convert this worker to ESM; ORT uses
 // importScripts in this production path.
 importScripts('/src/workers/EngineerSpectralControls.js');
+// Classic-worker helper: mask-aware HF post-filter applied to the masked bins
+// inside the same fused STFT/iSTFT (src/workers/HfPostFilter.js).
+importScripts('/src/workers/HfPostFilter.js');
 // Classic-worker helper: offline mains-hum notch run on each channel once per
 // Process before the model chain (src/workers/MainsHumFilter.js).
 importScripts('/src/workers/MainsHumFilter.js');
@@ -941,6 +944,11 @@ async function runFusedSpectralMaskChain(
 
   const out = new Float32Array(samples.length);
   const norm = new Float32Array(samples.length);
+  // Mask-aware HF noise reduction (replaces the fixed 8.4 kHz shelf PR #895
+  // removed): only bins whose mask is unsure AND whose tracked SNR is low.
+  const hfPostFilter = typeof self.createHfPostFilter === 'function'
+    ? self.createHfPostFilter({ fftSize: N, hop, bins, sampleRate })
+    : null;
   // Masked positive-frequency bins (0..N/2); the mirrored half is never built.
   const re = new Float32Array(N);
   const im = new Float32Array(N);
@@ -1062,6 +1070,7 @@ async function runFusedSpectralMaskChain(
         re[k] = cur.batchRe[off + k] * m;
         im[k] = cur.batchIm[off + k] * m;
       }
+      if (hfPostFilter) hfPostFilter.applyFrame(re, im, cur.batchMags, off, prevMask);
       if (engineerProcessor) {
         engineerProcessor.applyFrame(re, im, cur.batchMags, off, (f0 + b) * hop < pad);
       }

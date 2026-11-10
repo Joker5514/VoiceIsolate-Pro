@@ -37,6 +37,7 @@ const REQUIRED = [
   'lib/ort-wasm-simd-threaded.wasm',
   'src/workers/MLWorker.js',
   'src/workers/EngineerSpectralControls.js',
+  'src/workers/HfPostFilter.js',
   'src/workers/MainsHumFilter.js',
   'src/workers/BandlimitedResampler.js',
   'src/workers/DeepFilterNet.js',

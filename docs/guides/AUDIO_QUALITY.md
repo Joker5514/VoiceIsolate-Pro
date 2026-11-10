@@ -136,11 +136,12 @@ the reference contains it, so removing it costs SI-SDR against that reference.
   one exit (rule change 2026-11-10, owner-approved) is an explicit entry in
   the baseline's `improvementWaivers` (`{ key: reason }`): the gate prints it
   on every run, `--update` keeps it, and the pair rejoins the tier and loses
-  the waiver as soon as it measures >= 0 dB. The first waiver is
+  the waiver as soon as it measures >= 0 dB. The first waiver was
   `whisper-white-10db/landing/si-sdr-delta` (-0.03 dB) after PR #895 removed
   the always-on 8.4 kHz shelf: the synthetic talker stops at 7 kHz, so the
-  restored air band scores as noise there while PESQ, STOI and the recorded
-  4-12 kHz band do not move. Tagged
+  restored air band scored as noise there. The mask-aware HF post-filter
+  (below) brought it to +1.35 dB, so it rejoined the tier and the waiver is
+  gone. Tagged
   pairs still below 0 dB print as `improvement gap` on every run. On the
   synthetic fixtures the default and Engineer chains are still below 0 dB on
   white, HVAC and hum: the model alone scores only 6.4 dB SI-SDR on clean
@@ -152,6 +153,72 @@ Engineer noise reduction (stronger on flat noise floors, weaker on harmonic
 ones) moved every Engineer metric by about 0.1 dB, and weakening subtraction
 on music lowered music SI-SDR (-1.79 -> -2.03 dB). `SpectralCleanup.js` is
 not on any production path, so changes there would not reach users.
+
+## Mask-aware HF post-filter (2026-11-10)
+
+PR #714 hid the masks' HF noise leak with an always-on shelf (gain 1 -> 0.45
+from 8.4 kHz to Nyquist on every mask, unity included); PR #895 removed it so
+a unity mask reconstructs 12 and 16 kHz tones at about 140 dB SDR, and HF
+noise came back (white 5 dB SI-SDR delta -1.00 -> -2.13 dB on the default
+chain, noise-only suppression 5.00 -> 3.26 dB). The measured cause: BSRNN's
+mask is about 0.03 at 8-16 kHz on white noise but about 0.85 above 16 kHz,
+and after the 0.5 exponent that band keeps almost all of its noise.
+
+`src/workers/HfPostFilter.js` runs inside the fused STFT (after the masks,
+before the Engineer frame processor; no extra STFT). Per bin above 7 kHz
+(full weight from 9 kHz) the gain is
+`1 - w(f) * u(mask) * (1 - p) * (1 - 0.15)`:
+
+- `u(mask)` is 0 for a fused mask >= 0.995 and 1 at <= 0.9 (smoothstep), so
+  a unity or confident mask is never touched (bit-identical output, pinned
+  by `tests/hf-postfilter.test.js`).
+- `p` is a soft speech-presence probability from a minima-controlled
+  recursive-averaging noise tracker on the unmasked input power: 3-bin and
+  60 ms smoothing, minimum over two 1.5 s sub-windows (a 0.75 s window took
+  the floor of a pause-free sentence for noise and thinned its air band),
+  bias 2.3 (MCRA's 1.66 is for a ~1 s window; 2.3 holds the false-alarm
+  rate on Gaussian noise at 3 s) (Cohen and Berdugo, IEEE SPL 9(1), 2002;
+  Martin, IEEE TSAP 9(5), 2001), mapped through
+  a 7-14 dB a posteriori SNR ramp (60 ms smoothing; a strong onset opens at
+  once), as
+  OM-LSA uses its speech-presence probability (Cohen and Berdugo, Signal
+  Processing 81(11), 2001; Gerkmann and Hendriks, IEEE TASLP 20(4), 2012).
+  A strong onset (instantaneous SNR 6 dB past the ramp) counts from its
+  first frame.
+- A frame term (OM-LSA's frame-level speech presence): the same tracker on
+  the 1-7 kHz band power; while that band shows speech, the HF depth is cut
+  by up to 80 %, so the weak air band of a spoken word is kept.
+- The gain is smoothed over 3 bins (an isolated pass-through bin is pulled
+  down to its neighbours) and its decay is capped at 0.6 per 10 ms, the cap
+  RNNoise uses (Valin, MMSP 2018). The depth ramps in over the first 1.5 s
+  so a file that opens on speech is not taken for noise.
+- Floor 0.15 (-16.5 dB). RNNoise and DeepFilterNet3 (Schröter et al.,
+  Interspeech 2023) apply band gains up to 20/24 kHz; this is the same idea
+  gated by the separation mask.
+
+Gate (synthetic, 4 s), PR #911 -> this filter (pre-#895 in brackets):
+white 5 dB SI-SDR delta landing -2.13 -> -0.66 (-1.00), engineer -1.35 ->
+-0.57 (-0.73), maximum 0.16 -> 0.53 (0.46); noise-only suppression 3.26 ->
+5.70 (5.00), 6.14 -> 7.65 (7.26), 9.08 -> 9.99 (9.75); whisper in white
+10 dB landing -0.03 -> +1.15 (0.95); clean speech 6.40 -> 6.40 (6.38).
+Speech-level pins on noisy fixtures fell (white 5 dB landing -1.81 -> -2.29)
+because that metric includes the residual noise; the projected speech
+component moved by at most 0.06 dB (see the PR's re-pin table).
+
+Fullband check (48 kHz VCTK clean speech through the default chain, frames
+whose 16-24 kHz input is >= 10 dB above the clip's floor): the air band
+changes by -0.00 to -0.09 dB on 5 of 6 clips; the sixth opens on speech at
+t = 0 and loses 0.52 dB, almost all in its first second (cold start).
+
+Limits: the tracker treats any HF content that stays steady for over
+~1.5-3 s under an uncertain mask (a held cymbal, a steady HF tone) as noise;
+a confident mask still protects it. A file that opens on speech with no
+pause in its first ~1.5 s can lose up to a few dB of 16-24 kHz air in that
+span while the tracker learns the floor. Right after a word, HF noise is
+let through for ~50-130 ms while speech presence releases (a short hiss
+tail; measured, not tuned away). The recorded corpus is all 16 kHz, so it
+has nothing above 8 kHz and cannot show this filter; fullband checks used
+48 kHz VCTK recordings (CC BY 4.0) with synthetic noise.
 
 ## DeepFilterNet3 speech enhancement (2026-10-14)
 
