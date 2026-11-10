@@ -43,14 +43,24 @@ function bootUI(keys) {
   return { ui, container };
 }
 
-function flush() {
-  return new Promise((resolve) => setImmediate(resolve));
+/** Resolves after a vip-model-progress message has been delivered.
+ * setImmediate runs before BroadcastChannel's task, so the pill was still
+ * the initial model id ("ecapa_tdnn") when the assertion ran. */
+function nextModelMessage() {
+  return new Promise((resolve) => {
+    const channel = new BroadcastChannel('vip-model-progress');
+    channel.addEventListener('message', () => {
+      channel.close();
+      setImmediate(resolve);
+    }, { once: true });
+  });
 }
 
 describe('ModelStatusUI fallback dispositions', () => {
   test('fallback, unavailable, and unsupported pills do not claim the model ran', async () => {
     const { ui } = bootUI(['ecapa_tdnn', 'demucs', 'bsrnn_complex']);
     const channel = new BroadcastChannel('vip-model-progress');
+    const delivered = nextModelMessage();
     channel.postMessage({
       type: 'fallback',
       model: 'ecapa_tdnn',
@@ -67,7 +77,7 @@ describe('ModelStatusUI fallback dispositions', () => {
       model: 'bsrnn_complex',
       reason: 'no checksum',
     });
-    await flush();
+    await delivered;
 
     const ecapa = ui._pills.ecapa_tdnn;
     const demucs = ui._pills.demucs;
