@@ -609,6 +609,19 @@ body.v3 > details.v3-transport.pac {
   z-index: 180;
 }
 
+/* Isolate stays on the collapsed bar. The same node moves into the
+   Processing group only while the dock is open. */
+body.v3 > details.v3-transport.pac > summary.pac-bar {
+  flex-wrap: wrap;
+}
+body.v3 > details.v3-transport.pac > summary.pac-bar #landingProcessBar {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+body.v3 > details.v3-transport.pac > summary.pac-bar #processBtn {
+  white-space: nowrap;
+}
+
 body.v3 {
   padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
 }

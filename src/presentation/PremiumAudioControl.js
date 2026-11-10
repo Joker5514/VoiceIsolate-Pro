@@ -117,6 +117,17 @@ export function watchTransportStatus({ ready, status, sources = [], read } = {})
   return paint;
 }
 
+/**
+ * Keep Isolate on the collapsed bar. The expanded Processing group receives
+ * the same button only while the dock is open. append() reparents; never clone.
+ */
+export function placeProcessButton({ open, bar, slot, button } = {}) {
+  const target = open && slot ? slot : (bar || slot || null);
+  if (!target || !button || (typeof target.contains === 'function' && target.contains(button))) return target;
+  target.append(button);
+  return target;
+}
+
 /** Move a <select> by one option and emit change. Stops at the ends. */
 export function stepSelect(select, direction) {
   if (!select?.options?.length) return null;
