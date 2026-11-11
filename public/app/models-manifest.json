@@ -2,12 +2,12 @@
   "_note": "Generated from src/core/ModelManifest.js by pnpm models:manifests. Do not edit model definitions here. All runtime URLs are same-origin; audio never leaves the device.",
   "schemaVersion": 2,
   "models": {
-    "silero_vad": {
+    "vad": {
       "modelId": "vad",
       "filename": "silero_vad.onnx",
       "sizeBytes": 2327524,
       "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
-      "eager": true,
+      "eager": false,
       "optional": false,
       "shipped": true,
       "sources": [
@@ -59,6 +59,96 @@
         {
           "provider": "same-origin",
           "url": "/app/models/demucs_v4_quantized.onnx"
+        }
+      ]
+    },
+    "bsrnn_vocals": {
+      "modelId": "bsrnn_vocals",
+      "filename": "bsrnn_vocals.onnx",
+      "sizeBytes": 3870554,
+      "sha256": "7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141",
+      "eager": false,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/bsrnn_vocals.onnx"
+        }
+      ]
+    },
+    "dfn3_enc": {
+      "modelId": "dfn3_enc",
+      "filename": "dfn3_enc.onnx",
+      "sizeBytes": 1954042,
+      "sha256": "7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916",
+      "eager": false,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/dfn3_enc.onnx"
+        }
+      ]
+    },
+    "dfn3_erb_dec": {
+      "modelId": "dfn3_erb_dec",
+      "filename": "dfn3_erb_dec.onnx",
+      "sizeBytes": 3292397,
+      "sha256": "ab669a1d10afe20911728b33053a452071042317a90581092b325da7b2f9d895",
+      "eager": false,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/dfn3_erb_dec.onnx"
+        }
+      ]
+    },
+    "dfn3_df_dec": {
+      "modelId": "dfn3_df_dec",
+      "filename": "dfn3_df_dec.onnx",
+      "sizeBytes": 3340803,
+      "sha256": "23114ce3b0f6464b763ee62f7bb8aab6b2a129a21eabd5bcfe59413db05f278a",
+      "eager": false,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/dfn3_df_dec.onnx"
+        }
+      ]
+    },
+    "ecapa_tdnn": {
+      "modelId": "ecapa_tdnn",
+      "filename": "ecapa_tdnn.onnx",
+      "sizeBytes": 24861931,
+      "sha256": "f901ae3571912bad4e11e157744cb8b7d77a0b46923b83c410bdbb6c77d69736",
+      "eager": false,
+      "optional": true,
+      "shipped": false,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/ecapa_tdnn.onnx"
+        }
+      ]
+    },
+    "silero_vad": {
+      "modelId": "vad",
+      "filename": "silero_vad.onnx",
+      "sizeBytes": 2327524,
+      "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+      "eager": true,
+      "optional": false,
+      "shipped": true,
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/app/models/silero_vad.onnx"
         }
       ]
     },

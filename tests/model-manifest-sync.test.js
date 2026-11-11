@@ -21,15 +21,13 @@ const ROOT = path.resolve(__dirname, '..');
 const PKG_MANIFEST = path.join(ROOT, 'public', 'app', 'models-manifest.json');
 const CARD_MANIFEST = path.join(ROOT, 'public', 'app', 'models', 'models-manifest.json');
 
-let sync; // scripts/sync-model-manifests.mjs (ESM)
+let generator;
 let MODEL_MANIFEST;
-let classifyResult; // scripts/validate-onnx-models.js (CJS)
 let integrity; // scripts/validate-model-integrity.mjs (ESM) — canonical "shipped" predicates
 
 beforeAll(async () => {
-  sync = await import('../scripts/sync-model-manifests.mjs');
+  generator = await import('../scripts/generate-model-manifests.mjs');
   ({ MODEL_MANIFEST } = await import('../src/core/ModelManifest.js'));
-  ({ classifyResult } = require('../scripts/validate-onnx-models.js'));
   integrity = await import('../scripts/validate-model-integrity.mjs');
 });
 
@@ -50,19 +48,19 @@ describe('packaging model registry generation (VIP-012)', () => {
     expect(out).toContain('OK');
   });
 
-  test('generated models section is exactly the deliverable set plus documented legacy aliases', () => {
+  test('generated models section is every pinned file plus the legacy alias keys', () => {
     const file = JSON.parse(fs.readFileSync(PKG_MANIFEST, 'utf8'));
-    const rebuilt = sync.buildModelsSection(MODEL_MANIFEST, file.models);
-    // Deterministic: regenerating from the canonical registry reproduces the file.
+    const rebuilt = generator.packagingModels(MODEL_MANIFEST);
     expect(file.models).toEqual(rebuilt);
-    const canonicalIds = sync.deliverables(MODEL_MANIFEST).map(([id]) => id);
-    for (const id of canonicalIds) {
-      expect(file.models[id]).toBeDefined();
+    for (const id of ['vad', 'bsrnn_vocals', 'rnnoise', 'dfn3_enc', 'dfn3_erb_dec', 'dfn3_df_dec']) {
+      expect(file.models[id]).toMatchObject({ shipped: true, modelId: id });
     }
-    // Aliases are byte-identical copies of their canonical entries.
-    for (const [alias, canonical] of Object.entries(sync.LEGACY_ALIASES)) {
-      expect(file.models[alias]).toEqual(file.models[canonical]);
-    }
+    // Alias copies keep the canonical modelId. silero_vad stays the eager boot key.
+    expect(file.models.silero_vad).toEqual(rebuilt.silero_vad);
+    expect(file.models.silero_vad.modelId).toBe('vad');
+    expect(file.models.silero_vad.eager).toBe(true);
+    expect(file.models.bsrnn.modelId).toBe('bsrnn_vocals');
+    expect(file.models.vad.eager).toBe(false);
   });
 
   test('placeholder entries with sizeBytes null never enter the packaging registry', () => {
@@ -114,37 +112,33 @@ describe('packaging model registry generation (VIP-012)', () => {
   });
 });
 
-describe('delivery validation classification (VIP-003)', () => {
-  const base = { min_bytes: 1000 };
-
-  test('required entry passes on a real binary', () => {
-    expect(classifyResult({ ...base, status: 200, contentLength: 5000 })).toBe('ok');
+describe('delivery validation uses the integrity helper (VIP-003)', () => {
+  test('shipped DeepFilterNet3 parts are required and unshipped weights are not', () => {
+    expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.dfn3_enc)).toBe(true);
+    expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.dfn3_erb_dec)).toBe(true);
+    expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.dfn3_df_dec)).toBe(true);
+    expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.bsrnn_vocals)).toBe(true);
+    expect(integrity.isExplicitlyOptional(MODEL_MANIFEST.ecapa_tdnn)).toBe(true);
+    expect(integrity.isExplicitlyOptional(MODEL_MANIFEST.demucs)).toBe(true);
+    expect(integrity.isExplicitlyOptional(MODEL_MANIFEST.bsrnn_complex)).toBe(true);
+    expect(integrity.isRequiredShippedModel(MODEL_MANIFEST.bsrnn_complex)).toBe(false);
+    expect(integrity.isCompositeModel(MODEL_MANIFEST.deepfilternet3)).toBe(true);
   });
 
-  test('required entry reports unreachable / missing / stub as failures', () => {
-    expect(classifyResult({ ...base, status: 0, contentLength: 0, error: 'timeout' })).toBe('unreachable');
-    expect(classifyResult({ ...base, status: 404, contentLength: 0 })).toBe('missing');
-    expect(classifyResult({ ...base, status: 200, contentLength: 500 })).toBe('stub');
-  });
-
-  test('optional or unshipped entry never blocks: unreachable / 404 / stub all skip', () => {
-    for (const flags of [{ optional: true }, { shipped: false }, { optional: true, shipped: false }]) {
-      expect(classifyResult({ ...base, ...flags, status: 0, contentLength: 0, error: 'ECONN' })).toBe('skipped-optional');
-      expect(classifyResult({ ...base, ...flags, status: 404, contentLength: 0 })).toBe('skipped-optional');
-      expect(classifyResult({ ...base, ...flags, status: 200, contentLength: 10 })).toBe('skipped-optional');
-    }
-  });
-
-  test('optional entry still reports success and unverified states', () => {
-    expect(classifyResult({ ...base, optional: true, status: 200, contentLength: 5000 })).toBe('ok');
-    expect(classifyResult({ ...base, optional: true, status: 200, contentLength: 0 })).toBe('unverified');
-    expect(classifyResult({ ...base, status: 200, contentLength: 0 })).toBe('unverified');
+  test('local integrity accepts the shipped files, including the three DeepFilterNet3 parts', () => {
+    const local = integrity.validateModelIntegrity({ root: ROOT });
+    expect(local.errors || []).toEqual([]);
+    expect(local.ok).toBe(true);
   });
 
   test('requiring the validator module does not execute its CLI main', () => {
-    // If main() ran on require, this suite would already have exited non-zero
-    // (or printed the banner). The export existing is the guard.
-    expect(typeof classifyResult).toBe('function');
+    const { execFileSync: exec } = require('child_process');
+    const out = exec(process.execPath, ['-e', "require('./scripts/validate-onnx-models.js')"], {
+      cwd: ROOT, encoding: 'utf8',
+    });
+    expect(out).not.toMatch(/model-delivery/);
+    const cli = require('../scripts/validate-onnx-models.js');
+    expect(typeof cli.main).toBe('function');
   });
 });
 

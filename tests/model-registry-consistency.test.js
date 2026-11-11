@@ -24,7 +24,13 @@ test('packaging projections are deterministic, complete and strict (no warning-o
     expect(canonical.MODEL_MANIFEST[m.modelId]).toMatchObject({ sizeBytes: m.sizeBytes, sha256: m.sha256 });
   }
   expect(delivery.models.demucs).toMatchObject({ shipped: false, optional: true });
-  expect(delivery.models.bsrnn_vocals_complex).toMatchObject({ shipped: false, optional: true });
+  expect(delivery.models.bsrnn_vocals_complex).toMatchObject({ shipped: false, optional: true, sha256: null });
+  expect(delivery.models.dfn3_enc).toMatchObject({ shipped: true, optional: false, filename: 'dfn3_enc.onnx' });
+  expect(delivery.models.dfn3_erb_dec).toMatchObject({ shipped: true, filename: 'dfn3_erb_dec.onnx' });
+  expect(delivery.models.dfn3_df_dec).toMatchObject({ shipped: true, filename: 'dfn3_df_dec.onnx' });
+  expect(delivery.models.ecapa_tdnn).toMatchObject({ shipped: false, optional: true });
+  expect(delivery.models.bsrnn.modelId).toBe('bsrnn_vocals');
+  expect(delivery.models.silero_vad).toMatchObject({ modelId: 'vad', eager: true });
 });
 
 test('legacy aliases resolve to generated entries, never to a second pin table', () => {

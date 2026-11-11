@@ -29,4 +29,9 @@ async function main() {
   }
   return local.ok && !drift.length && remoteOk ? 0 : 1;
 }
-main().then((code) => { process.exitCode = code; }, (error) => { console.error(`[model-delivery] ${error.message}`); process.exitCode = 1; });
+
+if (require.main === module) {
+  main().then((code) => { process.exitCode = code; }, (error) => { console.error(`[model-delivery] ${error.message}`); process.exitCode = 1; });
+}
+
+module.exports = { main };

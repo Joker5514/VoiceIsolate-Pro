@@ -14,12 +14,60 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const MODEL_MANIFEST_PATH = 'public/app/models-manifest.json';
 export const MODEL_INVENTORY_PATH = 'public/app/models/models-manifest.json';
 export const MODEL_COMPAT_PATH = 'public/app/model-registry.generated.js';
-const LEGACY_KEYS = Object.freeze({ bsrnn_vocals: 'bsrnn', vad: 'silero_vad', demucs: 'demucs', bsrnn_complex: 'bsrnn_vocals_complex' });
-const EAGER = new Set(['rnnoise', 'vad']);
-// Compatibility keys are projections, not a second registry. Legacy consumers
-// filter shipped/optional and never infer that a canonical strategy is supported.
-const LEGACY_PACKAGING = new Set(['bsrnn_vocals', 'rnnoise', 'vad', 'vad_int8', 'demucs', 'bsrnn_complex']);
+const ALIAS_OF = Object.freeze({ vad: 'silero_vad', bsrnn_vocals: 'bsrnn' });
+// Boot preload stays on the historical keys. Canonical `vad` is not also eager,
+// or the same Silero file would be fetched twice.
+const EAGER_KEYS = new Set(['rnnoise', 'silero_vad']);
 const INVENTORY_KEYS = Object.freeze({ vad: 'silero_vad', demucs: 'demucs_v4', bsrnn_complex: 'bsrnn_vocals_complex' });
+
+function isDeliverableFile(entry) {
+  return entry && !entry.composite
+    && typeof entry.url === 'string' && entry.url.startsWith('/app/models/')
+    && Number.isInteger(entry.sizeBytes) && entry.sizeBytes > 0
+    && typeof entry.sha256 === 'string' && /^[a-f0-9]{64}$/.test(entry.sha256);
+}
+
+function deliveryEntry(entry, key) {
+  return {
+    modelId: entry.id,
+    filename: path.basename(entry.url),
+    sizeBytes: entry.sizeBytes,
+    sha256: entry.sha256,
+    eager: EAGER_KEYS.has(key),
+    optional: entry.optional === true,
+    shipped: entry.shipped !== false,
+    sources: [{ provider: 'same-origin', url: entry.url }],
+  };
+}
+
+/** Every pinned file, under its canonical id, plus the legacy alias keys. */
+export function packagingModels(manifest = MODEL_MANIFEST) {
+  const models = {};
+  for (const entry of modelFiles(manifest)) {
+    if (!isDeliverableFile(entry)) continue;
+    models[entry.id] = deliveryEntry(entry, entry.id);
+  }
+  for (const [id, alias] of Object.entries(ALIAS_OF)) {
+    const entry = manifest[id];
+    if (entry && models[id]) models[alias] = deliveryEntry(entry, alias);
+  }
+  // Unpinned complex BSRNN stays on its legacy key so the legacy worker still
+  // refuses it before fetch (no checksum). The canonical id is not a key.
+  const complex = manifest.bsrnn_complex;
+  if (complex && typeof complex.url === 'string') {
+    models.bsrnn_vocals_complex = {
+      modelId: complex.id,
+      filename: path.basename(complex.url),
+      sizeBytes: complex.sizeBytes,
+      sha256: complex.sha256,
+      eager: false,
+      optional: true,
+      shipped: false,
+      sources: [{ provider: 'same-origin', url: complex.url }],
+    };
+  }
+  return models;
+}
 
 export function modelFiles(manifest = MODEL_MANIFEST) {
   return Object.values(manifest).filter((entry) => !entry.composite);
@@ -46,15 +94,7 @@ export function workletPackaging(root = ROOT) {
 }
 
 export function generateModelManifests(root = ROOT) {
-  const models = {};
-  for (const entry of modelFiles().filter((item) => LEGACY_PACKAGING.has(item.id))) {
-    models[LEGACY_KEYS[entry.id] || entry.id] = {
-      modelId: entry.id, filename: path.basename(entry.url), sizeBytes: entry.sizeBytes,
-      sha256: entry.sha256, eager: EAGER.has(entry.id), optional: entry.optional === true,
-      shipped: entry.shipped !== false,
-      sources: [{ provider: 'same-origin', url: entry.url }],
-    };
-  }
+  const models = packagingModels();
   const delivery = {
     _note: 'Generated from src/core/ModelManifest.js by pnpm models:manifests. Do not edit model definitions here. All runtime URLs are same-origin; audio never leaves the device.',
     schemaVersion: 2, models,
@@ -69,7 +109,7 @@ export function generateModelManifests(root = ROOT) {
       filename: path.basename(entry.url), path: entry.url, purpose: entry.name,
       sizeBytes: entry.sizeBytes, sha256: entry.sha256,
       sample_rate: entry.sampleRate, strategy: entry.strategy,
-      load_priority: EAGER.has(entry.id) ? 'eager' : 'lazy',
+      load_priority: entry.id === 'rnnoise' || entry.id === 'vad' ? 'eager' : 'lazy',
       delivery: entry.shipped === false ? 'optional' : 'repo_committed',
       status: entry.shipped === false ? 'not-shipped' : 'committed',
       optional: entry.optional === true, shipped: entry.shipped !== false,
@@ -81,7 +121,7 @@ export function generateModelManifests(root = ROOT) {
       'Android excludes optional Demucs and SAM weights; its required files come from the same canonical registry.',
     ],
   };
-  const compat = { models, aliases: { vad: 'silero_vad', silero: 'silero_vad', 'silero-vad': 'silero_vad', demucs: 'demucs', 'demucs-v4': 'demucs', demucs_v4: 'demucs', bsrnn: 'bsrnn', bsrnn_vocals: 'bsrnn', bsrnn_complex: 'bsrnn_vocals_complex' } };
+  const compat = { models, aliases: { vad: 'vad', silero: 'vad', silero_vad: 'vad', 'silero-vad': 'vad', demucs: 'demucs', 'demucs-v4': 'demucs', demucs_v4: 'demucs', bsrnn: 'bsrnn_vocals', bsrnn_vocals: 'bsrnn_vocals', bsrnn_complex: 'bsrnn_vocals_complex' } };
   return [
     [MODEL_MANIFEST_PATH, `${JSON.stringify(delivery, null, 2)}\n`],
     [MODEL_INVENTORY_PATH, `${JSON.stringify(inventory, null, 2)}\n`],
