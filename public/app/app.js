@@ -7020,7 +7020,7 @@ class VoiceIsolatePro {
     const nrScale = whisperMode > 0 ? (wm.osf / 4.5) : 1;
     const nrAmount = (p.nrAmount ?? 0) * nrScale;
     if (nrAmount > 0) {
-      const noise = this._estimateNoiseFloor(mag);
+      const noise = this._trackNoiseFloor(mag, sr, HOP);
       // Milder over-subtraction scale — high sens+sub was creating HF musical noise.
       const scale = 1 + (p.nrSensitivity ?? 48) / 100 * 0.35 + (p.nrSpectralSub ?? 35) / 100 * 0.35;
       for (let k = 0; k < noise.length; k++) noise[k] *= scale;
@@ -7070,7 +7070,7 @@ class VoiceIsolatePro {
     } : null;
 
     // Noise profile for extreme path only (skip full-frame scan on the fast path).
-    if (runExtreme) this._extremeNoiseProfile = this._estimateNoiseFloor(mag);
+    if (runExtreme) this._extremeNoiseProfile = this._trackNoiseFloor(mag, sr, HOP);
 
     if (runExtreme || whParams) {
       for (let f0 = 0; f0 < totalFrames; f0 += FRAME_CHUNK) {
@@ -7210,7 +7210,7 @@ class VoiceIsolatePro {
       this._extremeCircularMag = Array.from({ length: 5 }, () => new Float32Array(halfN));
       this._extremeFrameIdx = 0;
     }
-    const noiseProfile = this._extremeNoiseProfile || this._estimateNoiseFloor(mag);
+    const noiseProfile = this._extremeNoiseProfile || this._trackNoiseFloor(mag, sr, HOP);
     if (!this._extremeNoiseProfile) this._extremeNoiseProfile = noiseProfile;
 
     const bassCrushCutoff = Math.round((bassCrush / 100) * 0.045 * fftSize);
@@ -7318,6 +7318,24 @@ class VoiceIsolatePro {
       }
     }
   }
+
+  // DSP-fallback noise bed. Martin minimum statistics (DSPCore.AdaptiveNoiseFloor)
+  // follow a floor that changes. The old whole-file minimum stayed at the
+  // quietest frame for the entire file (a 0.02 bed then a 0.50 bed stayed
+  // at 0.025 after the 1.25 bias). The 1.25 bias is the same one that
+  // estimator used, so stationary noise keeps the Wiener depth it had.
+  _trackNoiseFloor(mag, sr, hop) {
+    const DSP = this._resolveDSP();
+    const Tracker = DSP && DSP.AdaptiveNoiseFloor;
+    if (!Tracker || !mag?.length || !mag[0]) return this._estimateNoiseFloor(mag);
+    const tracker = new Tracker(mag[0].length, 400, hop || 512, sr || 48000);
+    for (let f = 0; f < mag.length; f++) tracker.update(mag[f]);
+    const floor = tracker.getFloor();
+    for (let k = 0; k < floor.length; k++) {
+      floor[k] = Number.isFinite(floor[k]) ? floor[k] * 1.25 : 0;
+    }
+    return floor;
+  },
 
   // Per-bin stationary-noise estimate via minimum statistics (subsample frames for speed).
   _estimateNoiseFloor(mag) {
