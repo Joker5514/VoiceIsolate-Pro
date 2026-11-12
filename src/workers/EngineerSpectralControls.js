@@ -98,7 +98,8 @@
     // Rayleigh-random, so a per-frame confidence flickered the gain.
     const confidencePower = new Float32Array(bins);
     const warpMagnitude = new Float32Array(bins);
-    const frameMag = new Float32Array(bins);
+    // Float64 keeps Math.sqrt at Number precision; Float32 narrowed the reused |bin|.
+    const frameMag = new Float64Array(bins);
     let initialized = false;
 
     const mode = Math.round(s.whisperMode);
