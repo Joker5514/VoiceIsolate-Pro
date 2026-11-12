@@ -184,8 +184,11 @@ describe('landing.js PlaybackMixer init guarded', () => {
   });
 
   test('PlaybackMixer construction is inside a try block', () => {
-    // The fix wraps: try { mixer = new PlaybackMixer(); } catch (err) { failProcessing(...) }
-    expect(src).toMatch(/try\s*\{\s*mixer\s*=\s*new PlaybackMixer\(\)/);
+    // Construction lives in ensureMixer() (shared by the full install and
+    // the first-window preview); installStems calls it inside try/catch so
+    // an init failure still fails processing instead of throwing.
+    expect(src).toMatch(/function ensureMixer\(\)[\s\S]*?mixer\s*=\s*new PlaybackMixer\(\)/);
+    expect(src).toMatch(/try\s*\{\s*ensureMixer\(\)/);
   });
 
   test('catch block calls failProcessing on PlaybackMixer init failure', () => {

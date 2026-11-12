@@ -5,13 +5,19 @@
  * uniform 20 s plan, on a crop long enough to include the first join and a
  * later 20 s window.
  *
- * Stated tolerance (pinned from this fixture): SI-SDR of the short-first
- * output vs uniform-20 s chunking is at least 35 dB, and the click detector
- * reports no new discontinuities at the first join. Exact measured values
- * are logged and also reported in the PR after the 75 s run.
+ * The input is generated deterministically in this file (seeded tones +
+ * noise) so the test runs in any checkout. It used to read a 75 s fixture
+ * from an absolute, machine-specific path
+ * (/workspace/echo-artifacts/fixtures/syn-long-75s/in0.f32) and skip when
+ * the file was absent, so the regression never ran outside that machine.
+ * The click check is the same second-difference rule as the audit harness
+ * (see newClicks in tests/chunked-extraction.test.js); the old version
+ * shelled out to a machine-specific Python tool for it.
+ *
+ * Stated tolerance: SI-SDR of the short-first output vs uniform-20 s
+ * chunking is at least 35 dB, and the click detector reports no new
+ * discontinuities at the first join. Exact measured values are logged.
  */
-const fs = require('fs');
-const path = require('path');
 
 jest.setTimeout(180000);
 
@@ -21,11 +27,30 @@ const FIRST = Math.floor((8 * SR) / HOP) * HOP;
 const CORE = Math.floor((20 * SR) / HOP) * HOP;
 const CROP_SEC = 30;
 const CROP = CROP_SEC * SR;
-const FIX = '/workspace/echo-artifacts/fixtures/syn-long-75s/in0.f32';
 
-function rd(f) {
-  const b = fs.readFileSync(f);
-  return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4).slice();
+/**
+ * Deterministic stand-in for the old 75 s fixture: three tones with slow
+ * tremolo plus low-level noise from a seeded LCG. The comparison is between
+ * two chunkings of the same input, so the exact content does not matter —
+ * only that it is fixed and exercises the model and the joins.
+ */
+function synthInput(frames) {
+  const out = new Float32Array(frames);
+  let seed = 0x12345678;
+  const rnd = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296 - 0.5;
+  };
+  for (let i = 0; i < frames; i++) {
+    const t = i / SR;
+    const trem = 0.75 + 0.25 * Math.sin(2 * Math.PI * 0.5 * t);
+    out[i] = trem * (
+      0.45 * Math.sin(2 * Math.PI * 220 * t) +
+      0.30 * Math.sin(2 * Math.PI * 440 * t + 0.7) +
+      0.15 * Math.sin(2 * Math.PI * 660 * t + 1.3)
+    ) + 0.05 * rnd();
+  }
+  return out;
 }
 
 function maxAbs(a, b) {
@@ -57,37 +82,37 @@ function siSdr(ref, est) {
   return 10 * Math.log10(signal / noise);
 }
 
-function wr(f, a) {
-  fs.mkdirSync(path.dirname(f), { recursive: true });
-  fs.writeFileSync(f, Buffer.from(a.buffer, a.byteOffset, a.byteLength));
-}
-
-function auditClicks(est, ref, inp) {
-  const { spawnSync } = require('child_process');
-  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'vip-first-chunk-'));
-  wr(path.join(dir, 'est.f32'), est);
-  wr(path.join(dir, 'ref.f32'), ref);
-  wr(path.join(dir, 'in.f32'), inp);
-  const r = spawnSync('/workspace/echo-venv/bin/python', [
-    '/workspace/echo-artifacts/round4/tradeoffs/scripts/tools.py', 'metrics',
-    path.join(dir, 'est.f32'), path.join(dir, 'ref.f32'), path.join(dir, 'in.f32'), String(SR),
-  ], { encoding: 'utf8' });
-  fs.rmSync(dir, { recursive: true, force: true });
-  if (r.status !== 0) throw new Error(r.stderr || r.stdout);
-  return JSON.parse(r.stdout);
+/** Second-difference spikes that the reference does not explain, same rule as the audit harness. */
+function newClicks(out, src) {
+  const d2 = (x) => {
+    const d = new Float64Array(Math.max(0, x.length - 2));
+    for (let i = 0; i < d.length; i++) d[i] = Math.abs(x[i] - 2 * x[i + 1] + x[i + 2]);
+    return d;
+  };
+  const dout = d2(out);
+  const dsrc = d2(src);
+  const hits = [];
+  const thresh = 10 ** (-70 / 20);
+  for (let i = 0; i < dout.length; i++) {
+    if (dout[i] <= 14 * 1e-7 && dout[i] <= thresh) continue;
+    const a = Math.max(0, i - 49);
+    const b = Math.min(dsrc.length, i + 48);
+    let srcMax = 0;
+    for (let j = a; j < b; j++) if (dsrc[j] > srcMax) srcMax = dsrc[j];
+    // A click is a 2nd-difference peak much larger than the reference nearby.
+    if (dout[i] > 14 * Math.max(srcMax, 1e-7) && dout[i] > 2 * Math.max(srcMax, 1e-6)) {
+      if (!hits.length || (i + 1) - hits[hits.length - 1] > 96) hits.push(i + 1);
+    }
+  }
+  return hits;
 }
 
 describe('first-chunk 8 s then 20 s, landing BSRNN', () => {
-  if (!fs.existsSync(FIX)) {
-    test.skip('requires the 75 s fixture', () => {});
-    return;
-  }
-
   test('output stays within 35 dB SI-SDR of uniform 20 s chunking and does not click at the first join', async () => {
     const { createMlWorker } = require('../scripts/quality/lib/mlworker-node.cjs');
     const IB = await import('../src/core/IngestionBudget.js');
     const CE = await import('../src/pipeline/ChunkedExtraction.js');
-    const input = rd(FIX).subarray(0, CROP);
+    const input = synthInput(CROP);
     const contract = IB.chainChunkContract(['bsrnn_vocals']);
     const hop = contract.hopSize;
     const fade = hop;
@@ -125,19 +150,16 @@ describe('first-chunk 8 s then 20 s, landing BSRNN', () => {
     const score = siSdr(uniform.clean[0], shorter.clean[0]);
     const peak = maxAbs(uniform.clean[0], shorter.clean[0]);
     const join = FIRST - fade;
-    const met = auditClicks(shorter.clean[0], uniform.clean[0], input);
+    const hits = newClicks(shorter.clean[0], uniform.clean[0]);
     const fadeSec = fade / SR;
-    const joinClicks = (met.new_click_at_s || []).filter((t) => Math.abs(t - join / SR) < 2 * fadeSec);
-    // eslint-disable-next-line no-console
+    const joinClicks = hits.filter((h) => Math.abs(h / SR - join / SR) < 2 * fadeSec);
     console.log(`FIRST_CHUNK_8S_MEASUREMENTS ${JSON.stringify({
       cropSec: CROP_SEC,
       siSdrVsUniform20s: score,
-      pesqVsUniform20s: met.pesq,
-      stoiVsUniform20s: met.stoi,
       maxAbs: peak,
       firstJoinFrame: join,
-      newClicks: met.new_clicks,
-      newClickAtS: met.new_click_at_s,
+      newClicks: hits.length,
+      newClickAtS: hits.map((h) => Number((h / SR).toFixed(3))),
       joinClicks,
     })}`);
     // Stated tolerance vs current (uniform 20 s) chunking on this 30 s crop:
@@ -146,6 +168,6 @@ describe('first-chunk 8 s then 20 s, landing BSRNN', () => {
     // within two fade lengths of the first join.
     expect(score).toBeGreaterThanOrEqual(35);
     expect(joinClicks).toEqual([]);
-    expect(met.new_clicks).toBe(0);
+    expect(hits.length).toBe(0);
   });
 });
