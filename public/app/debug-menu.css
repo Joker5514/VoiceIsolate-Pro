@@ -59,7 +59,9 @@
   top: 52px;
   right: 10px;
   width: 440px;
-  max-height: calc(100dvh - 70px);
+  /* Keep the footer, including Run Audit, above the fixed transport dock
+     and the phone field nav. The body scrolls; the footer stays in frame. */
+  max-height: calc(100dvh - 52px - 72px);
   background: linear-gradient(170deg, rgba(6, 8, 14, 0.97) 0%, rgba(4, 6, 10, 0.99) 100%);
   backdrop-filter: blur(32px) saturate(160%);
   border: 1px solid rgba(0, 255, 180, 0.18);
@@ -138,6 +140,7 @@
 .dbg-body {
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -415,6 +418,11 @@
 }
 .dbg-toast.show { opacity: 1; }
 
-@media (max-width: 600px) {
-  #vip-debug-panel { width: calc(100vw - 20px); right: 10px; left: 10px; }
+@media (max-width: 640px) {
+  #vip-debug-panel {
+    width: calc(100vw - 20px);
+    right: 10px;
+    left: 10px;
+    max-height: calc(100dvh - 52px - 72px - 64px);
+  }
 }
