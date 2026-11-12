@@ -6,6 +6,7 @@
  */
 
 import { summarizeSliderMount } from './debug-slider-count.js';
+import { sharedSessionStatus } from '/src/core/SessionStatus.js';
 
 const DBG_VERSION = '1.0.0';
 const REFRESH_MS  = 500;
@@ -329,10 +330,18 @@ function refresh() {
   const stage = stageEl ? stageEl.textContent : '—';
   const pct   = pctEl   ? pctEl.textContent   : '—';
   const detail = detailEl ? detailEl.textContent : '—';
-  const pipeStatus = badgeEl ? (badgeEl.dataset.state || 'idle') : 'unknown';
-
-  const pipeStateCls = { idle: 'dim', processing: 'ok', done: 'ok', error: 'err' }[pipeStatus] || 'warn';
-  cls(document.getElementById('dbgPipeStatus'), pipeStateCls, badge(pipeStateCls, pipeStatus));
+  const session = sharedSessionStatus(
+    document.getElementById('hStatus')?.textContent || badgeEl?.dataset?.state,
+  );
+  const pipeStateCls = {
+    IDLE: 'dim',
+    LOADING: 'warn',
+    READY: 'ok',
+    PROCESSING: 'warn',
+    DONE: 'ok',
+    ERROR: 'err',
+  }[session] || 'dim';
+  cls(document.getElementById('dbgPipeStatus'), pipeStateCls, badge(pipeStateCls, session));
   cls(document.getElementById('dbgPipeStage'), 'ok', stage + ' · ' + detail.slice(0, 30));
   cls(document.getElementById('dbgPipePct'), 'ok', pct);
 
@@ -387,9 +396,9 @@ function refresh() {
   const [deCls, deLbl] = wkSt(wk.deEsser?.state);
   cls(document.getElementById('dbgWkGate'), gateCls, gateLbl);
   cls(document.getElementById('dbgWkDeess'), deCls, deLbl);
-  const bridgeLive = !!(bridge && (bridge.isLoaded?.() || bridge.mixer));
-  cls(document.getElementById('dbgWkBridge'), bridgeLive ? 'ok' : app?._bridgeFailed ? 'err' : 'warn',
-    badge(bridgeLive ? 'ok' : app?._bridgeFailed ? 'err' : 'warn', bridgeLive ? 'ready' : app?._bridgeFailed ? 'failed' : 'booting'));
+  // Same word as the header. A bridge that has not been asked to load
+  // shares the session word instead of a separate startup label.
+  cls(document.getElementById('dbgWkBridge'), pipeStateCls, badge(pipeStateCls, session));
 
   /* ── Performance ── */
   _refreshCount++;

@@ -124,6 +124,7 @@ import {
 } from '/src/presentation/FileLibraryUI.js';
 import { persistAppSession, restoreAppSession } from './session-persist.js';
 import { migrateParamSnapshot } from '/src/core/ParamMigration.js';
+import { sharedSessionStatus } from '/src/core/SessionStatus.js';
 import { createLoudnessMeter, measureIntegratedLufs } from '/src/core/Loudness.js';
 import {
   exportVideoWithProcessedAudio,
@@ -535,7 +536,7 @@ const HeroExperience = (() => {
       });
       window.addEventListener('vip:fileLoaded', () => {
         setUiState('file-ready');
-        setHeroCopy('File loaded — processing pipeline starting', true);
+        setHeroCopy('File decoded — press Process to isolate', true);
         syncStatStrip(app.inputBuffer || app.origBuffer, 'File loaded');
         mirrorWaveCanvases();
       });
@@ -4979,7 +4980,10 @@ class VoiceIsolatePro {
   }
 
   setStatus(s) {
-    this._setHeaderStat('hStatus', s);
+    const next = sharedSessionStatus(s);
+    this._setHeaderStat('hStatus', next);
+    const badge = document.getElementById('vip-proc-badge');
+    if (badge) badge.dataset.state = next.toLowerCase();
   }
 
   // [WHISPER UPDATE] Read compound whisper-mode state from VIP_PARAMS

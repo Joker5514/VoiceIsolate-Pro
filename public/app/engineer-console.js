@@ -1066,8 +1066,18 @@
     exportBtn.id = 'ncExport';
     exportBtn.addEventListener('click', () => {
       const save = document.getElementById('saveProcBtn');
-      if (save && !save.disabled) save.click();
-      else save?.scrollIntoView({ block: 'center' });
+      if (save && !save.disabled) {
+        save.click();
+        return;
+      }
+      const pack = document.getElementById('exportProjectPackBtn');
+      const note = 'Nothing to export yet. Process a file for a WAV, or use Export pack for a .vippack.';
+      if (window._vipApp?.showNotification) window._vipApp.showNotification(note, 'warn');
+      else if (pack) {
+        const status = document.getElementById('exportPackStatus');
+        if (status) status.textContent = note;
+      }
+      (save || pack)?.scrollIntoView({ block: 'center' });
     });
 
     const actions = hdr.querySelector('.hdr-actions');
