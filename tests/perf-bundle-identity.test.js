@@ -6,7 +6,8 @@
  *     NaN and ±Inf exactly as main did (Number.isFinite repair).
  *   • landing and enhance stems are bit-identical to main on corpus fixtures
  *     (max abs 0).
- *   • engineer presets (Whisper Boost, Surveillance) stay within 1e-7.
+ *   • engineer presets (Whisper Boost, Surveillance) are bit-identical to
+ *     main goldens (max abs 0) after keeping |bin| in Float64.
  *   • HfPostFilter output is identical to main's always-log10 path on a
  *     fixture set of frames, and sppFromRatio matches smoothStep(10·log10).
  */
@@ -29,12 +30,28 @@ function maxAbs(a, b) {
   const n = Math.min(a.length, b.length);
   let m = 0;
   for (let i = 0; i < n; i++) {
+    if (!Number.isFinite(a[i]) || !Number.isFinite(b[i])) return Infinity;
     const d = Math.abs(a[i] - b[i]);
     if (d > m) m = d;
   }
   if (a.length !== b.length) m = Math.max(m, Infinity);
   return m;
 }
+
+describe('maxAbs rejects non-finite values', () => {
+  test('matching NaN or Infinity is not treated as zero error', () => {
+    expect(maxAbs(new Float32Array([0, 1]), new Float32Array([0, 1]))).toBe(0);
+    expect(maxAbs(new Float32Array([1]), new Float32Array([1.5]))).toBe(0.5);
+    expect(maxAbs(new Float32Array([NaN]), new Float32Array([NaN]))).toBe(Infinity);
+    expect(maxAbs(new Float32Array([Infinity]), new Float32Array([Infinity]))).toBe(Infinity);
+    expect(maxAbs(new Float32Array([-Infinity]), new Float32Array([-Infinity]))).toBe(Infinity);
+    expect(maxAbs(new Float32Array([NaN]), new Float32Array([0]))).toBe(Infinity);
+    expect(maxAbs(new Float32Array([0]), new Float32Array([Infinity]))).toBe(Infinity);
+    expect(maxAbs(new Float32Array([1, NaN, 3]), new Float32Array([1, NaN, 3]))).toBe(Infinity);
+    // Length mismatch is still infinite error.
+    expect(maxAbs(new Float32Array([1]), new Float32Array([1, 2]))).toBe(Infinity);
+  });
+});
 
 function loadWorkerHooks() {
   class Tensor {
@@ -317,14 +334,14 @@ describe('landing / enhance / engineer identity on corpus fixtures', () => {
   for (const name of ['Whisper Boost', 'Surveillance']) {
     const pid = name.replace(/ /g, '-');
     for (const fid of FILES) {
-      test(`${name} stays within 1e-7 of main on ${fid}`, async () => {
+      test(`${name} is bit-identical (max abs 0) on ${fid}`, async () => {
         const { input, clean, noise } = loadPair(fid, pid);
         const processingConfig = await presetConfig(name);
         const res = await worker.separate([input], { modelIds: ['bsrnn_vocals'], processingConfig });
         const mc = maxAbs(res.clean[0], clean);
         const mn = maxAbs(res.noise[0], noise);
-        expect(mc).toBeLessThanOrEqual(1e-7);
-        expect(mn).toBeLessThanOrEqual(1e-7);
+        expect(mc).toBe(0);
+        expect(mn).toBe(0);
       });
     }
   }
