@@ -256,7 +256,9 @@ export async function runChunkedExtraction(file, plan, options = {}) {
   try {
     for (let emitStart = 0; emitStart < total;) {
       if (options.signal?.aborted) throw abortError();
-      const emitLen = Math.min(chunk.coreFrames, total - emitStart);
+      const steadyCore = chunk.coreFrames;
+      const firstCore = chunk.firstCoreFrames > 0 ? chunk.firstCoreFrames : steadyCore;
+      const emitLen = Math.min(index === 0 ? firstCore : steadyCore, total - emitStart);
       const isLast = emitStart + emitLen >= total;
       const readStart = Math.max(0, emitStart - chunk.contextFrames);
       const readEnd = Math.min(total, emitStart + emitLen + chunk.contextFrames);

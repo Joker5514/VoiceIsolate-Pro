@@ -274,3 +274,94 @@ test('MPEG-1 Layer III frame length is stable across two frames', async () => {
   expect(info.samples[0].size).toBe(417);
   expect(info.samples[1].offset).toBe(417);
 });
+
+function maxAbs(a, b) {
+  const n = Math.min(a.length, b.length);
+  let m = 0;
+  for (let i = 0; i < n; i++) m = Math.max(m, Math.abs(a[i] - b[i]));
+  if (a.length !== b.length) return Infinity;
+  return m;
+}
+
+/** Second-difference spikes that the source does not explain, same idea as the audit harness. */
+function newClicks(out, src, sr = 48000) {
+  const d2 = (x) => {
+    const d = new Float64Array(Math.max(0, x.length - 2));
+    for (let i = 0; i < d.length; i++) d[i] = Math.abs(x[i] - 2 * x[i + 1] + x[i + 2]);
+    return d;
+  };
+  const dout = d2(out);
+  const dsrc = d2(src);
+  const hits = [];
+  const thresh = 10 ** (-70 / 20);
+  for (let i = 0; i < dout.length; i++) {
+    if (dout[i] <= 14 * 1e-7 && dout[i] <= thresh) continue;
+    const a = Math.max(0, i - 49);
+    const b = Math.min(dsrc.length, i + 48);
+    let srcMax = 0;
+    for (let j = a; j < b; j++) if (dsrc[j] > srcMax) srcMax = dsrc[j];
+    // A click is a 2nd-difference peak much larger than the source nearby.
+    // Scale is loose for unit tones; the comparison vs current chunking uses the same rule.
+    if (dout[i] > 14 * Math.max(srcMax, 1e-7) && dout[i] > 2 * Math.max(srcMax, 1e-6)) {
+      if (!hits.length || (i + 1) - hits[hits.length - 1] > 96) hits.push(i + 1);
+    }
+  }
+  return hits;
+}
+
+test('an 8 s first core then 20 s cores reconstructs a time-invariant process with max abs 0 vs uniform 20 s chunking', async () => {
+  const hop = 1024;
+  const first = Math.floor((8 * 48000) / hop) * hop;
+  const core = Math.floor((20 * 48000) / hop) * hop;
+  const total = first + core + hop * 4; // first window, one full steady window, a short tail
+  const uniform = planFor(total, { core, fade: hop, context: hop });
+  const shorter = planFor(total, { core, fade: hop, context: hop });
+  shorter.chunk.firstCoreFrames = first;
+  const options = {
+    sink: 'memory',
+    readWindow: (start, count) => tone(start, count),
+    processWindow: async (input) => input.map((ch) => {
+      const out = new Float32Array(ch.length);
+      for (let i = 0; i < ch.length; i++) out[i] = ch[i] * 0.5;
+      return out;
+    }),
+  };
+  const a = await chunked.runChunkedExtraction(null, uniform, options);
+  const b = await chunked.runChunkedExtraction(null, shorter, options);
+  expect(a.frames).toBe(total);
+  expect(b.frames).toBe(total);
+  expect(b.segments[0].frames).toBe(first);
+  expect(b.segments[1].frames).toBe(core);
+  expect(maxAbs(a.clean[0], b.clean[0])).toBe(0);
+  const src = tone(0, total)[0];
+  const scaled = new Float32Array(total);
+  for (let i = 0; i < total; i++) scaled[i] = src[i] * 0.5;
+  expect(maxAbs(b.clean[0], scaled)).toBeLessThan(1e-6);
+  const join = first - hop;
+  const jump = Math.abs(b.clean[0][join] - b.clean[0][join - 1]);
+  const srcJump = Math.abs(scaled[join] - scaled[join - 1]);
+  expect(jump).toBeLessThanOrEqual(srcJump + 1e-5);
+  expect(newClicks(b.clean[0], scaled)).toEqual([]);
+});
+
+test('the first-core join has no extra discontinuity on a linear process', async () => {
+  const hop = 1024;
+  const first = hop * 4;
+  const core = hop * 8;
+  const total = first + core + hop * 2;
+  const plan = planFor(total, { core, fade: hop, context: hop });
+  plan.chunk.firstCoreFrames = first;
+  const result = await chunked.runChunkedExtraction(null, plan, {
+    sink: 'memory',
+    readWindow: (start, count) => tone(start, count),
+    processWindow: async (input) => input.map((ch) => new Float32Array(ch)),
+  });
+  const expected = tone(0, total)[0];
+  expect(maxAbs(result.clean[0], expected)).toBe(0);
+  expect(result.segments[0].frames).toBe(first);
+  const join = first - hop;
+  const jump = Math.abs(result.clean[0][join] - result.clean[0][join - 1]);
+  const srcJump = Math.abs(expected[join] - expected[join - 1]);
+  expect(jump).toBeLessThanOrEqual(srcJump + 1e-7);
+  expect(newClicks(result.clean[0], expected)).toEqual([]);
+});

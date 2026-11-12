@@ -279,6 +279,8 @@ const PROFILE_BY_TIER = Object.freeze({
 
 /** Preferred core length before the memory cap. Profiles change real chunk size. */
 const CORE_SECONDS = Object.freeze({ HIGH: 45, BALANCED: 20, CONSTRAINED: 8 });
+/** First window on a longer plan (BALANCED 20 s, HIGH 45 s). Hop-aligned at plan time. */
+const FIRST_CORE_SECONDS = CORE_SECONDS.CONSTRAINED;
 
 /** Resident copies of one window: input, model output, stitch tail, decoder block. */
 const CHUNK_RESIDENT_COPIES = 4;
@@ -355,12 +357,20 @@ export function planChunkWindow(estimate, budget, contract, profile = 'AUTO') {
   let core = Math.min(preferred, maxFrames - 2 * context);
   core = Math.floor(core / hop) * hop;
   const viable = Boolean(contract?.chunkable) && core >= hop * 2 && Number.isFinite(estimate?.duration);
+  // A shorter first core cuts time-to-first-audio; later windows keep `core`.
+  // Never longer than the steady core (CONSTRAINED already is 8 s throughout).
+  let firstCore = 0;
+  if (viable) {
+    firstCore = Math.floor(Math.min(Math.round(FIRST_CORE_SECONDS * rate), core) / hop) * hop;
+    if (firstCore < hop * 2) firstCore = core;
+  }
   const windowFrames = viable ? core + 2 * context : 0;
   const peakBytes = viable ? windowFrames * bytesPerFrame : Infinity;
   return {
     viable: viable && peakBytes <= (budget?.workingBytes || 0),
     modelId: contract?.id || null,
     coreFrames: viable ? core : 0,
+    firstCoreFrames: viable ? firstCore : 0,
     contextFrames: context,
     fadeFrames: fade,
     strideFrames: viable ? core - fade : 0,
@@ -368,6 +378,7 @@ export function planChunkWindow(estimate, budget, contract, profile = 'AUTO') {
     peakBytes: Number.isFinite(peakBytes) ? peakBytes : null,
     copies: CHUNK_RESIDENT_COPIES,
     coreSeconds: viable ? core / rate : 0,
+    firstCoreSeconds: viable ? firstCore / rate : 0,
   };
 }
 
@@ -431,6 +442,10 @@ export function formatIngestionPlan(plan, name = 'recording') {
   }
   if (plan.strategy === 'chunked') {
     const seconds = Math.round(plan.chunk?.coreSeconds || 0);
+    const firstSeconds = Math.round(plan.chunk?.firstCoreSeconds || seconds);
+    const chunkLength = firstSeconds !== seconds
+      ? `${firstSeconds}s first window, then ${seconds}s`
+      : `${seconds}s`;
     return [
       'AUDIO OPTIMIZATION',
       `“${name}” needs more memory than this device can safely allocate for full decoding.`,
@@ -439,7 +454,7 @@ export function formatIngestionPlan(plan, name = 'recording') {
       'Strategy: Chunked processing',
       `Memory profile: ${plan.profile || 'AUTO'}`,
       `Device tier: ${plan.tier}`,
-      `Chunk length: ${seconds}s with ${plan.chunk?.contextFrames || 0} samples of model context`,
+      `Chunk length: ${chunkLength} with ${plan.chunk?.contextFrames || 0} samples of model context`,
       `Full-file working set: ${mb(plan.estimatedBytes)} MiB`,
       `Chunk working set: ${mb(plan.chunk?.peakBytes)} MiB`,
       `Budget: ${mb(plan.budgetBytes)} MiB`,
