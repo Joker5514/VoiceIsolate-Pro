@@ -49,6 +49,7 @@
       toggle.setAttribute('aria-label', state.toggleLabel);
     }
     if (play) {
+      play.setAttribute('aria-disabled', play.disabled ? 'true' : 'false');
       if (state.playHidden) {
         play.setAttribute('aria-hidden', 'true');
         play.setAttribute('tabindex', '-1');
@@ -84,7 +85,12 @@
       // Engineer transport clones #tpPlay after boot. The slot stays; retarget the new button.
       if (typeof MutationObserver === 'function') {
         const observer = new MutationObserver(function () { paint(); });
-        observer.observe(slot, { childList: true, subtree: true });
+        observer.observe(slot, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['disabled'],
+        });
       }
     });
   }

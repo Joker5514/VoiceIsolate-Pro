@@ -43,6 +43,20 @@
   color: var(--vip-ink);
 }
 
+/* A disabled play control must not wear the live red pill. Collapse still
+   owns width and opacity; this rule stays off the collapsed slot. */
+.vip-play-slot:not(.is-collapsed) #playBtn.v3-play:disabled,
+.vip-play-slot:not(.is-collapsed) #playBtn.v3-play[aria-disabled="true"],
+.vip-play-slot:not(.is-collapsed) #tpPlay.btn-tp-play:disabled,
+.vip-play-slot:not(.is-collapsed) #tpPlay.btn-tp-play[aria-disabled="true"] {
+  background: #1a222a;
+  color: #8b9aaa;
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .vip-play-slot {
   display: inline-flex;
   align-items: center;
