@@ -141,7 +141,15 @@ import {
   getWhisperPlatformProfile,
   maskConfidence,
 } from './whisper-hunter.js';
-globalThis.VIPLoudness = { measureIntegratedLufs, createLoudnessMeter };
+// Jest eval helpers strip ESM imports (tests/helpers/get-app-code.js).
+// typeof on an undeclared binding is safe; a shorthand property is not.
+// Prefer a live import, then a pre-injected global (the eval harness).
+globalThis.VIPLoudness = {
+  measureIntegratedLufs: (typeof measureIntegratedLufs === 'function' && measureIntegratedLufs)
+    || (globalThis.VIPLoudness && globalThis.VIPLoudness.measureIntegratedLufs),
+  createLoudnessMeter: (typeof createLoudnessMeter === 'function' && createLoudnessMeter)
+    || (globalThis.VIPLoudness && globalThis.VIPLoudness.createLoudnessMeter),
+};
 
 /**
  * Local preset redirect (mirrors src/core/PresetCalibration.js).
@@ -8371,12 +8379,23 @@ class VoiceIsolatePro {
       const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
       // ITU-R BS.1770-4 integrated loudness (K-weighted, gated). Channel 0,
       // plus channel 1 when the processed buffer is stereo. Not the export limiter.
+      // `proc` is the stem from _computeSessionMetricsState; eval extracts of
+      // this method (audio-metrics-exact) do not close over it, so fall back
+      // to the same output/proc buffer that method already selected.
+      const procBuf = (typeof proc !== 'undefined' && proc)
+        || (this && (this.outputBuffer || this.procBuffer))
+        || orig;
       const lufsChannels = [p.subarray(0, n)];
-      if (proc.numberOfChannels > 1) {
-        const right = cachedChannelData(proc, 1);
+      if (procBuf && procBuf.numberOfChannels > 1 && typeof procBuf.getChannelData === 'function') {
+        const right = cachedChannelData(procBuf, 1);
         lufsChannels.push(right.subarray(0, Math.min(n, right.length)));
       }
-      const lufsRaw = measureIntegratedLufs(lufsChannels, sampleRate);
+      const measureLufs = (typeof globalThis !== 'undefined'
+        && globalThis.VIPLoudness
+        && typeof globalThis.VIPLoudness.measureIntegratedLufs === 'function')
+        ? globalThis.VIPLoudness.measureIntegratedLufs
+        : (typeof measureIntegratedLufs === 'function' ? measureIntegratedLufs : null);
+      const lufsRaw = measureLufs ? measureLufs(lufsChannels, sampleRate) : NaN;
       const lufs = Number.isFinite(lufsRaw) ? Math.max(-120, Math.min(5, lufsRaw)) : -70;
 
       // Voices: distinct diarization speakers when available, otherwise a
