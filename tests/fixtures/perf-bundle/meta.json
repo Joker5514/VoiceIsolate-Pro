@@ -1,0 +1,14 @@
+{
+  "sha": "d7948c9e36170dbf8d71a60f419073e3b5e7a661",
+  "seconds": 1.5,
+  "sampleRate": 48000,
+  "files": {
+    "librispeech-clean-001": {
+      "frames": 72000
+    },
+    "syn-whisper-white-10db": {
+      "frames": 72000
+    }
+  },
+  "generatedAt": "2026-11-12T08:35:38.667Z"
+}

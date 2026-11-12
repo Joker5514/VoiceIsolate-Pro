@@ -98,6 +98,7 @@
     // Rayleigh-random, so a per-frame confidence flickered the gain.
     const confidencePower = new Float32Array(bins);
     const warpMagnitude = new Float32Array(bins);
+    const frameMag = new Float32Array(bins);
     let initialized = false;
 
     const mode = Math.round(s.whisperMode);
@@ -147,6 +148,7 @@
       let frameEnergy = 0;
       for (let k = 0; k < maxBins; k++) {
         const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+        frameMag[k] = mag;
         frameEnergy += mag * mag;
         if (!initialized) {
           noiseFloor[k] = Math.max(sourceMagnitude[offset + k] * 0.5, EPSILON);
@@ -161,7 +163,7 @@
       for (let k = 0; k < maxBins; k++) {
         const hz = k * binHz;
         const source = Math.max(EPSILON, sourceMagnitude[offset + k]);
-        const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+        const mag = frameMag[k];
         const priorNoise = noiseFloor[k] || source;
         noiseFloor[k] = source < priorNoise
           ? source

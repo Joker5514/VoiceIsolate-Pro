@@ -1094,12 +1094,7 @@ async function runFusedSpectralMaskChain(
   // The old floor at half the peak sum, and the unconditional 8 ms edge fades,
   // only existed to hide the uncovered edges; a unity mask now reconstructs
   // the whole input and the clean stem starts and ends where the input does.
-  for (let i = 0; i < out.length; i++) {
-    const y = out[i] / Math.max(norm[i], 1e-12);
-    // A non-finite frame is a numeric failure, not a mute. Keep the input
-    // sample so the clean stem cannot drop speech to NaN.
-    out[i] = Number.isFinite(y) ? y : (Number.isFinite(samples[i]) ? samples[i] : 0);
-  }
+  overlapAddNormalize(out, norm, samples);
   checkCancelled(requestId);
   onProgress(1);
   return out;
@@ -1249,10 +1244,33 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress, 
  */
 function finiteUnitMask(sample) {
   const n = +sample;
-  if (!Number.isFinite(n)) return 1;
+  // n*0 !== 0 is true for NaN and ±Inf, and is a single multiply+compare
+  // instead of a Number.isFinite call in the per-bin mask loop.
+  if (n * 0 !== 0) return 1;
   if (n <= 0) return 0;
   if (n >= 1) return 1;
   return n;
+}
+
+
+/**
+ * Overlap-add normalize. Happy path writes the divide; a non-finite result
+ * is a numeric failure, not a mute, so the repair keeps the input sample.
+ */
+function overlapAddNormalize(out, norm, samples) {
+  let badNorm = 0;
+  for (let i = 0; i < out.length; i++) {
+    const y = out[i] / Math.max(norm[i], 1e-12);
+    out[i] = y;
+    if (y * 0 !== 0) badNorm = 1;
+  }
+  if (badNorm) {
+    for (let i = 0; i < out.length; i++) {
+      const y = out[i];
+      if (!Number.isFinite(y)) out[i] = Number.isFinite(samples[i]) ? samples[i] : 0;
+    }
+  }
+  return out;
 }
 
 /**
@@ -1272,13 +1290,28 @@ function residual(channelData, cleanChannels) {
     }
     const noise = new Float32Array(input.length);
     const n = Math.min(input.length, clean.length);
+    let bad = 0;
     for (let i = 0; i < n; i++) {
-      const s = Number.isFinite(input[i]) ? input[i] : 0;
-      const c = Number.isFinite(clean[i]) ? clean[i] : 0;
-      noise[i] = s - c;
+      const d = input[i] - clean[i];
+      noise[i] = d;
+      if (d * 0 !== 0) bad = 1;
     }
     for (let i = n; i < input.length; i++) {
-      noise[i] = Number.isFinite(input[i]) ? input[i] : 0;
+      const s = input[i];
+      noise[i] = s;
+      if (s * 0 !== 0) bad = 1;
+    }
+    // Repair uses the same per-sample sanitize as before, only if a NaN/Inf
+    // appeared. The happy path is bit-identical for all-finite audio.
+    if (bad) {
+      for (let i = 0; i < n; i++) {
+        const s = Number.isFinite(input[i]) ? input[i] : 0;
+        const c = Number.isFinite(clean[i]) ? clean[i] : 0;
+        noise[i] = s - c;
+      }
+      for (let i = n; i < input.length; i++) {
+        noise[i] = Number.isFinite(input[i]) ? input[i] : 0;
+      }
     }
     return noise;
   });
