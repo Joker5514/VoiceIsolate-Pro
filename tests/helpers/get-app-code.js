@@ -231,8 +231,22 @@ const WHISPER_HUNTER_IMPORTS = {};
 `;
 }
 
+
+function buildLoudnessPreamble() {
+  const src = stripModuleSyntax(fs.readFileSync(path.join(SRC_CORE_DIR, 'Loudness.js'), 'utf8'));
+  return `
+const { measureIntegratedLufs, createLoudnessMeter } = (function _injectLoudness() {
+${src}
+  return { measureIntegratedLufs, createLoudnessMeter };
+})();
+if (typeof globalThis !== 'undefined') {
+  globalThis.VIPLoudness = { measureIntegratedLufs, createLoudnessMeter };
+}
+`;
+}
+
 function getAppCode() {
-  const preamble = buildWavEncoderPreamble() + '\n' + buildDspCorePreamble();
+  const preamble = buildWavEncoderPreamble() + '\n' + buildDspCorePreamble() + '\n' + buildLoudnessPreamble();
   const inlined  = INLINED_MODULES.map(inlineAsIIFE).join('\n');
   const appJsRaw = fs.readFileSync(path.join(APP_DIR, 'app.js'), 'utf8');
   let appJsCode = stripRelativeImports(appJsRaw);
