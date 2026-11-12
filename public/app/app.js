@@ -7335,7 +7335,7 @@ class VoiceIsolatePro {
       floor[k] = Number.isFinite(floor[k]) ? floor[k] * 1.25 : 0;
     }
     return floor;
-  },
+  }
 
   // Per-bin stationary-noise estimate via minimum statistics (subsample frames for speed).
   _estimateNoiseFloor(mag) {
