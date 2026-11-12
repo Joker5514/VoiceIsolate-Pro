@@ -54,6 +54,19 @@
   const FRAME_PROTECT = 0.8;
   /** Instantaneous-power margin (dB) for the fast onset path. */
   const ONSET_MARGIN_DB = 6;
+  const SPP_LO_LIN = 10 ** (SPP_LO_DB / 10);
+  const SPP_HI_LIN = 10 ** (SPP_HI_DB / 10);
+  const ONSET_LIN = 10 ** (ONSET_MARGIN_DB / 10);
+  /**
+   * Speech-presence from a power ratio. Mathematically identical to
+   * smoothStep(10*log10(ratio), SPP_LO_DB, SPP_HI_DB), but skips Math.log10
+   * outside the 7–14 dB transition.
+   */
+  function sppFromRatio(ratio) {
+    if (ratio <= SPP_LO_LIN) return 0;
+    if (ratio >= SPP_HI_LIN) return 1;
+    return smoothStep(10 * Math.log10(ratio), SPP_LO_DB, SPP_HI_DB);
+  }
   /**
    * Minimum-statistics bias correction. MCRA uses Bmin ≈ 1.66 for its ~1 s
    * window; the minimum of a longer window sits lower (Martin 2001), and 2.3
@@ -140,8 +153,8 @@
       else if (bandS < bandMinCur) bandMinCur = bandS;
       const bandNoise = MIN_BIAS * Math.min(bandMinCur, bandMinPrev) + 1e-20;
       const qb = Math.max(
-        smoothStep(10 * Math.log10(bandS / bandNoise + 1e-12), SPP_LO_DB, SPP_HI_DB),
-        smoothStep(10 * Math.log10(bp / bandNoise + 1e-12) - ONSET_MARGIN_DB, SPP_LO_DB, SPP_HI_DB),
+        sppFromRatio(bandS / bandNoise + 1e-12),
+        sppFromRatio((bp / bandNoise + 1e-12) / ONSET_LIN),
       );
       const heldB = first ? qb : aSpp * bandSpp + (1 - aSpp) * qb;
       bandSpp = qb > heldB ? qb : heldB;
@@ -157,11 +170,11 @@
         // again over SPP_TAU both ways: a single-frame noise excursion only
         // nudges it, so noise bins do not flip to pass-through (an isolated
         // pass-through bin is musical noise).
-        const qSmooth = smoothStep(10 * Math.log10(s / noise + 1e-12), SPP_LO_DB, SPP_HI_DB);
+        const qSmooth = sppFromRatio(s / noise + 1e-12);
         // A strong onset (instantaneous power ONSET_MARGIN_DB past the ramp,
         // which stationary noise practically never reaches) opens the bin at
         // once, so onsets and sibilants are not dulled.
-        const qOnset = smoothStep(10 * Math.log10(pf[i] / noise + 1e-12) - ONSET_MARGIN_DB, SPP_LO_DB, SPP_HI_DB);
+        const qOnset = sppFromRatio((pf[i] / noise + 1e-12) / ONSET_LIN);
         const held = first ? qSmooth : aSpp * spp[i] + (1 - aSpp) * qSmooth;
         spp[i] = qOnset > held ? qOnset : held;
         // Uncertainty is 0 for a confident mask: those bins are never touched.
@@ -194,6 +207,6 @@
 
   scope.createHfPostFilter = createHfPostFilter;
   scope.VipHfPostFilter = Object.freeze({
-    BAND_LO_HZ, BAND_HI_HZ, MASK_SURE, MASK_UNSURE, GAIN_FLOOR, SPP_LO_DB, SPP_HI_DB,
+    BAND_LO_HZ, BAND_HI_HZ, MASK_SURE, MASK_UNSURE, GAIN_FLOOR, SPP_LO_DB, SPP_HI_DB, sppFromRatio,
   });
 })(typeof self !== 'undefined' ? self : globalThis);
