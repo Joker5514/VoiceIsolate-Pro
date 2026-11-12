@@ -669,3 +669,37 @@ body.v3 .pac .compare-row__ab .vip-btn[aria-pressed="true"] {
     min-width: 44px;
   }
 }
+
+/* The status string used to stay flex:none, so the dock clipped it mid-word
+   and pushed Isolate & Enhance out of a narrow bar. Let the status shrink. */
+:is(body.eng-console, body.v3) .pac-ready {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:is(body.eng-console, body.v3) .vip-dock-process,
+:is(body.eng-console, body.v3) #landingProcessBar {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 768px) {
+  body.v3 #processBtn,
+  body.eng-console #processBtn,
+  body.eng-console #mobileProcessBtn {
+    height: 44px;
+    min-height: 44px;
+  }
+}
+
+/* The phone field nav is fixed at the bottom. The transport dock was also
+   fixed at bottom: 0 and painted over those tabs. Sit the dock on top of it. */
+@media (max-width: 640px) {
+  body.eng-console.ec-skin:not(.ws) > details.transport-card.pac {
+    bottom: calc(var(--ps-field-nav-h, 64px) + env(safe-area-inset-bottom, 0px));
+  }
+  body.eng-console.ec-skin:not(.ws) {
+    padding-bottom: calc(72px + var(--ps-field-nav-h, 64px) + env(safe-area-inset-bottom, 0px));
+  }
+}
