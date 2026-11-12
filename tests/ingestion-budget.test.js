@@ -117,7 +117,10 @@ test('the reported 7922 MiB file is a full-file plan, and a chunk still fits BAL
   expect(plan.measurements.processingPeakBytes).toBe(plan.estimatedBytes);
   expect(plan.chunk.peakBytes).toBeLessThanOrEqual(balanced.workingBytes);
   expect(plan.chunk.coreFrames).toBe(Math.floor((20 * 48000) / 1024) * 1024);
+  expect(plan.chunk.firstCoreFrames).toBe(Math.floor((8 * 48000) / 1024) * 1024);
+  expect(plan.chunk.firstCoreFrames).toBeLessThan(plan.chunk.coreFrames);
   const text = budget.formatIngestionPlan(plan, 'this.m4a');
+  expect(text).toMatch(/8s first window, then 20s/);
   expect(text).toMatch(/AUDIO OPTIMIZATION/);
   expect(text).toMatch(/Chunked processing/);
   expect(text).not.toMatch(/WebGPU/);
@@ -133,6 +136,10 @@ test('memory profiles change chunk length inside the same device budget', () => 
   expect(high.strategy).toBe('chunked');
   expect(low.chunk.coreFrames).toBeLessThan(high.chunk.coreFrames);
   expect(low.chunk.peakBytes).toBeLessThanOrEqual(balanced.workingBytes);
+  // LOW is already 8 s throughout, so the first window is not shorter than the rest.
+  expect(low.chunk.firstCoreFrames).toBe(low.chunk.coreFrames);
+  expect(high.chunk.firstCoreFrames).toBe(Math.floor((8 * 48000) / 1024) * 1024);
+  expect(high.chunk.firstCoreFrames).toBeLessThan(high.chunk.coreFrames);
 });
 
 test('a recurrent model is not described as chunked when the full file does not fit', () => {
