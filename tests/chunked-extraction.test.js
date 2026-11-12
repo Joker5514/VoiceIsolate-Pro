@@ -365,3 +365,78 @@ test('the first-core join has no extra discontinuity on a linear process', async
   expect(jump).toBeLessThanOrEqual(srcJump + 1e-7);
   expect(newClicks(result.clean[0], expected)).toEqual([]);
 });
+
+describe('onFirstWindow preview hook', () => {
+  test('fires once after the first window with the exact prefix of the final stems', async () => {
+    const hop = 1024;
+    const first = Math.floor((8 * 48000) / hop) * hop;
+    const core = Math.floor((20 * 48000) / hop) * hop;
+    const total = first + core + hop * 4;
+    const plan = planFor(total, { core, fade: hop, context: hop });
+    plan.chunk.firstCoreFrames = first;
+    const seen = [];
+    const result = await chunked.runChunkedExtraction(null, plan, {
+      sink: 'memory',
+      readWindow: (start, count) => tone(start, count),
+      processWindow: async (input) => input.map((ch) => {
+        const out = new Float32Array(ch.length);
+        for (let i = 0; i < ch.length; i++) out[i] = ch[i] * 0.5;
+        return out;
+      }),
+      onFirstWindow: (firstWindow) => seen.push(firstWindow),
+    });
+    expect(seen.length).toBe(1);
+    const [preview] = seen;
+    expect(preview.index).toBe(0);
+    expect(preview.startFrame).toBe(0);
+    expect(preview.sampleRate).toBe(48000);
+    expect(preview.frames).toBeGreaterThan(0);
+    expect(preview.frames).toBeLessThanOrEqual(first);
+    // The preview is the emitted prefix of the final stems: same samples,
+    // same length, frame for frame.
+    expect(preview.clean[0].length).toBe(preview.frames);
+    expect(preview.noise[0].length).toBe(preview.frames);
+    expect(maxAbs(preview.clean[0], result.clean[0].subarray(0, preview.frames))).toBe(0);
+    expect(maxAbs(preview.noise[0], result.noise[0].subarray(0, preview.frames))).toBe(0);
+    expect(result.frames).toBe(total);
+  });
+
+  test('a throwing preview callback does not break extraction', async () => {
+    const plan = planFor(9000);
+    const result = await chunked.runChunkedExtraction(null, plan, {
+      sink: 'memory',
+      readWindow: (start, count) => tone(start, count),
+      processWindow: async (input) => input.map((ch) => new Float32Array(ch)),
+      onFirstWindow: () => { throw new Error('preview boom'); },
+    });
+    expect(result.frames).toBe(9000);
+    expect(result.segments.every((s) => s.state === 'done')).toBe(true);
+  });
+
+  test('a rejecting preview callback does not break extraction', async () => {
+    const plan = planFor(9000);
+    const result = await chunked.runChunkedExtraction(null, plan, {
+      sink: 'memory',
+      readWindow: (start, count) => tone(start, count),
+      processWindow: async (input) => input.map((ch) => new Float32Array(ch)),
+      onFirstWindow: async () => { throw new Error('preview boom'); },
+    });
+    expect(result.frames).toBe(9000);
+    expect(result.segments.every((s) => s.state === 'done')).toBe(true);
+  });
+
+  test('the file-backed sink reports no noise stem on the first window', async () => {
+    const plan = planFor(9000);
+    const seen = [];
+    const result = await chunked.runChunkedExtraction(null, plan, {
+      sink: 'file',
+      readWindow: (start, count) => tone(start, count),
+      processWindow: async (input) => input.map((ch) => new Float32Array(ch)),
+      onFirstWindow: (firstWindow) => seen.push(firstWindow),
+    });
+    expect(seen.length).toBe(1);
+    expect(seen[0].clean[0].length).toBe(seen[0].frames);
+    expect(seen[0].noise).toBeNull();
+    expect(result.kind).toBe('file');
+  });
+});

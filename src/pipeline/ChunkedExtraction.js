@@ -233,6 +233,12 @@ function chooseSink(plan, prefer) {
  * @param {object} plan resolveIngestionPlan result
  * @param {object} options
  * @param {(channels: Float32Array[], sampleRate: number, info: object) => Promise<Float32Array[]>} options.processWindow
+ * @param {(first: { index: number, clean: Float32Array[], noise: Float32Array[] | null, frames: number, startFrame: number, sampleRate: number }) => void} [options.onFirstWindow] Called once, right after the first
+ *   window is written to the sink, with that window's emitted samples — the
+ *   exact prefix of the final stems, so a caller can play it while the rest
+ *   still processes. `noise` is null when the sink is file-backed (no noise
+ *   stem is held). Best-effort: never awaited, and a throwing callback must
+ *   not break extraction.
  */
 export async function runChunkedExtraction(file, plan, options = {}) {
   const chunk = plan?.chunk;
@@ -298,10 +304,30 @@ export async function runChunkedExtraction(file, plan, options = {}) {
       const cleanPiece = stitchEmit(cleanCore, cleanTail, fade, isLast);
       await cleanSink.write(cleanPiece.samples);
       cleanTail = cleanPiece.tail;
+      let noisePiece = null;
       if (noiseSink) {
-        const noisePiece = stitchEmit(noiseCore, noiseTail, fade, isLast);
+        noisePiece = stitchEmit(noiseCore, noiseTail, fade, isLast);
         await noiseSink.write(noisePiece.samples);
         noiseTail = noisePiece.tail;
+      }
+      if (index === 0) {
+        // The emitted piece is the crossfaded core minus the fade tail the
+        // next segment emits, so it is the exact prefix of the final stems.
+        // Publish it now: the caller can play the first window while the
+        // rest still processes instead of waiting for the whole file.
+        // Best-effort and never awaited — a preview failure must not break
+        // extraction, and the loop must not stall on UI work.
+        try {
+          const first = options.onFirstWindow?.({
+            index: 0,
+            clean: cleanPiece.samples,
+            noise: noisePiece ? noisePiece.samples : null,
+            frames: cleanPiece.emitted,
+            startFrame: emitStart,
+            sampleRate: SAMPLE_RATE,
+          });
+          if (first && typeof first.catch === 'function') first.catch(() => {});
+        } catch { /* preview is best-effort */ }
       }
       emitted += cleanPiece.emitted;
       segment.state = 'done';

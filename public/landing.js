@@ -206,6 +206,8 @@ const mediaTransport = createMediaTransport({
 /** @type {File|Blob|null} original upload retained for video remux export */
 let sourceFile = null;
 let requestSeq = 0;
+/** True once the first chunked window has been published as a preview. */
+let firstWindowPublished = false;
 /** Aborts the in-flight speaker detection when its request goes stale. */
 let speakerDetectAbort = null;
 /** True while a stems result is being installed (cooperative copies). */
@@ -1813,6 +1815,43 @@ function recomputeMemoryPlan() {
   ui.processBtn.disabled = next.strategy === 'refuse';
 }
 
+/**
+ * Publish the first processed window as playable audio while the rest of the
+ * chunked run still processes. This is the payoff of the 8 s first chunk:
+ * the user hears the first window after ~one window of compute instead of
+ * waiting for the whole file.
+ *
+ * Deliberately NOT the full installStems path: that path ends processing
+ * (processingInFlight = false), caches stems, arms comparison and runs
+ * analysis — all of which must wait for the complete result. The preview
+ * only loads the window into the mixer (loadStemsAsync supersedes it when
+ * the full stems arrive) and enables transport. Download, comparison and
+ * speaker detection stay locked until the full install.
+ */
+async function publishFirstWindowPreview({ requestId, clean, noise, sampleRate }) {
+  if (requestId !== requestSeq || !processingInFlight) return;
+  try {
+    ensureMixer();
+  } catch {
+    return; // AudioContext unavailable: preview is best-effort, extraction continues.
+  }
+  if (requestId !== requestSeq || !processingInFlight) return;
+  let installed = false;
+  try {
+    installed = await mixer.loadStemsAsync(clean, noise, sampleRate);
+  } catch {
+    return;
+  }
+  if (!installed || requestId !== requestSeq || !processingInFlight) return;
+  visualizer?.loadStems?.(clean, noise, mixer.duration());
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.rewBtn, ui.fwdBtn, ui.seekSlider]) {
+    if (el) el.disabled = false;
+  }
+  writeTimeReadout(0, mixer.duration());
+  quickClean.setState('processing', 'First 8 s ready — press Play while the rest processes.');
+  setStatus('First 8 s ready — press Play while the rest processes.', 'active');
+}
+
 async function processChunked() {
   const plan = ingested?.ingestionPlan;
   if (!plan || plan.strategy !== 'chunked' || !plan.chunk?.viable) {
@@ -1821,6 +1860,7 @@ async function processChunked() {
   }
   processingInFlight = true;
   hasProcessed = false;
+  firstWindowPublished = false;
   chunkedExportFile = null;
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
@@ -1849,6 +1889,17 @@ async function processChunked() {
         return stems.clean;
       },
       onProgress: (frac) => setProcStage('separate', Math.round(frac * 100), 'Extracting speech…'),
+      onFirstWindow: (first) => {
+        // PCM preview only: the file-backed sink holds no noise stem, and a
+        // clean-only preview would give the mixer a cleanBuffer, which flips
+        // chunkedMediaActive() off — the full file result would then play
+        // the preview through the mixer instead of the file. Best-effort:
+        // never throws into extraction.
+        if (id !== requestSeq || !processingInFlight || firstWindowPublished) return;
+        if (!first?.clean?.length || !first?.noise?.length) return;
+        firstWindowPublished = true;
+        void publishFirstWindowPreview({ ...first, requestId: id }).catch(() => {});
+      },
     });
     if (id !== requestSeq) return;
     if (result.kind === 'pcm' && result.noise?.length) {
@@ -1992,6 +2043,33 @@ async function applyStems(msg) {
   }
 }
 
+/**
+ * Create the playback mixer and its UI bindings on first use. Idempotent:
+ * a second call returns the existing mixer. Throws when the AudioContext
+ * cannot be created; callers decide whether that is fatal (full install)
+ * or best-effort (first-window preview).
+ */
+function ensureMixer() {
+  if (mixer) return mixer;
+  mixer = new PlaybackMixer();
+  // −1 dBTP true-peak safety ceiling on playback too, so the preview is
+  // exactly what Export writes (renderMix applies the same limiter).
+  mixer.setSafetyCeiling(-1);
+  // Ensure gate/de-esser worklets finish loading (non-blocking for play).
+  void mixer.workletsReady?.().then(() => {
+    try {
+      globalThis.__vipWorkletStatus = mixer.getWorkletStatus?.();
+    } catch { /* ignore */ }
+  }).catch(() => {});
+  sliderUI = new SliderUI(mixer);
+  sliderUI.bind();
+  speakerControls = new SpeakerControls(mixer, ui.speakerCardsGrid);
+  visualizer = new LandingVisualizer(mixer, ui.waveCanvas, ui.specCanvas);
+  // Read-only diagnostics handle for smoke tests and the debug console.
+  globalThis.__vipDiagnostics = { mixer, sliderUI, speakerControls, visualizer };
+  return mixer;
+}
+
 async function installStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
   clearProcessWatch();
   processingInFlight = false;
@@ -2019,32 +2097,15 @@ async function installStems({ requestId, clean, noise, sampleRate, passthrough, 
     await setCachedStemsAsync(cacheKey, { clean, noise, sampleRate, passthrough: false }, copyChannel);
     if (!current()) return;
   }
-  if (!mixer) {
-    try {
-      mixer = new PlaybackMixer();
-      // −1 dBTP true-peak safety ceiling on playback too, so the preview is
-      // exactly what Export writes (renderMix applies the same limiter).
-      mixer.setSafetyCeiling(-1);
-    } catch (err) {
-      // AudioContext may fail on first load if the browser requires a user gesture
-      // (autoplay policy) or if the Web Audio API is unavailable.
-      failProcessing(new Error(`Failed to initialise audio playback: ${err.message}. Tap Play after processing completes or try a different browser.`));
-      speakerControls?.clear();
-      ui.speakersPanel.hidden = true;
-      return;
-    }
-    // Ensure gate/de-esser worklets finish loading (non-blocking for play).
-    void mixer.workletsReady?.().then(() => {
-      try {
-        globalThis.__vipWorkletStatus = mixer.getWorkletStatus?.();
-      } catch { /* ignore */ }
-    }).catch(() => {});
-    sliderUI = new SliderUI(mixer);
-    sliderUI.bind();
-    speakerControls = new SpeakerControls(mixer, ui.speakerCardsGrid);
-    visualizer = new LandingVisualizer(mixer, ui.waveCanvas, ui.specCanvas);
-    // Read-only diagnostics handle for smoke tests and the debug console.
-    globalThis.__vipDiagnostics = { mixer, sliderUI, speakerControls, visualizer };
+  try {
+    ensureMixer();
+  } catch (err) {
+    // AudioContext may fail on first load if the browser requires a user gesture
+    // (autoplay policy) or if the Web Audio API is unavailable.
+    failProcessing(new Error(`Failed to initialise audio playback: ${err.message}. Tap Play after processing completes or try a different browser.`));
+    speakerControls?.clear();
+    ui.speakersPanel.hidden = true;
+    return;
   }
   if (!(await mixer.loadStemsAsync(clean, noise, sampleRate)) || !current()) return;
   hasProcessed = true;
