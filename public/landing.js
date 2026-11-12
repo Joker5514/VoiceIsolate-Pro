@@ -63,6 +63,7 @@ import {
   isCancellationError,
   throwIfAborted,
 } from '/src/pipeline/JobController.js';
+import { transportKeyAction } from '/src/core/TransportKeys.js';
 
 // ── Unified Premium Signal-First UX (Issue #820) ──────────────────────────
 // Shared state + automatic analysis + Raw/Processed/Removed
@@ -1571,6 +1572,11 @@ async function ingestFrom(file) {
     endJob(job.id, 'completed');
     if (window.__vipLandingJobId === job.id) window.__vipLandingJobId = null;
     if (next.strategy !== 'chunked') {
+      const decodedSeconds = next.duration
+        || (next.channelData?.[0]?.length && next.sampleRate
+          ? next.channelData[0].length / next.sampleRate
+          : 0);
+      writeTimeReadout(0, decodedSeconds);
       quickClean.setState('imported', `Imported “${file.name}”. Automatic analysis starting…`);
       setStatus(`Imported “${file.name}” — automatic analysis starting…`, 'active');
     }
@@ -2319,21 +2325,18 @@ function wireTransport() {
   });
 
   document.addEventListener('keydown', (event) => {
-    const target = event.target;
-    if (!target) return;
-    const tag = target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
-    if (tag === 'BUTTON' || target.closest?.('[role="tablist"]')) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.key === 'k' || event.key === 'K') {
-      event.preventDefault();
-      if (ui.playBtn && !ui.playBtn.disabled) ui.playBtn.click();
+    const action = transportKeyAction(event);
+    if (action === 'play') {
+      if (ui.playBtn && !ui.playBtn.disabled) {
+        event.preventDefault();
+        ui.playBtn.click();
+      }
       return;
     }
-    if (event.key === 'ArrowLeft') {
+    if (action === 'seek-back') {
       event.preventDefault();
       void seekBy(-5);
-    } else if (event.key === 'ArrowRight') {
+    } else if (action === 'seek-forward') {
       event.preventDefault();
       void seekBy(5);
     }

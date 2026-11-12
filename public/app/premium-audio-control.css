@@ -514,7 +514,6 @@
 
 /* Workstation rules in engineer-console.css outrank a bare .pac class.
    These selectors stay ahead of that grid, the 40px play key, and the inset clock. */
-:is(body.eng-console, body.v3) details.transport-card.pac .btn-tp-play,
 :is(body.eng-console, body.v3) details.transport-card.pac .btn-tp-play:not(:disabled),
 :is(body.eng-console, body.v3) details.transport-card.pac .btn-tp-play:not(:disabled):hover {
   width: 32px;
