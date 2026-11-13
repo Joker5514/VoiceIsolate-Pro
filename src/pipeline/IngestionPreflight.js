@@ -3,6 +3,7 @@ import { readDeviceSignals, selectPerformanceTier } from '../core/PerformanceTie
 import {
   budgetError, chainChunkContract, estimateIngestionMemory, ingestionBudget, resolveIngestionPlan,
 } from '../core/IngestionBudget.js';
+import { parseMp4Duration } from './CompressedAudioReader.js';
 import { wavMetadataFor } from './ChunkedExtraction.js';
 import { probeMediaMetadata, runBounded } from './media-decode.js';
 
@@ -19,6 +20,10 @@ export async function preflightIngestion(file, {
     timeoutMessage: 'Audio header read timed out.',
   }));
   const signature = head.length >= 4 ? String.fromCharCode(head[0], head[1], head[2], head[3]) : '';
+  const mp4Brand = head.length >= 8 ? String.fromCharCode(head[4], head[5], head[6], head[7]) : '';
+  const isMp4 = mp4Brand === 'ftyp'
+    || /\.(mp4|m4v|mov)$/i.test(file.name || '')
+    || /(?:mp4|quicktime)/i.test(file.type || '');
   const isWave = ['RIFF', 'RF64'].includes(signature)
     && head.length >= 12
     && String.fromCharCode(head[8], head[9], head[10], head[11]) === 'WAVE';
@@ -38,6 +43,27 @@ export async function preflightIngestion(file, {
     // Malformed PCM metadata is a decode error, not permission to allocate an
     // unbounded fallback capture. The browser decoder never sees this file.
     throw new Error(`[VIP][FileIngestion] Could not decode '${file.name || 'file'}': invalid or incomplete WAV header.`);
+  }
+  if (!metadata && isMp4) {
+    const mp4Controller = typeof AbortController === 'function' ? new AbortController() : null;
+    try {
+      const duration = await runBounded(
+        () => parseMp4Duration(file, { signal: mp4Controller?.signal }),
+        {
+          timeoutMs,
+          signal,
+          onStop: () => mp4Controller?.abort(),
+          timeoutCode: 'INGESTION_HEADER_TIMEOUT',
+          timeoutMessage: 'Audio header read timed out.',
+        },
+      );
+      if (Number.isFinite(duration) && duration > 0) {
+        metadata = { duration, channels: null, sampleRate: null, bitDepth: null, source: 'mp4-mvhd', complete: false };
+      }
+    } catch (error) {
+      if (error.name === 'AbortError' || error.code === 'ABORT_ERR') throw error;
+      // Fall through to the browser's media-element probe for unusual MP4s.
+    }
   }
   if (!metadata) {
     try { metadata = await probeMediaMetadata(file, signal, timeoutMs); }
