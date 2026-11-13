@@ -1,9 +1,10 @@
 'use strict';
-let budget, preflight, chunked;
+let budget, preflight, chunked, compressed;
 beforeAll(async () => {
   budget = await import('../src/core/IngestionBudget.js');
   preflight = await import('../src/pipeline/IngestionPreflight.js');
   chunked = await import('../src/pipeline/ChunkedExtraction.js');
+  compressed = await import('../src/pipeline/CompressedAudioReader.js');
 });
 function wavHeader({ seconds = 1, channels = 2, rate = 48000, bits = 16 } = {}) {
   const block = channels * bits / 8;
@@ -54,6 +55,36 @@ test('non-WAV preflight stops after the fixed-size signature read', async () => 
     code: 'INGESTION_METADATA_REQUIRED',
   });
   expect(ranges).toEqual([[0, 12]]);
+});
+
+function mp4Box(type, payload) {
+  const out = Buffer.alloc(8 + payload.length);
+  out.writeUInt32BE(out.length, 0);
+  out.write(type, 4, 4, 'ascii');
+  payload.copy(out, 8);
+  return out;
+}
+
+function mp4DurationFile(seconds, version = 0) {
+  const payload = Buffer.alloc(version === 1 ? 32 : 20);
+  payload.writeUInt8(version, 0);
+  const timescaleAt = version === 1 ? 20 : 12;
+  const durationAt = version === 1 ? 24 : 16;
+  payload.writeUInt32BE(1000, timescaleAt);
+  if (version === 1) payload.writeBigUInt64BE(BigInt(seconds * 1000), durationAt);
+  else payload.writeUInt32BE(seconds * 1000, durationAt);
+  const ftyp = mp4Box('ftyp', Buffer.from('isom\x00\x00\x02\x00isomiso2'));
+  const mdat = mp4Box('mdat', Buffer.alloc(32));
+  const moov = mp4Box('moov', mp4Box('mvhd', payload));
+  const file = new Blob([ftyp, mdat, moov], { type: 'video/mp4' });
+  Object.defineProperty(file, 'name', { value: '8372043366_1794517439075 (1).mp4' });
+  return file;
+}
+
+test.each([0, 1])('MP4 movie duration v%d is read when moov follows mdat', async (version) => {
+  const file = mp4DurationFile(37, version);
+  await expect(compressed.parseMp4Duration(file)).resolves.toBe(37);
+  await expect(preflight.preflightIngestion(file)).resolves.toMatchObject({ duration: 37 });
 });
 
 test('a stalled WAV header read times out and stops the scan', async () => {

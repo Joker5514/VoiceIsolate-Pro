@@ -126,6 +126,73 @@ function parseMdhdTimescale(buf, box) {
   return view.getUint32(at);
 }
 
+/**
+ * Read the container-level movie duration from a bounded MP4 `moov` box.
+ * This works for ordinary video MP4s even when the browser cannot expose
+ * media-element metadata and no local AAC decoder is available.
+ * @param {Blob} file
+ * @param {{signal?: AbortSignal, maxMoovBytes?: number}} [options]
+ * @returns {Promise<number|null>} duration in seconds
+ */
+export async function parseMp4Duration(file, options = {}) {
+  const signal = options.signal || null;
+  const maxMoovBytes = Math.min(64 * 1024 * 1024, Math.max(1024, options.maxMoovBytes || 32 * 1024 * 1024));
+  let at = 0;
+  for (let count = 0; count < 256 && at + 8 <= file.size; count++) {
+    if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
+    const header = new Uint8Array(await file.slice(at, Math.min(file.size, at + 16)).arrayBuffer());
+    if (header.length < 8) return null;
+    const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+    let size = view.getUint32(0);
+    const type = fourcc(header, 4);
+    let headerBytes = 8;
+    if (size === 1) {
+      if (header.length < 16) return null;
+      size = Number(view.getBigUint64(8));
+      headerBytes = 16;
+    } else if (size === 0) {
+      size = file.size - at;
+    }
+    if (!Number.isSafeInteger(size) || size < headerBytes || at + size > file.size) return null;
+    if (type === 'moov') {
+      if (size > maxMoovBytes) return null;
+      const bytes = new Uint8Array(await file.slice(at, at + size).arrayBuffer());
+      if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
+      const moov = findChild(bytes, 0, bytes.length, 'moov');
+      if (!moov) return null;
+      const movieHeader = findChild(bytes, moov.start, moov.end, 'mvhd');
+      if (!movieHeader) return null;
+      const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const version = bytes[movieHeader.start];
+      if (version !== 0 && version !== 1) return null;
+      const timescaleOffset = movieHeader.start + (version === 1 ? 20 : 12);
+      const durationOffset = movieHeader.start + (version === 1 ? 24 : 16);
+      const durationBytes = version === 1 ? 8 : 4;
+      if (timescaleOffset + 4 > movieHeader.end || durationOffset + durationBytes > movieHeader.end) return null;
+      const timescale = data.getUint32(timescaleOffset);
+      const rawTicks = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
+      const unknownTicks = rawTicks === 0n || rawTicks === 0xffffffffn || rawTicks === 0xffffffffffffffffn;
+      let ticks = unknownTicks || rawTicks > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(rawTicks);
+      if (unknownTicks || ticks === 0) {
+        const mvex = findChild(bytes, moov.start, moov.end, 'mvex');
+        const mehd = mvex ? findChild(bytes, mvex.start, mvex.end, 'mehd') : null;
+        if (mehd) {
+          const fragmentVersion = bytes[mehd.start];
+          const fragmentOffset = mehd.start + 4;
+          const fragmentTicks = fragmentVersion === 1 && fragmentOffset + 8 <= mehd.end
+            ? data.getBigUint64(fragmentOffset)
+            : fragmentOffset + 4 <= mehd.end ? BigInt(data.getUint32(fragmentOffset)) : 0n;
+          if (fragmentTicks > 0n && fragmentTicks <= BigInt(Number.MAX_SAFE_INTEGER)) ticks = Number(fragmentTicks);
+        }
+      }
+      const seconds = timescale > 0 ? ticks / timescale : NaN;
+      return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+    }
+    at += size;
+  }
+  return null;
+}
+
 function parseSampleTable(buf, stbl) {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const stts = findChild(buf, stbl.start, stbl.end, 'stts');
