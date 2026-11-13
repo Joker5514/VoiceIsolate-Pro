@@ -21,6 +21,66 @@ test('WAV metadata uses declared data length, channels, rate and bit depth', () 
   expect(budget.parseWavMetadata(Buffer.from('RIFFbroken'))).toBeNull();
 });
 
+test('large WAV front matter is parsed with geometrically bounded reads', async () => {
+  const metadataBytes = 9 * 1024 * 1024;
+  const fmt = Buffer.alloc(16);
+  fmt.writeUInt16LE(1, 0); fmt.writeUInt16LE(1, 2); fmt.writeUInt32LE(48000, 4);
+  fmt.writeUInt32LE(96000, 8); fmt.writeUInt16LE(2, 12); fmt.writeUInt16LE(16, 14);
+  const chunks = Buffer.alloc(56 + metadataBytes);
+  chunks.write('RIFF', 0); chunks.writeUInt32LE(chunks.length - 8, 4); chunks.write('WAVE', 8);
+  chunks.write('JUNK', 12); chunks.writeUInt32LE(metadataBytes, 16);
+  const fmtAt = 20 + metadataBytes;
+  chunks.write('fmt ', fmtAt); chunks.writeUInt32LE(fmt.length, fmtAt + 4); fmt.copy(chunks, fmtAt + 8);
+  chunks.write('data', fmtAt + 24); chunks.writeUInt32LE(4, fmtAt + 28);
+  const blob = new Blob([chunks], { type: 'audio/wav' });
+  const originalSlice = blob.slice.bind(blob);
+  const ranges = [];
+  blob.slice = (start, end) => { ranges.push([start, end]); return originalSlice(start, end); };
+
+  await expect(chunked.wavMetadataFor(blob)).resolves.toMatchObject({
+    sampleRate: 48000, dataBytes: 4, blockAlign: 2,
+  });
+  expect(ranges.length).toBeLessThan(8);
+  expect(ranges.every(([start]) => start === 0)).toBe(true);
+});
+
+test('non-WAV preflight stops after the fixed-size signature read', async () => {
+  const blob = new Blob([Buffer.from('ID3\x04\x00\x00\x00\x00\x00\x00')], { type: 'audio/mpeg' });
+  const originalSlice = blob.slice.bind(blob);
+  const ranges = [];
+  blob.slice = (start, end) => { ranges.push([start, end]); return originalSlice(start, end); };
+
+  await expect(preflight.preflightIngestion(blob)).rejects.toMatchObject({
+    code: 'INGESTION_METADATA_REQUIRED',
+  });
+  expect(ranges).toEqual([[0, 12]]);
+});
+
+test('a stalled WAV header read times out and stops the scan', async () => {
+  jest.useFakeTimers();
+  const signature = Buffer.alloc(12);
+  signature.write('RIFF', 0); signature.write('WAVE', 8);
+  let reads = 0;
+  const file = {
+    size: 4096,
+    name: 'stalled.wav',
+    slice: jest.fn(() => ({
+      arrayBuffer: () => (++reads === 1
+        ? Promise.resolve(signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength))
+        : new Promise(() => {})),
+    })),
+  };
+  const pending = preflight.preflightIngestion(file, { timeoutMs: 25 });
+  const rejection = expect(pending).rejects.toMatchObject({
+    code: 'INGESTION_HEADER_TIMEOUT',
+    message: 'Audio header read timed out.',
+  });
+  await jest.advanceTimersByTimeAsync(25);
+  await rejection;
+  expect(file.slice).toHaveBeenCalledTimes(2);
+  jest.useRealTimers();
+});
+
 function wavFile({ seconds = 1, channels = 1, rate = 48000, bits = 16 } = {}) {
   const header = wavHeader({ seconds, channels, rate, bits });
   return Buffer.concat([header, Buffer.alloc(header.readUInt32LE(40))]);
