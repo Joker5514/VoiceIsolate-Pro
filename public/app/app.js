@@ -2628,6 +2628,9 @@ class VoiceIsolatePro {
       });
     };
     bind('fileInput', d.fileInput, 'change', (e) => acceptUpload(e.target?.files?.[0]));
+    // Mark the canonical handler so mobile-upload-fix does not attach a second
+    // change listener and race a second handleFile() against this upload.
+    if (d.fileInput?.dataset) d.fileInput.dataset.vipAppChangeBound = '1';
     if (d.dropZone) {
       d.dropZone.addEventListener('dragover', e => { e.preventDefault(); d.dropZone.classList.add('drag-over'); });
       d.dropZone.addEventListener('dragleave', () => d.dropZone.classList.remove('drag-over'));
@@ -2636,6 +2639,8 @@ class VoiceIsolatePro {
         d.dropZone.classList.remove('drag-over');
         acceptUpload(e.dataTransfer?.files?.[0]);
       });
+      // The mobile compatibility layer must not register a duplicate drop handler.
+      if (d.dropZone.dataset) d.dropZone.dataset.vipAppDropBound = '1';
     }
     // Engineer upload zone (id=uploadZone) also drops files.
     if (d.uploadZone && d.uploadZone !== d.dropZone) {

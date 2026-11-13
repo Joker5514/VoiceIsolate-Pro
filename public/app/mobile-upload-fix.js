@@ -292,7 +292,7 @@
     }
 
     // Re-bind change in case a legacy patch cloned/replaced the input node.
-    if (!fi.dataset.vipChangeBound) {
+    if (!fi.dataset.vipChangeBound && !fi.dataset.vipAppChangeBound) {
       fi.dataset.vipChangeBound = '1';
       fi.addEventListener('change', function (e) {
         var file = e.target.files && e.target.files[0];
@@ -305,7 +305,7 @@
     }
 
     var dropZone = document.getElementById('dropZone');
-    if (dropZone && !dropZone.dataset.vipDropBound) {
+    if (dropZone && !dropZone.dataset.vipDropBound && !dropZone.dataset.vipAppDropBound) {
       dropZone.dataset.vipDropBound = '1';
       ['dragenter', 'dragover'].forEach(function (ev) {
         dropZone.addEventListener(ev, function (e) {
