@@ -389,11 +389,66 @@ async function probeContainerDuration(blob, signal, timeoutMs) {
       timeoutCode: 'MEDIA_METADATA_TIMEOUT',
       signal,
     });
-    return Number.isFinite(media.duration) ? media.duration : null;
+    if (Number.isFinite(media.duration)) return media.duration;
+    if (media.duration === Infinity) {
+      // Live or duration-less containers (a live-recorded WebM has no
+      // duration element): the element reports Infinity until it is seeked
+      // to the end, at which point the browser resolves the real duration.
+      try {
+        media.currentTime = 1e7;
+        await runBounded(() => _waitForDurationChange(media, signal), {
+          timeoutMs,
+          timeoutMessage: '[VIP][FileIngestion] metadata probe timeout',
+          timeoutCode: 'MEDIA_METADATA_TIMEOUT',
+          signal,
+        });
+      } catch { /* A failed end-seek leaves the duration unknown. */ }
+      if (Number.isFinite(media.duration) && media.duration > 0) return media.duration;
+    }
+    return null;
   } finally {
     try { media.removeAttribute('src'); media.load(); } catch { /* ignore */ }
     URL.revokeObjectURL(url);
   }
+}
+
+function _waitForDurationChange(media, signal = null) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      clearTimeout(timer);
+      media.removeEventListener?.('durationchange', done);
+      media.removeEventListener?.('seeked', done);
+      media.removeEventListener?.('error', fail);
+      signal?.removeEventListener?.('abort', onAbort);
+    };
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const done = () => {
+      settle(resolve);
+    };
+    const fail = () => {
+      settle(() => reject(new Error('[VIP][FileIngestion] Media element failed to load')));
+    };
+    const onAbort = () => settle(() => reject(createAbortError()));
+    timer = setTimeout(() => {
+      settle(() => reject(createTimeoutError(
+        'Media metadata load timeout — file may be corrupt or unsupported.',
+        'MEDIA_METADATA_TIMEOUT',
+      )));
+    }, MEDIA_DECODE_MIN_TIMEOUT_MS);
+    if (Number.isFinite(media.duration) && media.duration > 0) { done(); return; }
+    media.addEventListener('durationchange', done, { once: true });
+    media.addEventListener('seeked', done, { once: true });
+    media.addEventListener('error', fail, { once: true });
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
 }
 
 /** Incremental channel buffer — grows in chunks instead of one huge upfront alloc. */

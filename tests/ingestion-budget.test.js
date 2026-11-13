@@ -83,8 +83,252 @@ function mp4DurationFile(seconds, version = 0) {
 
 test.each([0, 1])('MP4 movie duration v%d is read when moov follows mdat', async (version) => {
   const file = mp4DurationFile(37, version);
-  await expect(compressed.parseMp4Duration(file)).resolves.toBe(37);
+  await expect(compressed.parseMp4Duration(file)).resolves.toMatchObject({ duration: 37, source: 'mp4-mvhd' });
   await expect(preflight.preflightIngestion(file)).resolves.toMatchObject({ duration: 37 });
+});
+
+function mp4MvhdBox(version, timescale, duration) {
+  const payload = Buffer.alloc(version === 1 ? 32 : 20);
+  payload.writeUInt8(version, 0);
+  payload.writeUInt32BE(timescale, version === 1 ? 20 : 12);
+  if (version === 1) payload.writeBigUInt64BE(BigInt(duration), 24);
+  else payload.writeUInt32BE(duration, 16);
+  return mp4Box('mvhd', payload);
+}
+
+function mp4TkhdBox(version, trackId, duration) {
+  const payload = Buffer.alloc(version === 1 ? 92 : 84);
+  payload.writeUInt8(version, 0);
+  payload[3] = 0x07;
+  payload.writeUInt32BE(trackId, version === 1 ? 20 : 12);
+  if (version === 1) payload.writeBigUInt64BE(BigInt(duration), 28);
+  else payload.writeUInt32BE(duration, 20);
+  return mp4Box('tkhd', payload);
+}
+
+function mp4MdhdBox(version, timescale, duration) {
+  const payload = Buffer.alloc(version === 1 ? 32 : 24);
+  payload.writeUInt8(version, 0);
+  payload.writeUInt32BE(timescale, version === 1 ? 20 : 12);
+  if (version === 1) payload.writeBigUInt64BE(BigInt(duration), 24);
+  else payload.writeUInt32BE(duration, 16);
+  return mp4Box('mdhd', payload);
+}
+
+function mp4HdlrBox(kind) {
+  const payload = Buffer.alloc(24);
+  payload.write('appl', 8, 4, 'ascii');
+  payload.write(kind, 12, 4, 'ascii');
+  return mp4Box('hdlr', payload);
+}
+
+function mp4SttsBox(entries) {
+  const payload = Buffer.alloc(8 + entries.length * 8);
+  payload.writeUInt32BE(entries.length, 4);
+  entries.forEach(([count, delta], i) => {
+    payload.writeUInt32BE(count, 8 + i * 8);
+    payload.writeUInt32BE(delta, 12 + i * 8);
+  });
+  return mp4Box('stts', payload);
+}
+
+function mp4TrakBox({ trackId = 1, handler = 'soun', timescale = 1000, tkhdDuration = 0, mdhdDuration = 0, stts = null } = {}) {
+  const mdiaKids = [mp4MdhdBox(0, timescale, mdhdDuration), mp4HdlrBox(handler)];
+  if (stts) mdiaKids.push(mp4Box('minf', mp4Box('stbl', mp4SttsBox(stts))));
+  return mp4Box('trak', Buffer.concat([mp4TkhdBox(0, trackId, tkhdDuration), mp4Box('mdia', Buffer.concat(mdiaKids))]));
+}
+
+function mp4TfhdBox(trackId, { defaultDuration = null } = {}) {
+  let flags = 0x020000;
+  const extra = [];
+  if (defaultDuration != null) {
+    flags |= 0x000008;
+    const b = Buffer.alloc(4);
+    b.writeUInt32BE(defaultDuration, 0);
+    extra.push(b);
+  }
+  const payload = Buffer.alloc(8);
+  payload.writeUInt32BE(flags, 0);
+  payload.writeUInt32BE(trackId, 4);
+  return mp4Box('tfhd', Buffer.concat([payload, ...extra]));
+}
+
+function mp4TfdtBox(version, baseMediaDecodeTime) {
+  const payload = Buffer.alloc(version === 1 ? 12 : 8);
+  payload.writeUInt8(version, 0);
+  if (version === 1) payload.writeBigUInt64BE(BigInt(baseMediaDecodeTime), 4);
+  else payload.writeUInt32BE(baseMediaDecodeTime, 4);
+  return mp4Box('tfdt', payload);
+}
+
+function mp4TrunBox(samples, { dataOffset = null } = {}) {
+  // samples: [{duration}] or [] for a trun with no per-sample durations.
+  const withDuration = samples.length > 0 && samples[0].duration != null;
+  let flags = 0;
+  if (dataOffset != null) flags |= 0x000001;
+  if (withDuration) flags |= 0x000100;
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(flags, 0);
+  head.writeUInt32BE(samples.length, 4);
+  const extra = [];
+  if (dataOffset != null) {
+    const b = Buffer.alloc(4);
+    b.writeUInt32BE(dataOffset, 0);
+    extra.push(b);
+  }
+  const entries = Buffer.alloc(samples.length * (withDuration ? 4 : 0));
+  samples.forEach((s, i) => { if (withDuration) entries.writeUInt32BE(s.duration, i * 4); });
+  return mp4Box('trun', Buffer.concat([head, ...extra, entries]));
+}
+
+function mp4MoofBox(trafs) {
+  return mp4Box('moof', Buffer.concat(trafs));
+}
+
+function mp4TrafBox(children) {
+  return mp4Box('traf', Buffer.concat(children));
+}
+
+function mp4MvexBox() {
+  const trex = Buffer.alloc(24);
+  trex.writeUInt32BE(1, 4);
+  trex.writeUInt32BE(1, 8);
+  trex.writeUInt32BE(1024, 12);
+  return mp4Box('mvex', mp4Box('trex', trex));
+}
+
+function mp4MehdBox(version, fragmentDuration) {
+  const payload = Buffer.alloc(version === 1 ? 12 : 8);
+  payload.writeUInt8(version, 0);
+  if (version === 1) payload.writeBigUInt64BE(BigInt(fragmentDuration), 4);
+  else payload.writeUInt32BE(fragmentDuration, 4);
+  return mp4Box('mehd', payload);
+}
+
+function mp4File({ moov, name = 'test.mp4', type = 'video/mp4' } = {}) {
+  const ftyp = mp4Box('ftyp', Buffer.from('isom\x00\x00\x02\x00isomiso2'));
+  const mdat = mp4Box('mdat', Buffer.alloc(32));
+  const file = new Blob([ftyp, mdat, moov], { type });
+  Object.defineProperty(file, 'name', { value: name });
+  return file;
+}
+
+function mp4FragmentedFile({ mvhdDuration = 0, fragments, timescale = 1000 } = {}) {
+  // fragments: [{start, durations: [ticks...]}] — a null duration entry means
+  // the muxer stored a sample with no per-sample duration field.
+  const moov = mp4Box('moov', Buffer.concat([
+    mp4MvhdBox(0, timescale, mvhdDuration),
+    mp4TrakBox({ trackId: 1, timescale, tkhdDuration: 0, mdhdDuration: 0 }),
+    mp4MvexBox(),
+  ]));
+  const moofs = fragments.map(({ start, durations }) => mp4MoofBox([
+    mp4TrafBox([
+      mp4TfhdBox(1),
+      mp4TfdtBox(0, start),
+      mp4TrunBox(durations.map((d) => ({ duration: d })), { dataOffset: 8 }),
+    ]),
+  ]));
+  const ftyp = mp4Box('ftyp', Buffer.from('isom\x00\x00\x02\x00isomiso2'));
+  const file = new Blob([ftyp, moov, ...moofs], { type: 'video/mp4' });
+  Object.defineProperty(file, 'name', { value: '8372043366_1794517439075 (1).mp4' });
+  return file;
+}
+
+test('fragmented MP4 with mvhd duration 0 resolves from its moof timeline', async () => {
+  const file = mp4FragmentedFile({
+    fragments: [
+      { start: 0, durations: [4000] },
+      { start: 4000, durations: [4000] },
+      { start: 8000, durations: [4023] },
+    ],
+  });
+  await expect(compressed.parseMp4Duration(file)).resolves.toMatchObject({ duration: 12.023, source: 'mp4-fragments' });
+  await expect(preflight.preflightIngestion(file)).resolves.toMatchObject({ duration: 12.023 });
+});
+
+test('fragmented MP4 returns the fragment timeline even when mvhd understates it', async () => {
+  const file = mp4FragmentedFile({
+    mvhdDuration: 10031,
+    fragments: [
+      { start: 0, durations: [4000] },
+      { start: 4000, durations: [4000] },
+      { start: 8000, durations: [4023] },
+    ],
+  });
+  await expect(compressed.parseMp4Duration(file)).resolves.toMatchObject({ duration: 12.023, source: 'mp4-fragments' });
+});
+
+test('fragment durations are inferred from the next tfdt, final fragment reuses the previous step', async () => {
+  const file = mp4FragmentedFile({
+    fragments: [
+      { start: 0, durations: [null] },
+      { start: 4000, durations: [null] },
+      { start: 8000, durations: [null] },
+    ],
+  });
+  await expect(compressed.parseMp4Duration(file)).resolves.toMatchObject({ duration: 12, source: 'mp4-fragments' });
+});
+
+test('MP4 with mvhd duration 0 resolves from the audio track duration', async () => {
+  const moov = mp4Box('moov', Buffer.concat([
+    mp4MvhdBox(0, 1000, 0),
+    mp4TrakBox({ trackId: 1, timescale: 1000, tkhdDuration: 12023, mdhdDuration: 12023 }),
+  ]));
+  const file = mp4File({ moov, name: 'mvhd_zero.mp4' });
+  await expect(compressed.parseMp4Duration(file)).resolves.toMatchObject({ duration: 12.023, source: 'mp4-track' });
+  await expect(preflight.preflightIngestion(file)).resolves.toMatchObject({ duration: 12.023 });
+});
+
+test('MP4 with no movie or track duration resolves from the audio sample table', async () => {
+  const moov = mp4Box('moov', Buffer.concat([
+    mp4MvhdBox(0, 1000, 0),
+    mp4TrakBox({ trackId: 1, timescale: 1000, stts: [[3, 4000], [1, 23]] }),
+  ]));
+  const file = mp4File({ moov });
+  await expect(compressed.parseMp4Duration(file)).resolves.toMatchObject({ duration: 12.023, source: 'mp4-stts' });
+});
+
+test('MP4 with an mvex mehd resolves from the declared fragment duration', async () => {
+  const moov = mp4Box('moov', Buffer.concat([
+    mp4MvhdBox(0, 1000, 0),
+    mp4Box('mvex', mp4MehdBox(0, 12023)),
+  ]));
+  const file = mp4File({ moov });
+  await expect(compressed.parseMp4Duration(file)).resolves.toMatchObject({ duration: 12.023, source: 'mp4-mvhd' });
+});
+
+test('a truncated moov throws INCOMPLETE_CONTAINER instead of the RESOURCE LIMIT refusal', async () => {
+  const full = mp4Box('moov', mp4MvhdBox(0, 1000, 12023));
+  const cut = Buffer.from(full.subarray(0, 24));
+  cut.writeUInt32BE(full.length + 500, 0);
+  const ftyp = mp4Box('ftyp', Buffer.from('isom\x00\x00\x02\x00isomiso2'));
+  const mdat = mp4Box('mdat', Buffer.alloc(32));
+  const file = new Blob([ftyp, mdat, cut], { type: 'video/mp4' });
+  Object.defineProperty(file, 'name', { value: 'truncated_moov_end.mp4' });
+  await expect(compressed.parseMp4Duration(file)).rejects.toMatchObject({ code: 'INCOMPLETE_CONTAINER' });
+  await expect(preflight.preflightIngestion(file)).rejects.toMatchObject({ code: 'INCOMPLETE_CONTAINER' });
+});
+
+test('an MPEG-TS file mislabeled .mp4 throws UNSUPPORTED_CONTAINER', async () => {
+  const ts = Buffer.alloc(512);
+  ts[0] = 0x47;
+  ts[188] = 0x47;
+  ts[376] = 0x47;
+  const file = new Blob([ts], { type: 'video/mp4' });
+  Object.defineProperty(file, 'name', { value: 'ts_named.mp4' });
+  await expect(preflight.preflightIngestion(file)).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTAINER' });
+});
+
+test('a moov larger than the read cap still resolves from a bounded header window', async () => {
+  const filler = mp4Box('udta', Buffer.alloc(6000));
+  const moov = mp4Box('moov', Buffer.concat([
+    mp4MvhdBox(0, 1000, 0),
+    mp4TrakBox({ trackId: 1, timescale: 1000, tkhdDuration: 12023, mdhdDuration: 12023 }),
+    filler,
+  ]));
+  const file = mp4File({ moov });
+  await expect(compressed.parseMp4Duration(file, { maxMoovBytes: 1024, moovHeaderBytes: 4096 }))
+    .resolves.toMatchObject({ duration: 12.023, source: 'mp4-track' });
 });
 
 test('a stalled WAV header read times out and stops the scan', async () => {

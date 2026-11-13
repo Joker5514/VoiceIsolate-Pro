@@ -24,6 +24,23 @@ export async function preflightIngestion(file, {
   const isMp4 = mp4Brand === 'ftyp'
     || /\.(mp4|m4v|mov)$/i.test(file.name || '')
     || /(?:mp4|quicktime)/i.test(file.type || '');
+  // MPEG-TS containers (often mislabeled .mp4) have no MP4 movie header and
+  // no browser demuxer: fail with a typed error instead of the misleading
+  // RESOURCE LIMIT refusal. The 188-byte sync pattern makes a false
+  // positive effectively impossible.
+  if (head[0] === 0x47) {
+    const sync = new Uint8Array(await runBounded(() => file.slice(0, 512).arrayBuffer(), {
+      timeoutMs,
+      signal,
+      timeoutCode: 'INGESTION_HEADER_TIMEOUT',
+      timeoutMessage: 'Audio header read timed out.',
+    }));
+    if (sync.length >= 377 && sync[0] === 0x47 && sync[188] === 0x47 && sync[376] === 0x47) {
+      const err = new Error(`[VIP][FileIngestion] '${file.name || 'file'}' is an MPEG-TS container, which VoiceIsolate cannot decode. Re-export it as MP4 (or extract the audio) and try again.`);
+      err.code = 'UNSUPPORTED_CONTAINER';
+      throw err;
+    }
+  }
   const isWave = ['RIFF', 'RF64'].includes(signature)
     && head.length >= 12
     && String.fromCharCode(head[8], head[9], head[10], head[11]) === 'WAVE';
@@ -47,7 +64,7 @@ export async function preflightIngestion(file, {
   if (!metadata && isMp4) {
     const mp4Controller = typeof AbortController === 'function' ? new AbortController() : null;
     try {
-      const duration = await runBounded(
+      const result = await runBounded(
         () => parseMp4Duration(file, { signal: mp4Controller?.signal }),
         {
           timeoutMs,
@@ -57,11 +74,15 @@ export async function preflightIngestion(file, {
           timeoutMessage: 'Audio header read timed out.',
         },
       );
-      if (Number.isFinite(duration) && duration > 0) {
-        metadata = { duration, channels: null, sampleRate: null, bitDepth: null, source: 'mp4-mvhd', complete: false };
+      if (result && Number.isFinite(result.duration) && result.duration > 0) {
+        metadata = { duration: result.duration, channels: null, sampleRate: null, bitDepth: null, source: result.source, complete: false };
       }
     } catch (error) {
       if (error.name === 'AbortError' || error.code === 'ABORT_ERR') throw error;
+      // A truncated or unsupported container is a typed, actionable failure,
+      // not an unknown duration: surface it instead of the RESOURCE LIMIT
+      // refusal the media probe would end in.
+      if (error.code === 'INCOMPLETE_CONTAINER' || error.code === 'UNSUPPORTED_CONTAINER') throw error;
       // Fall through to the browser's media-element probe for unusual MP4s.
     }
   }

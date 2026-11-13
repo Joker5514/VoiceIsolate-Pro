@@ -126,69 +126,294 @@ function parseMdhdTimescale(buf, box) {
   return view.getUint32(at);
 }
 
+function readMvhdDuration(bytes, data, moov) {
+  const movieHeader = findChild(bytes, moov.start, moov.end, 'mvhd');
+  if (!movieHeader) return null;
+  const version = bytes[movieHeader.start];
+  if (version !== 0 && version !== 1) return null;
+  const timescaleOffset = movieHeader.start + (version === 1 ? 20 : 12);
+  const durationOffset = movieHeader.start + (version === 1 ? 24 : 16);
+  const durationBytes = version === 1 ? 8 : 4;
+  if (timescaleOffset + 4 > movieHeader.end || durationOffset + durationBytes > movieHeader.end) return null;
+  const timescale = data.getUint32(timescaleOffset);
+  const rawTicks = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
+  const unknownTicks = rawTicks === 0n || rawTicks === 0xffffffffn || rawTicks === 0xffffffffffffffffn;
+  const ticks = unknownTicks || rawTicks > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(rawTicks);
+  return { timescale, ticks };
+}
+
+function readMehdTicks(bytes, data, moov, mvex) {
+  const mehd = mvex ? findChild(bytes, mvex.start, mvex.end, 'mehd') : null;
+  if (!mehd) return 0;
+  const fragmentVersion = bytes[mehd.start];
+  const fragmentOffset = mehd.start + 4;
+  const fragmentTicks = fragmentVersion === 1 && fragmentOffset + 8 <= mehd.end
+    ? data.getBigUint64(fragmentOffset)
+    : fragmentOffset + 4 <= mehd.end ? BigInt(data.getUint32(fragmentOffset)) : 0n;
+  return fragmentTicks > 0n && fragmentTicks <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(fragmentTicks) : 0;
+}
+
+function readMp4Tracks(bytes, data, moov, movieTimescale) {
+  const tracks = [];
+  for (const trak of walkBoxes(bytes, moov.start, moov.end)) {
+    if (trak.type !== 'trak') continue;
+    const mdia = findChild(bytes, trak.start, trak.end, 'mdia');
+    if (!mdia) continue;
+    const mdhd = findChild(bytes, mdia.start, mdia.end, 'mdhd');
+    const hdlr = findChild(bytes, mdia.start, mdia.end, 'hdlr');
+    const tkhd = findChild(bytes, trak.start, trak.end, 'tkhd');
+    const minf = findChild(bytes, mdia.start, mdia.end, 'minf');
+    const stbl = minf ? findChild(bytes, minf.start, minf.end, 'stbl') : null;
+    const handler = hdlr && hdlr.start + 12 <= hdlr.end ? fourcc(bytes, hdlr.start + 8) : '';
+    let id = null;
+    let tkhdSeconds = null;
+    if (tkhd) {
+      const version = bytes[tkhd.start];
+      if (version === 0 || version === 1) {
+        const idOffset = tkhd.start + (version === 1 ? 20 : 12);
+        const durationOffset = tkhd.start + (version === 1 ? 28 : 20);
+        const durationBytes = version === 1 ? 8 : 4;
+        if (idOffset + 4 <= tkhd.end && durationOffset + durationBytes <= tkhd.end) {
+          id = data.getUint32(idOffset);
+          const raw = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
+          const ticks = raw > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(raw);
+          if (movieTimescale > 0 && ticks > 0) tkhdSeconds = ticks / movieTimescale;
+        }
+      }
+    }
+    let timescale = null;
+    let mdhdSeconds = null;
+    if (mdhd) {
+      const version = bytes[mdhd.start];
+      if (version === 0 || version === 1) {
+        const timescaleOffset = mdhd.start + (version === 1 ? 20 : 12);
+        const durationOffset = mdhd.start + (version === 1 ? 24 : 16);
+        const durationBytes = version === 1 ? 8 : 4;
+        if (timescaleOffset + 4 <= mdhd.end && durationOffset + durationBytes <= mdhd.end) {
+          timescale = data.getUint32(timescaleOffset);
+          const raw = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
+          const ticks = raw > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(raw);
+          if (timescale > 0 && ticks > 0) mdhdSeconds = ticks / timescale;
+        }
+      }
+    }
+    tracks.push({ id, handler, timescale, mdhdSeconds, tkhdSeconds, stbl });
+  }
+  return tracks;
+}
+
+function readMp4TrackDuration(tracks) {
+  const audio = tracks.filter((t) => t.handler === 'soun');
+  const pool = audio.length ? audio : tracks;
+  let best = null;
+  for (const track of pool) {
+    const seconds = track.mdhdSeconds ?? track.tkhdSeconds;
+    if (Number.isFinite(seconds) && seconds > 0) best = best == null ? seconds : Math.max(best, seconds);
+  }
+  return best;
+}
+
+function readMp4SttsSeconds(bytes, data, tracks) {
+  const audio = tracks.find((t) => t.handler === 'soun' && t.timescale > 0 && t.stbl)
+    || tracks.find((t) => t.timescale > 0 && t.stbl);
+  if (!audio) return null;
+  const stts = findChild(bytes, audio.stbl.start, audio.stbl.end, 'stts');
+  if (!stts) return null;
+  let total = 0;
+  const count = data.getUint32(stts.start + 4);
+  for (let i = 0; i < count; i++) {
+    const o = stts.start + 8 + i * 8;
+    if (o + 8 > stts.end) break;
+    total += data.getUint32(o) * data.getUint32(o + 4);
+  }
+  const seconds = total / audio.timescale;
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+async function readMp4FragmentDuration(file, moofs, tracks, { signal, maxMoofBytes }) {
+  const byTrack = new Map();
+  const cursor = new Map();
+  for (const { at, size } of moofs) {
+    if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
+    if (size > maxMoofBytes) return null;
+    const bytes = new Uint8Array(await file.slice(at, at + size).arrayBuffer());
+    const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let headerBytes = 8;
+    if (bytes.length >= 16 && data.getUint32(0) === 1) headerBytes = 16;
+    for (const traf of walkBoxes(bytes, headerBytes, bytes.length)) {
+      if (traf.type !== 'traf') continue;
+      const tfhd = findChild(bytes, traf.start, traf.end, 'tfhd');
+      if (!tfhd) continue;
+      const trackId = data.getUint32(tfhd.start + 4);
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track || !track.timescale) continue;
+      const flags = (bytes[tfhd.start + 1] << 16) | (bytes[tfhd.start + 2] << 8) | bytes[tfhd.start + 3];
+      let p = tfhd.start + 8;
+      if (flags & 0x000001) p += 8;
+      if (flags & 0x000002) p += 4;
+      let defaultDuration = 0;
+      if (flags & 0x000008) {
+        if (p + 4 > tfhd.end) continue;
+        defaultDuration = data.getUint32(p);
+        p += 4;
+      }
+      const tfdt = findChild(bytes, traf.start, traf.end, 'tfdt');
+      let startTicks = null;
+      if (tfdt) {
+        const version = bytes[tfdt.start];
+        if (version === 1 && tfdt.start + 12 <= tfdt.end) startTicks = Number(data.getBigUint64(tfdt.start + 4));
+        else if (version === 0 && tfdt.start + 8 <= tfdt.end) startTicks = data.getUint32(tfdt.start + 4);
+      }
+      let fragTicks = null;
+      for (const trun of walkBoxes(bytes, traf.start, traf.end)) {
+        if (trun.type !== 'trun') continue;
+        const tflags = (bytes[trun.start + 1] << 16) | (bytes[trun.start + 2] << 8) | bytes[trun.start + 3];
+        const count = data.getUint32(trun.start + 4);
+        let ep = trun.start + 8;
+        if (tflags & 0x000001) ep += 4;
+        if (tflags & 0x000004) ep += 4;
+        const entrySize = 4 * ((tflags & 0x000100 ? 1 : 0) + (tflags & 0x000200 ? 1 : 0)
+          + (tflags & 0x000400 ? 1 : 0) + (tflags & 0x000800 ? 1 : 0));
+        if (tflags & 0x000100) {
+          let sum = 0;
+          for (let i = 0; i < count; i++) {
+            const o = ep + i * entrySize;
+            if (o + 4 > trun.end) break;
+            sum += data.getUint32(o);
+          }
+          fragTicks = (fragTicks ?? 0) + sum;
+        } else if (defaultDuration > 0) {
+          fragTicks = (fragTicks ?? 0) + defaultDuration * count;
+        }
+      }
+      const list = byTrack.get(trackId) || [];
+      const start = startTicks ?? cursor.get(trackId) ?? 0;
+      list.push({ start, duration: fragTicks });
+      cursor.set(trackId, fragTicks != null ? start + fragTicks : start);
+      byTrack.set(trackId, list);
+    }
+  }
+  let audioSeconds = null;
+  let anySeconds = null;
+  for (const [trackId, list] of byTrack) {
+    const track = tracks.find((t) => t.id === trackId);
+    if (!track || !track.timescale) continue;
+    let prevStep = null;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].duration == null) {
+        const next = list[i + 1];
+        if (next) list[i].duration = Math.max(0, next.start - list[i].start);
+        else if (prevStep != null) list[i].duration = prevStep;
+        else list[i].duration = 0;
+      }
+      if (list[i].duration > 0) prevStep = list[i].duration;
+    }
+    let endTicks = 0;
+    for (const frag of list) endTicks = Math.max(endTicks, frag.start + (frag.duration ?? 0));
+    const seconds = endTicks / track.timescale;
+    if (!Number.isFinite(seconds) || seconds <= 0) continue;
+    anySeconds = anySeconds == null ? seconds : Math.max(anySeconds, seconds);
+    if (track.handler === 'soun') audioSeconds = audioSeconds == null ? seconds : Math.max(audioSeconds, seconds);
+  }
+  return audioSeconds ?? anySeconds;
+}
+
 /**
  * Read the container-level movie duration from a bounded MP4 `moov` box.
  * This works for ordinary video MP4s even when the browser cannot expose
  * media-element metadata and no local AAC decoder is available.
  * @param {Blob} file
- * @param {{signal?: AbortSignal, maxMoovBytes?: number}} [options]
- * @returns {Promise<number|null>} duration in seconds
+ * @param {{signal?: AbortSignal, maxMoovBytes?: number, moovHeaderBytes?: number}} [options]
+ * @returns {Promise<{duration: number, source: string}|null>} duration in seconds and which header supplied it
  */
 export async function parseMp4Duration(file, options = {}) {
   const signal = options.signal || null;
   const maxMoovBytes = Math.min(64 * 1024 * 1024, Math.max(1024, options.maxMoovBytes || 32 * 1024 * 1024));
+  const moovHeaderBytes = Math.min(8 * 1024 * 1024, Math.max(1024, options.moovHeaderBytes || 1024 * 1024));
+  const maxTopBoxes = 8192;
+  const maxMoofs = 8192;
+  const maxMoofBytes = 1024 * 1024;
+  // Pass 1: walk the top-level boxes. Collect the moov position and every
+  // moof position; a box whose declared size runs past EOF means the file
+  // was cut off, which is a container error, not an unknown duration.
+  let moovAt = -1;
+  let moovSize = 0;
+  let moovHeader = 8;
+  const moofs = [];
+  let moofsComplete = true;
   let at = 0;
-  for (let count = 0; count < 256 && at + 8 <= file.size; count++) {
+  for (let count = 0; count < maxTopBoxes && at + 8 <= file.size; count++) {
     if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
     const header = new Uint8Array(await file.slice(at, Math.min(file.size, at + 16)).arrayBuffer());
-    if (header.length < 8) return null;
+    if (header.length < 8) { moofsComplete = false; break; }
     const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
     let size = view.getUint32(0);
     const type = fourcc(header, 4);
     let headerBytes = 8;
     if (size === 1) {
-      if (header.length < 16) return null;
+      if (header.length < 16) { moofsComplete = false; break; }
       size = Number(view.getBigUint64(8));
       headerBytes = 16;
     } else if (size === 0) {
       size = file.size - at;
     }
-    if (!Number.isSafeInteger(size) || size < headerBytes || at + size > file.size) return null;
-    if (type === 'moov') {
-      if (size > maxMoovBytes) return null;
-      const bytes = new Uint8Array(await file.slice(at, at + size).arrayBuffer());
-      if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
-      const moov = findChild(bytes, 0, bytes.length, 'moov');
-      if (!moov) return null;
-      const movieHeader = findChild(bytes, moov.start, moov.end, 'mvhd');
-      if (!movieHeader) return null;
-      const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      const version = bytes[movieHeader.start];
-      if (version !== 0 && version !== 1) return null;
-      const timescaleOffset = movieHeader.start + (version === 1 ? 20 : 12);
-      const durationOffset = movieHeader.start + (version === 1 ? 24 : 16);
-      const durationBytes = version === 1 ? 8 : 4;
-      if (timescaleOffset + 4 > movieHeader.end || durationOffset + durationBytes > movieHeader.end) return null;
-      const timescale = data.getUint32(timescaleOffset);
-      const rawTicks = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
-      const unknownTicks = rawTicks === 0n || rawTicks === 0xffffffffn || rawTicks === 0xffffffffffffffffn;
-      let ticks = unknownTicks || rawTicks > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(rawTicks);
-      if (unknownTicks || ticks === 0) {
-        const mvex = findChild(bytes, moov.start, moov.end, 'mvex');
-        const mehd = mvex ? findChild(bytes, mvex.start, mvex.end, 'mehd') : null;
-        if (mehd) {
-          const fragmentVersion = bytes[mehd.start];
-          const fragmentOffset = mehd.start + 4;
-          const fragmentTicks = fragmentVersion === 1 && fragmentOffset + 8 <= mehd.end
-            ? data.getBigUint64(fragmentOffset)
-            : fragmentOffset + 4 <= mehd.end ? BigInt(data.getUint32(fragmentOffset)) : 0n;
-          if (fragmentTicks > 0n && fragmentTicks <= BigInt(Number.MAX_SAFE_INTEGER)) ticks = Number(fragmentTicks);
-        }
+    if (!Number.isSafeInteger(size) || size < headerBytes) { moofsComplete = false; break; }
+    if (at + size > file.size) {
+      if (type === 'moov' || moovAt < 0) {
+        throw fail('INCOMPLETE_CONTAINER', '[VIP][FileIngestion] The MP4 movie header (moov) is incomplete — the file may have been truncated during download or export. Re-export or re-download the file and try again.');
       }
-      const seconds = timescale > 0 ? ticks / timescale : NaN;
-      return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+      break;
+    }
+    if (type === 'moov' && moovAt < 0) {
+      moovAt = at;
+      moovSize = size;
+      moovHeader = headerBytes;
+    } else if (type === 'moof' && moofs.length < maxMoofs) {
+      moofs.push({ at, size });
     }
     at += size;
+  }
+  if (at + 8 <= file.size) moofsComplete = false;
+  if (moovAt < 0) {
+    // No moov at all, and the file ends mid-box: the header the duration
+    // lives in never arrived. A clean walk with no moov is not an MP4
+    // duration source at all, so it falls through to the media probe.
+    if (at < file.size && at + 8 > file.size) {
+      throw fail('INCOMPLETE_CONTAINER', '[VIP][FileIngestion] The file ends before its MP4 movie header (moov) — the file may have been truncated during download or export. Re-export or re-download the file and try again.');
+    }
+    return null;
+  }
+  // Pass 2: read the moov. A huge moov is read as a bounded header window:
+  // mvhd/mehd and the track headers live at its start, so the duration
+  // sources that need them still resolve without loading tens of megabytes.
+  const moovComplete = moovSize <= maxMoovBytes;
+  const take = moovComplete ? moovSize : Math.min(moovSize, moovHeaderBytes);
+  const bytes = new Uint8Array(await file.slice(moovAt, moovAt + take).arrayBuffer());
+  if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
+  const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const moov = { start: moovHeader, end: bytes.length };
+  const mvhd = readMvhdDuration(bytes, data, moov);
+  const mvex = findChild(bytes, moov.start, moov.end, 'mvex');
+  const tracks = readMp4Tracks(bytes, data, moov, mvhd?.timescale ?? 0);
+  // Fragmented files: the moof timeline is authoritative. Encoders write a
+  // stale or zero mvhd duration for them (10.031 s declared vs 12.023 s of
+  // fragments is a real shape), so fragments outrank the movie header.
+  if (mvex && moofs.length && moofsComplete) {
+    const fragments = await readMp4FragmentDuration(file, moofs, tracks, { signal, maxMoofBytes });
+    if (fragments != null) return { duration: fragments, source: 'mp4-fragments' };
+  }
+  if (mvhd && mvhd.timescale > 0 && mvhd.ticks > 0) {
+    return { duration: mvhd.ticks / mvhd.timescale, source: 'mp4-mvhd' };
+  }
+  const mehdTicks = readMehdTicks(bytes, data, moov, mvex);
+  if (mehdTicks > 0 && mvhd?.timescale > 0) {
+    return { duration: mehdTicks / mvhd.timescale, source: 'mp4-mvhd' };
+  }
+  const trackSeconds = readMp4TrackDuration(tracks);
+  if (trackSeconds != null) return { duration: trackSeconds, source: 'mp4-track' };
+  if (moovComplete) {
+    const sttsSeconds = readMp4SttsSeconds(bytes, data, tracks);
+    if (sttsSeconds != null) return { duration: sttsSeconds, source: 'mp4-stts' };
   }
   return null;
 }
