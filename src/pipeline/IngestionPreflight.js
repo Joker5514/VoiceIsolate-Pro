@@ -10,12 +10,30 @@ export async function preflightIngestion(file, {
   signal, timeoutMs = 15000, onBudget = () => {}, profile = 'AUTO', modelIds = null,
 } = {}) {
   if (signal?.aborted) throw new DOMException('Ingestion cancelled', 'AbortError');
-  // Header walk, never blob.arrayBuffer() of the whole file before the budget decision.
-  let metadata = await runBounded(() => wavMetadataFor(file), {
-    timeoutMs, signal, timeoutCode: 'INGESTION_HEADER_TIMEOUT', timeoutMessage: 'Audio header read timed out.',
-  });
-  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  // Sniff the fixed-size container signature first: non-WAV inputs must not
+  // enter the bounded WAV chunk walk at all.
+  const head = new Uint8Array(await runBounded(() => file.slice(0, 12).arrayBuffer(), {
+    timeoutMs,
+    signal,
+    timeoutCode: 'INGESTION_HEADER_TIMEOUT',
+    timeoutMessage: 'Audio header read timed out.',
+  }));
   const signature = head.length >= 4 ? String.fromCharCode(head[0], head[1], head[2], head[3]) : '';
+  const isWave = ['RIFF', 'RF64'].includes(signature)
+    && head.length >= 12
+    && String.fromCharCode(head[8], head[9], head[10], head[11]) === 'WAVE';
+  // Header walk, never blob.arrayBuffer() of the whole file before the budget decision.
+  const headerController = typeof AbortController === 'function' ? new AbortController() : null;
+  let metadata = isWave ? await runBounded(
+    () => wavMetadataFor(file, { signal: headerController?.signal, headerChecked: true }),
+    {
+      timeoutMs,
+      signal,
+      onStop: () => headerController?.abort(),
+      timeoutCode: 'INGESTION_HEADER_TIMEOUT',
+      timeoutMessage: 'Audio header read timed out.',
+    },
+  ) : null;
   if (!metadata && ['RIFF', 'RF64'].includes(signature)) {
     // Malformed PCM metadata is a decode error, not permission to allocate an
     // unbounded fallback capture. The browser decoder never sees this file.

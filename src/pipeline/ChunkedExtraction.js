@@ -372,29 +372,69 @@ export async function runChunkedExtraction(file, plan, options = {}) {
   }
 }
 
-/** Header parse used by tests and the WAV reader. Walks past the first 1 MiB
- * until fmt and data are both found, capped at 32 MiB of front matter. An
- * unfinished data size is trimmed when a metadata chunk ends the file. */
-export async function wavMetadataFor(file) {
+/** Header parse used by tests and the WAV reader. Reads a geometrically growing
+ * prefix (capped at 32 MiB) so large front-matter chunks do not cause a full
+ * prefix copy and parse for every 1 MiB increment. An unfinished data size is
+ * trimmed when a metadata chunk ends the file.
+ * @param {Blob} file
+ * @param {{signal?: AbortSignal}} [options]
+ */
+export async function wavMetadataFor(file, options = {}) {
   const size = Number(file?.size) || 0;
   const cap = Math.min(size > 0 ? size : WAV_HEADER_WALK_CAP, WAV_HEADER_WALK_CAP);
-  let buf = new Uint8Array(0);
+  const signal = options.signal || null;
+  if (!options.headerChecked) {
+    const header = new Uint8Array(await readHeaderSlice(file, 0, 12, signal));
+    if (signal?.aborted) throw abortError();
+    const signature = String.fromCharCode(...header.subarray(0, 4));
+    const wave = String.fromCharCode(...header.subarray(8, 12));
+    if (header.length < 12 || !['RIFF', 'RF64'].includes(signature) || wave !== 'WAVE') return null;
+  }
+  let length = 0;
   let meta = null;
-  while (buf.length < cap) {
-    const next = Math.min(cap, buf.length + WAV_HEADER_WINDOW);
-    const part = new Uint8Array(await file.slice(buf.length, next).arrayBuffer());
-    if (!part.length) break;
-    const joined = new Uint8Array(buf.length + part.length);
-    joined.set(buf, 0);
-    joined.set(part, buf.length);
-    buf = joined;
+  while (length < cap) {
+    if (signal?.aborted) throw abortError();
+    const next = Math.min(cap, Math.max(WAV_HEADER_WINDOW, length * 2));
+    const buf = new Uint8Array(await readHeaderSlice(file, 0, next, signal));
+    if (signal?.aborted) throw abortError();
+    if (buf.length <= length) break;
+    length = buf.length;
     meta = parseWavMetadata(buf, size || buf.length);
     if (meta) break;
   }
-  if (meta?.unfinishedData && size > buf.length) {
+  if (signal?.aborted) throw abortError();
+  if (meta?.unfinishedData && size > length) {
     const tailLen = Math.min(WAV_HEADER_WINDOW, size);
-    const tail = new Uint8Array(await file.slice(size - tailLen, size).arrayBuffer());
+    const tail = new Uint8Array(await readHeaderSlice(file, size - tailLen, size, signal));
+    if (signal?.aborted) throw abortError();
     meta = applyWavTail(meta, tail, size);
   }
   return meta;
+}
+
+function readHeaderSlice(file, start, end, signal) {
+  if (!signal) return file.slice(start, end).arrayBuffer();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const onAbort = () => finish(reject, abortError());
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    let pending;
+    try { pending = file.slice(start, end).arrayBuffer(); }
+    catch (error) { finish(reject, error); return; }
+    Promise.resolve(pending).then(
+      (buffer) => finish(resolve, buffer),
+      (error) => finish(reject, error),
+    );
+  });
 }
