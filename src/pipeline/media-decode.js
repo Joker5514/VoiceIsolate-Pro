@@ -6,8 +6,9 @@ import { inferMediaKind } from '../core/media-types.js';
 /** Minimum capture timeout — long files scale beyond this. */
 const MEDIA_DECODE_MIN_TIMEOUT_MS = 120_000;
 const AUDIO_DATA_DECODE_MIN_TIMEOUT_MS = 60_000;
-const AUDIO_DATA_DECODE_MAX_TIMEOUT_MS = 180_000;
+const AUDIO_DATA_DECODE_MAX_TIMEOUT_MS = 300_000;
 const FILE_READ_MIN_TIMEOUT_MS = 30_000;
+const FILE_READ_MAX_TIMEOUT_MS = 300_000;
 const MEDIA_PLAY_TIMEOUT_MS = 15_000;
 const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 10_000;
 /** Below 64 MiB a single arrayBuffer() read is faster than streaming chunks. */
@@ -40,8 +41,9 @@ function createTimeoutError(message, code) {
 function adaptiveTimeout(blob, override, minimum) {
   if (Number.isFinite(override) && override > 0) return Number(override);
   const sizeMiB = Math.max(0, Number(blob?.size || 0) / (1024 * 1024));
+  const maximum = minimum === FILE_READ_MIN_TIMEOUT_MS ? FILE_READ_MAX_TIMEOUT_MS : AUDIO_DATA_DECODE_MAX_TIMEOUT_MS;
   return Math.min(
-    AUDIO_DATA_DECODE_MAX_TIMEOUT_MS,
+    maximum,
     Math.max(minimum, minimum + Math.ceil(sizeMiB) * 1000),
   );
 }

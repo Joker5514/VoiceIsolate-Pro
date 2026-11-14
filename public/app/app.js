@@ -4026,7 +4026,15 @@ class VoiceIsolatePro {
       this._clearVideoElement();
     }
 
-    // Lightweight video picture preview (no audio decode).
+    // Video flag drives Save button label and future decode path; the
+    if (typeof this._clearVideoElement === 'function') {
+      this._clearVideoElement();
+    }
+
+    // Lightweight video picture preview (no audio decode). Keep it for
+    // immediate user feedback; the decode path will temporarily detach
+    // this element to avoid dual-demux stall during media capture (see
+    // ensureDecoded's preview suspension).
     if (isVideoFile && this.dom?.videoPlayer) {
       this.isVideo = true;
       try {
@@ -4166,6 +4174,21 @@ class VoiceIsolatePro {
         }
 
         stageStart('decode');
+        // Suspend video preview during audio capture to avoid dual-demux
+        // stall: a playing preview and the hidden capture element would
+        // both demux the same large video file, starving progress on
+        // mobile/Android and triggering the capture timeout.
+        let previewSuspended = false;
+        let savedPreviewUrl = null;
+        const previewEl = this.dom?.videoPlayer || null;
+        if (this.isVideo && previewEl && previewEl.src) {
+          try { previewEl.pause(); } catch {}
+          savedPreviewUrl = this._videoObjectUrl;
+          try { previewEl.removeAttribute('src'); previewEl.load?.(); } catch {}
+          if (savedPreviewUrl) { try { URL.revokeObjectURL(savedPreviewUrl); } catch {} }
+          this._videoObjectUrl = null;
+          previewSuspended = true;
+        }
         let decoded;
         try {
           this._decodeBudget = await preflightIngestion(file, {
@@ -4205,6 +4228,23 @@ class VoiceIsolatePro {
           assertDecodedIngestionBudget(decoded, file.size, this._decodeBudget);
         } finally {
           stageEnd('decode');
+          // Restore video preview after capture completes (or on preflight
+          // failure where decode was never attempted). Best-effort; a newer
+          // file may have already replaced this preview.
+          if (previewSuspended && this.isVideo && this._sourceFile) {
+            try {
+              const url = URL.createObjectURL(this._sourceFile);
+              this._videoObjectUrl = url;
+              if (previewEl) {
+                previewEl.src = url;
+                previewEl.muted = true;
+                previewEl.load?.();
+              }
+              if (this.dom?.videoCard) this.dom.videoCard.style.display = '';
+            } catch (err) {
+              structuredLog('warn', '[VIP] video preview restore failed', { err: err?.message });
+            }
+          }
         }
         await yieldToBrowser();
         if (fileSeq !== this._fileSeq) {
@@ -7227,7 +7267,7 @@ class VoiceIsolatePro {
       this._extremeCircularMag = Array.from({ length: 5 }, () => new Float32Array(halfN));
       this._extremeFrameIdx = 0;
     }
-    const noiseProfile = this._extremeNoiseProfile || this._trackNoiseFloor(mag, sr, HOP);
+    const noiseProfile = this._extremeNoiseProfile || this._trackNoiseFloor(mag, sr, hop);
     if (!this._extremeNoiseProfile) this._extremeNoiseProfile = noiseProfile;
 
     const bassCrushCutoff = Math.round((bassCrush / 100) * 0.045 * fftSize);
@@ -8391,6 +8431,7 @@ class VoiceIsolatePro {
       // `proc` is the stem from _computeSessionMetricsState; eval extracts of
       // this method (audio-metrics-exact) do not close over it, so fall back
       // to the same output/proc buffer that method already selected.
+      // eslint-disable-next-line no-undef
       const procBuf = (typeof proc !== 'undefined' && proc)
         || (this && (this.outputBuffer || this.procBuffer))
         || orig;

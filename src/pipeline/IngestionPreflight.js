@@ -8,13 +8,20 @@ import { wavMetadataFor } from './ChunkedExtraction.js';
 import { probeMediaMetadata, runBounded } from './media-decode.js';
 
 export async function preflightIngestion(file, {
-  signal, timeoutMs = 15000, onBudget = () => {}, profile = 'AUTO', modelIds = null,
+  signal, timeoutMs, onBudget = () => {}, profile = 'AUTO', modelIds = null,
 } = {}) {
+  // Video containers often need a longer header/mvhd probe (moov atom can be
+  // at the end of a fragmented MP4). Default 15 s is tight for large video
+  // uploads over slow storage; bump to 30 s for video so the preflight does
+  // not time out while the source is still valid.
+  const resolvedTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : ((() => { try { const k=(file?.type||'').toLowerCase(); const n=(file?.name||'').toLowerCase(); return k.startsWith('video/') || /\.(mp4|m4v|mov|mkv|webm|avi)$/i.test(n); } catch { return false; } })() ? 30000 : 15000);
   if (signal?.aborted) throw new DOMException('Ingestion cancelled', 'AbortError');
   // Sniff the fixed-size container signature first: non-WAV inputs must not
   // enter the bounded WAV chunk walk at all.
   const head = new Uint8Array(await runBounded(() => file.slice(0, 12).arrayBuffer(), {
-    timeoutMs,
+    timeoutMs: resolvedTimeoutMs,
     signal,
     timeoutCode: 'INGESTION_HEADER_TIMEOUT',
     timeoutMessage: 'Audio header read timed out.',
@@ -32,7 +39,7 @@ export async function preflightIngestion(file, {
   let metadata = isWave ? await runBounded(
     () => wavMetadataFor(file, { signal: headerController?.signal, headerChecked: true }),
     {
-      timeoutMs,
+      timeoutMs: resolvedTimeoutMs,
       signal,
       onStop: () => headerController?.abort(),
       timeoutCode: 'INGESTION_HEADER_TIMEOUT',
@@ -50,7 +57,7 @@ export async function preflightIngestion(file, {
       const duration = await runBounded(
         () => parseMp4Duration(file, { signal: mp4Controller?.signal }),
         {
-          timeoutMs,
+          timeoutMs: resolvedTimeoutMs,
           signal,
           onStop: () => mp4Controller?.abort(),
           timeoutCode: 'INGESTION_HEADER_TIMEOUT',
@@ -66,7 +73,7 @@ export async function preflightIngestion(file, {
     }
   }
   if (!metadata) {
-    try { metadata = await probeMediaMetadata(file, signal, timeoutMs); }
+    try { metadata = await probeMediaMetadata(file, signal, resolvedTimeoutMs); }
     catch (error) {
       if (error.name === 'AbortError' || error.code === 'ABORT_ERR') throw error;
       metadata = null;

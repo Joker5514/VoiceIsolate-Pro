@@ -360,10 +360,18 @@ export class ProcessingOrchestrator {
         requestId,
         reject: (error) => settle(() => reject(error)),
       };
+      // Adaptive timeout mirrors StemSeparation: 5 min baseline, +4 s per
+      // second of audio so long video soundtracks do not falsely time out
+      // while the worker is still sending progress heartbeats.
+      const durationSec = (channelData[0]?.length || 0) / Math.max(1, sampleRate);
+      const adaptiveTimeoutMs = Math.max(
+        300000,
+        Math.ceil(durationSec * 4000 + 60_000),
+      );
       timeout = setTimeout(() => {
         try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
         failWorker(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout'));
-      }, 300000);
+      }, adaptiveTimeoutMs);
       stallWatch = setInterval(() => {
         if (Date.now() - lastProgressAt < 45000) return;
         try { worker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }

@@ -40,7 +40,32 @@ export default [
   },
   {
     files: ['public/app/batch-orchestrator.js'],
-    languageOptions: { globals: { createFFmpeg: 'readonly', DSPCore: 'readonly' } },
+    languageOptions: {
+      globals: {
+        createFFmpeg: 'readonly',
+        DSPCore: 'readonly',
+        process: 'readonly',
+        require: 'readonly',
+      },
+    },
+  },
+  {
+    files: ['public/app/batch-processor.js'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        require: 'readonly',
+      },
+    },
+  },
+  {
+    files: ['public/app/dsp-core.js'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        require: 'readonly',
+      },
+    },
   },
 
   // ── Specific file overrides (come after catch-all; later entries win) ─────────

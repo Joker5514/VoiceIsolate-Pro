@@ -132,15 +132,21 @@
     // --- Extended container detection (KEY FIX) ---
     const isVideoFile = needsVideoFallback(file);
 
-    // Revoke any previous video object URL
-    if (this.dom && this.dom.videoPlayer && this.dom.videoPlayer.src) {
+    // Clear any previous video preview; muted preview is wired only after
+    // audio decode completes to avoid dual-demux stall on large video uploads.
+    if (typeof this._clearVideoElement === 'function') {
+      this._clearVideoElement();
+    } else if (this.dom && this.dom.videoPlayer && this.dom.videoPlayer.src) {
       const prev = this.dom.videoPlayer;
       try { URL.revokeObjectURL(prev.src); } catch (_) { /* ignore */ }
       try {
         if (typeof prev.removeAttribute === 'function') prev.removeAttribute('src');
         else prev.src = '';
       } catch (_) { /* ignore */ }
+      if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = 'none';
     }
+    this.isVideo = isVideoFile;
+    if (!isVideoFile && this.dom?.videoCard) this.dom.videoCard.style.display = 'none';
 
     let buffer;
     try {
@@ -153,10 +159,6 @@
         // but whose raw bytes Web Audio cannot demux directly)
         try {
           buffer = await this.decodeViaVideoElement(file);
-          if (buffer && this.dom && this.dom.videoPlayer) {
-            try { this.dom.videoPlayer.src = URL.createObjectURL(file); } catch (_) { /* ignore */ }
-          }
-          if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = '';
           this.isVideo = true;
         } catch (_vidErr) {
           if (this.dom && this.dom.fileInfo)
@@ -186,10 +188,12 @@
     if (isVideoFile && this.dom && this.dom.videoPlayer) {
       this.isVideo = true;
       try {
-        if (!this.dom.videoPlayer.src)
-          this.dom.videoPlayer.src = URL.createObjectURL(file);
+        const url = URL.createObjectURL(file);
+        this._videoObjectUrl = url;
+        this.dom.videoPlayer.src = url;
+        this.dom.videoPlayer.muted = true;
+        this.dom.videoPlayer.load?.();
       } catch (_) { /* ignore */ }
-      this.dom.videoPlayer.muted = true;
       if (this.dom.videoCard) this.dom.videoCard.style.display = '';
     } else {
       this.isVideo = false;
@@ -224,11 +228,30 @@
       return;
     }
 
-    VIP.prototype.handleFile = patchedHandleFile;
+    // Keep the modern implementation (with ingest budget, adaptive timeouts,
+    // and deferred video preview) for video files and large uploads. The
+    // legacy M4A patch is only needed for small audio/mp4 voice memos on
+    // iOS Safari where the AudioContext is suspended.
+    const originalHandleFile = VIP.prototype.handleFile;
+    const originalNeedsPatch = typeof originalHandleFile === 'function';
+    VIP.prototype.handleFile = function handleFileWithM4AFallback(file) {
+      const isLargeVideo = (() => {
+        try {
+          const n = (file && file.name || '').toLowerCase();
+          const t = (file && file.type || '').toLowerCase();
+          const isVideo = t.startsWith('video/') || /\.(mp4|m4v|mov|mkv|webm|avi)$/i.test(n);
+          return isVideo && (file.size || 0) > 20 * 1024 * 1024;
+        } catch { return false; }
+      })();
+      if (isLargeVideo && originalNeedsPatch) {
+        return originalHandleFile.call(this, file);
+      }
+      return patchedHandleFile.call(this, file);
+    };
 
     // Also patch the live instance if it already exists
     if (window._vipApp && typeof window._vipApp.handleFile === 'function') {
-      window._vipApp.handleFile = patchedHandleFile.bind(window._vipApp);
+      window._vipApp.handleFile = VIP.prototype.handleFile.bind(window._vipApp);
     }
 
     // Re-bind the fileInput change handler on the live instance so it calls

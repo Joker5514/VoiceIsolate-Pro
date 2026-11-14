@@ -296,12 +296,21 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     let settled = false;
     let cancelPosted = false;
     let cancelGraceTimer = null;
+    // Adaptive timeout: longer audio needs more inference time. Baseline
+    // 180 s covers typical 5 min clips; scale ~4 s per second of audio for
+    // long video soundtracks (e.g., 10 min → ~420 s) so video does not time
+    // out while the MLWorker is still making progress.
+    const durationSec = (channelData[0]?.length || 0) / Math.max(1, sampleRate);
+    const adaptiveTimeoutMs = Math.max(
+      PROCESS_TIMEOUT_MS,
+      Math.ceil(durationSec * 4000 + 60_000),
+    );
     const timer = setTimeout(() => {
       finish(() => {
         resetStemSeparation();
         reject(new Error('[VIP][StemSeparation] processing timeout'));
       });
-    }, PROCESS_TIMEOUT_MS);
+    }, adaptiveTimeoutMs);
     // Fail fast when the worker goes silent mid-job (common "stuck at ~55%" UX).
     const stallWatch = setInterval(() => {
       if (Date.now() - lastProgressAt < PROGRESS_STALL_MS) return;

@@ -221,7 +221,7 @@ let processPlan = null;
 let processWatch = null;
 let lastProcessProgress = 0;
 const PROCESS_STALL_MS = 45000;
-const MODEL_LOAD_MAX_MS = 180000;
+const MODEL_LOAD_MAX_MS = 300000;
 let lastRealProgress = 0;
 // A backgrounded tab or a locked Android screen pauses timers and the worker;
 // on return, give the job a fresh stall window instead of failing it at once.
