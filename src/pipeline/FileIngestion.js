@@ -29,6 +29,7 @@ import { inferMediaKind, isGenericMimeType, isImageFile, resolveMediaKind } from
 import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
+import { emitIngestionDebug } from '../core/ingestion-debug.js';
 import { copyFloat32Channel, createAbortableYield } from './ui-yield.js';
 import { preflightIngestion, assertDecodedIngestionBudget } from './IngestionPreflight.js';
 import {
@@ -369,6 +370,7 @@ export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode, signal = null, audioContext = null, onWarning = null, tier = null } = hooks;
   const modelIds = hooks.modelIds?.length ? hooks.modelIds : getModelIdsForMode(isolationMode);
   throwIfCancelled(signal);
+  emitIngestionDebug('ingest:start', { fileName: file?.name || 'untitled', fileBytes: file?.size ?? null, mime: file?.type || 'unknown' });
   // Magic-byte sniff for Windows octet-stream / extensionless renames.
   // VIP-009: tier size policy + WAV decode-cost probe run here, before decode.
   await assertIngestibleAsync(file, {
@@ -377,6 +379,7 @@ export async function ingestFile(file, hooks = {}) {
     tier,
     onWarning,
   });
+  emitIngestionDebug('ingest:validated', { fileName: file.name || 'untitled' });
   throwIfCancelled(signal);
   const budget = await preflightIngestion(file, {
     signal, timeoutMs: hooks.metadataTimeoutMs,
@@ -386,8 +389,10 @@ export async function ingestFile(file, hooks = {}) {
   });
   throwIfCancelled(signal);
 
+  emitIngestionDebug('ingest:plan', { strategy: budget.strategy, duration: budget.duration ?? null, tier: budget.tier || null });
   if (budget.strategy === 'chunked') {
     onProgress('done', 100);
+    emitIngestionDebug('ingest:chunked-ready', { duration: budget.duration, strategy: 'chunked', tier: budget.tier || null });
     return {
       strategy: 'chunked',
       channelData: [],
@@ -403,6 +408,7 @@ export async function ingestFile(file, hooks = {}) {
   }
 
   onProgress('decoding', 5);
+  emitIngestionDebug('decode:start', { maxCaptureBytes: budget.budgetBytes ?? null });
   stageStart('decode');
   let decoded;
   try {
@@ -418,6 +424,10 @@ export async function ingestFile(file, hooks = {}) {
     // Container metadata can be wrong. Refuse before resampling/extraction if
     // the actual decoded layout exceeds the plan; never truncate/downsample.
     assertDecodedIngestionBudget(decoded, file.size, budget);
+    emitIngestionDebug('decode:success', { duration: decoded.duration, sampleRate: decoded.sampleRate, channels: decoded.numberOfChannels, frames: decoded.length });
+  } catch (error) {
+    emitIngestionDebug('decode:error', { code: error?.code || error?.name || 'ERROR', message: error?.message || String(error) });
+    throw error;
   } finally {
     stageEnd('decode');
   }
@@ -433,6 +443,7 @@ export async function ingestFile(file, hooks = {}) {
     decoded.sampleRate || SAMPLE_RATE,
   );
 
+  emitIngestionDebug('resample:start', { sourceRate: decoded.sampleRate, targetRate: SAMPLE_RATE });
   onProgress('resampling', 10);
   stageStart('resample');
   let canonical;
@@ -458,6 +469,7 @@ export async function ingestFile(file, hooks = {}) {
   const channelData = await extractChannels(canonical, signal);
   throwIfCancelled(signal);
   onProgress('done', 100);
+  emitIngestionDebug('ingest:done', { duration: canonical.duration, sampleRate: SAMPLE_RATE, channels: channelData.length, frames: canonical.length });
   
   // Get model IDs for the selected isolation mode
   return {

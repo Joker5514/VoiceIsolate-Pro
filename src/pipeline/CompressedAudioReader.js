@@ -160,33 +160,60 @@ export async function parseMp4Duration(file, options = {}) {
       if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
       const moov = findChild(bytes, 0, bytes.length, 'moov');
       if (!moov) return null;
-      const movieHeader = findChild(bytes, moov.start, moov.end, 'mvhd');
-      if (!movieHeader) return null;
       const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      const version = bytes[movieHeader.start];
-      if (version !== 0 && version !== 1) return null;
-      const timescaleOffset = movieHeader.start + (version === 1 ? 20 : 12);
-      const durationOffset = movieHeader.start + (version === 1 ? 24 : 16);
-      const durationBytes = version === 1 ? 8 : 4;
-      if (timescaleOffset + 4 > movieHeader.end || durationOffset + durationBytes > movieHeader.end) return null;
-      const timescale = data.getUint32(timescaleOffset);
-      const rawTicks = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
-      const unknownTicks = rawTicks === 0n || rawTicks === 0xffffffffn || rawTicks === 0xffffffffffffffffn;
-      let ticks = unknownTicks || rawTicks > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(rawTicks);
-      if (unknownTicks || ticks === 0) {
-        const mvex = findChild(bytes, moov.start, moov.end, 'mvex');
-        const mehd = mvex ? findChild(bytes, mvex.start, mvex.end, 'mehd') : null;
-        if (mehd) {
-          const fragmentVersion = bytes[mehd.start];
-          const fragmentOffset = mehd.start + 4;
-          const fragmentTicks = fragmentVersion === 1 && fragmentOffset + 8 <= mehd.end
-            ? data.getBigUint64(fragmentOffset)
-            : fragmentOffset + 4 <= mehd.end ? BigInt(data.getUint32(fragmentOffset)) : 0n;
-          if (fragmentTicks > 0n && fragmentTicks <= BigInt(Number.MAX_SAFE_INTEGER)) ticks = Number(fragmentTicks);
+      const movieHeader = findChild(bytes, moov.start, moov.end, 'mvhd');
+      let movieSeconds = null;
+      if (movieHeader) {
+        const version = bytes[movieHeader.start];
+        if (version === 0 || version === 1) {
+          const timescaleOffset = movieHeader.start + (version === 1 ? 20 : 12);
+          const durationOffset = movieHeader.start + (version === 1 ? 24 : 16);
+          const durationBytes = version === 1 ? 8 : 4;
+          if (timescaleOffset + 4 <= movieHeader.end && durationOffset + durationBytes <= movieHeader.end) {
+            const timescale = data.getUint32(timescaleOffset);
+            const rawTicks = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
+            const unknownTicks = rawTicks === 0n || rawTicks === 0xffffffffn || rawTicks === 0xffffffffffffffffn;
+            let ticks = unknownTicks || rawTicks > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(rawTicks);
+            if (unknownTicks || ticks === 0) {
+              const mvex = findChild(bytes, moov.start, moov.end, 'mvex');
+              const mehd = mvex ? findChild(bytes, mvex.start, mvex.end, 'mehd') : null;
+              if (mehd) {
+                const fragmentVersion = bytes[mehd.start];
+                const fragmentOffset = mehd.start + 4;
+                const fragmentTicks = fragmentVersion === 1 && fragmentOffset + 8 <= mehd.end
+                  ? data.getBigUint64(fragmentOffset)
+                  : fragmentOffset + 4 <= mehd.end ? BigInt(data.getUint32(fragmentOffset)) : 0n;
+                if (fragmentTicks > 0n && fragmentTicks <= BigInt(Number.MAX_SAFE_INTEGER)) ticks = Number(fragmentTicks);
+              }
+            }
+            const seconds = timescale > 0 ? ticks / timescale : NaN;
+            if (Number.isFinite(seconds) && seconds > 0) movieSeconds = seconds;
+          }
         }
       }
-      const seconds = timescale > 0 ? ticks / timescale : NaN;
-      return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+      // Some phone encoders leave mvhd duration at zero/unknown while writing
+      // valid per-track mdhd durations. Use the longest valid track duration:
+      // it is conservative for memory planning and avoids inventing a duration.
+      let trackSeconds = 0;
+      for (const trak of walkBoxes(bytes, moov.start, moov.end)) {
+        if (trak.type !== 'trak') continue;
+        const mdia = findChild(bytes, trak.start, trak.end, 'mdia');
+        const mdhd = mdia ? findChild(bytes, mdia.start, mdia.end, 'mdhd') : null;
+        if (!mdhd) continue;
+        const version = bytes[mdhd.start];
+        if (version !== 0 && version !== 1) continue;
+        const timescaleOffset = mdhd.start + (version === 1 ? 20 : 12);
+        const durationOffset = mdhd.start + (version === 1 ? 24 : 16);
+        const durationBytes = version === 1 ? 8 : 4;
+        if (timescaleOffset + 4 > mdhd.end || durationOffset + durationBytes > mdhd.end) continue;
+        const timescale = data.getUint32(timescaleOffset);
+        const rawTicks = version === 1 ? data.getBigUint64(durationOffset) : BigInt(data.getUint32(durationOffset));
+        if (!timescale || rawTicks === 0n || rawTicks === 0xffffffffn || rawTicks === 0xffffffffffffffffn
+          || rawTicks > BigInt(Number.MAX_SAFE_INTEGER)) continue;
+        const seconds = Number(rawTicks) / timescale;
+        if (Number.isFinite(seconds) && seconds > trackSeconds) trackSeconds = seconds;
+      }
+      return movieSeconds || (trackSeconds > 0 ? trackSeconds : null);
     }
     at += size;
   }

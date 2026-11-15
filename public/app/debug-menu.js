@@ -74,6 +74,11 @@ function pushLog(level, args) {
   }
   window.addEventListener('error', e => pushLog('err', [e.message || String(e)]));
   window.addEventListener('unhandledrejection', e => pushLog('err', ['Unhandled:', String(e.reason)]));
+  window.addEventListener('vip:ingestion-debug', e => {
+    const detail = e?.detail || {};
+    const { stage = 'unknown', at, ...meta } = detail;
+    pushLog(stage.includes('error') || stage.includes('refused') ? 'err' : stage.includes('unavailable') ? 'warn' : 'info', ['[INGEST]', stage, JSON.stringify(meta)]);
+  });
 })();
 
 /* ── HTML template ─────────────────────────────────────────────────────── */
@@ -619,7 +624,7 @@ function mount() {
   document.body.appendChild(_panel);
 
   // Toggle button in header
-  const hdrActions = document.querySelector('.hdr-actions') || document.querySelector('.hdr');
+  const hdrActions = document.querySelector('.hdr-actions') || document.querySelector('.hdr') || document.querySelector('.v3-header__links') || document.querySelector('.v3-header');
   if (hdrActions) {
     _btn = document.createElement('button');
     _btn.id = 'vip-debug-toggle';
@@ -629,6 +634,7 @@ function mount() {
     _btn.innerHTML = '<span class="dbg-dot"></span>DBG';
     _btn.addEventListener('click', togglePanel);
     hdrActions.prepend(_btn);
+    if (document.querySelector('.v3-header__links')) _btn.classList.add('vip-debug-toggle--landing');
   }
 
   // Keyboard shortcut: backtick

@@ -6,6 +6,7 @@ import {
 import { parseMp4Duration } from './CompressedAudioReader.js';
 import { wavMetadataFor } from './ChunkedExtraction.js';
 import { probeMediaMetadata, runBounded } from './media-decode.js';
+import { emitIngestionDebug } from '../core/ingestion-debug.js';
 
 export async function preflightIngestion(file, {
   signal, timeoutMs = 15000, onBudget = () => {}, profile = 'AUTO', modelIds = null,
@@ -13,6 +14,7 @@ export async function preflightIngestion(file, {
   if (signal?.aborted) throw new DOMException('Ingestion cancelled', 'AbortError');
   // Sniff the fixed-size container signature first: non-WAV inputs must not
   // enter the bounded WAV chunk walk at all.
+  emitIngestionDebug('preflight:start', { fileName: file.name || 'untitled', fileBytes: file.size, mime: file.type || 'unknown' });
   const head = new Uint8Array(await runBounded(() => file.slice(0, 12).arrayBuffer(), {
     timeoutMs,
     signal,
@@ -45,6 +47,7 @@ export async function preflightIngestion(file, {
     throw new Error(`[VIP][FileIngestion] Could not decode '${file.name || 'file'}': invalid or incomplete WAV header.`);
   }
   if (!metadata && isMp4) {
+    emitIngestionDebug('metadata:mp4-probe:start', { fileName: file.name || 'untitled' });
     const mp4Controller = typeof AbortController === 'function' ? new AbortController() : null;
     try {
       const duration = await runBounded(
@@ -58,19 +61,23 @@ export async function preflightIngestion(file, {
         },
       );
       if (Number.isFinite(duration) && duration > 0) {
+        emitIngestionDebug('metadata:mp4-probe:success', { duration, source: 'mp4-mvhd-or-track' });
         metadata = { duration, channels: null, sampleRate: null, bitDepth: null, source: 'mp4-mvhd', complete: false };
       }
     } catch (error) {
+      emitIngestionDebug('metadata:mp4-probe:error', { code: error?.code || error?.name || 'ERROR', message: error?.message || String(error) });
       if (error.name === 'AbortError' || error.code === 'ABORT_ERR') throw error;
       // Fall through to the browser's media-element probe for unusual MP4s.
     }
   }
   if (!metadata) {
+    emitIngestionDebug('metadata:browser-probe:start', { fileName: file.name || 'untitled' });
     try { metadata = await probeMediaMetadata(file, signal, timeoutMs); }
     catch (error) {
       if (error.name === 'AbortError' || error.code === 'ABORT_ERR') throw error;
       metadata = null;
     }
+    emitIngestionDebug(metadata?.duration > 0 ? 'metadata:browser-probe:success' : 'metadata:browser-probe:unavailable', { duration: metadata?.duration ?? null, source: metadata?.source || null });
   }
   const signals = readDeviceSignals();
   const tier = selectPerformanceTier(signals);
@@ -80,8 +87,13 @@ export async function preflightIngestion(file, {
     profile, contract, modelId: modelIds?.[0],
   });
   // Full-file `decision: refuse` is not a dead end when a chunk window fits.
-  if (estimate.strategy === 'refuse') throw budgetError(estimate, file.name);
+  emitIngestionDebug('preflight:plan', { strategy: estimate.strategy, duration: estimate.duration ?? null, estimatedBytes: estimate.estimatedBytes ?? null, budgetBytes: estimate.budgetBytes ?? null, tier: estimate.tier || tier, metadataSource: estimate.metadataSource || metadata?.source || null });
+  if (estimate.strategy === 'refuse') {
+    emitIngestionDebug('preflight:refused', { code: 'INGESTION_METADATA_REQUIRED', known: estimate.known });
+    throw budgetError(estimate, file.name);
+  }
   onBudget(estimate);
+  emitIngestionDebug('preflight:ready', { strategy: estimate.strategy, duration: estimate.duration });
   return estimate;
 }
 

@@ -426,3 +426,17 @@
     max-height: calc(100dvh - 52px - 72px - 64px);
   }
 }
+
+/* Landing/Stems header placement: keep the diagnostic toggle visible on compact screens. */
+#vip-debug-toggle.vip-debug-toggle--landing {
+  margin-inline: 8px;
+  min-height: 30px;
+  align-self: center;
+}
+@media (max-width: 720px) {
+  #vip-debug-toggle.vip-debug-toggle--landing {
+    padding: 5px 7px;
+    font-size: 9px;
+    margin-inline: 4px;
+  }
+}
