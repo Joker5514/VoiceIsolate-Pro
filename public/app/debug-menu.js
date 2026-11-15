@@ -26,7 +26,10 @@ function rememberDebugDismissed(on) {
 function ortDebugLabel() {
   const snap = typeof window !== 'undefined' ? window.__vipOrtStatus : null;
   if (snap && snap.provider && snap.provider !== 'unknown') {
-    if (snap.provider === 'wasm') return ['warn', 'WASM fallback'];
+    if (snap.provider === 'webgpu' && snap.providerVerified !== true) {
+      return ['warn', 'GPU candidate — provider not initialized'];
+    }
+    if (snap.provider === 'wasm') return ['warn', snap.providerVerified === true ? 'WASM fallback' : 'runtime present · provider idle'];
     if (snap.provider === 'webgpu') return ['ok', 'WebGPU active'];
     if (snap.provider === 'probing') return ['warn', 'Probing GPU…'];
     if (snap.provider === 'error') return ['err', snap.detail ? `ORT error: ${snap.detail}` : 'ORT error'];

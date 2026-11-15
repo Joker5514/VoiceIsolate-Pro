@@ -1147,9 +1147,10 @@ async function createSessionWithFallback(modelUrl, expectedSha256, executionProv
   const canUseWebGpu = Array.isArray(executionProviders) && executionProviders.includes('webgpu');
   if (canUseWebGpu) {
     try {
-      // EP: WebGPU primary, WASM fallback — local inference only, no cloud.
+      // WebGPU alone. A combined provider list can succeed on WASM and still
+      // look like a GPU session. Local inference only, no cloud.
       const session = await ort.InferenceSession.create(source, {
-        executionProviders: ['webgpu', 'wasm'],
+        executionProviders: ['webgpu'],
         graphOptimizationLevel: 'all',
       });
       return { session, provider: 'webgpu' };

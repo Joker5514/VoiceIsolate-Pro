@@ -25,12 +25,19 @@ VoiceIsolate Pro pins **`onnxruntime-web@1.25.1`** (see root `package.json`).
 - Execution providers: **`webgpu`** preferred, **`wasm`** fallback
 - Load ORT from the vendored bundle: `/lib/ort.min.js` (installed by `pnpm setup:ort`)
 
-Create sessions with:
+Create sessions with one provider at a time. Do not pass `webgpu` and `wasm` together: a combined list can succeed on WASM while the caller records WebGPU.
 
 ```javascript
-const session = await ort.InferenceSession.create('/models/silero-vad.onnx', {
-  executionProviders: ['webgpu', 'wasm'],
-});
+let session;
+try {
+  session = await ort.InferenceSession.create('/models/silero-vad.onnx', {
+    executionProviders: ['webgpu'],
+  });
+} catch {
+  session = await ort.InferenceSession.create('/models/silero-vad.onnx', {
+    executionProviders: ['wasm'],
+  });
+}
 ```
 
 ---

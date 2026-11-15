@@ -7,8 +7,8 @@
  * computed once per processed file on the CLEAN voice stem.
  *
  * Protocol (postMessage):
- *   → { type: 'diarize', requestId, samples: Float32Array, sampleRate }
- *   ← { type: 'segments', requestId, segments: Segment[], speakers: Summary[] }
+ *   → { type: 'diarize', requestId, samples: Float32Array, sampleRate, maxFrames?, budgetMs? }
+ *   ← { type: 'segments', requestId, segments: Segment[], speakers: Summary[], stats }
  *   ← { type: 'error', requestId?, message }
  */
 'use strict';
@@ -23,12 +23,16 @@ self.onmessage = (event) => {
         const samples = msg.samples instanceof Float32Array
           ? msg.samples
           : new Float32Array(msg.samples || []);
-        const segments = diarizeChannel(samples, msg.sampleRate);
+        const options = {};
+        if (Number.isFinite(Number(msg.maxFrames))) options.maxFrames = Number(msg.maxFrames);
+        if (Number.isFinite(Number(msg.budgetMs))) options.budgetMs = Number(msg.budgetMs);
+        const segments = diarizeChannel(samples, msg.sampleRate, options);
         self.postMessage({
           type: 'segments',
           requestId: msg.requestId,
           segments,
           speakers: summarizeSpeakers(segments),
+          stats: segments.stats || null,
         });
         break;
       }

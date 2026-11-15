@@ -15,6 +15,8 @@
  * @property {number} updatedAt
  * @property {string[]} modelsLoaded
  * @property {boolean} webgpuAvailable
+ * @property {boolean} providerVerified true only after InferenceSession.create succeeds
+ * @property {boolean} [runtimeLoaded]
  */
 
 /** @type {OrtStatusSnapshot} */
@@ -24,6 +26,8 @@ let _status = {
   updatedAt: 0,
   modelsLoaded: [],
   webgpuAvailable: false,
+  providerVerified: false,
+  runtimeLoaded: false,
 };
 
 /** @type {Set<(s: OrtStatusSnapshot) => void>} */
@@ -77,9 +81,10 @@ export function subscribeOrtStatus(fn) {
  * @returns {string}
  */
 export function formatOrtProviderLabel(s = getOrtStatus()) {
+  if (s.provider === 'webgpu' && s.providerVerified !== true) return 'Probing GPU…';
   switch (s.provider) {
     case 'webgpu': return 'WebGPU active';
-    case 'wasm': return 'WASM fallback';
+    case 'wasm': return s.providerVerified === true ? 'WASM fallback' : 'ORT idle';
     case 'probing': return 'Probing GPU…';
     case 'error': return s.detail ? `ORT error: ${s.detail}` : 'ORT error';
     default: return 'ORT idle';
@@ -112,10 +117,24 @@ export async function probeWebGpuAvailable() {
  * @param {object} msg
  */
 export function applyMlWorkerMessage(msg = {}) {
+  if (msg.type === 'ort-provider' && msg.providerVerified === true) {
+    const backend = String(msg.backend || '').toLowerCase();
+    if (backend === 'webgpu' || backend === 'wasm') {
+      setOrtStatus({
+        provider: backend,
+        providerVerified: true,
+        runtimeLoaded: true,
+        detail: null,
+        webgpuAvailable: backend === 'webgpu' || _status.webgpuAvailable,
+      });
+    }
+    return;
+  }
   if (msg.type === 'stage' && msg.stage === 'ort-fallback') {
     const backend = String(msg.backend || 'wasm').toLowerCase();
     setOrtStatus({
-      provider: backend === 'webgpu' ? 'webgpu' : 'wasm',
+      provider: backend === 'webgpu' && msg.providerVerified === true ? 'webgpu' : 'wasm',
+      providerVerified: true,
       detail: msg.detail || msg.label || 'WebGPU failed — local WASM retry',
       webgpuAvailable: _status.webgpuAvailable,
     });
@@ -123,10 +142,17 @@ export function applyMlWorkerMessage(msg = {}) {
   }
   if (msg.type === 'ready') {
     const backend = String(msg.backend || '').toLowerCase();
+    const verified = msg.providerVerified === true && (backend === 'webgpu' || backend === 'wasm');
     setOrtStatus({
-      provider: backend === 'webgpu' ? 'webgpu' : backend === 'wasm' ? 'wasm' : 'unknown',
-      detail: null,
-      webgpuAvailable: backend === 'webgpu' || _status.webgpuAvailable,
+      provider: verified ? backend : 'probing',
+      providerVerified: verified,
+      runtimeLoaded: true,
+      detail: verified
+        ? null
+        : (msg.gpuCandidate
+          ? 'WebGPU adapter present; provider not initialized'
+          : 'ONNX runtime loaded; execution provider not verified'),
+      webgpuAvailable: Boolean(msg.gpuCandidate) || _status.webgpuAvailable,
     });
     return;
   }

@@ -162,7 +162,7 @@ describe('ml-worker.js', () => {
     });
 
     expect(workerGlobal.self.ort.InferenceSession.create).toHaveBeenCalledTimes(2);
-    expect(workerGlobal.self.ort.InferenceSession.create.mock.calls[0][1].executionProviders).toEqual(['webgpu', 'wasm']);
+    expect(workerGlobal.self.ort.InferenceSession.create.mock.calls[0][1].executionProviders).toEqual(['webgpu']);
     expect(workerGlobal.self.ort.InferenceSession.create.mock.calls[1][1].executionProviders).toEqual(['wasm']);
 
     const readyMsg = postedMessages.find(m => m.type === 'ready');

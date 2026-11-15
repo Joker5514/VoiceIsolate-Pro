@@ -29,9 +29,14 @@ describe('Engineer mode slider/worklet wiring', () => {
 describe('ONNX init sequencing and fallback', () => {
   const mlSrc = read('public/app/ml-worker.js');
 
-  test('ml-worker uses WebGPU first with WASM fallback providers', () => {
-    expect(mlSrc).toContain("executionProviders: ['webgpu', 'wasm']");
+  test('ml-worker tries WebGPU alone, then WASM, and does not combine them in one session', () => {
+    expect(mlSrc).toContain("executionProviders: ['webgpu']");
     expect(mlSrc).toContain("executionProviders: ['wasm']");
+    const lists = [...mlSrc.matchAll(/executionProviders:\s*\[([^\]]+)\]/g)].map((match) => match[1]);
+    expect(lists.length).toBeGreaterThan(0);
+    expect(lists.some((list) => list.includes("'webgpu'"))).toBe(true);
+    expect(lists.some((list) => list.includes("'wasm'"))).toBe(true);
+    expect(lists.some((list) => list.includes("'webgpu'") && list.includes("'wasm'"))).toBe(false);
   });
 
   test('ml-worker handles init message and manages session lifecycle', () => {

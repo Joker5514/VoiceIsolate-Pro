@@ -69,7 +69,8 @@ describe('app.js + MLWorkerHost pill hooks', () => {
 
   test('MLWorker ready message updates ORT + ML pills', () => {
     expect(host).toContain("setPill('engOrtPill'");
-    expect(host).toContain("setPill('engMlPill', 'ready')");
+    expect(host).toContain("setPill('engMlPill', verified ? 'ready' : 'loading')");
+    expect(host).toContain('providerVerified === true');
     expect(host).toContain("msg.type === 'ready'");
   });
 

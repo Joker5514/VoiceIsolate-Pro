@@ -86,7 +86,8 @@ describe('DiarizationWorker', () => {
       // Verify diarization was called with correct parameters
       expect(mockDiarization.diarizeChannel).toHaveBeenCalledWith(
         expect.any(Float32Array),
-        48000
+        48000,
+        expect.any(Object),
       );
 
       // Verify summarize was called with segments
@@ -137,7 +138,8 @@ describe('DiarizationWorker', () => {
 
       expect(mockDiarization.diarizeChannel).toHaveBeenCalledWith(
         expect.any(Float32Array),
-        48000
+        48000,
+        expect.any(Object),
       );
       expect(postedMessages[0].type).toBe('segments');
     });
