@@ -38,6 +38,14 @@ export const WINDOW_SEC = 0.2;
 /** Analysis hop in seconds. */
 export const HOP_SEC = 0.1;
 /**
+ * Upper bound on analysis frames. Short files keep the natural 100 ms hop.
+ * Longer files decimate toward 16 kHz and then widen the hop so clustering
+ * stays inside a processing budget instead of timing out.
+ */
+export const MAX_DIARIZATION_FRAMES = 480;
+/** Wall-clock budget for feature extraction. Partial frames are clustered. */
+export const DEFAULT_DIARIZATION_BUDGET_MS = 8000;
+/**
  * RMS below this is treated as silence (no speaker). Deliberately low
  * (≈ −56 dBFS) so whispered/soft speech on the CLEAN stem is still captured;
  * the denoiser has already stripped background hiss, so a low floor admits
@@ -328,6 +336,49 @@ export function kMeans(features, k, maxIter = 20) {
   return labels;
 }
 
+function diarizationNow() {
+  return (typeof performance !== 'undefined' && typeof performance.now === 'function')
+    ? performance.now()
+    : Date.now();
+}
+
+function throwIfDiarizationAborted(signal) {
+  if (!signal?.aborted) return;
+  if (typeof DOMException === 'function') {
+    throw new DOMException('Diarization aborted', 'AbortError');
+  }
+  const err = new Error('Diarization aborted');
+  err.name = 'AbortError';
+  throw err;
+}
+
+/** Boxcar decimation. Used only after the natural frame count exceeds the cap. */
+function decimateForDiarization(samples, factor, shouldStop) {
+  const outLen = Math.floor(samples.length / factor);
+  const out = new Float32Array(outLen);
+  let produced = outLen;
+  for (let i = 0; i < outLen; i++) {
+    if ((i & 8191) === 0 && i > 0 && shouldStop?.()) {
+      produced = i;
+      break;
+    }
+    let sum = 0;
+    const base = i * factor;
+    for (let k = 0; k < factor; k++) sum += samples[base + k];
+    out[i] = sum / factor;
+  }
+  return produced === outLen ? out : out.subarray(0, produced);
+}
+
+function attachDiarizationStats(segments, stats) {
+  Object.defineProperty(segments, 'stats', {
+    value: Object.freeze(stats),
+    enumerable: false,
+    configurable: true,
+  });
+  return segments;
+}
+
 /**
  * Diarize one mono channel into speaker segments.
  *
@@ -335,43 +386,131 @@ export function kMeans(features, k, maxIter = 20) {
  * @param {number} sampleRate
  * @param {object} [options]
  * @param {number} [options.maxSpeakers]  cap on cluster count (2–8)
+ * @param {number} [options.maxFrames]    analysis-frame cap (default 480)
+ * @param {number} [options.budgetMs]     feature-extraction budget
+ * @param {AbortSignal} [options.signal]
  * @returns {Array<{speakerId: string, label: string, start: number, end: number, confidence: number}>}
  */
 export function diarizeChannel(samples, sampleRate, options = {}) {
-  if (!(samples instanceof Float32Array) || samples.length === 0) return [];
+  const started = diarizationNow();
+  const cap = Number.isFinite(options.maxFrames) && options.maxFrames >= 8
+    ? Math.floor(options.maxFrames)
+    : MAX_DIARIZATION_FRAMES;
+  const callerBudget = Number.isFinite(options.budgetMs) && options.budgetMs > 0;
+  const budgetMs = callerBudget ? options.budgetMs : DEFAULT_DIARIZATION_BUDGET_MS;
+  // The default clock budget is for files that exceed the frame cap.
+  // A short file already has a bounded frame count, and a busy CPU must
+  // not drop the second speaker to satisfy that backstop.
+  const stats = {
+    frames: 0,
+    hopSamples: 0,
+    windowSamples: 0,
+    sampleRate,
+    sourceRate: sampleRate,
+    decimated: false,
+    decimationFactor: 1,
+    hopAdapted: false,
+    truncated: false,
+    degraded: false,
+    elapsedMs: 0,
+    budgetMs,
+    maxFrames: cap,
+  };
+  const finish = (segments) => {
+    stats.elapsedMs = Math.round(diarizationNow() - started);
+    stats.degraded = stats.truncated || stats.decimated || stats.hopAdapted;
+    return attachDiarizationStats(segments, stats);
+  };
+
+  if (!(samples instanceof Float32Array) || samples.length === 0) return finish([]);
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
     throw new RangeError('[VIP][diarization] sampleRate must be a positive number.');
   }
+  throwIfDiarizationAborted(options.signal);
 
-  const winSamp = Math.round(WINDOW_SEC * sampleRate);
-  const hopSamp = Math.round(HOP_SEC * sampleRate);
+  const naturalWin = Math.round(WINDOW_SEC * sampleRate);
+  const naturalHop = Math.round(HOP_SEC * sampleRate);
   // A rate this low rounds the hop to zero samples — the analysis loop could
   // never advance. Reject it loudly rather than hang or guess.
-  if (hopSamp < 1 || winSamp < 1) {
+  if (naturalHop < 1 || naturalWin < 1) {
     throw new RangeError(
       `[VIP][diarization] sampleRate ${sampleRate} is too low for the ${WINDOW_SEC}s analysis window.`
     );
   }
 
+  let work = samples;
+  let rate = sampleRate;
+  let budgetArmed = callerBudget;
+  const naturalSpan = samples.length - naturalWin;
+  const naturalFrames = naturalSpan >= 0 ? Math.floor(naturalSpan / naturalHop) + 1 : 0;
+  if (naturalFrames > cap) budgetArmed = true;
+  if (naturalFrames > cap && sampleRate >= 32000) {
+    const factor = Math.max(2, Math.round(sampleRate / 16000));
+    if (factor > 1 && samples.length >= factor * naturalWin) {
+      const fullLen = Math.floor(samples.length / factor);
+      work = decimateForDiarization(samples, factor, () => {
+        throwIfDiarizationAborted(options.signal);
+        return diarizationNow() - started > budgetMs;
+      });
+      if (work.length < fullLen) stats.truncated = true;
+      rate = sampleRate / factor;
+      stats.decimated = true;
+      stats.decimationFactor = factor;
+      stats.sampleRate = rate;
+    }
+  }
+
+  let winSamp = Math.round(WINDOW_SEC * rate);
+  let hopSamp = Math.max(1, Math.round(HOP_SEC * rate));
+  if (winSamp < 1) winSamp = 1;
+  const span = work.length - winSamp;
+  if (span >= 0 && Math.floor(span / hopSamp) + 1 > cap) {
+    // floor(span / hop) + 1 === cap + 1 when hop is span / cap exactly.
+    // The last legal start is (cap - 1) hops from zero.
+    hopSamp = Math.max(hopSamp, Math.ceil(span / Math.max(1, cap - 1)));
+    stats.hopAdapted = true;
+  }
+  stats.hopSamples = hopSamp;
+  stats.windowSamples = winSamp;
+
   // Per-window: energy (RMS) for VAD/confidence, plus the identity vector
   // [zcr, flatness, ...melFingerprint] used for clustering. Energy is kept out
   // of the identity vector on purpose — loudness is not who is speaking.
+  // Silent windows skip the FFT. Their features never enter k-means.
   const energies = [];
   const idFeatures = [];
   const frameStarts = [];
-  for (let i = 0; i + winSamp <= samples.length; i += hopSamp) {
-    const frame = samples.subarray(i, i + winSamp);
+  let lastCovered = 0;
+  for (let i = 0; i + winSamp <= work.length; i += hopSamp) {
+    if (stats.frames >= cap) {
+      stats.truncated = true;
+      break;
+    }
+    if (stats.frames > 0 && (stats.frames & 7) === 0) {
+      throwIfDiarizationAborted(options.signal);
+      if (budgetArmed && diarizationNow() - started > budgetMs) {
+        stats.truncated = true;
+        break;
+      }
+    }
+    const frame = work.subarray(i, i + winSamp);
     const [rms, zcr, flatness] = frameFeatures(frame);
-    const mel = melBands(frame, sampleRate);
+    energies.push(rms);
+    frameStarts.push(i);
+    lastCovered = i + winSamp;
+    stats.frames += 1;
+    if (rms < SILENCE_RMS) {
+      idFeatures.push(null);
+      continue;
+    }
+    const mel = melBands(frame, rate);
     const id = new Array(2 + mel.length);
     id[0] = zcr;
     id[1] = flatness;
     for (let b = 0; b < mel.length; b++) id[2 + b] = mel[b];
-    energies.push(rms);
     idFeatures.push(id);
-    frameStarts.push(i);
   }
-  if (idFeatures.length === 0) return [];
+  if (idFeatures.length === 0) return finish([]);
 
   // Cluster VOICED frames only. Silent windows must not participate: their
   // degenerate features skew the normalisation and absorb a whole cluster,
@@ -380,16 +519,17 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
   for (let fi = 0; fi < energies.length; fi++) {
     if (energies[fi] >= SILENCE_RMS) voicedIdx.push(fi);
   }
-  if (voicedIdx.length === 0) return [];
+  if (voicedIdx.length === 0) return finish([]);
 
   // Cluster count grows with duration; clamp to caller's cap and frame count.
-  const durSec = samples.length / sampleRate;
+  const covered = stats.truncated ? lastCovered : work.length;
+  const durSec = covered / rate;
   const maxSpeakers = Math.min(8, Math.max(2, options.maxSpeakers || 4));
   const k = Math.min(maxSpeakers, voicedIdx.length, durSec < 10 ? 2 : durSec < 30 ? 3 : 4);
 
   // Min-max normalise each IDENTITY dimension (over voiced frames) so no single
   // feature dominates the distance metric.
-  const dim = idFeatures[0].length;
+  const dim = idFeatures[voicedIdx[0]].length;
   const fMin = new Float64Array(dim).fill(Infinity);
   const fMax = new Float64Array(dim).fill(-Infinity);
   for (const fi of voicedIdx) {
@@ -433,16 +573,20 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
     const meanEnergy = segFrames > 0 ? segEnergy / segFrames : 0;
     segments.push({
       cluster: segCluster,
-      start: segStart / sampleRate,
-      end: endSamp / sampleRate,
+      start: segStart / rate,
+      end: endSamp / rate,
       confidence: Math.min(0.97, 0.68 + meanEnergy * 0.29),
     });
   };
 
+  const frameEnd = (fi) => frameStarts[fi] + winSamp;
+  const gapped = hopSamp > winSamp;
   for (let fi = 0; fi < frameStarts.length; fi++) {
     const cluster = labelByFrame.has(fi) ? labelByFrame.get(fi) : null;
-    if (cluster !== segCluster) {
-      flush(frameStarts[fi]);
+    const gap = fi > 0 && frameStarts[fi] > frameEnd(fi - 1);
+    // An adapted hop leaves audio between windows. That gap is not speech.
+    if (cluster !== segCluster || (gap && segCluster !== null)) {
+      flush(gap ? frameEnd(fi - 1) : frameStarts[fi]);
       segStart = frameStarts[fi];
       segCluster = cluster;
       segEnergy = 0;
@@ -453,33 +597,39 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
       segFrames++;
     }
   }
-  flush(samples.length);
+  if (frameStarts.length) {
+    const tail = frameEnd(frameStarts.length - 1);
+    const fileEnd = stats.truncated ? lastCovered : work.length;
+    flush(gapped ? Math.min(fileEnd, tail) : fileEnd);
+  }
 
   // Drop jitter, then relabel clusters compactly (S1, S2, …) in order of
   // first appearance so absent clusters never produce phantom speakers.
-  let kept = segments.filter((s) => s.end - s.start >= MIN_SEGMENT_SEC);
+  const minSec = gapped ? (winSamp / rate) : MIN_SEGMENT_SEC;
+  let kept = segments.filter((s) => s.end - s.start >= minSec - 1e-4);
 
   // Safety net: voiced content existed but every segment was shorter than
   // MIN_SEGMENT_SEC (pathological flip-flop before collapse). Emit one
   // continuous S1 covering the full voiced span so the mixer always has a
-  // speaker when there is audible speech.
-  if (kept.length === 0 && voicedIdx.length > 0) {
+  // speaker when there is audible speech. Skip this when the hop was widened:
+  // that span includes audio the sampler never observed.
+  if (kept.length === 0 && voicedIdx.length > 0 && !gapped) {
     const firstFi = voicedIdx[0];
     const lastFi = voicedIdx[voicedIdx.length - 1];
-    const start = frameStarts[firstFi] / sampleRate;
-    const end = (frameStarts[lastFi] + winSamp) / sampleRate;
+    const start = frameStarts[firstFi] / rate;
+    const end = (frameStarts[lastFi] + winSamp) / rate;
     if (end - start >= MIN_SEGMENT_SEC) {
       kept = [{
         cluster: 0,
         start,
-        end: Math.min(end, samples.length / sampleRate),
+        end: Math.min(end, covered / rate),
         confidence: 0.75,
       }];
     }
   }
 
   const idByCluster = new Map();
-  return kept.map((s) => {
+  return finish(kept.map((s) => {
     if (!idByCluster.has(s.cluster)) idByCluster.set(s.cluster, `S${idByCluster.size + 1}`);
     const speakerId = idByCluster.get(s.cluster);
     return {
@@ -489,7 +639,7 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
       end: s.end,
       confidence: s.confidence,
     };
-  });
+  }));
 }
 
 /**

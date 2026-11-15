@@ -33,6 +33,17 @@ import { mountedRangeSliders, summarizeSliderMount } from './debug-slider-count.
 async function runVipAudit() {
   'use strict';
 
+  if (window.VIP_engineerReady && typeof window.VIP_engineerReady.then === 'function') {
+    let settled = false;
+    await Promise.race([
+      Promise.resolve(window.VIP_engineerReady).then(() => { settled = true; }).catch(() => { settled = true; }),
+      new Promise((resolve) => setTimeout(resolve, 8000)),
+    ]);
+    if (!settled) {
+      console.warn('[VIP][audit] Engineer init did not finish within 8s; audit continued');
+    }
+  }
+
   const PASS  = '✅';
   const FAIL  = '❌';
   const WARN  = '⚠️';
@@ -62,7 +73,7 @@ async function runVipAudit() {
     log('pass', 1, `${sliderMount.found} slider controls found`);
   } else {
     log('fail', 1, `Only ${sliderMount.found}/${sliderMount.expected} sliders in DOM`,
-        'buildPanels may not have run');
+        'slider mount has not finished');
   }
 
   // ── 2. Tab panels ─────────────────────────────────────────────────────
@@ -116,11 +127,31 @@ async function runVipAudit() {
     log('warn', 7, 'SharedArrayBuffer unavailable (COOP/COEP headers missing)');
   }
 
-  // ── 8. WebGPU ──────────────────────────────────────────────────────────
-  if (navigator.gpu) {
-    log('pass', 8, 'WebGPU API present (ONNX will prefer GPU)');
+  // ── 8. ONNX provider ──────────────────────────────────────────────────
+  // navigator.gpu is not an initialized ONNX provider.
+  const ortStatus = window.__vipOrtStatus || null;
+  if (ortStatus && ortStatus.providerVerified === true && ortStatus.provider === 'webgpu') {
+    log('pass', 8, 'ONNX WebGPU provider initialized');
+  } else if (ortStatus && ortStatus.providerVerified === true && ortStatus.provider === 'wasm') {
+    log('pass', 8, 'ONNX WASM provider initialized');
+  } else if (ortStatus && ortStatus.provider === 'error') {
+    log('fail', 8, 'ONNX provider failed', ortStatus.detail || '');
+  } else if (ortStatus && (ortStatus.runtimeLoaded || ortStatus.provider === 'probing')) {
+    log('warn', 8, 'ONNX runtime loaded; execution provider not verified',
+      ortStatus.detail || '');
+  } else if (typeof navigator !== 'undefined' && navigator.gpu) {
+    log('warn', 8, 'WebGPU API present; ONNX has not initialized a GPU provider');
   } else {
-    log('warn', 8, 'WebGPU not available — ONNX will fall back to WASM');
+    log('warn', 8, 'WebGPU unavailable; ONNX WASM fallback is not verified yet');
+  }
+
+  function registryControlMounted(id) {
+    if (document.getElementById('sl_' + id)) return true;
+    const nodes = document.querySelectorAll('[data-slider-id]');
+    for (const node of nodes) {
+      if (node.getAttribute('data-slider-id') === id) return true;
+    }
+    return false;
   }
 
   // ── 9. SLIDER_REGISTRY DOM match ──────────────────────────────────────
@@ -128,7 +159,7 @@ async function runVipAudit() {
   let regMissing = 0;
   if (window.VIP_SLIDER_REGISTRY) {
     for (const entry of window.VIP_SLIDER_REGISTRY) {
-      if (!document.getElementById('sl_' + entry.id)) regMissing++;
+      if (!registryControlMounted(entry.id)) regMissing++;
     }
     if (regMissing === 0) {
       log('pass', 9, 'All SLIDER_REGISTRY entries have DOM matches');
@@ -180,7 +211,9 @@ async function runVipAudit() {
   }
 
   // ── 13. App instance ──────────────────────────────────────────────────
-  if (app) {
+  if (app && app._bootError) {
+    log('fail', 13, 'VoiceIsolatePro init failed', app._bootError.message || String(app._bootError));
+  } else if (app) {
     log('pass', 13, 'window._vipApp / window.vip instance found');
   } else {
     log('fail', 13, 'VoiceIsolatePro not bootstrapped');

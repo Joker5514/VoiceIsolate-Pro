@@ -212,6 +212,7 @@ export default [
     // Layers 1/3/4 — browser ES modules
     files: [
       'src/core/**/*.js',
+      'src/diagnostics/**/*.js',
       'src/pipeline/**/*.js',
       'src/presentation/**/*.js',
       'src/platform/**/*.js',

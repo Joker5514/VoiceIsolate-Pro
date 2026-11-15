@@ -1000,6 +1000,12 @@
       console.error('[VIP] Failed to load module: ./app.js', err);
       if (typeof window._vipReportError === 'function') window._vipReportError('./app.js', err);
     });
+    import('/src/diagnostics/LiveDiagnostics.js').then((mod) => {
+      mod.mountLiveDiagnostics('engineer');
+      mod.vipLog('info', 'engineer.boot', { page: 'engineer' });
+    }).catch((err) => {
+      console.warn('[VIP] live diagnostics unavailable:', err?.message || err);
+    });
     // Full-audio analysis workspace (timeline / audition / recommendations)
     await import('./lib/analysis-workspace.js').catch(err => {
       console.error('[VIP] Failed to load module: ./lib/analysis-workspace.js', err);

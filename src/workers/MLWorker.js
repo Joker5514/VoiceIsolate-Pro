@@ -15,7 +15,8 @@
  *
  * Protocol (postMessage):
  *   → { type: 'init', manifest: ManifestEntry[] }
- *   ← { type: 'ready', backend: 'webgpu'|'wasm' }
+ *   ← { type: 'ready', backend: 'wasm', gpuCandidate: boolean, providerVerified: false }
+ *   ← { type: 'ort-provider', backend: 'webgpu'|'wasm', providerVerified: true }
  *   → { type: 'process', requestId, modelId, channelData: Float32Array[], sampleRate }
  *   → { type: 'process', requestId, modelIds: string[], channelData, sampleRate }
  *        (chain — runs models in series, e.g. vocals → denoise, for maximum
@@ -149,8 +150,25 @@ async function queuedSessionRun(sessionKey, session, feeds, requestId) {
 
 /** Preferred execution backend from the one-shot GPU probe (not mutated by per-session fallback). */
 let BACKEND = null;
+/** Last verified session provider announced to the UI. */
+let _announcedProvider = null;
 /** Worker-wide WebGPU disable reason (device loss). Null while WebGPU remains eligible. */
 let _webgpuDisabledReason = null;
+
+function announceVerifiedProvider(provider, sessionKey) {
+  if (provider !== 'webgpu' && provider !== 'wasm') return;
+  // A later WASM session must not hide a live WebGPU session.
+  // Device loss clears that eligibility, so the WASM retry is announced.
+  if (provider === 'wasm' && _announcedProvider === 'webgpu' && !_webgpuDisabledReason) return;
+  if (_announcedProvider === provider) return;
+  _announcedProvider = provider;
+  self.postMessage({
+    type: 'ort-provider',
+    backend: provider,
+    providerVerified: true,
+    sessionKey,
+  });
+}
 
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
@@ -519,6 +537,7 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
   if (webgpuBlocked) {
     const session = await create(['wasm'], safeBytes);
     SESSION_BACKENDS[key] = 'wasm';
+    announceVerifiedProvider('wasm', key);
     return session;
   }
 
@@ -532,9 +551,11 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
       const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
       const wasmSession = await create(['wasm'], wasmBytes);
       SESSION_BACKENDS[key] = 'wasm';
+      announceVerifiedProvider('wasm', key);
       return wasmSession;
     }
     SESSION_BACKENDS[key] = 'webgpu';
+    announceVerifiedProvider('webgpu', key);
     return session;
   } catch (err) {
     const kind = classifyOrtFailure(err);
@@ -569,6 +590,7 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
     const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
     const session = await create(['wasm'], wasmBytes);
     SESSION_BACKENDS[key] = 'wasm';
+    announceVerifiedProvider('wasm', key);
     return session;
   }
 }
@@ -1816,8 +1838,15 @@ self.onmessage = async (event) => {
             ort.env.wasm.numThreads = Math.min(8, Math.max(1, cores - 1));
           }
         }
-        const backend = await resolveBackend();
-        self.postMessage({ type: 'ready', backend });
+        await resolveBackend();
+        // Adapter success is not a compiled provider. Report WASM as the
+        // unverified runtime until InferenceSession.create records one.
+        self.postMessage({
+          type: 'ready',
+          backend: 'wasm',
+          gpuCandidate: BACKEND === 'webgpu',
+          providerVerified: false,
+        });
         break;
       }
       case 'process': {

@@ -853,6 +853,10 @@ function structuredLog(level, msg, data = {}) {
     if (!window._vipLogs) window._vipLogs = [];
     if (window._vipLogs.length >= 200) window._vipLogs.shift();
     window._vipLogs.push(entry);
+    try {
+      const diagLevel = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
+      window.VIP_liveDiagnostics?.log?.(diagLevel, msg, data);
+    } catch { /* diagnostics must not affect the pipeline */ }
   }
   return entry;
 }
@@ -1114,17 +1118,28 @@ class VoiceIsolatePro {
     // orchestrator sets window._vipOrch.mlReady or window.VIP_ML_AVAILABLE in this build.
     // We avoid eagerly calling loadModels() here: it would download the 2MB model file on
     // the main thread, which is never used since actual inference runs in MLWorker.js.
-    const ort = (typeof window !== 'undefined' && window.ort) || (typeof globalThis !== 'undefined' && globalThis.ort);
-    if (ort && ort.InferenceSession) {
-      window.VIP_ML_AVAILABLE = true;
-      pill('engMlPill', 'ready');
-      // Provider not known until MLWorker posts `ready` — leave ORT loading.
-      pill('engOrtPill', 'loading');
-    } else {
+    // Load the vendored runtime after the slider rack is mounted. A loaded
+    // script is not a verified execution provider.
+    pill('engOrtPill', 'loading');
+    pill('engMlPill', 'loading');
+    void import('/src/pipeline/OrtRuntime.js').then(({ loadOrtRuntime }) => loadOrtRuntime()).then((rt) => {
+      if (rt?.ort) {
+        structuredLog('info', '[VIP] ONNX runtime loaded', {
+          providerVerified: false,
+          webgpuCandidate: rt.webgpuCandidate === true,
+        });
+        return;
+      }
       window.VIP_ML_AVAILABLE = false;
       pill('engMlPill', 'unavailable');
       pill('engOrtPill', 'unavailable');
-    }
+      structuredLog('warn', '[VIP] ONNX Runtime unavailable', { err: rt?.error || 'onnxruntime-web not loaded' });
+    }).catch((err) => {
+      window.VIP_ML_AVAILABLE = false;
+      pill('engMlPill', 'unavailable');
+      pill('engOrtPill', 'unavailable');
+      structuredLog('error', '[VIP] ONNX runtime bootstrap failed', { err: err?.message || String(err) });
+    });
 
     // SAB pill — capability is known at boot (COOP/COEP isolation).
     try {
@@ -2326,6 +2341,7 @@ class VoiceIsolatePro {
       ? window.VIP_PARAMS.whisperMode : (spec ? spec.val : 0);
 
     const row = document.createElement('div');
+    row.id = 'sl_whisperMode';
     row.className = 'sr-row whisper-mode-row';
     row.dataset.sliderId = 'whisperMode';
 
@@ -6699,27 +6715,10 @@ class VoiceIsolatePro {
 
   // ── ML model loading ──────────────────────────────────────────────────────
   async loadModels() {
-    const ort = (typeof window !== 'undefined' && window.ort) || (typeof globalThis !== 'undefined' && globalThis.ort);
-    if (!ort || !ort.InferenceSession) {
-      structuredLog('warn', '[VIP] ONNX Runtime unavailable');
-      this._dspOnlyMode = true;
-      window.VIP_ML_AVAILABLE = false;
-      pill('engMlPill', 'unavailable');
-      return null;
-    }
     let session = null;
     try {
-      ort.env.wasm.wasmPaths = './';
-      // Try WebGPU first, fall back to WASM-only
-      try {
-        session = await ort.InferenceSession.create('./models/rnnoise_suppressor.onnx', {
-          executionProviders: ['webgpu', 'wasm'],
-        });
-      } catch (_gpuErr) {
-        session = await ort.InferenceSession.create('./models/rnnoise_suppressor.onnx', {
-          executionProviders: ['wasm'],
-        });
-      }
+      const { createOrtSession } = await import('/src/pipeline/OrtRuntime.js');
+      session = await createOrtSession('./models/rnnoise_suppressor.onnx', { cacheKey: 'rnnoise' });
       this._onnxSession = session;
       this._onnxReady = true;
       this._dspOnlyMode = false;
@@ -9132,6 +9131,11 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
   if (typeof document === 'undefined' || typeof document.readyState !== 'string') return;
   if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') return;
 
+  var resolveEngineerReady = function () {};
+  window.VIP_engineerReady = new Promise(function (resolve) {
+    resolveEngineerReady = resolve;
+  });
+
   function _callAuthInit() {
     if (typeof Auth !== 'undefined' && Auth && typeof Auth.init === 'function') {
       Auth.init().catch(function(e) {
@@ -9141,21 +9145,35 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
   }
 
   function boot() {
-    if (window._vipApp) return;
+    if (window._vipApp) {
+      resolveEngineerReady(window._vipApp);
+      return;
+    }
     var app = null;
     try {
       app = new VoiceIsolatePro();
-      app.init();
+      var initResult = app.init();
       app._initCalled = true;
       window._vipApp = app;
       window.vip = app;
       console.info('[app] VoiceIsolatePro ready via app.js bootstrap');
+      Promise.resolve(initResult).then(function () {
+        app._bootError = null;
+      }).catch(function (e) {
+        app._bootError = e;
+        console.error('[app] init failed:', e);
+        if (typeof window._vipReportError === 'function') window._vipReportError('init', e);
+      }).then(function () {
+        resolveEngineerReady(app);
+      });
     } catch (e) {
       console.error('[app] Bootstrap failed:', e);
       window._vipApp = null;
       window.vip = null;
+      app = null;
       if (typeof window._vipDismissBootSplash === 'function') window._vipDismissBootSplash();
       if (typeof window._vipReportError === 'function') window._vipReportError('bootstrap', e);
+      resolveEngineerReady(null);
     }
     _callAuthInit();
   }

@@ -36,6 +36,7 @@ import {
 } from '/src/pipeline/video-export.js';
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
+import { mountLiveDiagnostics, vipLog } from '/src/diagnostics/LiveDiagnostics.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
 import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKeyAsync } from '/src/pipeline/MLStemCache.js';
 import { copyFloat32Channel, createYieldBudget } from '/src/pipeline/ui-yield.js';
@@ -1078,17 +1079,43 @@ function getWorker() {
           console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
         }
         // Provider status for research / UI (OrtStatus also updated in MLWorkerHost).
+        const verified = msg.providerVerified === true && (msg.backend === 'webgpu' || msg.backend === 'wasm');
         try {
-          const label = msg.backend === 'webgpu' ? 'WebGPU' : (msg.backend || 'WASM');
+          const label = verified && msg.backend === 'webgpu'
+            ? 'WebGPU'
+            : verified
+              ? 'WASM'
+              : (msg.gpuCandidate ? 'WASM (GPU not initialized)' : 'WASM (provider not initialized)');
           const el = document.getElementById('ortProviderHint');
           if (el) el.textContent = `Inference: ${label} (local)`;
           const backendLine = document.getElementById('backendStatusLine');
           if (backendLine) {
             backendLine.textContent = `Backend: ${label} · Fast/Balanced/Max via model chain · 100% local`;
-            backendLine.dataset.backend = String(msg.backend || 'wasm');
+            backendLine.dataset.backend = verified ? String(msg.backend) : 'unverified';
           }
+          vipLog(verified && msg.backend === 'webgpu' ? 'info' : 'warn', 'worker.ready', {
+            backend: msg.backend || null,
+            providerVerified: verified,
+            gpuCandidate: msg.gpuCandidate === true,
+          });
         } catch (_) { /* ignore */ }
-        quickClean.setBackend(msg.backend);
+        quickClean.setBackend(verified && msg.backend === 'webgpu' ? 'webgpu' : 'wasm');
+        void refreshPreflight();
+        break;
+      }
+      case 'ort-provider': {
+        if (msg.providerVerified !== true) break;
+        const backend = msg.backend === 'webgpu' ? 'webgpu' : 'wasm';
+        const label = backend === 'webgpu' ? 'WebGPU' : 'WASM';
+        const el = document.getElementById('ortProviderHint');
+        if (el) el.textContent = `Inference: ${label} (local)`;
+        const backendLine = document.getElementById('backendStatusLine');
+        if (backendLine) {
+          backendLine.textContent = `Backend: ${label} · Fast/Balanced/Max via model chain · 100% local`;
+          backendLine.dataset.backend = backend;
+        }
+        quickClean.setBackend(backend);
+        vipLog('info', 'ort.provider', { backend, providerVerified: true });
         void refreshPreflight();
         break;
       }
@@ -1192,17 +1219,32 @@ async function detectSpeakers(clean, sampleRate) {
   const ctl = new AbortController();
   speakerDetectAbort = ctl;
   try {
-    const { segments, speakers, method } = await detectSpeakersPipeline(clean, sampleRate, { signal: ctl.signal });
+    const result = await detectSpeakersPipeline(clean, sampleRate, { signal: ctl.signal });
     if (seq !== requestSeq) return;
+    const segments = result?.segments || [];
+    const speakers = result?.speakers || [];
+    const method = result?.method;
+    const status = result?.status;
+    const reason = result?.reason;
     mixer.loadSpeakerSegments(segments);
     const count = speakerControls.render(speakers);
-    const methodLabel = method === 'onnx' ? 'ONNX embeddings' : 'spectral fingerprint';
+    const methodLabel = method === 'onnx' ? 'ONNX embeddings' : method === 'kmeans' ? 'spectral fingerprint' : 'unavailable';
+    const degradedNote = status === 'degraded'
+      ? ` Degraded${reason ? `: ${String(reason).slice(0, 180)}` : '.'}`
+      : '';
     setSpeakerStatus(count === 0
-      ? 'No distinct speakers detected.'
-      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`);
+      ? `No distinct speakers detected.${degradedNote}`
+      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel}).${degradedNote}`);
+    if (status === 'degraded') {
+      console.warn('[VIP][landing] speaker detection degraded:', reason || method);
+      vipLog('warn', 'speaker.degraded', { method, reason: reason || null, speakers: count });
+    } else {
+      vipLog('info', 'speaker.done', { method, speakers: count, segments: segments.length });
+    }
   } catch (err) {
     if (seq !== requestSeq || ctl.signal.aborted) return;
     console.error('[VIP][landing] diarization failed:', err);
+    vipLog('error', 'speaker.failed', { message: err?.message || String(err) });
     mixer.loadSpeakerSegments([]);
     setSpeakerStatus(`Speaker detection unavailable: ${err.message}`);
   }
@@ -1557,6 +1599,14 @@ async function ingestFrom(file) {
       return;
     }
     ingested = next;
+    vipLog('info', 'ingest.decoded', {
+      bytes: file.size || 0,
+      duration: next.duration ?? null,
+      sampleRate: next.sampleRate ?? null,
+      channels: Array.isArray(next.channelData) ? next.channelData.length : null,
+      frames: next.channelData?.[0]?.length ?? null,
+      strategy: next.strategy || null,
+    }, { includeMemory: true });
     chunkedExportFile = null;
     mediaTransport.close();
     if (next.strategy === 'chunked') {
@@ -1672,6 +1722,7 @@ async function ingestFrom(file) {
     hideSpinner();
     clearVideo(); // nothing to play — don't leave a dangling preview/object URL
     console.error('[VIP][landing] ingestion failed:', err);
+    vipLog('error', 'ingest.failed', { message: err?.message || String(err), bytes: file.size || 0 });
     setStatus(err.message, 'error');
     quickClean.setState('error', `Import failed: ${err.message}. Your source file is unchanged. Choose a supported format and retry.`);
     endJob(job.id, 'error', err);
@@ -2569,6 +2620,8 @@ wireTransport();
 wireMuteButtons();
 wireDragAndDrop();
 mountBadge();
+try { mountLiveDiagnostics('stems'); vipLog('info', 'stems.boot', { page: 'stems' }); }
+catch (err) { console.warn('[VIP][diagnostics] mount failed:', err?.message || err); }
 try { getWorker(); } catch (err) { quickClean.setBackend('unavailable'); quickClean.setState('error', err.message); }
 void refreshPreflight();
 wireClearLocalData();

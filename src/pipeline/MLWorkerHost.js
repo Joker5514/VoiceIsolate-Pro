@@ -34,26 +34,31 @@ export function createMLWorker() {
     const msg = ev.data || {};
     const setPill = globalThis._setVipEnginePill;
     if (typeof setPill !== 'function') return;
-    if (msg.type === 'ready') {
+    if (msg.type === 'ready' || (msg.type === 'ort-provider' && msg.providerVerified === true)) {
       const backend = String(msg.backend || '').toLowerCase();
-      setPill('engOrtPill', backend === 'webgpu' || backend === 'wasm' ? 'ready' : 'loading');
-      setPill('engMlPill', 'ready');
+      const verified = msg.providerVerified === true && (backend === 'webgpu' || backend === 'wasm');
+      setPill('engOrtPill', verified ? 'ready' : 'loading');
+      setPill('engMlPill', verified ? 'ready' : 'loading');
       try {
         const el = globalThis.document?.getElementById?.('engOrtPill');
         if (el) {
-          el.title = backend === 'webgpu'
-            ? 'ONNX Runtime: WebGPU (preferred)'
-            : backend === 'wasm'
-              ? 'ONNX Runtime: WASM fallback'
-              : `ONNX Runtime: ${backend || 'unknown'}`;
-          el.textContent = backend === 'webgpu' ? 'WebGPU' : backend === 'wasm' ? 'WASM' : 'ORT';
+          el.title = verified && backend === 'webgpu'
+            ? 'ONNX Runtime: WebGPU session initialized'
+            : verified
+              ? 'ONNX Runtime: WASM session initialized'
+              : 'ONNX Runtime loaded; execution provider not verified';
+          el.textContent = verified && backend === 'webgpu' ? 'WebGPU' : verified ? 'WASM' : 'ORT';
         }
         const ml = globalThis.document?.getElementById?.('engMlPill');
-        if (ml) ml.title = `Local ONNX ready (${backend || 'unknown'})`;
+        if (ml) ml.title = verified ? `Local ONNX session (${backend})` : 'Local ONNX runtime loaded';
         const strip = globalThis.document?.getElementById?.('ortBackendLabel');
         if (strip) {
-          strip.textContent = backend === 'webgpu' ? 'Backend: WebGPU' : backend === 'wasm' ? 'Backend: WASM' : 'Backend: —';
-          strip.dataset.backend = backend || '';
+          strip.textContent = verified && backend === 'webgpu'
+            ? 'Backend: WebGPU'
+            : verified
+              ? 'Backend: WASM'
+              : 'Backend: unverified';
+          strip.dataset.backend = verified ? backend : 'unverified';
         }
       } catch { /* ignore */ }
     } else if (msg.type === 'stems' && msg.modelChain) {
