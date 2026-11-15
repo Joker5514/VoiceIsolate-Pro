@@ -392,7 +392,7 @@ export async function ingestFile(file, hooks = {}) {
   emitIngestionDebug('ingest:plan', { strategy: budget.strategy, duration: budget.duration ?? null, tier: budget.tier || null });
   if (budget.strategy === 'chunked') {
     onProgress('done', 100);
-  emitIngestionDebug('ingest:done', { duration: canonical.duration, sampleRate: SAMPLE_RATE, channels: channelData.length, frames: canonical.length });
+    emitIngestionDebug('ingest:chunked-ready', { duration: budget.duration, strategy: 'chunked', tier: budget.tier || null });
     return {
       strategy: 'chunked',
       channelData: [],
@@ -425,6 +425,9 @@ export async function ingestFile(file, hooks = {}) {
     // the actual decoded layout exceeds the plan; never truncate/downsample.
     assertDecodedIngestionBudget(decoded, file.size, budget);
     emitIngestionDebug('decode:success', { duration: decoded.duration, sampleRate: decoded.sampleRate, channels: decoded.numberOfChannels, frames: decoded.length });
+  } catch (error) {
+    emitIngestionDebug('decode:error', { code: error?.code || error?.name || 'ERROR', message: error?.message || String(error) });
+    throw error;
   } finally {
     stageEnd('decode');
   }
@@ -466,6 +469,7 @@ export async function ingestFile(file, hooks = {}) {
   const channelData = await extractChannels(canonical, signal);
   throwIfCancelled(signal);
   onProgress('done', 100);
+  emitIngestionDebug('ingest:done', { duration: canonical.duration, sampleRate: SAMPLE_RATE, channels: channelData.length, frames: canonical.length });
   
   // Get model IDs for the selected isolation mode
   return {
