@@ -89,7 +89,7 @@ function mp4TrackDurationFile(seconds) {
   const mdhdPayload = Buffer.alloc(20);
   mdhdPayload.writeUInt32BE(1000, 12);
   mdhdPayload.writeUInt32BE(seconds * 1000, 16);
-  const ftyp = mp4Box('ftyp', Buffer.from('isom\\x00\\x00\\x02\\x00isomiso2'));
+  const ftyp = mp4Box('ftyp', Buffer.from('isom\x00\x00\x02\x00isomiso2'));
   const mdat = mp4Box('mdat', Buffer.alloc(24));
   const trak = mp4Box('trak', mp4Box('mdia', mp4Box('mdhd', mdhdPayload)));
   const moov = mp4Box('moov', Buffer.concat([mp4Box('mvhd', mvhdPayload), trak]));
