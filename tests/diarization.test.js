@@ -340,6 +340,24 @@ describe('diarizeChannel', () => {
     expect(segments.length).toBeGreaterThanOrEqual(1);
   });
 
+  test('an adapted hop does not label the unobserved gaps as speech', () => {
+    const seconds = 8;
+    const samples = new Float32Array(SR * seconds);
+    for (let i = 0; i < samples.length; i++) {
+      samples[i] = 0.2 * Math.sin((2 * Math.PI * 220 * i) / SR);
+    }
+    const segments = diar.diarizeChannel(samples, SR, { maxFrames: 8 });
+    expect(segments.stats.hopAdapted).toBe(true);
+    expect(segments.stats.hopSamples).toBeGreaterThan(segments.stats.windowSamples);
+    const windowSec = segments.stats.windowSamples / segments.stats.sampleRate;
+    expect(segments.length).toBeGreaterThan(0);
+    for (const seg of segments) {
+      expect(seg.end - seg.start).toBeLessThanOrEqual(windowSec + 0.02);
+    }
+    const covered = segments.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+    expect(covered).toBeLessThan(seconds * 0.5);
+  });
+
   test('maxSpeakers option caps cluster count', () => {
     // maxSpeakers is clamped to the documented 2-8 range; with maxSpeakers: 2
     // the diarizer should never produce more than 2 speaker ids.

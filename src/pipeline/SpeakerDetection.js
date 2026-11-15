@@ -100,12 +100,14 @@ async function kMeansDiarize(cleanChannel, sampleRate, signal = null) {
     const w = new Worker('/src/workers/DiarizationWorker.js', { type: 'module' });
     const requestId = 1;
     const started = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    // postMessage transfers samples.buffer, so samples.length is 0 afterward.
+    const sampleCount = samples.length;
     const timer = setTimeout(() => {
       const elapsed = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - started);
       done();
       w.terminate();
       const err = new Error(
-        `K-means diarization timeout after ${elapsed}ms (samples=${samples.length}, rate=${sampleRate}, maxFrames=${DIAR_MAX_FRAMES}, budgetMs=${DIAR_BUDGET_MS})`,
+        `K-means diarization timeout after ${elapsed}ms (samples=${sampleCount}, rate=${sampleRate}, maxFrames=${DIAR_MAX_FRAMES}, budgetMs=${DIAR_BUDGET_MS})`,
       );
       err.code = 'diarization-timeout';
       reject(err);
@@ -225,7 +227,7 @@ export async function detectSpeakers(clean, sampleRate, { signal = null } = {}) 
       segments: km.segments || [],
       speakers: km.speakers || [],
       method: 'kmeans',
-      provider: 'wasm-kmeans',
+      provider: 'js-kmeans',
       stats: km.stats || null,
     });
   } catch (kmErr) {

@@ -1080,7 +1080,7 @@ function getWorker() {
             ? 'WebGPU'
             : verified
               ? 'WASM'
-              : (msg.gpuCandidate ? 'WASM (GPU not initialized)' : 'WASM');
+              : (msg.gpuCandidate ? 'WASM (GPU not initialized)' : 'WASM (provider not initialized)');
           const el = document.getElementById('ortProviderHint');
           if (el) el.textContent = `Inference: ${label} (local)`;
           const backendLine = document.getElementById('backendStatusLine');

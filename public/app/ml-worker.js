@@ -1088,7 +1088,7 @@ async function loadModels(basePath, providers, modelList) {
       await warmupSession(modelId, session);
       sessions[modelId] = session;
       modelStatus[modelId] = true;
-      self.postMessage({ type: 'model_loaded', modelId, providers: eps });
+      self.postMessage({ type: 'model_loaded', modelId, provider, providers: [provider] });
       console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob-cache' : 'same-origin'})`);
     } catch (err) {
       modelStatus[modelId] = false;

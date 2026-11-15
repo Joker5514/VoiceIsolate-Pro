@@ -14,6 +14,8 @@ const ORT_SRC = '/lib/ort.min.js';
 const WASM_PATH = '/lib/';
 /** A script that never fires load or error must not stall speaker detection. */
 const SCRIPT_LOAD_MS = 12000;
+/** One provider attempt. A hung WebGPU create must still reach the WASM attempt. */
+const SESSION_CREATE_MS = 12000;
 
 /** @type {Map<string, Promise<object>>} */
 const _sessions = new Map();
@@ -104,11 +106,13 @@ export function loadOrtRuntime() {
   pending = new Promise((resolve) => {
     let settled = false;
     let timer = null;
+    let script = null;
     const finish = (error) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (error || !globalThis.ort?.InferenceSession) {
+        try { script?.remove(); } catch { /* the tag may already be gone */ }
         // Null on a microtask so a synchronous failure still returns this promise.
         queueMicrotask(() => {
           if (_loadPromise === pending) _loadPromise = null;
@@ -147,22 +151,46 @@ export function loadOrtRuntime() {
       finish(null);
       return;
     }
-    const script = existing || document.createElement('script');
+    // A failed or timed-out tag does not fire load/error again. Replace it.
+    if (existing) existing.remove();
+    script = document.createElement('script');
     script.src = ORT_SRC;
     script.async = true;
     script.dataset.vipOrt = '1';
     script.onload = () => finish(null);
-    script.onerror = () => finish('Failed to load /lib/ort.min.js');
-    if (!existing) document.head.appendChild(script);
+    script.onerror = () => {
+      script.remove();
+      finish('Failed to load /lib/ort.min.js');
+    };
+    document.head.appendChild(script);
   });
   _loadPromise = pending;
   return pending;
 }
 
+function createSessionAttempt(ort, source, providers) {
+  let timer = null;
+  const attempt = ort.InferenceSession.create(source, { executionProviders: providers });
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`ONNX ${providers[0]} session timed out after ${SESSION_CREATE_MS}ms`));
+    }, SESSION_CREATE_MS);
+  });
+  const guarded = Promise.race([attempt, timeout]).finally(() => clearTimeout(timer));
+  guarded.catch(() => {
+    attempt.then((session) => {
+      if (session && typeof session.release === 'function') {
+        Promise.resolve(session.release()).catch(() => {});
+      }
+    }).catch(() => {});
+  });
+  return guarded;
+}
+
 /**
  * Create one session. WebGPU is attempted only when an adapter exists, and
- * only by itself. A failed WebGPU create falls back to WASM. The cached
- * session is reused for the same cacheKey.
+ * only by itself. A failed or timed-out WebGPU create falls back to WASM.
+ * The cached session is reused for the same cacheKey.
  *
  * @param {string|ArrayBuffer} source
  * @param {{ cacheKey?: string }} [options]
@@ -182,9 +210,7 @@ export async function createOrtSession(source, options = {}) {
     let detail = null;
     if (candidate) {
       try {
-        session = await loaded.ort.InferenceSession.create(source, {
-          executionProviders: ['webgpu'],
-        });
+        session = await createSessionAttempt(loaded.ort, source, ['webgpu']);
         provider = 'webgpu';
       } catch (err) {
         detail = err?.message || String(err);
@@ -192,9 +218,7 @@ export async function createOrtSession(source, options = {}) {
       }
     }
     if (!session) {
-      session = await loaded.ort.InferenceSession.create(source, {
-        executionProviders: ['wasm'],
-      });
+      session = await createSessionAttempt(loaded.ort, source, ['wasm']);
       provider = 'wasm';
     }
     publish({

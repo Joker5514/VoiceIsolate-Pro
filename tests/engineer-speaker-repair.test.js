@@ -169,7 +169,7 @@ describe('bounded diarization', () => {
     const segments = diar.diarizeChannel(samples, 48000, { budgetMs: 0.01, maxFrames: 64 });
     expect(Array.isArray(segments)).toBe(true);
     expect(segments.stats.frames).toBeLessThanOrEqual(64);
-    expect(segments.stats.truncated || segments.stats.frames < 40).toBe(true);
+    expect(segments.stats.truncated).toBe(true);
   });
 });
 
@@ -187,6 +187,10 @@ describe('live diagnostics', () => {
     expect(entries.length).toBeGreaterThanOrEqual(2);
     expect(entries[0].level).toBe('info');
     expect(entries[0].detail.samples).toEqual({ type: 'Float32Array', length: 3 });
+    const pcmList = Array.from({ length: 32 }, (_, i) => i / 32);
+    diagnostics.vipLog('info', 'ingest.raw', { data: pcmList }, { page: 'stems' });
+    const raw = diagnostics.getLiveDiagnostics().find((entry) => entry.event === 'ingest.raw');
+    expect(raw.detail.data).toEqual({ type: 'number[]', length: 32 });
     const text = JSON.stringify(entries);
     expect(text).not.toContain('0.1');
     const panel = document.getElementById('vip-live-diagnostics');
@@ -197,6 +201,29 @@ describe('live diagnostics', () => {
     expect(panel.dataset.page).toBe('engineer');
     diagnostics.clearLiveDiagnostics();
     expect(diagnostics.getLiveDiagnostics()).toEqual([]);
+  });
+});
+
+describe('ONNX status honesty', () => {
+  test('a WASM retry is unverified until the session exists', async () => {
+    const { applyMlWorkerMessage, getOrtStatus, setOrtStatus } = await import('../src/core/OrtStatus.js');
+    setOrtStatus({
+      provider: 'probing',
+      providerVerified: false,
+      runtimeLoaded: true,
+      detail: null,
+      modelsLoaded: [],
+    });
+    applyMlWorkerMessage({
+      type: 'stage',
+      stage: 'ort-fallback',
+      backend: 'wasm',
+      label: 'WebGPU failed — local WASM retry',
+    });
+    expect(getOrtStatus().providerVerified).toBe(false);
+    expect(getOrtStatus().provider).toBe('probing');
+    applyMlWorkerMessage({ type: 'ort-provider', backend: 'wasm', providerVerified: true });
+    expect(getOrtStatus()).toMatchObject({ provider: 'wasm', providerVerified: true });
   });
 });
 

@@ -134,6 +134,8 @@ async function runVipAudit() {
     log('pass', 8, 'ONNX WebGPU provider initialized');
   } else if (ortStatus && ortStatus.providerVerified === true && ortStatus.provider === 'wasm') {
     log('pass', 8, 'ONNX WASM provider initialized');
+  } else if (ortStatus && ortStatus.provider === 'error') {
+    log('fail', 8, 'ONNX provider failed', ortStatus.detail || '');
   } else if (ortStatus && (ortStatus.runtimeLoaded || ortStatus.provider === 'probing')) {
     log('warn', 8, 'ONNX runtime loaded; execution provider not verified',
       ortStatus.detail || '');

@@ -131,10 +131,11 @@ export function applyMlWorkerMessage(msg = {}) {
     return;
   }
   if (msg.type === 'stage' && msg.stage === 'ort-fallback') {
-    const backend = String(msg.backend || 'wasm').toLowerCase();
+    // Posted before the WASM session exists. Verification arrives later
+    // as ort-provider, and only after InferenceSession.create succeeds.
     setOrtStatus({
-      provider: backend === 'webgpu' && msg.providerVerified === true ? 'webgpu' : 'wasm',
-      providerVerified: true,
+      provider: 'probing',
+      providerVerified: false,
       detail: msg.detail || msg.label || 'WebGPU failed — local WASM retry',
       webgpuAvailable: _status.webgpuAvailable,
     });

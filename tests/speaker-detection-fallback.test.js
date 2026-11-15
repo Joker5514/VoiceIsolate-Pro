@@ -22,6 +22,7 @@ describe('speaker detection does not block enhancement', () => {
     expect(result.method).toBe('kmeans');
     expect(Array.isArray(result.segments)).toBe(true);
     expect(Array.isArray(result.speakers)).toBe(true);
+    expect(result.provider).toBe('js-kmeans');
     expect(result.providerVerified).toBe(false);
     expect(String(result.reason)).toMatch(/onnxruntime-web not loaded|not available locally/i);
   }, 15000);

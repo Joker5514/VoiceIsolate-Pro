@@ -147,13 +147,17 @@ async function queuedSessionRun(sessionKey, session, feeds, requestId) {
 
 /** Preferred execution backend from the one-shot GPU probe (not mutated by per-session fallback). */
 let BACKEND = null;
-/** First verified session provider announced to the UI. WebGPU replaces WASM. */
+/** Last verified session provider announced to the UI. */
 let _announcedProvider = null;
+/** Worker-wide WebGPU disable reason (device loss). Null while WebGPU remains eligible. */
+let _webgpuDisabledReason = null;
 
 function announceVerifiedProvider(provider, sessionKey) {
   if (provider !== 'webgpu' && provider !== 'wasm') return;
-  if (provider === 'wasm' && _announcedProvider) return;
-  if (provider === 'webgpu' && _announcedProvider === 'webgpu') return;
+  // A later WASM session must not hide a live WebGPU session.
+  // Device loss clears that eligibility, so the WASM retry is announced.
+  if (provider === 'wasm' && _announcedProvider === 'webgpu' && !_webgpuDisabledReason) return;
+  if (_announcedProvider === provider) return;
   _announcedProvider = provider;
   self.postMessage({
     type: 'ort-provider',
@@ -162,8 +166,6 @@ function announceVerifiedProvider(provider, sessionKey) {
     sessionKey,
   });
 }
-/** Worker-wide WebGPU disable reason (device loss). Null while WebGPU remains eligible. */
-let _webgpuDisabledReason = null;
 
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;

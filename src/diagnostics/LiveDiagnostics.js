@@ -37,7 +37,13 @@ function sanitize(value, depth = 0) {
     return { name: value.name, message: value.message, stack: value.stack || null };
   }
   if (depth >= 3) return '[object]';
-  if (Array.isArray(value)) return value.slice(0, 12).map((item) => sanitize(item, depth + 1));
+  if (Array.isArray(value)) {
+    // A plain number list is how PCM shows up when it is not a typed array.
+    if (value.length > 16 && value.every((item) => typeof item === 'number')) {
+      return { type: 'number[]', length: value.length };
+    }
+    return value.slice(0, 12).map((item) => sanitize(item, depth + 1));
+  }
   const out = {};
   for (const [key, item] of Object.entries(value)) {
     if (/pcm|channelData|samples|audioData/i.test(key) && item && typeof item === 'object') {

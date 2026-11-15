@@ -353,16 +353,21 @@ function throwIfDiarizationAborted(signal) {
 }
 
 /** Boxcar decimation. Used only after the natural frame count exceeds the cap. */
-function decimateForDiarization(samples, factor) {
+function decimateForDiarization(samples, factor, shouldStop) {
   const outLen = Math.floor(samples.length / factor);
   const out = new Float32Array(outLen);
+  let produced = outLen;
   for (let i = 0; i < outLen; i++) {
+    if ((i & 8191) === 0 && i > 0 && shouldStop?.()) {
+      produced = i;
+      break;
+    }
     let sum = 0;
     const base = i * factor;
     for (let k = 0; k < factor; k++) sum += samples[base + k];
     out[i] = sum / factor;
   }
-  return out;
+  return produced === outLen ? out : out.subarray(0, produced);
 }
 
 function attachDiarizationStats(segments, stats) {
@@ -391,9 +396,11 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
   const cap = Number.isFinite(options.maxFrames) && options.maxFrames >= 8
     ? Math.floor(options.maxFrames)
     : MAX_DIARIZATION_FRAMES;
-  const budgetMs = Number.isFinite(options.budgetMs) && options.budgetMs > 0
-    ? options.budgetMs
-    : DEFAULT_DIARIZATION_BUDGET_MS;
+  const callerBudget = Number.isFinite(options.budgetMs) && options.budgetMs > 0;
+  const budgetMs = callerBudget ? options.budgetMs : DEFAULT_DIARIZATION_BUDGET_MS;
+  // The default clock budget is for files that exceed the frame cap.
+  // A short file already has a bounded frame count, and a busy CPU must
+  // not drop the second speaker to satisfy that backstop.
   const stats = {
     frames: 0,
     hopSamples: 0,
@@ -433,12 +440,19 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
 
   let work = samples;
   let rate = sampleRate;
+  let budgetArmed = callerBudget;
   const naturalSpan = samples.length - naturalWin;
   const naturalFrames = naturalSpan >= 0 ? Math.floor(naturalSpan / naturalHop) + 1 : 0;
+  if (naturalFrames > cap) budgetArmed = true;
   if (naturalFrames > cap && sampleRate >= 32000) {
     const factor = Math.max(2, Math.round(sampleRate / 16000));
     if (factor > 1 && samples.length >= factor * naturalWin) {
-      work = decimateForDiarization(samples, factor);
+      const fullLen = Math.floor(samples.length / factor);
+      work = decimateForDiarization(samples, factor, () => {
+        throwIfDiarizationAborted(options.signal);
+        return diarizationNow() - started > budgetMs;
+      });
+      if (work.length < fullLen) stats.truncated = true;
       rate = sampleRate / factor;
       stats.decimated = true;
       stats.decimationFactor = factor;
@@ -474,7 +488,7 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
     }
     if (stats.frames > 0 && (stats.frames & 7) === 0) {
       throwIfDiarizationAborted(options.signal);
-      if (diarizationNow() - started > budgetMs) {
+      if (budgetArmed && diarizationNow() - started > budgetMs) {
         stats.truncated = true;
         break;
       }
@@ -565,10 +579,14 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
     });
   };
 
+  const frameEnd = (fi) => frameStarts[fi] + winSamp;
+  const gapped = hopSamp > winSamp;
   for (let fi = 0; fi < frameStarts.length; fi++) {
     const cluster = labelByFrame.has(fi) ? labelByFrame.get(fi) : null;
-    if (cluster !== segCluster) {
-      flush(frameStarts[fi]);
+    const gap = fi > 0 && frameStarts[fi] > frameEnd(fi - 1);
+    // An adapted hop leaves audio between windows. That gap is not speech.
+    if (cluster !== segCluster || (gap && segCluster !== null)) {
+      flush(gap ? frameEnd(fi - 1) : frameStarts[fi]);
       segStart = frameStarts[fi];
       segCluster = cluster;
       segEnergy = 0;
@@ -579,17 +597,23 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
       segFrames++;
     }
   }
-  flush(stats.truncated ? lastCovered : work.length);
+  if (frameStarts.length) {
+    const tail = frameEnd(frameStarts.length - 1);
+    const fileEnd = stats.truncated ? lastCovered : work.length;
+    flush(gapped ? Math.min(fileEnd, tail) : fileEnd);
+  }
 
   // Drop jitter, then relabel clusters compactly (S1, S2, …) in order of
   // first appearance so absent clusters never produce phantom speakers.
-  let kept = segments.filter((s) => s.end - s.start >= MIN_SEGMENT_SEC);
+  const minSec = gapped ? (winSamp / rate) : MIN_SEGMENT_SEC;
+  let kept = segments.filter((s) => s.end - s.start >= minSec - 1e-4);
 
   // Safety net: voiced content existed but every segment was shorter than
   // MIN_SEGMENT_SEC (pathological flip-flop before collapse). Emit one
   // continuous S1 covering the full voiced span so the mixer always has a
-  // speaker when there is audible speech.
-  if (kept.length === 0 && voicedIdx.length > 0) {
+  // speaker when there is audible speech. Skip this when the hop was widened:
+  // that span includes audio the sampler never observed.
+  if (kept.length === 0 && voicedIdx.length > 0 && !gapped) {
     const firstFi = voicedIdx[0];
     const lastFi = voicedIdx[voicedIdx.length - 1];
     const start = frameStarts[firstFi] / rate;
