@@ -81,6 +81,29 @@ function mp4DurationFile(seconds, version = 0) {
   return file;
 }
 
+
+function mp4TrackDurationFile(seconds) {
+  const mvhdPayload = Buffer.alloc(20);
+  mvhdPayload.writeUInt32BE(1000, 12);
+  mvhdPayload.writeUInt32BE(0xffffffff, 16); // unknown movie duration
+  const mdhdPayload = Buffer.alloc(20);
+  mdhdPayload.writeUInt32BE(1000, 12);
+  mdhdPayload.writeUInt32BE(seconds * 1000, 16);
+  const ftyp = mp4Box('ftyp', Buffer.from('isom\\x00\\x00\\x02\\x00isomiso2'));
+  const mdat = mp4Box('mdat', Buffer.alloc(24));
+  const trak = mp4Box('trak', mp4Box('mdia', mp4Box('mdhd', mdhdPayload)));
+  const moov = mp4Box('moov', Buffer.concat([mp4Box('mvhd', mvhdPayload), trak]));
+  const file = new Blob([ftyp, mdat, moov], { type: 'video/mp4' });
+  Object.defineProperty(file, 'name', { value: 'track-duration-fallback.mp4' });
+  return file;
+}
+
+test('MP4 falls back to a valid track duration when mvhd duration is unknown', async () => {
+  const file = mp4TrackDurationFile(42);
+  await expect(compressed.parseMp4Duration(file)).resolves.toBe(42);
+  await expect(preflight.preflightIngestion(file)).resolves.toMatchObject({ duration: 42, strategy: expect.any(String) });
+});
+
 test.each([0, 1])('MP4 movie duration v%d is read when moov follows mdat', async (version) => {
   const file = mp4DurationFile(37, version);
   await expect(compressed.parseMp4Duration(file)).resolves.toBe(37);
