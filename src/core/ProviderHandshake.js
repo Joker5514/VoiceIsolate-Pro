@@ -55,3 +55,18 @@ export function explainProviderReady(msg = {}) {
     detail: null,
   };
 }
+
+/**
+ * Eager startup failed before any Process request. The dead worker has to be
+ * dropped. Leaving it allocated keeps the backend probing and disables Process.
+ * An error that belongs to a request returns null so that path can clean itself up.
+ * @returns {{ terminate: true, backend: 'unavailable', message: string }|null}
+ */
+export function planStartupProviderFailure(msg = {}) {
+  if (msg.requestId != null || msg.code !== 'PROVIDER_INIT_FAILED') return null;
+  return {
+    terminate: true,
+    backend: 'unavailable',
+    message: msg.message || 'Local ML worker initialization failed',
+  };
+}

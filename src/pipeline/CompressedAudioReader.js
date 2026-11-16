@@ -118,17 +118,40 @@ export function aacChannelCount(description) {
   } else {
     config = (b1 >> 3) & 0x0f;
   }
-  return config >= 1 && config <= 8 ? config : null;
+  // ISO 14496-3: 1–6 are that many channels, 7 is 7.1 (8 channels). 8–15 are reserved.
+  return [null, 1, 2, 3, 4, 5, 6, 8][config] ?? null;
 }
 
-/** PCM frames enumerated by a sample table, minus encoder priming already in PCM frames. */
-export function pcmFramesFromSamples(samples, timescale, sampleRate, primingFrames = 0) {
+/**
+ * Presentation length of an edit list, in PCM frames at `sampleRate`.
+ * `segmentDuration` is in the movie timescale. Empty edits (`mediaTime < 0`) are skipped.
+ * @param {{ segmentDuration: number, mediaTime: number }[]} entries
+ */
+export function editPlaybackFrames(entries, movieTimescale, sampleRate) {
+  if (!entries?.length || !(movieTimescale > 0) || !(sampleRate > 0)) return null;
+  let ticks = 0;
+  for (const entry of entries) {
+    if (!entry || entry.mediaTime < 0 || !(entry.segmentDuration > 0)) continue;
+    ticks += entry.segmentDuration;
+  }
+  if (!(ticks > 0)) return null;
+  const frames = Math.round((ticks * sampleRate) / movieTimescale);
+  return Number.isInteger(frames) && frames > 0 ? frames : null;
+}
+
+/**
+ * PCM frames enumerated by a sample table, minus encoder priming.
+ * `editPlaybackFrames` is the edit list's selected duration. It caps the
+ * table so a trimmed file does not regain the discarded tail.
+ */
+export function pcmFramesFromSamples(samples, timescale, sampleRate, primingFrames = 0, editFrames = null) {
   if (!samples?.length || !(timescale > 0) || !(sampleRate > 0)) return null;
   const last = samples[samples.length - 1];
   const end = (last.time || 0) + (last.duration || 0);
   if (!(end > 0)) return null;
   const raw = timescale === sampleRate ? end : Math.round((end * sampleRate) / timescale);
-  const frames = raw - Math.max(0, primingFrames || 0);
+  let frames = raw - Math.max(0, primingFrames || 0);
+  if (Number.isInteger(editFrames) && editFrames > 0) frames = Math.min(frames, editFrames);
   return Number.isInteger(frames) && frames > 0 ? frames : null;
 }
 
@@ -145,7 +168,9 @@ export function layoutFromParsedAudio(info) {
     decodedChannels: Number.isInteger(info.decodedChannels) ? info.decodedChannels : null,
   });
   const timescale = info.timescale || info.sampleRate;
-  const frames = pcmFramesFromSamples(info.samples, timescale, info.sampleRate, info.primingFrames);
+  const frames = pcmFramesFromSamples(
+    info.samples, timescale, info.sampleRate, info.primingFrames, info.editPlaybackFrames,
+  );
   if (!channels || !frames || !(info.sampleRate > 0)) return null;
   const measured = { ...info, channels };
   return {
@@ -160,23 +185,46 @@ export function layoutFromParsedAudio(info) {
   };
 }
 
-function parseElstMediaTime(buf, trak) {
+function parseMovieTimescale(buf, moov) {
+  const mvhd = findChild(buf, moov.start, moov.end, 'mvhd');
+  if (!mvhd) return null;
+  const version = buf[mvhd.start];
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const at = mvhd.start + (version === 1 ? 20 : 12);
+  if (at + 4 > mvhd.end) return null;
+  const timescale = view.getUint32(at);
+  return timescale > 0 ? timescale : null;
+}
+
+/** Edit-list entries. `segmentDuration` is movie-timescale ticks. `mediaTime` -1 is an empty edit. */
+function parseElstEntries(buf, trak) {
   const edts = findChild(buf, trak.start, trak.end, 'edts');
-  if (!edts) return 0;
+  if (!edts) return null;
   const elst = findChild(buf, edts.start, edts.end, 'elst');
-  if (!elst) return 0;
+  if (!elst) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const version = buf[elst.start];
   const count = view.getUint32(elst.start + 4);
-  if (!count) return 0;
-  if (version === 1) {
-    if (elst.start + 24 > elst.end) return 0;
-    const mediaTime = view.getBigInt64(elst.start + 16);
-    return mediaTime > 0n ? Number(mediaTime) : 0;
+  if (!count) return null;
+  const entries = [];
+  let cursor = elst.start + 8;
+  for (let i = 0; i < count; i++) {
+    let segmentDuration;
+    let mediaTime;
+    if (version === 1) {
+      if (cursor + 20 > elst.end) break;
+      segmentDuration = Number(view.getBigUint64(cursor));
+      mediaTime = Number(view.getBigInt64(cursor + 8));
+      cursor += 20;
+    } else {
+      if (cursor + 12 > elst.end) break;
+      segmentDuration = view.getUint32(cursor);
+      mediaTime = view.getInt32(cursor + 4);
+      cursor += 12;
+    }
+    entries.push({ segmentDuration, mediaTime });
   }
-  if (elst.start + 16 > elst.end) return 0;
-  const mediaTime = view.getInt32(elst.start + 12);
-  return mediaTime > 0 ? mediaTime : 0;
+  return entries.length ? entries : null;
 }
 
 function parseMdhdTimescale(buf, box) {
@@ -394,9 +442,11 @@ export async function parseMp4Audio(file, options = {}) {
     audio = parsed;
     timescale = mdhd ? parseMdhdTimescale(moovBuf, mdhd) : parsed.sampleRate;
     samples = parseSampleTable(moovBuf, stbl);
-    const mediaTime = parseElstMediaTime(moovBuf, trak);
+    const edits = parseElstEntries(moovBuf, trak);
+    const mediaTime = edits?.find((entry) => entry.mediaTime > 0)?.mediaTime || 0;
     const scale = timescale || parsed.sampleRate || 1;
     audio.primingFrames = Math.max(0, Math.round(mediaTime * parsed.sampleRate / scale));
+    audio.editPlaybackFrames = editPlaybackFrames(edits, parseMovieTimescale(moovBuf, moov), parsed.sampleRate);
     break;
   }
   if (!audio || !samples?.length) return null;

@@ -354,6 +354,9 @@ describe('container PCM layout', () => {
   test('AAC channel 0 in the sample entry falls back to AudioSpecificConfig', () => {
     expect(compressed.aacChannelCount(Uint8Array.from([0x11, 0x88]))).toBe(1);
     expect(compressed.aacChannelCount(Uint8Array.from([0x11, 0x90]))).toBe(2);
+    // channelConfiguration 7 is 7.1 (8 channels). 8 is reserved.
+    expect(compressed.aacChannelCount(Uint8Array.from([0x11, 0xb8]))).toBe(8);
+    expect(compressed.aacChannelCount(Uint8Array.from([0x11, 0xc0]))).toBeNull();
     const layout = compressed.layoutFromParsedAudio({
       codec: 'mp4a.40.2',
       channels: 0,
@@ -375,6 +378,74 @@ describe('container PCM layout', () => {
       samples: [{ time: 0, duration: 1024 }],
     });
     expect(zeroDecoder).toBeNull();
+    const hour = 3600 * 48000;
+    const half = 1800 * 48000;
+    const trimmed = compressed.layoutFromParsedAudio({
+      codec: 'mp4a.40.2',
+      channels: 1,
+      sampleRate: 48000,
+      timescale: 48000,
+      primingFrames: 0,
+      editPlaybackFrames: half,
+      samples: [{ time: 0, duration: hour }],
+    });
+    expect(trimmed.frames).toBe(half);
+    expect(trimmed.duration).toBeCloseTo(1800, 6);
+  });
+
+  test('an edit list shorter than the sample table caps the chunked plan', async () => {
+    const box = (type, payload) => {
+      const out = Buffer.alloc(8 + payload.length);
+      out.writeUInt32BE(out.length, 0);
+      out.write(type, 4, 4, 'ascii');
+      payload.copy(out, 8);
+      return out;
+    };
+    const mvhd = Buffer.alloc(20);
+    mvhd.writeUInt32BE(1000, 12);
+    mvhd.writeUInt32BE(1800 * 1000, 16);
+    const elst = Buffer.alloc(20);
+    elst.writeUInt32BE(1, 4);
+    elst.writeUInt32BE(1800 * 1000, 8);
+    elst.writeInt32BE(0, 12);
+    elst.writeInt16BE(1, 16);
+    const mdhd = Buffer.alloc(24);
+    mdhd.writeUInt32BE(48000, 12);
+    const stsdEntry = Buffer.alloc(36);
+    stsdEntry.writeUInt32BE(36, 0);
+    stsdEntry.write('mp4a', 4, 4, 'ascii');
+    stsdEntry.writeUInt16BE(1, 24);
+    stsdEntry.writeUInt32BE(48000 * 65536, 32);
+    const stsd = Buffer.concat([Buffer.from([0, 0, 0, 0, 0, 0, 0, 1]), stsdEntry]);
+    const stts = Buffer.alloc(16);
+    stts.writeUInt32BE(1, 4);
+    stts.writeUInt32BE(3600, 8);
+    stts.writeUInt32BE(48000, 12);
+    const stsc = Buffer.alloc(20);
+    stsc.writeUInt32BE(1, 4);
+    stsc.writeUInt32BE(1, 8);
+    stsc.writeUInt32BE(3600, 12);
+    stsc.writeUInt32BE(1, 16);
+    const stsz = Buffer.alloc(20);
+    stsz.writeUInt32BE(8, 4);
+    stsz.writeUInt32BE(3600, 8);
+    const stco = Buffer.alloc(16);
+    stco.writeUInt32BE(1, 4);
+    stco.writeUInt32BE(64, 8);
+    const stbl = box('stbl', Buffer.concat([
+      box('stsd', stsd), box('stts', stts), box('stsc', stsc), box('stsz', stsz), box('stco', stco),
+    ]));
+    const trak = box('trak', Buffer.concat([
+      box('edts', box('elst', elst)),
+      box('mdia', Buffer.concat([box('mdhd', mdhd), box('minf', stbl)])),
+    ]));
+    const file = new Blob([box('moov', Buffer.concat([box('mvhd', mvhd), trak]))], { type: 'audio/mp4' });
+    Object.defineProperty(file, 'name', { value: 'trimmed.m4a' });
+    const info = await compressed.parseMp4Audio(file);
+    expect(info.editPlaybackFrames).toBe(1800 * 48000);
+    const layout = compressed.layoutFromParsedAudio(info);
+    expect(layout.frames).toBe(1800 * 48000);
+    expect(layout.frames).toBeLessThan(3600 * 48000);
   });
 
   test('a long container with only a movie duration cannot be logged as decoded', async () => {
@@ -436,6 +507,21 @@ describe('worker transfer and provider handshake', () => {
     expect(verified).toMatchObject({ providerVerified: true, backend: 'wasm' });
     const missing = handshake.explainProviderReady({ type: 'error', code: 'PROVIDER_INIT_FAILED' });
     expect(missing).toMatchObject({ providerVerified: false, ready: false, code: 'PROVIDER_INIT_FAILED' });
+    expect(handshake.planStartupProviderFailure({
+      code: 'PROVIDER_INIT_FAILED',
+      message: 'ONNX Runtime did not initialize in the worker.',
+    })).toEqual({
+      terminate: true,
+      backend: 'unavailable',
+      message: 'ONNX Runtime did not initialize in the worker.',
+    });
+    expect(handshake.planStartupProviderFailure({
+      code: 'PROVIDER_INIT_FAILED',
+      requestId: 4,
+    })).toBeNull();
+    const landing = fs.readFileSync(path.join(root, 'public/landing.js'), 'utf8');
+    expect(landing).toContain('planStartupProviderFailure');
+    expect(landing).toMatch(/startup\?\.terminate[\s\S]*ownedWorker\.terminate\(\)/);
   });
 
   test('the stems page no longer derives channels from an empty PCM list', () => {

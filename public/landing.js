@@ -15,7 +15,7 @@ import { ingestFile, assertIngestible, isDesktopShell, pickAudioFile } from '/sr
 import { runChunkedExtraction } from '/src/pipeline/ChunkedExtraction.js';
 import { formatIngestionPlan, resolveIngestionPlan } from '/src/core/IngestionBudget.js';
 import { describeTransferredChannels, ingestDecodedDetail } from '/src/core/DecodedAudio.js';
-import { explainProviderReady } from '/src/core/ProviderHandshake.js';
+import { explainProviderReady, planStartupProviderFailure } from '/src/core/ProviderHandshake.js';
 import { separateStems } from '/src/pipeline/StemSeparation.js';
 import { createMediaTransport } from '/src/presentation/MediaTransport.js';
 import { mountExplainBullets, foldParagraph, INGESTION_EXPLAINS } from '/src/presentation/ExplainBullets.js';
@@ -1175,10 +1175,18 @@ function getWorker() {
             code: provider.code,
             message: msg.message || provider.detail,
           });
-          if (msg.code === 'PROVIDER_INIT_FAILED') {
+          const startup = planStartupProviderFailure(msg);
+          if (startup?.terminate) {
             clearTimeout(workerReadyTimer);
-            rejectWorkerReady?.(new Error(msg.message || 'Local ML worker initialization failed'));
+            workerReadyTimer = null;
+            rejectWorkerReady?.(new Error(startup.message));
+            resolveWorkerReady = null;
+            rejectWorkerReady = null;
             workerReadyPromise = null;
+            try { ownedWorker.terminate(); } catch { /* already stopped */ }
+            if (worker === ownedWorker) worker = null;
+            quickClean.setBackend(startup.backend);
+            void refreshPreflight();
           }
         }
         if (stale) break;
