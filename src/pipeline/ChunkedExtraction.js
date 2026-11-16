@@ -9,6 +9,7 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS } from '../core/audio-config.js';
+import { traceIngest } from '../core/ingestion-debug.js';
 import { applyWavTail, parseWavMetadata, WAV_HEADER_WALK_CAP, WAV_HEADER_WINDOW } from '../core/IngestionBudget.js';
 import { interleaveFloat32, wavHeaderBytes } from '../core/WavEncoder.js';
 import { openCompressedReader } from './CompressedAudioReader.js';
@@ -136,16 +137,60 @@ export async function readCanonicalWindow(file, plan, canonStart, canonCount, op
   return limitChannels(await options._reader.read(canonStart, canonCount));
 }
 
-function concatPlanar(parts, frames) {
-  return parts.map((list) => {
+/**
+ * Concatenate variable-sized chunks, including a short final chunk and empty
+ * chunks that contribute no samples. The parts must sum to `frames`. A short
+ * or long total is an error: the gap is not filled with zeros.
+ */
+export function assemblePlanarChannels(parts, frames) {
+  if (!Array.isArray(parts) || parts.length < 1) {
+    throw fail('CHUNK_AGGREGATE', '[VIP][ChunkedExtraction] No channels to assemble. Output discarded.');
+  }
+  if (!Number.isInteger(frames) || frames < 1) {
+    throw fail('CHUNK_AGGREGATE', `[VIP][ChunkedExtraction] Cannot assemble ${frames} frames. Output discarded.`);
+  }
+  return parts.map((list, channel) => {
+    if (!Array.isArray(list)) {
+      throw fail('CHUNK_AGGREGATE', `[VIP][ChunkedExtraction] Channel ${channel} is not a chunk list. Output discarded.`);
+    }
     const joined = new Float32Array(frames);
     let offset = 0;
     for (const part of list) {
+      const n = part?.length || 0;
+      if (n === 0) continue;
+      if (offset + n > frames) {
+        throw fail('CHUNK_AGGREGATE', `[VIP][ChunkedExtraction] Channel ${channel} exceeds ${frames} frames at ${offset}+${n}. Output discarded.`);
+      }
       joined.set(part, offset);
-      offset += part.length;
+      offset += n;
+    }
+    if (offset !== frames) {
+      throw fail('CHUNK_AGGREGATE', `[VIP][ChunkedExtraction] Channel ${channel} assembled ${offset} frames; expected ${frames}. Refusing to pad or truncate.`);
     }
     return joined;
   });
+}
+
+/** How many windows the extraction loop will emit. Null when the plan cannot advance. */
+export function plannedChunkCount(plan) {
+  const total = plan?.totalFrames;
+  const chunk = plan?.chunk;
+  if (!chunk?.viable || !(total > 0) || !(chunk.coreFrames > 0)) return null;
+  let emitStart = 0;
+  let index = 0;
+  const fade = chunk.fadeFrames || 0;
+  while (emitStart < total && index < 1_000_000) {
+    const steady = chunk.coreFrames;
+    const first = chunk.firstCoreFrames > 0 ? chunk.firstCoreFrames : steady;
+    const emitLen = Math.min(index === 0 ? first : steady, total - emitStart);
+    if (!(emitLen > 0)) return null;
+    if (emitStart + emitLen >= total) return index + 1;
+    const step = emitLen - fade;
+    if (step <= 0) return null;
+    emitStart += step;
+    index += 1;
+  }
+  return null;
 }
 
 function createMemorySink(channelCount) {
@@ -154,11 +199,24 @@ function createMemorySink(channelCount) {
   return {
     kind: 'pcm',
     write(samples) {
+      if (!samples || samples.length < channelCount) {
+        throw fail('CHUNK_AGGREGATE', `[VIP][ChunkedExtraction] Window has ${samples?.length || 0} channels; the plan has ${channelCount}. Output discarded.`);
+      }
+      const n = samples[0]?.length ?? -1;
+      if (!Number.isInteger(n) || n < 0) {
+        throw fail('CHUNK_AGGREGATE', '[VIP][ChunkedExtraction] Window frame count is missing. Output discarded.');
+      }
+      for (let c = 0; c < channelCount; c++) {
+        if (samples[c]?.length !== n) {
+          throw fail('CHUNK_AGGREGATE', `[VIP][ChunkedExtraction] Channel ${c} has ${samples[c]?.length ?? 0} frames; channel 0 has ${n}. Output discarded.`);
+        }
+      }
+      if (n === 0) return;
       for (let c = 0; c < channelCount; c++) parts[c].push(samples[c]);
-      frames += samples[0].length;
+      frames += n;
     },
     async finish() {
-      return { kind: 'pcm', channels: concatPlanar(parts, frames), frames };
+      return { kind: 'pcm', channels: assemblePlanarChannels(parts, frames), frames };
     },
     async abort() {
       for (const list of parts) list.length = 0;
@@ -247,6 +305,9 @@ export async function runChunkedExtraction(file, plan, options = {}) {
   }
   const total = plan.totalFrames;
   const channelCount = plan.outputChannels;
+  if (!Number.isInteger(channelCount) || channelCount < 1 || !Number.isInteger(total) || total < 1) {
+    throw fail('CHUNK_PLAN', `[VIP][ChunkedExtraction] Plan channels ${channelCount} and frames ${total} are not a decode. Nothing was written.`);
+  }
   const fade = chunk.fadeFrames;
   const sinkKind = chooseSink(plan, options.sink);
   const cleanSink = sinkKind === 'pcm' ? createMemorySink(channelCount) : await createFileSink({
@@ -259,6 +320,17 @@ export async function runChunkedExtraction(file, plan, options = {}) {
   let emitted = 0;
   let index = 0;
   const segments = [];
+  let readerClosed = false;
+  const closeReader = async () => {
+    if (readerClosed) return;
+    readerClosed = true;
+    if (readState._reader?.close) {
+      try { await readState._reader.close(); } catch { /* already closed */ }
+    }
+  };
+  traceIngest('ingest.decode.start', {
+    strategy: 'chunked', channels: channelCount, frames: total, sampleRate: SAMPLE_RATE, chunkCount: plannedChunkCount(plan),
+  });
   try {
     for (let emitStart = 0; emitStart < total;) {
       if (options.signal?.aborted) throw abortError();
@@ -274,10 +346,19 @@ export async function runChunkedExtraction(file, plan, options = {}) {
       segments.push(segment);
       options.onSegment?.(segment);
       const input = await readCanonicalWindow(file, plan, readStart, readCount, readState);
-      if (!input?.length || input[0].length !== readCount) {
+      if (!input?.length || input.length !== channelCount || input.some((channel) => channel?.length !== readCount)) {
         segment.state = 'failed';
-        throw fail('CHUNK_FAILED', `[VIP][ChunkedExtraction] Segment ${index} decoded ${input?.[0]?.length ?? 0} frames; expected ${readCount}. Output discarded.`, segment);
+        throw fail('CHUNK_FAILED', `[VIP][ChunkedExtraction] Segment ${index} decoded ${input?.length ?? 0} channels and ${input?.[0]?.length ?? 0} frames; expected ${channelCount} channels and ${readCount} frames. Output discarded.`, segment);
       }
+      traceIngest('ingest.decode.chunk', {
+        index,
+        frames: emitLen,
+        channels: input.length,
+        sampleRate: SAMPLE_RATE,
+        strategy: 'chunked',
+        startFrame: emitStart,
+        decodedPcmBytes: input.length * readCount * 4,
+      });
       segment.state = 'processing';
       options.onSegment?.(segment);
       // Copy the core before the separator. transferOwned may detach `input`.
@@ -290,9 +371,13 @@ export async function runChunkedExtraction(file, plan, options = {}) {
         error.segment = segment;
         throw error;
       }
-      if (!processed || processed.length < input.length || processed[0].length !== readCount) {
+      const shortChannel = !processed || processed.length < input.length
+        ? 0
+        : processed.slice(0, input.length).findIndex((channel) => channel?.length !== readCount);
+      if (!processed || processed.length < input.length || shortChannel !== -1) {
         segment.state = 'failed';
-        throw fail('CHUNK_FAILED', `[VIP][ChunkedExtraction] Segment ${index} returned ${processed?.[0]?.length ?? 0} frames; expected ${readCount}. The recording was not marked complete.`, segment);
+        const got = processed?.[shortChannel < 0 ? 0 : shortChannel]?.length ?? 0;
+        throw fail('CHUNK_FAILED', `[VIP][ChunkedExtraction] Segment ${index} channel ${Math.max(0, shortChannel)} returned ${got} frames; expected ${readCount}. The recording was not marked complete.`, segment);
       }
       const cleanCore = processed.slice(0, input.length).map((ch) => new Float32Array(ch.subarray(coreOffset, coreOffset + emitLen)));
       const noiseCore = cleanCore.map((ch, c) => {
@@ -347,7 +432,16 @@ export async function runChunkedExtraction(file, plan, options = {}) {
     }
     const clean = await cleanSink.finish();
     const noise = noiseSink ? await noiseSink.finish() : null;
-    if (readState._reader?.close) await readState._reader.close();
+    await closeReader();
+    traceIngest('ingest.decode.complete', {
+      strategy: 'chunked',
+      frames: emitted,
+      channels: channelCount,
+      sampleRate: SAMPLE_RATE,
+      duration: emitted / SAMPLE_RATE,
+      chunkCount: segments.length,
+      decodedPcmBytes: emitted * channelCount * 4,
+    });
     return {
       kind: clean.kind,
       clean: clean.channels || null,
@@ -365,8 +459,14 @@ export async function runChunkedExtraction(file, plan, options = {}) {
   } catch (error) {
     await cleanSink.abort?.();
     await noiseSink?.abort?.();
-    if (readState._reader?.close) {
-      try { await readState._reader.close(); } catch { /* already closed */ }
+    await closeReader();
+    if (error?.name !== 'AbortError' && error?.code !== 'ABORT_ERR') {
+      traceIngest('ingest.failed', {
+        stage: 'ingest.decode.chunk',
+        code: error?.code || error?.name || 'ERROR',
+        message: error?.message || String(error),
+        index: Number.isInteger(error?.segment?.index) ? error.segment.index : null,
+      }, 'error');
     }
     throw error;
   }

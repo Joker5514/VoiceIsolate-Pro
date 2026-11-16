@@ -6,6 +6,8 @@
  */
 'use strict';
 
+import { explainProviderReady } from './ProviderHandshake.js';
+
 /** @typedef {'unknown'|'probing'|'webgpu'|'wasm'|'error'} OrtProviderState */
 
 /**
@@ -141,20 +143,27 @@ export function applyMlWorkerMessage(msg = {}) {
     });
     return;
   }
-  if (msg.type === 'ready') {
-    const backend = String(msg.backend || '').toLowerCase();
-    const verified = msg.providerVerified === true && (backend === 'webgpu' || backend === 'wasm');
-    setOrtStatus({
-      provider: verified ? backend : 'probing',
-      providerVerified: verified,
-      runtimeLoaded: true,
-      detail: verified
-        ? null
-        : (msg.gpuCandidate
-          ? 'WebGPU adapter present; provider not initialized'
-          : 'ONNX runtime loaded; execution provider not verified'),
-      webgpuAvailable: Boolean(msg.gpuCandidate) || _status.webgpuAvailable,
-    });
+  if (msg.type === 'ready' || msg.type === 'ort-provider') {
+    const explained = explainProviderReady(msg);
+    if (msg.type === 'ort-provider' && explained.providerVerified) {
+      setOrtStatus({
+        provider: explained.backend,
+        providerVerified: true,
+        runtimeLoaded: true,
+        detail: null,
+        webgpuAvailable: explained.backend === 'webgpu' || _status.webgpuAvailable,
+      });
+      return;
+    }
+    if (msg.type === 'ready') {
+      setOrtStatus({
+        provider: 'probing',
+        providerVerified: false,
+        runtimeLoaded: true,
+        detail: explained.detail,
+        webgpuAvailable: Boolean(msg.gpuCandidate) || _status.webgpuAvailable,
+      });
+    }
     return;
   }
   if (msg.type === 'warmed' && Array.isArray(msg.modelIds)) {

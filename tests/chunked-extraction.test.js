@@ -56,6 +56,16 @@ test('identity windows reconstruct the source with the original duration', async
   expect(peak).toBe(0);
 });
 
+test('a short later channel is rejected before it is written as NaN', async () => {
+  const total = 4096;
+  const plan = planFor(total, { channels: 2 });
+  await expect(chunked.runChunkedExtraction(null, plan, {
+    sink: 'memory',
+    readWindow: (start, count) => tone(start, count, 2),
+    processWindow: async (input) => [new Float32Array(input[0]), input[1].subarray(0, input[1].length - 3)],
+  })).rejects.toMatchObject({ code: 'CHUNK_FAILED' });
+});
+
 test('a constant gain survives the overlap crossfade', async () => {
   const total = 9000;
   const plan = planFor(total);

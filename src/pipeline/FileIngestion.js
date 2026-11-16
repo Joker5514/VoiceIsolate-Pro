@@ -12,9 +12,9 @@
  *   3. If the decoded rate ≠ 48 000 Hz, render through an OfflineAudioContext
  *      sized for the target rate (high-quality browser-native resampling)
  *
- * Output contract: { channelData: Float32Array[], sampleRate, duration }.
- * channelData arrays are detached-safe copies — they may be transferred to
- * MLWorker without invalidating the caller.
+ * Output contract: a validated decode. Full imports return resident Float32
+ * channelData. Chunked imports return channelData null with numberOfChannels
+ * and numberOfFrames counted from the PCM frame table — never an empty list.
  *
  * Model Chaining Support:
  * Accepts an optional `isolationMode` parameter that maps to modelIds array:
@@ -29,9 +29,16 @@ import { inferMediaKind, isGenericMimeType, isImageFile, resolveMediaKind } from
 import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
-import { emitIngestionDebug } from '../core/ingestion-debug.js';
+import { emitIngestionDebug, traceIngest } from '../core/ingestion-debug.js';
+import {
+  assertAudioBufferContract,
+  buildChunkedDecodedAudio,
+  channelLayoutName,
+  validateDecodedAudio,
+} from '../core/DecodedAudio.js';
 import { copyFloat32Channel, createAbortableYield } from './ui-yield.js';
 import { preflightIngestion, assertDecodedIngestionBudget } from './IngestionPreflight.js';
+import { plannedChunkCount } from './ChunkedExtraction.js';
 import {
   evaluateUpload,
   probeWavHeader,
@@ -366,11 +373,36 @@ export async function pickAndIngestFile(hooks = {}) {
   return ingestFile(file, hooks);
 }
 
+function traceFailure(error, file) {
+  if (error?.ingestTraced || error?.name === 'AbortError' || error?.code === 'ABORT_ERR') return;
+  traceIngest('ingest.failed', {
+    stage: error?.stage || 'ingest.failed',
+    field: error?.field || null,
+    code: error?.code || error?.name || 'ERROR',
+    message: error?.message || String(error),
+    file: file?.name || 'untitled',
+    decoder: error?.decoder || null,
+  }, 'error');
+  try { error.ingestTraced = true; } catch { /* ignore */ }
+}
+
 export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode, signal = null, audioContext = null, onWarning = null, tier = null } = hooks;
   const modelIds = hooks.modelIds?.length ? hooks.modelIds : getModelIdsForMode(isolationMode);
   throwIfCancelled(signal);
-  emitIngestionDebug('ingest:start', { fileName: file?.name || 'untitled', fileBytes: file?.size ?? null, mime: file?.type || 'unknown' });
+  const fileName = file?.name || 'untitled';
+  traceIngest('ingest.start', { file: fileName, bytes: file?.size ?? null, mime: file?.type || 'unknown', strategy: null });
+  emitIngestionDebug('ingest:start', { fileName, fileBytes: file?.size ?? null, mime: file?.type || 'unknown' });
+  try {
+    return await ingestFileBody(file, hooks, { onProgress, isolationMode, signal, audioContext, onWarning, tier, modelIds, fileName });
+  } catch (error) {
+    traceFailure(error, file);
+    throw error;
+  }
+}
+
+async function ingestFileBody(file, hooks, ctx) {
+  const { onProgress, isolationMode, signal, audioContext, onWarning, tier, modelIds, fileName } = ctx;
   // Magic-byte sniff for Windows octet-stream / extensionless renames.
   // VIP-009: tier size policy + WAV decode-cost probe run here, before decode.
   await assertIngestibleAsync(file, {
@@ -390,24 +422,52 @@ export async function ingestFile(file, hooks = {}) {
   throwIfCancelled(signal);
 
   emitIngestionDebug('ingest:plan', { strategy: budget.strategy, duration: budget.duration ?? null, tier: budget.tier || null });
+  traceIngest('ingest.demux', {
+    file: fileName,
+    strategy: budget.strategy,
+    duration: budget.duration ?? null,
+    sampleRate: budget.sampleRate ?? null,
+    channels: budget.channelsAssumed ? null : (budget.channels ?? null),
+    frames: budget.sourceFrames ?? null,
+    frameAuthority: budget.frameAuthority || null,
+    decoder: budget.metadataSource || null,
+  });
   if (budget.strategy === 'chunked') {
-    onProgress('done', 100);
-    emitIngestionDebug('ingest:chunked-ready', { duration: budget.duration, strategy: 'chunked', tier: budget.tier || null });
-    return {
-      strategy: 'chunked',
-      channelData: [],
-      sampleRate: SAMPLE_RATE,
-      duration: budget.duration,
-      numberOfChannels: budget.outputChannels,
-      sourceName: file.name || 'untitled',
+    const decoded = buildChunkedDecodedAudio(budget, file, {
+      sourceName: fileName,
       modelIds,
       isolationMode: isolationMode || DEFAULT_ISOLATION_MODE,
-      ingestionPlan: budget,
-      sourceFile: file,
-    };
+      chunkCount: plannedChunkCount(budget),
+    });
+    traceIngest('ingest.metadata.validate', {
+      ok: true,
+      strategy: 'chunked',
+      sampleRate: decoded.sampleRate,
+      channels: decoded.numberOfChannels,
+      frames: decoded.numberOfFrames,
+      duration: decoded.duration,
+      sourceChannels: decoded.sourceChannels,
+      sourceSampleRate: decoded.sourceSampleRate,
+      sourceFrames: decoded.sourceFrames,
+    });
+    traceIngest('ingest.ready', {
+      strategy: 'chunked',
+      sampleRate: decoded.sampleRate,
+      channels: decoded.numberOfChannels,
+      frames: decoded.numberOfFrames,
+      duration: decoded.duration,
+      pcmResident: false,
+    });
+    emitIngestionDebug('ingest:chunked-ready', {
+      duration: decoded.duration, strategy: 'chunked', tier: budget.tier || null,
+      channels: decoded.numberOfChannels, frames: decoded.numberOfFrames,
+    });
+    onProgress('done', 100);
+    return decoded;
   }
 
   onProgress('decoding', 5);
+  traceIngest('ingest.decode.start', { file: fileName, strategy: 'full', decoder: 'audio-buffer' });
   emitIngestionDebug('decode:start', { maxCaptureBytes: budget.budgetBytes ?? null });
   stageStart('decode');
   let decoded;
@@ -424,6 +484,16 @@ export async function ingestFile(file, hooks = {}) {
     // Container metadata can be wrong. Refuse before resampling/extraction if
     // the actual decoded layout exceeds the plan; never truncate/downsample.
     assertDecodedIngestionBudget(decoded, file.size, budget);
+    assertAudioBufferContract(decoded, { file: fileName, decoder: 'audio-buffer', stage: 'ingest.decode.complete' });
+    traceIngest('ingest.decode.complete', {
+      file: fileName,
+      strategy: 'full',
+      duration: decoded.length / decoded.sampleRate,
+      sampleRate: decoded.sampleRate,
+      channels: decoded.numberOfChannels,
+      frames: decoded.length,
+      decoder: 'audio-buffer',
+    });
     emitIngestionDebug('decode:success', { duration: decoded.duration, sampleRate: decoded.sampleRate, channels: decoded.numberOfChannels, frames: decoded.length });
   } catch (error) {
     emitIngestionDebug('decode:error', { code: error?.code || error?.name || 'ERROR', message: error?.message || String(error) });
@@ -468,19 +538,45 @@ export async function ingestFile(file, hooks = {}) {
 
   const channelData = await extractChannels(canonical, signal);
   throwIfCancelled(signal);
-  onProgress('done', 100);
-  emitIngestionDebug('ingest:done', { duration: canonical.duration, sampleRate: SAMPLE_RATE, channels: channelData.length, frames: canonical.length });
-  
-  // Get model IDs for the selected isolation mode
-  return {
+  const frames = channelData[0]?.length || 0;
+  const record = validateDecodedAudio({
     channelData,
     sampleRate: SAMPLE_RATE,
-    duration: canonical.duration,
     numberOfChannels: channelData.length,
-    sourceName: file.name || 'untitled',
-    modelIds, // Pass model IDs to caller for MLWorker processing
+    numberOfFrames: frames,
+    duration: frames > 0 ? frames / SAMPLE_RATE : 0,
+    strategy: 'full',
+    decodingStrategy: 'full',
+    pcmResident: true,
+    metadataAuthority: 'decoded-pcm',
+    metadataSource: 'decoded-pcm',
+    channelLayout: channelLayoutName(channelData.length),
+    sourceSampleRate: decoded.sampleRate,
+    sourceChannels: decoded.numberOfChannels,
+    sourceFrames: decoded.length,
+    sourceName: fileName,
+    modelIds,
     isolationMode: isolationMode || DEFAULT_ISOLATION_MODE,
-  };
+  }, { file: fileName, decoder: 'decoded-pcm' });
+  traceIngest('ingest.metadata.validate', {
+    ok: true,
+    strategy: 'full',
+    sampleRate: record.sampleRate,
+    channels: record.numberOfChannels,
+    frames: record.numberOfFrames,
+    duration: record.duration,
+  });
+  traceIngest('ingest.ready', {
+    strategy: 'full',
+    sampleRate: record.sampleRate,
+    channels: record.numberOfChannels,
+    frames: record.numberOfFrames,
+    duration: record.duration,
+    pcmResident: true,
+  });
+  emitIngestionDebug('ingest:done', { duration: record.duration, sampleRate: SAMPLE_RATE, channels: record.numberOfChannels, frames: record.numberOfFrames });
+  onProgress('done', 100);
+  return record;
 }
 
 export default ingestFile;

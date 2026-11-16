@@ -54,7 +54,8 @@ test('non-WAV preflight stops after the fixed-size signature read', async () => 
   await expect(preflight.preflightIngestion(blob)).rejects.toMatchObject({
     code: 'INGESTION_METADATA_REQUIRED',
   });
-  expect(ranges).toEqual([[0, 12]]);
+  // Signature read, then one probe of the tiny MPEG payload. No third scan.
+  expect(ranges).toEqual([[0, 12], [0, blob.size]]);
 });
 
 function mp4Box(type, payload) {

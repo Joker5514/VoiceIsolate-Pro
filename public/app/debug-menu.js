@@ -79,8 +79,10 @@ function pushLog(level, args) {
   window.addEventListener('unhandledrejection', e => pushLog('err', ['Unhandled:', String(e.reason)]));
   window.addEventListener('vip:ingestion-debug', e => {
     const detail = e?.detail || {};
-    const { stage = 'unknown', at, ...meta } = detail;
-    pushLog(stage.includes('error') || stage.includes('refused') ? 'err' : stage.includes('unavailable') ? 'warn' : 'info', ['[INGEST]', stage, JSON.stringify(meta)]);
+    const { stage = 'unknown', at, level, ...meta } = detail;
+    const rank = level === 'error' ? 'err' : level === 'warn' ? 'warn' : level === 'info' ? 'info'
+      : (stage.includes('error') || stage.includes('refused') || stage.includes('failed') ? 'err' : stage.includes('unavailable') ? 'warn' : 'info');
+    pushLog(rank, ['[INGEST]', stage, JSON.stringify(meta)]);
   });
 })();
 

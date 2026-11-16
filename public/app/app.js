@@ -76,6 +76,8 @@ import {
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { preflightIngestion, assertDecodedIngestionBudget } from '/src/pipeline/IngestionPreflight.js';
 import { formatIngestionPlan, resolveIngestionPlan } from '/src/core/IngestionBudget.js';
+import { assertAudioBufferContract, buildChunkedDecodedAudio, ingestDecodedDetail } from '/src/core/DecodedAudio.js';
+import { traceIngest } from '/src/core/ingestion-debug.js';
 import {
   runBounded as runBoundedOperation,
   resumeAudioContext,
@@ -4169,6 +4171,7 @@ class VoiceIsolatePro {
       const decodeSignal = decodeController?.signal || parentSignal;
       this._decodeAbortController = decodeController;
       try {
+        traceIngest('ingest.start', { file: file.name || 'untitled', bytes: file.size || 0, mime: file.type || null });
         await runBoundedOperation(() => this.ensureCtx(), {
           timeoutMs: 10000,
           timeoutMessage: 'Audio context initialization timed out',
@@ -4193,14 +4196,45 @@ class VoiceIsolatePro {
                 `Large recording: estimated ${Math.ceil(estimate.estimatedBytes / 1048576)} MiB working memory (${estimate.tier}). Close other tabs if playback becomes slow.`, 'warn');
             },
           });
+          traceIngest('ingest.demux', {
+            file: file.name || 'untitled',
+            strategy: this._decodeBudget?.strategy || null,
+            duration: this._decodeBudget?.duration ?? null,
+            sampleRate: this._decodeBudget?.sampleRate ?? null,
+            channels: this._decodeBudget?.channelsAssumed ? null : (this._decodeBudget?.channels ?? null),
+            frames: this._decodeBudget?.sourceFrames ?? null,
+            frameAuthority: this._decodeBudget?.frameAuthority || null,
+          });
+          if (fileSeq !== this._fileSeq) {
+            if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+            return null;
+          }
           if (this._decodeBudget?.strategy === 'chunked') {
-            this._chunkSession = { file, plan: this._decodeBudget };
+            const decoded = buildChunkedDecodedAudio(this._decodeBudget, file);
+            this._chunkSession = { file, plan: this._decodeBudget, decoded };
+            traceIngest('ingest.metadata.validate', {
+              ok: true,
+              strategy: 'chunked',
+              sampleRate: decoded.sampleRate,
+              channels: decoded.numberOfChannels,
+              frames: decoded.numberOfFrames,
+              duration: decoded.duration,
+            });
+            traceIngest('ingest.ready', {
+              strategy: 'chunked',
+              sampleRate: decoded.sampleRate,
+              channels: decoded.numberOfChannels,
+              frames: decoded.numberOfFrames,
+              pcmResident: false,
+            });
+            structuredLog('info', 'ingest.decoded', ingestDecodedDetail(decoded, { bytes: file.size || 0 }));
             this._showChunkPlan(this._decodeBudget, file.name);
             if (decodeJob) jobs.endJob(decodeJob.id, 'completed');
             this._updateProcessButtonsState?.();
             this._updateTransportUI?.();
             return null;
           }
+          traceIngest('ingest.decode.start', { file: file.name || 'untitled', strategy: 'full', decoder: 'audio-buffer' });
           decoded = await decodeBlobToAudioBuffer(file, {
             maxCaptureBytes: this._decodeBudget.budgetBytes,
             audioContext: this.ctx,
@@ -4240,10 +4274,47 @@ class VoiceIsolatePro {
           stageEnd('resample');
         }
         await yieldToBrowser();
-
-        if (!buffer || !buffer.length) {
-          throw new Error('Decoded audio is empty or unreadable');
+        if (fileSeq !== this._fileSeq) {
+          if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+          return null;
         }
+
+        const decodedContract = assertAudioBufferContract(buffer, { file: file.name || 'untitled', decoder: 'audio-buffer' });
+        traceIngest('ingest.decode.complete', {
+          file: file.name || 'untitled',
+          strategy: 'full',
+          sampleRate: decodedContract.sampleRate,
+          channels: decodedContract.numberOfChannels,
+          frames: decodedContract.numberOfFrames,
+          duration: decodedContract.duration,
+        });
+        traceIngest('ingest.metadata.validate', {
+          ok: true,
+          strategy: 'full',
+          sampleRate: decodedContract.sampleRate,
+          channels: decodedContract.numberOfChannels,
+          frames: decodedContract.numberOfFrames,
+          duration: decodedContract.duration,
+        });
+        traceIngest('ingest.ready', {
+          strategy: 'full',
+          sampleRate: decodedContract.sampleRate,
+          channels: decodedContract.numberOfChannels,
+          frames: decodedContract.numberOfFrames,
+          pcmResident: true,
+        });
+        structuredLog('info', 'ingest.decoded', {
+          bytes: file.size || 0,
+          duration: decodedContract.duration,
+          sampleRate: decodedContract.sampleRate,
+          channels: decodedContract.numberOfChannels,
+          frames: decodedContract.numberOfFrames,
+          strategy: 'full',
+          channelLayout: decodedContract.channelLayout,
+          metadataAuthority: decodedContract.metadataAuthority,
+          pcmResident: true,
+          decodedPcmBytes: decodedContract.numberOfChannels * decodedContract.numberOfFrames * 4,
+        });
         if (fileSeq !== this._fileSeq) {
           if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
           return null;
@@ -4302,6 +4373,13 @@ class VoiceIsolatePro {
         this.setStatus('ERROR');
         this.showNotification('Cannot decode: ' + (file.name || 'file'), 'error');
         structuredLog('error', '[VIP] ensureDecoded failed', { err: decodeErr?.message });
+        if (!decodeErr?.ingestTraced) traceIngest('ingest.failed', {
+          stage: decodeErr?.stage || 'ingest.decode',
+          field: decodeErr?.field || null,
+          code: decodeErr?.code || decodeErr?.name || 'ERROR',
+          message: decodeErr?.message || String(decodeErr),
+          file: file.name || 'untitled',
+        }, 'error');
         HeroExperience.onDecodeError(msg);
         return null;
       } finally {
@@ -5168,19 +5246,24 @@ class VoiceIsolatePro {
       duration: prev.duration,
       channels: prev.channels,
       sampleRate: prev.sampleRate,
+      frames: prev.sourceFrames,
       source: prev.wav ? 'wav-header' : prev.metadataSource,
+      dataBytes: prev.wav?.dataBytes,
+      blockAlign: prev.wav?.blockAlign,
       ...(prev.wav || {}),
     }, prev.compressedBytes ?? prev.measurements?.compressedBytes ?? 0, {
       workingBytes: prev.budgetBytes,
       tier: prev.tier,
     }, { profile: profile || 'AUTO', contract: prev.contract });
+    next.bitstream = prev.bitstream || null;
+    if (next.strategy === 'full') next.strategy = 'chunked';
     this._chunkSession.plan = next;
     this._showChunkPlan(next, this._chunkSession.file?.name);
   }
 
   async _runChunkedPipeline(fileSeq = this._fileSeq) {
     const session = this._chunkSession;
-    if (!session?.plan?.chunk?.viable || !session.file) {
+    if (!session?.plan?.chunk?.viable || !session.file || session.plan.frameAuthority !== 'pcm') {
       const text = formatIngestionPlan(session?.plan, session?.file?.name || 'recording');
       this.showNotification?.(text, 'error');
       return;
@@ -5197,6 +5280,7 @@ class VoiceIsolatePro {
       const result = await runChunkedExtraction(session.file, session.plan, {
         signal: ctrl?.signal,
         processWindow: async (input, sampleRate, info) => {
+          const expectedFrames = input[0].length;
           const stems = await stemMod.separateStems(input, sampleRate, {
             modelIds: [...DEFAULT_ML_CHAIN],
             transferOwned: true,
@@ -5204,7 +5288,7 @@ class VoiceIsolatePro {
             signal: info.signal,
             sourceName: session.file.name,
           });
-          if (!stems?.clean?.[0] || stems.clean[0].length !== input[0].length) {
+          if (!stems?.clean?.[0] || stems.clean[0].length !== expectedFrames) {
             throw new Error('The local model did not return a full window. The partial output was discarded.');
           }
           return stems.clean;

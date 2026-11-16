@@ -1463,7 +1463,10 @@ async function runUniversalSeparate(msg) {
     }
 
     const pcm = waveform instanceof Float32Array ? waveform : new Float32Array(waveform || []);
-    const sr = sampleRate || 48000;
+    if (pcm.length < 1 || !(typeof sampleRate === 'number') || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+      throw new Error('[VIP][MLWorker] Refusing to separate a waveform with no frames or no sample rate.');
+    }
+    const sr = sampleRate;
 
     // Contract for future AudioSep-class exports:
     //   input  'input'  float32 [1, T]  waveform
@@ -1566,8 +1569,30 @@ async function runUniversalSeparate(msg) {
   }
 }
 
+function assertInboundPcm(channelData, sampleRate) {
+  if (!Array.isArray(channelData) || channelData.length < 1) {
+    throw new Error('[VIP][MLWorker] Refusing to separate audio with no channels.');
+  }
+  const frames = channelData[0]?.length;
+  // Length 0 is a present empty channel. The worker returns empty stems.
+  // A missing length is not that case.
+  if (!Number.isInteger(frames) || frames < 0) {
+    throw new Error('[VIP][MLWorker] Refusing to separate audio with no frames.');
+  }
+  for (let i = 0; i < channelData.length; i++) {
+    const channel = channelData[i];
+    if (!channel || channel.length !== frames) {
+      throw new Error(`[VIP][MLWorker] Channel ${i} length ${channel?.length ?? 0} does not match ${frames} frames. Nothing was separated.`);
+    }
+  }
+  if (!(typeof sampleRate === 'number') || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+    throw new Error('[VIP][MLWorker] Refusing to separate audio without a sample rate.');
+  }
+}
+
 async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate, processingConfig = null }) {
   checkCancelled(requestId);
+  assertInboundPcm(channelData, sampleRate);
   // Production spectral path: compatible spectral-mask heads (same geometry)
   // fuse on **one STFT → product of masks → one iSTFT** per channel.
   // Waveform-only models (e.g. demucs) are a separate branch and never claim
@@ -1584,6 +1609,23 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     if (MANIFEST[id].strategy === 'deepfilternet-part') {
       throw new Error(`[VIP][MLWorker] '${id}' is part of a composite model; select its composite entry instead.`);
     }
+  }
+  if (channelData[0].length === 0) {
+    const clean = channelData.map(() => new Float32Array(0));
+    const noise = channelData.map(() => new Float32Array(0));
+    self.postMessage({
+      type: 'stems',
+      requestId,
+      clean,
+      noise,
+      sampleRate,
+      numberOfChannels: clean.length,
+      numberOfFrames: 0,
+      passthrough: true,
+      pipelineMode: 'empty',
+      modelChain: chain,
+    }, [...clean, ...noise].map((channel) => channel.buffer));
+    return;
   }
 
   // Spectral masks are trained on fixed bin frequencies; another rate would
@@ -1706,6 +1748,14 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   onProgress(1);
   checkCancelled(requestId);
   const noise = residual(channelData, clean);
+  if (!clean?.length || !clean[0]?.length) {
+    throw new Error('[VIP][MLWorker] Separation produced no PCM frames. Nothing was returned.');
+  }
+  for (let i = 0; i < clean.length; i++) {
+    if (clean[i]?.length !== clean[0].length || noise[i]?.length !== clean[0].length) {
+      throw new Error(`[VIP][MLWorker] Separated channel ${i} does not match ${clean[0].length} frames. Nothing was returned.`);
+    }
+  }
   const stft = getStftCounters();
 
   const transfers = [...clean, ...noise].map((a) => a.buffer);
@@ -1717,6 +1767,8 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       clean,
       noise,
       sampleRate,
+      numberOfChannels: clean.length,
+      numberOfFrames: clean[0].length,
       passthrough: false,
       pipelineMode,
       modelChain: chain,
@@ -1838,6 +1890,19 @@ self.onmessage = async (event) => {
             ort.env.wasm.numThreads = Math.min(8, Math.max(1, cores - 1));
           }
         }
+        const runtimePresent = typeof ort !== 'undefined' && typeof ort.InferenceSession?.create === 'function';
+        if (!runtimePresent) {
+          self.postMessage({
+            type: 'error',
+            code: 'PROVIDER_INIT_FAILED',
+            runtimePresent: false,
+            providerVerified: false,
+            backend: null,
+            gpuCandidate: false,
+            message: 'ONNX Runtime did not initialize in the worker. /lib/ort.min.js did not provide InferenceSession. Stem separation cannot run until the local WASM runtime loads.',
+          });
+          break;
+        }
         await resolveBackend();
         // Adapter success is not a compiled provider. Report WASM as the
         // unverified runtime until InferenceSession.create records one.
@@ -1846,6 +1911,9 @@ self.onmessage = async (event) => {
           backend: 'wasm',
           gpuCandidate: BACKEND === 'webgpu',
           providerVerified: false,
+          sessionCreated: false,
+          reason: 'session-not-created',
+          detail: 'Execution provider is not verified. A GPU adapter is only a candidate until InferenceSession.create succeeds.',
         });
         break;
       }
