@@ -26,7 +26,10 @@ export function traceIngest(event, details = {}, level = 'info') {
   for (const [key, value] of Object.entries(details || {})) {
     if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) safe[key] = value;
   }
-  emitIngestionDebug(event, safe);
+  const failureStage = safe.stage;
+  delete safe.stage;
+  if (failureStage !== undefined) safe.failureStage = failureStage;
+  emitIngestionDebug(event, { ...safe, level });
   try {
     const log = globalThis.VIP_liveDiagnostics?.log;
     if (typeof log === 'function') log(level, event, safe);
@@ -40,8 +43,15 @@ export function emitIngestionDebug(stage, details = {}) {
     for (const [key, value] of Object.entries(details || {})) {
       if (value == null || ['string', 'number', 'boolean'].includes(typeof value)) safe[key] = value;
     }
+    const failureStage = safe.stage;
+    delete safe.stage;
     globalThis.dispatchEvent(new CustomEvent('vip:ingestion-debug', {
-      detail: { stage: String(stage), at: Date.now(), ...safe },
+      detail: {
+        stage: String(stage),
+        at: Date.now(),
+        ...safe,
+        ...(failureStage === undefined ? {} : { failureStage }),
+      },
     }));
   } catch { /* diagnostics must never affect ingestion */ }
 }

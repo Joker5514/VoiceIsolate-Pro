@@ -254,6 +254,8 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       clean,
       noise,
       sampleRate: cached.sampleRate,
+      numberOfChannels: clean.length,
+      numberOfFrames: clean[0]?.length || 0,
       passthrough: cached.passthrough,
       fromCache: true,
       appliedProcessingConfigRevision: processingRevision || null,

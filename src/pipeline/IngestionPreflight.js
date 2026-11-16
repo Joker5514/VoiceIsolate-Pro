@@ -7,7 +7,7 @@ import { parseMp4Duration, readCompressedLayout } from './CompressedAudioReader.
 import { wavMetadataFor } from './ChunkedExtraction.js';
 import { probeMediaMetadata, runBounded } from './media-decode.js';
 import { emitIngestionDebug, traceIngest } from '../core/ingestion-debug.js';
-import { decodeMetadataError } from '../core/DecodedAudio.js';
+import { buildChunkedDecodedAudio } from '../core/DecodedAudio.js';
 
 export async function preflightIngestion(file, {
   signal, timeoutMs = 15000, onBudget = () => {}, profile = 'AUTO', modelIds = null,
@@ -78,8 +78,18 @@ export async function preflightIngestion(file, {
   }
   if ((isMp4 || isMpeg) && !(metadata?.source === 'wav-header')) {
     emitIngestionDebug('metadata:bitstream:start', { fileName: file.name || 'untitled', kind: isMp4 ? 'mp4' : 'mp3' });
+    const bitstreamController = typeof AbortController === 'function' ? new AbortController() : null;
     try {
-      const layout = await readCompressedLayout(file, { signal, kind: isMp4 ? 'mp4' : 'mp3' });
+      const layout = await runBounded(
+        () => readCompressedLayout(file, { signal: bitstreamController?.signal, kind: isMp4 ? 'mp4' : 'mp3' }),
+        {
+          timeoutMs,
+          signal,
+          onStop: () => bitstreamController?.abort(),
+          timeoutCode: 'INGESTION_HEADER_TIMEOUT',
+          timeoutMessage: 'Audio header read timed out.',
+        },
+      );
       if (layout?.frames > 0 && layout.channels > 0 && layout.sampleRate > 0) {
         emitIngestionDebug('metadata:bitstream:success', {
           duration: layout.duration, channels: layout.channels, sampleRate: layout.sampleRate, frames: layout.frames, source: layout.source,
@@ -128,23 +138,30 @@ export async function preflightIngestion(file, {
     emitIngestionDebug('preflight:refused', { code: 'INGESTION_METADATA_REQUIRED', known: estimate.known });
     throw budgetError(estimate, file.name);
   }
-  if (estimate.strategy === 'chunked' && estimate.frameAuthority !== 'pcm') {
-    const field = estimate.channelsAssumed ? 'channels' : 'frames';
-    const error = decodeMetadataError({
-      stage: 'ingest.metadata.validate',
-      file: file.name || 'untitled',
-      decoder: metadata?.source || 'container',
-      field,
-      message: `[VIP][FileIngestion] Cannot import “${file.name || 'file'}” in chunked mode: the container did not provide a measured channel count and a PCM frame count. A duration by itself is not a decode, and the channel count was not guessed. The file was not modified. Export WAV, M4A/AAC, or MP3, or use a shorter file that fits in memory.`,
-    });
-    traceIngest('ingest.metadata.validate', {
-      ok: false, field, strategy: 'chunked', channels: estimate.channels ?? null, frames: estimate.sourceFrames ?? null, sampleRate: estimate.sampleRate ?? null,
-    }, 'error');
-    traceIngest('ingest.failed', {
-      stage: 'ingest.metadata.validate', field, strategy: 'chunked', message: error.message, file: file.name || 'untitled',
-    }, 'error');
-    error.ingestTraced = true;
-    throw error;
+  if (estimate.strategy === 'chunked') {
+    try {
+      buildChunkedDecodedAudio(estimate, file);
+    } catch (error) {
+      if (error?.code === 'DECODE_METADATA_INVALID') {
+        traceIngest('ingest.metadata.validate', {
+          ok: false,
+          field: error.field || null,
+          strategy: 'chunked',
+          channels: estimate.channelsAssumed ? null : (estimate.channels ?? null),
+          frames: estimate.sourceFrames ?? null,
+          sampleRate: metadata?.sampleRate ?? null,
+        }, 'error');
+        traceIngest('ingest.failed', {
+          failureStage: 'ingest.metadata.validate',
+          field: error.field || null,
+          strategy: 'chunked',
+          message: error.message,
+          file: file.name || 'untitled',
+        }, 'error');
+        error.ingestTraced = true;
+      }
+      throw error;
+    }
   }
   onBudget(estimate);
   emitIngestionDebug('preflight:ready', { strategy: estimate.strategy, duration: estimate.duration });

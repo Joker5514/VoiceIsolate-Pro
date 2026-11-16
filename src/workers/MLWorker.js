@@ -1463,7 +1463,10 @@ async function runUniversalSeparate(msg) {
     }
 
     const pcm = waveform instanceof Float32Array ? waveform : new Float32Array(waveform || []);
-    const sr = sampleRate || 48000;
+    if (pcm.length < 1 || !(typeof sampleRate === 'number') || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+      throw new Error('[VIP][MLWorker] Refusing to separate a waveform with no frames or no sample rate.');
+    }
+    const sr = sampleRate;
 
     // Contract for future AudioSep-class exports:
     //   input  'input'  float32 [1, T]  waveform

@@ -28,6 +28,16 @@ const LAYOUTS = Object.freeze({
   8: '7.1',
 });
 
+/**
+ * Why a chunked plan's frame count is trusted.
+ * `pcm` is the normalized authority `buildChunkedDecodedAudio` writes.
+ * `wav-pcm` is an exact PCM byte count from a WAV data chunk.
+ * `mp4-sample-table` is the sample table, capped by the edit list.
+ * `mp3-frames` counts samples in each parsed MPEG frame (1152 or 576). That
+ * includes encoder delay and padding; it is the frame table, not a guess from
+ * the file size. A decoder probe may still replace the channel count.
+ * `decoded-pcm` / `decoded-buffer` are measurements from decoded samples.
+ */
 const PCM_AUTHORITIES = new Set([
   'pcm',
   'wav-pcm',
@@ -77,10 +87,12 @@ export function durationMatchesFrames(duration, frames, sampleRate) {
   return Math.abs(duration * sampleRate - frames) <= DURATION_SAMPLE_TOLERANCE;
 }
 
-function finiteEndpoint(channel) {
+function channelIsFinite(channel) {
   if (!channel || channel.length < 1) return false;
-  const last = channel.length - 1;
-  return Number.isFinite(channel[0]) && Number.isFinite(channel[last]);
+  for (let i = 0; i < channel.length; i++) {
+    if (!Number.isFinite(channel[i])) return false;
+  }
+  return true;
 }
 
 /**
@@ -157,7 +169,7 @@ export function validateDecodedAudio(decoded, context = {}) {
     if (channel.length !== frames) {
       reject('frames', `[VIP][DecodedAudio] Channel ${i} has ${channel.length} frames; expected ${frames}. Channels must stay aligned. The file was not modified.`, base);
     }
-    if (!finiteEndpoint(channel)) {
+    if (!channelIsFinite(channel)) {
       reject('channelData', `[VIP][DecodedAudio] Channel ${i} has a non-finite sample. The file was not modified.`, base);
     }
   }
@@ -232,7 +244,7 @@ export function assertAudioBufferContract(buffer, context = {}) {
     if (!isFloat32Channel(channel) || channel.length !== frames) {
       reject('frames', `[VIP][DecodedAudio] Decoded channel ${i} length ${channel?.length} does not match ${frames}. The file was not modified.`, base);
     }
-    if (!finiteEndpoint(channel)) {
+    if (!channelIsFinite(channel)) {
       reject('channelData', `[VIP][DecodedAudio] Decoded channel ${i} has a non-finite sample. The file was not modified.`, base);
     }
   }
@@ -243,8 +255,9 @@ export function assertAudioBufferContract(buffer, context = {}) {
     duration: frames / sampleRate,
     channelLayout: channelLayoutName(channels),
     metadataAuthority: 'decoded-buffer',
-    pcmResident: true,
-    strategy: 'full',
+    // Counts checked against the buffer. The channel views stay on the
+    // AudioBuffer, so this object is not itself a resident PCM record.
+    pcmChecked: true,
   };
 }
 

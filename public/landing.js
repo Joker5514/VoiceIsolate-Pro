@@ -1163,11 +1163,11 @@ function getWorker() {
         ui.modelSelect.disabled = false;
         break;
       case 'error':
-        if (!msg.requestId) {
+        if (msg.code === 'PROVIDER_INIT_FAILED') {
           const provider = explainProviderReady({
             ...msg,
             type: 'error',
-            runtimePresent: msg.code === 'PROVIDER_INIT_FAILED' ? false : msg.runtimePresent,
+            runtimePresent: false,
           });
           vipLog('error', 'ingest.provider.verify', provider);
           vipLog('error', 'ingest.failed', {
@@ -1953,6 +1953,7 @@ async function processChunked() {
     const result = await runChunkedExtraction(sourceFile, plan, {
       signal: job.controller.signal,
       processWindow: async (input, sampleRate, info) => {
+        const expectedFrames = input[0].length;
         const stems = await separateStems(input, sampleRate, {
           modelIds: ingested.modelIds,
           transferOwned: true,
@@ -1960,7 +1961,7 @@ async function processChunked() {
           signal: info.signal,
           sourceName: sourceFile?.name,
         });
-        if (!stems?.clean?.[0] || stems.clean[0].length !== input[0].length) {
+        if (!stems?.clean?.[0] || stems.clean[0].length !== expectedFrames) {
           throw Object.assign(new Error('The local model did not return a full window. Nothing was marked complete.'), { code: 'CHUNK_FAILED' });
         }
         return stems.clean;

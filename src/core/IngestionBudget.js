@@ -383,14 +383,8 @@ export function planChunkWindow(estimate, budget, contract, profile = 'AUTO') {
 }
 
 /**
- * Full-file decision plus the strategy the device can actually run.
- * `decision` stays the full-file verdict (`allow` / `warn` / `refuse`).
- * `strategy` is `full` when that verdict fits, `chunked` when a window fits,
- * and `refuse` only when neither does.
- */
-/**
- * PCM frame count when the container enumerates samples. A duration with no
- * frame table is not a count.
+ * Measured PCM layout when the container enumerates samples.
+ * A duration with no frame table is not a layout.
  * @returns {{ channels: number, sampleRate: number, frames: number }|null}
  */
 export function pcmLayoutFromMetadata(metadata, channelsAssumed = false) {
@@ -406,6 +400,12 @@ export function pcmLayoutFromMetadata(metadata, channelsAssumed = false) {
   return { channels, sampleRate, frames };
 }
 
+/**
+ * Full-file decision plus the strategy the device can actually run.
+ * `decision` stays the full-file verdict (`allow` / `warn` / `refuse`).
+ * `strategy` is `full` when that verdict fits, `chunked` when a window fits,
+ * and `refuse` only when neither does.
+ */
 export function resolveIngestionPlan(metadata, fileBytes, budget, options = {}) {
   const estimate = estimateIngestionMemory(metadata, fileBytes, budget);
   const contract = options.contract || chunkContractFor(options.modelId || 'bsrnn_vocals');

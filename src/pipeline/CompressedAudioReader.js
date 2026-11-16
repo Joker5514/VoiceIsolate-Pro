@@ -453,16 +453,33 @@ export async function parseMp4Audio(file, options = {}) {
   return { ...audio, timescale: timescale || audio.sampleRate, samples };
 }
 
-function mp3FrameBytes(header) {
+/** MPEG-1, MPEG-2, and MPEG-2.5 Layer III. Reserved version and free/bad bitrates return null. */
+function mp3FrameLayout(header) {
   const version = (header >>> 19) & 3;
   const layer = (header >>> 17) & 3;
   const bitrateIndex = (header >>> 12) & 0xf;
   const rateIndex = (header >>> 10) & 3;
   const padding = (header >>> 9) & 1;
-  if (version !== 3 || layer !== 1 || bitrateIndex === 0 || bitrateIndex === 15 || rateIndex === 3) return 0;
-  const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
-  const rates = [44100, 48000, 32000];
-  return Math.floor((144 * bitrates[bitrateIndex] * 1000) / rates[rateIndex]) + padding;
+  if (version === 1 || layer !== 1 || bitrateIndex === 0 || bitrateIndex === 15 || rateIndex === 3) return null;
+  const mpeg1 = version === 3;
+  const bitrates = mpeg1
+    ? [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0]
+    : [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
+  const rates = mpeg1
+    ? [44100, 48000, 32000]
+    : version === 2
+      ? [22050, 24000, 16000]
+      : [11025, 12000, 8000];
+  const sampleRate = rates[rateIndex];
+  const samplesPerFrame = mpeg1 ? 1152 : 576;
+  const byteLength = Math.floor(((samplesPerFrame / 8) * bitrates[bitrateIndex] * 1000) / sampleRate) + padding;
+  if (byteLength < 5) return null;
+  return {
+    byteLength,
+    sampleRate,
+    samplesPerFrame,
+    channels: ((header >>> 6) & 3) === 3 ? 1 : 2,
+  };
 }
 
 /** Scan MPEG-1 Layer III frames. Returns null if none. Channel mode comes from the header (mono is mode 3). */
@@ -480,7 +497,8 @@ export async function parseMp3Frames(file, options = {}) {
   let guard = 0;
   while (at + 4 <= buf.length && guard < 8) {
     const header = (buf[at] << 24) | (buf[at + 1] << 16) | (buf[at + 2] << 8) | buf[at + 3];
-    const len = mp3FrameBytes(header >>> 0);
+    const layout = mp3FrameLayout(header >>> 0);
+    const len = layout?.byteLength || 0;
     if ((header >>> 21) === 0x7ff && len > 4) {
       frames.push({ offset: at, size: len });
       break;
@@ -492,13 +510,14 @@ export async function parseMp3Frames(file, options = {}) {
   // Continue across the whole file using the first header's frame length pattern.
   const first = frames[0];
   const head = new DataView(buf.buffer, buf.byteOffset + first.offset, 4).getUint32(0);
-  const rateIndex = (head >>> 10) & 3;
-  const sampleRate = [44100, 48000, 32000][rateIndex];
-  const channels = ((head >>> 6) & 3) === 3 ? 1 : 2;
+  const firstLayout = mp3FrameLayout(head);
+  if (!firstLayout) return null;
+  const sampleRate = firstLayout.sampleRate;
+  const channels = firstLayout.channels;
+  const hop = firstLayout.samplesPerFrame;
   let cursor = first.offset;
   const all = [];
   let time = 0;
-  const hop = 1152;
   let windowBuf = buf;
   let windowStart = 0;
   while (cursor + 4 <= file.size && all.length < 2_000_000) {
@@ -511,7 +530,7 @@ export async function parseMp3Frames(file, options = {}) {
     }
     const o = cursor - windowStart;
     const header = (windowBuf[o] << 24) | (windowBuf[o + 1] << 16) | (windowBuf[o + 2] << 8) | windowBuf[o + 3];
-    const len = mp3FrameBytes(header >>> 0);
+    const len = mp3FrameLayout(header >>> 0)?.byteLength || 0;
     if (!len || cursor + len > file.size) break;
     all.push({ offset: cursor, size: len, time, duration: hop });
     cursor += len;

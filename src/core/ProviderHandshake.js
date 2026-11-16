@@ -31,6 +31,16 @@ export function explainProviderReady(msg = {}) {
       detail: msg.detail || msg.message || 'ONNX Runtime did not initialize. The WASM provider is unavailable until /lib/ort.min.js loads in the worker.',
     };
   }
+  if (msg.type === 'error' && msg.code !== 'PROVIDER_INIT_FAILED') {
+    return {
+      providerVerified: false,
+      backend: null,
+      gpuCandidate: msg.gpuCandidate === true,
+      ready: false,
+      code: msg.code || null,
+      detail: msg.message || msg.detail || null,
+    };
+  }
   const backend = VERIFIED_BACKENDS.has(msg.backend) ? msg.backend : null;
   // Only a session-backed announcement counts. A ready handshake that copies
   // providerVerified: true is still unverified.

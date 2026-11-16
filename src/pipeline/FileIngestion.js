@@ -538,7 +538,6 @@ async function ingestFileBody(file, hooks, ctx) {
 
   const channelData = await extractChannels(canonical, signal);
   throwIfCancelled(signal);
-  onProgress('done', 100);
   const frames = channelData[0]?.length || 0;
   const record = validateDecodedAudio({
     channelData,
@@ -576,6 +575,7 @@ async function ingestFileBody(file, hooks, ctx) {
     pcmResident: true,
   });
   emitIngestionDebug('ingest:done', { duration: record.duration, sampleRate: SAMPLE_RATE, channels: record.numberOfChannels, frames: record.numberOfFrames });
+  onProgress('done', 100);
   return record;
 }
 

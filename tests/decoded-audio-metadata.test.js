@@ -178,6 +178,8 @@ describe('PCM recovery and layout', () => {
     })).toThrow(/aligned|frames/i);
     const bad = new Float32Array([0, Number.NaN]);
     expect(() => audio.recoverDecodedAudio({ channelData: [bad], sampleRate: 16000 })).toThrow(/non-finite/);
+    const interior = new Float32Array([0.1, Number.NaN, 0.2]);
+    expect(() => audio.recoverDecodedAudio({ channelData: [interior], sampleRate: 48000 })).toThrow(/non-finite/);
   });
 
   test('missing PCM cannot be repaired by inventing frames from a byte size', () => {
@@ -349,6 +351,22 @@ describe('container PCM layout', () => {
     expect(plan.channels).toBe(1);
     expect(plan.sourceFrames).toBe(2304);
     expect(plan.frameAuthority).toBe('pcm');
+  });
+
+  test('MPEG-2 Layer III frames count 576 samples at the MPEG-2 rate', async () => {
+    const frame = Buffer.alloc(417);
+    frame[0] = 0xff;
+    frame[1] = 0xf3;
+    frame[2] = 0xc0;
+    frame[3] = 0x00;
+    const file = new Blob([frame, frame], { type: 'audio/mpeg' });
+    Object.defineProperty(file, 'name', { value: 'mpeg2.mp3' });
+    const info = await compressed.parseMp3Frames(file);
+    expect(info.sampleRate).toBe(22050);
+    expect(info.samples).toHaveLength(2);
+    expect(info.samples[0].duration).toBe(576);
+    const layout = compressed.layoutFromParsedAudio(info);
+    expect(layout.frames).toBe(1152);
   });
 
   test('AAC channel 0 in the sample entry falls back to AudioSpecificConfig', () => {

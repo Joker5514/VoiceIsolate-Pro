@@ -4205,6 +4205,10 @@ class VoiceIsolatePro {
             frames: this._decodeBudget?.sourceFrames ?? null,
             frameAuthority: this._decodeBudget?.frameAuthority || null,
           });
+          if (fileSeq !== this._fileSeq) {
+            if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+            return null;
+          }
           if (this._decodeBudget?.strategy === 'chunked') {
             const decoded = buildChunkedDecodedAudio(this._decodeBudget, file);
             this._chunkSession = { file, plan: this._decodeBudget, decoded };
@@ -4270,6 +4274,10 @@ class VoiceIsolatePro {
           stageEnd('resample');
         }
         await yieldToBrowser();
+        if (fileSeq !== this._fileSeq) {
+          if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+          return null;
+        }
 
         const decodedContract = assertAudioBufferContract(buffer, { file: file.name || 'untitled', decoder: 'audio-buffer' });
         traceIngest('ingest.decode.complete', {
@@ -4366,7 +4374,7 @@ class VoiceIsolatePro {
         this.showNotification('Cannot decode: ' + (file.name || 'file'), 'error');
         structuredLog('error', '[VIP] ensureDecoded failed', { err: decodeErr?.message });
         if (!decodeErr?.ingestTraced) traceIngest('ingest.failed', {
-          stage: decodeErr?.stage || 'ingest.decode.complete',
+          stage: decodeErr?.stage || 'ingest.decode',
           field: decodeErr?.field || null,
           code: decodeErr?.code || decodeErr?.name || 'ERROR',
           message: decodeErr?.message || String(decodeErr),
@@ -5272,6 +5280,7 @@ class VoiceIsolatePro {
       const result = await runChunkedExtraction(session.file, session.plan, {
         signal: ctrl?.signal,
         processWindow: async (input, sampleRate, info) => {
+          const expectedFrames = input[0].length;
           const stems = await stemMod.separateStems(input, sampleRate, {
             modelIds: [...DEFAULT_ML_CHAIN],
             transferOwned: true,
@@ -5279,7 +5288,7 @@ class VoiceIsolatePro {
             signal: info.signal,
             sourceName: session.file.name,
           });
-          if (!stems?.clean?.[0] || stems.clean[0].length !== input[0].length) {
+          if (!stems?.clean?.[0] || stems.clean[0].length !== expectedFrames) {
             throw new Error('The local model did not return a full window. The partial output was discarded.');
           }
           return stems.clean;

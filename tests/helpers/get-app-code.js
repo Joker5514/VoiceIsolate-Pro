@@ -203,11 +203,16 @@ function buildChunkedDecodedAudio(plan, file) {
   error.code = 'DECODE_METADATA_INVALID';
   error.file = file && file.name;
   error.stage = 'ingest.metadata.validate';
-  if (!plan || plan.frameAuthority !== 'pcm') throw error;
+  const channels = plan && plan.outputChannels;
+  const frames = plan && plan.totalFrames;
+  if (!plan || plan.frameAuthority !== 'pcm' || plan.channelsAssumed
+    || !Number.isInteger(plan.sourceFrames) || plan.sourceFrames <= 0
+    || !Number.isInteger(channels) || channels <= 0
+    || !Number.isInteger(frames) || frames <= 0) throw error;
   return {
     strategy: 'chunked',
     sampleRate: 48000,
-    numberOfChannels: plan.outputChannels || 1,
+    numberOfChannels: channels,
     numberOfFrames: plan.totalFrames,
     duration: plan.totalFrames / 48000,
     pcmResident: false,
