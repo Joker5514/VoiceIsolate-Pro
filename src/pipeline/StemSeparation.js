@@ -6,6 +6,8 @@
  */
 'use strict';
 
+import { describeTransferredChannels } from '../core/DecodedAudio.js';
+import { traceIngest } from '../core/ingestion-debug.js';
 import { DEFAULT_ML_MODEL_IDS } from '../core/ml-defaults.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
@@ -281,11 +283,21 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       if (signal?.aborted) throw createAbortError();
     }
   }
+  const transferred = describeTransferredChannels(copies, sampleRate);
+  traceIngest('ingest.worker.transfer', {
+    sampleRate: transferred.sampleRate,
+    channels: transferred.numberOfChannels,
+    frames: transferred.numberOfFrames,
+    decodedPcmBytes: transferred.numberOfChannels * transferred.numberOfFrames * 4,
+    strategy: 'full',
+  });
   const msg = {
     type: 'process',
     requestId,
     channelData: copies,
-    sampleRate,
+    sampleRate: transferred.sampleRate,
+    numberOfChannels: transferred.numberOfChannels,
+    numberOfFrames: transferred.numberOfFrames,
     modelIds,
     processingConfig: options.processingConfig || null,
   };
@@ -354,10 +366,28 @@ export async function separateStems(channelData, sampleRate, options = {}) {
           return;
         }
         finish(() => {
+          let described;
+          try {
+            described = describeTransferredChannels(m.clean, m.sampleRate, {
+              numberOfChannels: m.numberOfChannels,
+              numberOfFrames: m.numberOfFrames,
+            });
+            if (m.noise) {
+              describeTransferredChannels(m.noise, m.sampleRate, {
+                numberOfChannels: described.numberOfChannels,
+                numberOfFrames: described.numberOfFrames,
+              });
+            }
+          } catch (error) {
+            reject(error);
+            return;
+          }
           const out = {
             clean: m.clean,
             noise: m.noise,
-            sampleRate: m.sampleRate,
+            sampleRate: described.sampleRate,
+            numberOfChannels: described.numberOfChannels,
+            numberOfFrames: described.numberOfFrames,
             passthrough: Boolean(m.passthrough),
             pipelineMode: m.pipelineMode || null,
             backend: m.backend || null,

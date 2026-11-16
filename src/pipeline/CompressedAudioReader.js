@@ -10,6 +10,7 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS } from '../core/audio-config.js';
+import { resolveMeasuredChannels } from '../core/DecodedAudio.js';
 import { resampleWindow, sourceSpan } from './resample-window.js';
 
 function fail(code, message) {
@@ -97,6 +98,66 @@ function parseStsd(buf, box) {
     if (child.type === 'esds') description = audioSpecificConfig(buf, child);
   }
   return { codec: 'mp4a.40.2', channels, sampleRate, description };
+}
+
+/**
+ * Channel count from an AAC AudioSpecificConfig. 0 means the count lives in
+ * a program_config_element, which this reader does not invent a value for.
+ * @param {Uint8Array|null} description
+ * @returns {number|null}
+ */
+export function aacChannelCount(description) {
+  if (!description || description.length < 2) return null;
+  const b0 = description[0];
+  const b1 = description[1];
+  const freqIndex = ((b0 & 0x07) << 1) | (b1 >> 7);
+  let config;
+  if (freqIndex === 0x0f) {
+    if (description.length < 5) return null;
+    config = (description[4] >> 3) & 0x0f;
+  } else {
+    config = (b1 >> 3) & 0x0f;
+  }
+  return config >= 1 && config <= 8 ? config : null;
+}
+
+/** PCM frames enumerated by a sample table, minus encoder priming already in PCM frames. */
+export function pcmFramesFromSamples(samples, timescale, sampleRate, primingFrames = 0) {
+  if (!samples?.length || !(timescale > 0) || !(sampleRate > 0)) return null;
+  const last = samples[samples.length - 1];
+  const end = (last.time || 0) + (last.duration || 0);
+  if (!(end > 0)) return null;
+  const raw = timescale === sampleRate ? end : Math.round((end * sampleRate) / timescale);
+  const frames = raw - Math.max(0, primingFrames || 0);
+  return Number.isInteger(frames) && frames > 0 ? frames : null;
+}
+
+/**
+ * Layout from a parsed MP4 or MP3 bitstream. Decoder channel count wins.
+ * An explicit decoded count of 0 does not fall back to stereo.
+ * @returns {object|null}
+ */
+export function layoutFromParsedAudio(info) {
+  if (!info) return null;
+  const channels = resolveMeasuredChannels({
+    containerChannels: info.channels,
+    ascChannels: aacChannelCount(info.description),
+    decodedChannels: Number.isInteger(info.decodedChannels) ? info.decodedChannels : null,
+  });
+  const timescale = info.timescale || info.sampleRate;
+  const frames = pcmFramesFromSamples(info.samples, timescale, info.sampleRate, info.primingFrames);
+  if (!channels || !frames || !(info.sampleRate > 0)) return null;
+  const measured = { ...info, channels };
+  return {
+    duration: frames / info.sampleRate,
+    channels,
+    sampleRate: info.sampleRate,
+    frames,
+    bitDepth: null,
+    source: info.codec === 'mp3' ? 'mp3-frames' : 'mp4-sample-table',
+    complete: true,
+    bitstream: measured,
+  };
 }
 
 function parseElstMediaTime(buf, trak) {
@@ -288,7 +349,8 @@ function parseSampleTable(buf, stbl) {
 }
 
 /** @returns {Promise<{codec:string, sampleRate:number, channels:number, description:Uint8Array|null, timescale:number, samples:object[]}|null>} */
-export async function parseMp4Audio(file) {
+export async function parseMp4Audio(file, options = {}) {
+  if (options.signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
   const boxes = [];
   let at = 0;
   let moovBuf = null;
@@ -353,8 +415,10 @@ function mp3FrameBytes(header) {
   return Math.floor((144 * bitrates[bitrateIndex] * 1000) / rates[rateIndex]) + padding;
 }
 
-/** Scan the first megabyte for MPEG-1 Layer III frames. Returns null if none. */
-export async function parseMp3Frames(file) {
+/** Scan MPEG-1 Layer III frames. Returns null if none. Channel mode comes from the header (mono is mode 3). */
+export async function parseMp3Frames(file, options = {}) {
+  const signal = options.signal || null;
+  if (signal?.aborted) throw fail('ABORT_ERR', 'MP3 metadata read cancelled');
   const take = Math.min(file.size, 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, take).arrayBuffer());
   let at = 0;
@@ -380,6 +444,7 @@ export async function parseMp3Frames(file) {
   const head = new DataView(buf.buffer, buf.byteOffset + first.offset, 4).getUint32(0);
   const rateIndex = (head >>> 10) & 3;
   const sampleRate = [44100, 48000, 32000][rateIndex];
+  const channels = ((head >>> 6) & 3) === 3 ? 1 : 2;
   let cursor = first.offset;
   const all = [];
   let time = 0;
@@ -387,6 +452,7 @@ export async function parseMp3Frames(file) {
   let windowBuf = buf;
   let windowStart = 0;
   while (cursor + 4 <= file.size && all.length < 2_000_000) {
+    if (signal?.aborted) throw fail('ABORT_ERR', 'MP3 metadata read cancelled');
     if (cursor < windowStart || cursor + 4 > windowStart + windowBuf.length) {
       windowStart = cursor;
       const take = Math.min(file.size - cursor, 256 * 1024);
@@ -402,7 +468,7 @@ export async function parseMp3Frames(file) {
     time += hop;
   }
   if (all.length < 2) return null;
-  return { codec: 'mp3', sampleRate, channels: 2, description: null, timescale: sampleRate, samples: all };
+  return { codec: 'mp3', sampleRate, channels, description: null, timescale: sampleRate, samples: all };
 }
 
 function codecString(info) {
@@ -569,21 +635,104 @@ async function openDecoderStream(file, info) {
   };
 }
 
+async function parseCompressedInfo(file, options = {}) {
+  const name = (file.name || '').toLowerCase();
+  const type = (file.type || '').toLowerCase();
+  const kind = options.kind || '';
+  if (kind === 'mp4' || type.includes('mp4') || type.includes('m4a') || type.includes('aac') || /\.(m4a|mp4|aac|mov|m4v)$/.test(name)) {
+    return parseMp4Audio(file, options);
+  }
+  if (kind === 'mp3' || type.includes('mpeg') || type.includes('mp3') || name.endsWith('.mp3')) {
+    return parseMp3Frames(file, options);
+  }
+  return null;
+}
+
+/**
+ * Decode the first packet when WebCodecs is present. A missing decoder returns
+ * null so the container sample table remains the PCM authority. Zero channels
+ * from a real decoder is returned as measured, not replaced.
+ * @returns {Promise<{numberOfChannels:number, packetFrames:number}|null>}
+ */
+export async function probeDecoderChannels(file, info) {
+  if (typeof AudioDecoder === 'undefined' || typeof EncodedAudioChunk === 'undefined' || !info?.samples?.length) return null;
+  const sample = info.samples[0];
+  if (!sample?.size) return null;
+  const pending = [];
+  let failed = null;
+  const decoder = new AudioDecoder({
+    output: (data) => pending.push(data),
+    error: (error) => { failed = error; },
+  });
+  try {
+    const channels = Math.min(MAX_CHANNELS, Math.max(1, info.channels || 1));
+    const config = { codec: codecString(info), sampleRate: info.sampleRate, numberOfChannels: channels };
+    if (info.description) config.description = info.description;
+    const support = await AudioDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
+    if (!support?.supported) return null;
+    decoder.configure(config);
+    const bytes = new Uint8Array(await file.slice(sample.offset, sample.offset + sample.size).arrayBuffer());
+    const timescale = info.timescale || info.sampleRate;
+    decoder.decode(new EncodedAudioChunk({
+      type: 'key',
+      timestamp: Math.round(((sample.time || 0) / timescale) * 1e6),
+      duration: Math.round(((sample.duration || 0) / timescale) * 1e6),
+      data: bytes,
+    }));
+    await decoder.flush().catch((error) => { failed = error; });
+    if (failed) return null;
+    const data = pending[0];
+    if (!data) return null;
+    const measured = { numberOfChannels: data.numberOfChannels, packetFrames: data.numberOfFrames };
+    return measured;
+  } catch {
+    return null;
+  } finally {
+    for (const data of pending) {
+      try { data.close(); } catch { /* already closed */ }
+    }
+    try { decoder.close(); } catch { /* already closed */ }
+  }
+}
+
+/**
+ * Authoritative compressed layout: sample table plus a one-packet decoder
+ * check when WebCodecs can run it. Null when the container has no PCM table.
+ */
+export async function readCompressedLayout(file, options = {}) {
+  const info = await parseCompressedInfo(file, options);
+  if (!info) return null;
+  if (options.signal?.aborted) throw fail('ABORT_ERR', 'Compressed metadata read cancelled');
+  const hinted = resolveMeasuredChannels({
+    containerChannels: info.channels,
+    ascChannels: aacChannelCount(info.description),
+  });
+  const probed = await probeDecoderChannels(file, hinted ? { ...info, channels: hinted } : info);
+  if (probed && probed.numberOfChannels === 0) {
+    throw fail('DECODE_METADATA_INVALID', `[VIP][FileIngestion] The ${info.codec} decoder reported 0 channels for “${file.name || 'file'}”. The file was not modified.`);
+  }
+  if (probed?.numberOfChannels > 0) info.decodedChannels = probed.numberOfChannels;
+  return layoutFromParsedAudio(info);
+}
+
 /**
  * @param {Blob} file
  * @param {object} plan
  */
 export async function openCompressedReader(file, plan) {
-  const name = (file.name || '').toLowerCase();
-  const type = (file.type || '').toLowerCase();
-  let info = null;
-  if (type.includes('mp4') || type.includes('m4a') || type.includes('aac') || /\.(m4a|mp4|aac)$/.test(name)) {
-    info = await parseMp4Audio(file);
-  } else if (type.includes('mpeg') || type.includes('mp3') || name.endsWith('.mp3')) {
-    info = await parseMp3Frames(file);
-  } else {
-    info = await parseMp4Audio(file);
-    if (!info) info = await parseMp3Frames(file);
+  let info = plan?.bitstream?.samples?.length ? plan.bitstream : null;
+  if (!info) info = await parseCompressedInfo(file, { kind: plan?.metadataSource === 'mp3-frames' ? 'mp3' : plan?.metadataSource === 'mp4-sample-table' ? 'mp4' : '' });
+  if (!info) {
+    const name = (file.name || '').toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    if (type.includes('mp4') || type.includes('m4a') || type.includes('aac') || /\.(m4a|mp4|aac)$/.test(name)) {
+      info = await parseMp4Audio(file);
+    } else if (type.includes('mpeg') || type.includes('mp3') || name.endsWith('.mp3')) {
+      info = await parseMp3Frames(file);
+    } else {
+      info = await parseMp4Audio(file);
+      if (!info) info = await parseMp3Frames(file);
+    }
   }
   if (!info) {
     throw fail('CHUNK_DECODER_UNAVAILABLE', '[VIP][ChunkedExtraction] This container has no local chunk decoder (WAV, M4A/AAC, and MP3 are windowed). The file was not modified.');
@@ -592,6 +741,5 @@ export async function openCompressedReader(file, plan) {
   if (!stream) {
     throw fail('CHUNK_DECODER_UNAVAILABLE', `[VIP][ChunkedExtraction] ${info.codec} was recognized but WebCodecs cannot decode it on this device. The file was not modified.`);
   }
-  void plan;
   return stream;
 }

@@ -34,9 +34,11 @@ export function createMLWorker() {
     const msg = ev.data || {};
     const setPill = globalThis._setVipEnginePill;
     if (typeof setPill !== 'function') return;
-    if (msg.type === 'ready' || (msg.type === 'ort-provider' && msg.providerVerified === true)) {
+    if (msg.type === 'ready' || msg.type === 'ort-provider') {
       const backend = String(msg.backend || '').toLowerCase();
-      const verified = msg.providerVerified === true && (backend === 'webgpu' || backend === 'wasm');
+      // A ready handshake is not a verified provider. Only ort-provider, posted
+      // after InferenceSession.create, may set providerVerified === true.
+      const verified = msg.type === 'ort-provider' && msg.providerVerified === true && (backend === 'webgpu' || backend === 'wasm');
       setPill('engOrtPill', verified ? 'ready' : 'loading');
       setPill('engMlPill', verified ? 'ready' : 'loading');
       try {

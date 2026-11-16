@@ -14,6 +14,8 @@
 import { ingestFile, assertIngestible, isDesktopShell, pickAudioFile } from '/src/pipeline/FileIngestion.js';
 import { runChunkedExtraction } from '/src/pipeline/ChunkedExtraction.js';
 import { formatIngestionPlan, resolveIngestionPlan } from '/src/core/IngestionBudget.js';
+import { describeTransferredChannels, ingestDecodedDetail } from '/src/core/DecodedAudio.js';
+import { explainProviderReady } from '/src/core/ProviderHandshake.js';
 import { separateStems } from '/src/pipeline/StemSeparation.js';
 import { createMediaTransport } from '/src/presentation/MediaTransport.js';
 import { mountExplainBullets, foldParagraph, INGESTION_EXPLAINS } from '/src/presentation/ExplainBullets.js';
@@ -1079,33 +1081,33 @@ function getWorker() {
           console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
         }
         // Provider status for research / UI (OrtStatus also updated in MLWorkerHost).
-        const verified = msg.providerVerified === true && (msg.backend === 'webgpu' || msg.backend === 'wasm');
+        const provider = explainProviderReady({ ...msg, type: 'ready' });
+        const verified = provider.providerVerified === true;
         try {
-          const label = verified && msg.backend === 'webgpu'
+          const label = verified && provider.backend === 'webgpu'
             ? 'WebGPU'
             : verified
               ? 'WASM'
-              : (msg.gpuCandidate ? 'WASM (GPU not initialized)' : 'WASM (provider not initialized)');
+              : (provider.gpuCandidate ? 'WASM (GPU not initialized)' : 'WASM (provider not initialized)');
           const el = document.getElementById('ortProviderHint');
           if (el) el.textContent = `Inference: ${label} (local)`;
           const backendLine = document.getElementById('backendStatusLine');
           if (backendLine) {
             backendLine.textContent = `Backend: ${label} · Fast/Balanced/Max via model chain · 100% local`;
-            backendLine.dataset.backend = verified ? String(msg.backend) : 'unverified';
+            backendLine.dataset.backend = verified ? String(provider.backend) : 'unverified';
           }
-          vipLog(verified && msg.backend === 'webgpu' ? 'info' : 'warn', 'worker.ready', {
-            backend: msg.backend || null,
-            providerVerified: verified,
-            gpuCandidate: msg.gpuCandidate === true,
-          });
+          vipLog(verified && provider.backend === 'webgpu' ? 'info' : 'warn', 'worker.ready', provider);
+          vipLog(verified ? 'info' : 'warn', 'ingest.provider.verify', provider);
         } catch (_) { /* ignore */ }
-        quickClean.setBackend(verified && msg.backend === 'webgpu' ? 'webgpu' : 'wasm');
+        quickClean.setBackend(verified && provider.backend === 'webgpu' ? 'webgpu' : 'wasm');
         void refreshPreflight();
         break;
       }
       case 'ort-provider': {
-        if (msg.providerVerified !== true) break;
-        const backend = msg.backend === 'webgpu' ? 'webgpu' : 'wasm';
+        const provider = explainProviderReady({ ...msg, type: 'ort-provider' });
+        vipLog(provider.providerVerified ? 'info' : 'warn', 'ingest.provider.verify', provider);
+        if (provider.providerVerified !== true) break;
+        const backend = provider.backend === 'webgpu' ? 'webgpu' : 'wasm';
         const label = backend === 'webgpu' ? 'WebGPU' : 'WASM';
         const el = document.getElementById('ortProviderHint');
         if (el) el.textContent = `Inference: ${label} (local)`;
@@ -1161,6 +1163,24 @@ function getWorker() {
         ui.modelSelect.disabled = false;
         break;
       case 'error':
+        if (!msg.requestId) {
+          const provider = explainProviderReady({
+            ...msg,
+            type: 'error',
+            runtimePresent: msg.code === 'PROVIDER_INIT_FAILED' ? false : msg.runtimePresent,
+          });
+          vipLog('error', 'ingest.provider.verify', provider);
+          vipLog('error', 'ingest.failed', {
+            stage: 'ingest.provider.verify',
+            code: provider.code,
+            message: msg.message || provider.detail,
+          });
+          if (msg.code === 'PROVIDER_INIT_FAILED') {
+            clearTimeout(workerReadyTimer);
+            rejectWorkerReady?.(new Error(msg.message || 'Local ML worker initialization failed'));
+            workerReadyPromise = null;
+          }
+        }
         if (stale) break;
         clearProcessWatch();
         failProcessing(new Error(msg.message || 'Local worker failed'));
@@ -1599,14 +1619,7 @@ async function ingestFrom(file) {
       return;
     }
     ingested = next;
-    vipLog('info', 'ingest.decoded', {
-      bytes: file.size || 0,
-      duration: next.duration ?? null,
-      sampleRate: next.sampleRate ?? null,
-      channels: Array.isArray(next.channelData) ? next.channelData.length : null,
-      frames: next.channelData?.[0]?.length ?? null,
-      strategy: next.strategy || null,
-    }, { includeMemory: true });
+    vipLog('info', 'ingest.decoded', ingestDecodedDetail(next, { bytes: file.size || 0 }), { includeMemory: true });
     chunkedExportFile = null;
     mediaTransport.close();
     if (next.strategy === 'chunked') {
@@ -1854,12 +1867,17 @@ function recomputeMemoryPlan() {
     duration: prev.duration,
     channels: prev.channels,
     sampleRate: prev.sampleRate,
+    frames: prev.sourceFrames,
     source: prev.wav ? 'wav-header' : prev.metadataSource,
+    dataBytes: prev.wav?.dataBytes,
+    blockAlign: prev.wav?.blockAlign,
     ...(prev.wav || {}),
   }, prev.compressedBytes ?? prev.measurements?.compressedBytes ?? 0, {
     workingBytes: prev.budgetBytes,
     tier: prev.tier,
   }, { profile, contract: prev.contract });
+  next.bitstream = prev.bitstream || null;
+  if (next.strategy === 'full' && !ingested.channelData?.length) next.strategy = 'chunked';
   ingested.ingestionPlan = next;
   ingested.strategy = next.strategy;
   showIngestionPlan(next, sourceFile?.name || ingested.sourceName);
@@ -1905,7 +1923,7 @@ async function publishFirstWindowPreview({ requestId, clean, noise, sampleRate }
 
 async function processChunked() {
   const plan = ingested?.ingestionPlan;
-  if (!plan || plan.strategy !== 'chunked' || !plan.chunk?.viable) {
+  if (!plan || plan.strategy !== 'chunked' || !plan.chunk?.viable || plan.frameAuthority !== 'pcm') {
     setStatus(formatIngestionPlan(plan, sourceFile?.name || 'recording'), 'error');
     return;
   }
@@ -2059,8 +2077,18 @@ async function onProcess() {
     }, 5000);
     const readyWorker = await ensureWorkerReady();
     if (readyWorker !== worker) throw new Error('Local ML worker was replaced before processing.');
+    const transferred = describeTransferredChannels(channelData, processPlan.sampleRate, { file: source.sourceName || null });
+    vipLog('info', 'ingest.worker.transfer', {
+      sampleRate: transferred.sampleRate,
+      channels: transferred.numberOfChannels,
+      frames: transferred.numberOfFrames,
+      decodedPcmBytes: transferred.numberOfChannels * transferred.numberOfFrames * 4,
+      strategy: 'full',
+    });
     readyWorker.postMessage({ type: 'process', requestId: id, modelIds: [...modelIds],
-      channelData, sampleRate: processPlan.sampleRate }, channelData.map((channel) => channel.buffer));
+      channelData, sampleRate: transferred.sampleRate,
+      numberOfChannels: transferred.numberOfChannels, numberOfFrames: transferred.numberOfFrames,
+    }, channelData.map((channel) => channel.buffer));
   } catch (err) { failProcessing(err); }
 }
 

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function loadBackendHarness({ adapter = {}, create }) {
+function loadBackendHarness({ adapter = {}, create, runtime = true } = {}) {
   const messages = [];
   const source = fs.readFileSync(path.join(__dirname, '../src/workers/MLWorker.js'), 'utf8') + `
     self.__backendTest = { resolveBackend, createSessionFromBytes, classifyWebGpuFailure };
@@ -16,13 +16,13 @@ function loadBackendHarness({ adapter = {}, create }) {
       navigator: adapter === null ? {} : { gpu: { requestAdapter: async () => adapter }, hardwareConcurrency: 4 },
       postMessage: (message) => messages.push(message),
     },
-    ort: { env: { wasm: {} }, InferenceSession: { create } },
+    ort: runtime ? { env: { wasm: {} }, InferenceSession: { create: create || (async () => ({})) } } : undefined,
     Promise, Error, Object, Set, Map, Float32Array, Uint8Array, Uint32Array,
     setTimeout, clearTimeout,
   };
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
-  return { api: sandbox.self.__backendTest, messages };
+  return { api: sandbox.self.__backendTest, messages, onmessage: sandbox.self.onmessage };
 }
 
 const entry = (id) => ({ id });
@@ -58,6 +58,33 @@ describe('canonical MLWorker backend fallback', () => {
     await api.createSessionFromBytes(entry('b'), bytes, 'b');
     expect(calls).toEqual([['webgpu'], ['wasm'], ['wasm'], ['webgpu']]);
     expect(messages.find((m) => m.stage === 'ort-fallback')).toMatchObject({ modelId: 'a', reason: 'session-compile' });
+  });
+
+  test('a GPU adapter does not verify the provider before a session exists', async () => {
+    const { messages, onmessage } = loadBackendHarness({ adapter: {} });
+    await onmessage({ data: { type: 'init', manifest: [] } });
+    const ready = messages.find((message) => message.type === 'ready');
+    expect(ready).toMatchObject({
+      backend: 'wasm',
+      gpuCandidate: true,
+      providerVerified: false,
+      sessionCreated: false,
+      reason: 'session-not-created',
+    });
+    expect(messages.some((message) => message.providerVerified === true)).toBe(false);
+  });
+
+  test('a missing WASM runtime fails closed instead of reporting ready', async () => {
+    const { messages, onmessage } = loadBackendHarness({ adapter: null, runtime: false });
+    await onmessage({ data: { type: 'init', manifest: [] } });
+    expect(messages).toEqual([
+      expect.objectContaining({
+        type: 'error',
+        code: 'PROVIDER_INIT_FAILED',
+        providerVerified: false,
+        runtimePresent: false,
+      }),
+    ]);
   });
 
   test('device loss disables further WebGPU attempts worker-wide', async () => {

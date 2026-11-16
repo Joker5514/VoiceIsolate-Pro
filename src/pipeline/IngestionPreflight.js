@@ -3,10 +3,11 @@ import { readDeviceSignals, selectPerformanceTier } from '../core/PerformanceTie
 import {
   budgetError, chainChunkContract, estimateIngestionMemory, ingestionBudget, resolveIngestionPlan,
 } from '../core/IngestionBudget.js';
-import { parseMp4Duration } from './CompressedAudioReader.js';
+import { parseMp4Duration, readCompressedLayout } from './CompressedAudioReader.js';
 import { wavMetadataFor } from './ChunkedExtraction.js';
 import { probeMediaMetadata, runBounded } from './media-decode.js';
-import { emitIngestionDebug } from '../core/ingestion-debug.js';
+import { emitIngestionDebug, traceIngest } from '../core/ingestion-debug.js';
+import { decodeMetadataError } from '../core/DecodedAudio.js';
 
 export async function preflightIngestion(file, {
   signal, timeoutMs = 15000, onBudget = () => {}, profile = 'AUTO', modelIds = null,
@@ -29,6 +30,11 @@ export async function preflightIngestion(file, {
   const isWave = ['RIFF', 'RF64'].includes(signature)
     && head.length >= 12
     && String.fromCharCode(head[8], head[9], head[10], head[11]) === 'WAVE';
+  const isId3 = head.length >= 3 && signature.startsWith('ID3');
+  const isMpegFrame = head.length >= 2 && head[0] === 0xff && (head[1] & 0xe0) === 0xe0;
+  const isMpeg = isId3 || isMpegFrame
+    || /\.mp3$/i.test(file.name || '')
+    || /(?:mpeg|mp3)/i.test(file.type || '');
   // Header walk, never blob.arrayBuffer() of the whole file before the budget decision.
   const headerController = typeof AbortController === 'function' ? new AbortController() : null;
   let metadata = isWave ? await runBounded(
@@ -70,6 +76,33 @@ export async function preflightIngestion(file, {
       // Fall through to the browser's media-element probe for unusual MP4s.
     }
   }
+  if ((isMp4 || isMpeg) && !(metadata?.source === 'wav-header')) {
+    emitIngestionDebug('metadata:bitstream:start', { fileName: file.name || 'untitled', kind: isMp4 ? 'mp4' : 'mp3' });
+    try {
+      const layout = await readCompressedLayout(file, { signal, kind: isMp4 ? 'mp4' : 'mp3' });
+      if (layout?.frames > 0 && layout.channels > 0 && layout.sampleRate > 0) {
+        emitIngestionDebug('metadata:bitstream:success', {
+          duration: layout.duration, channels: layout.channels, sampleRate: layout.sampleRate, frames: layout.frames, source: layout.source,
+        });
+        metadata = {
+          duration: layout.duration,
+          channels: layout.channels,
+          sampleRate: layout.sampleRate,
+          frames: layout.frames,
+          bitDepth: null,
+          source: layout.source,
+          complete: true,
+          bitstream: layout.bitstream,
+        };
+      } else {
+        emitIngestionDebug('metadata:bitstream:unavailable', { fileName: file.name || 'untitled' });
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
+      if (error?.code === 'DECODE_METADATA_INVALID') throw error;
+      emitIngestionDebug('metadata:bitstream:error', { code: error?.code || error?.name || 'ERROR', message: error?.message || String(error) });
+    }
+  }
   if (!metadata) {
     emitIngestionDebug('metadata:browser-probe:start', { fileName: file.name || 'untitled' });
     try { metadata = await probeMediaMetadata(file, signal, timeoutMs); }
@@ -83,14 +116,35 @@ export async function preflightIngestion(file, {
   const tier = selectPerformanceTier(signals);
   const budget = ingestionBudget(signals, tier);
   const contract = modelIds?.length ? chainChunkContract(modelIds) : undefined;
+  const bitstream = metadata?.bitstream || null;
+  if (metadata) delete metadata.bitstream;
   const estimate = resolveIngestionPlan(metadata, file.size, budget, {
     profile, contract, modelId: modelIds?.[0],
   });
+  if (bitstream) estimate.bitstream = bitstream;
   // Full-file `decision: refuse` is not a dead end when a chunk window fits.
   emitIngestionDebug('preflight:plan', { strategy: estimate.strategy, duration: estimate.duration ?? null, estimatedBytes: estimate.estimatedBytes ?? null, budgetBytes: estimate.budgetBytes ?? null, tier: estimate.tier || tier, metadataSource: estimate.metadataSource || metadata?.source || null });
   if (estimate.strategy === 'refuse') {
     emitIngestionDebug('preflight:refused', { code: 'INGESTION_METADATA_REQUIRED', known: estimate.known });
     throw budgetError(estimate, file.name);
+  }
+  if (estimate.strategy === 'chunked' && estimate.frameAuthority !== 'pcm') {
+    const field = estimate.channelsAssumed ? 'channels' : 'frames';
+    const error = decodeMetadataError({
+      stage: 'ingest.metadata.validate',
+      file: file.name || 'untitled',
+      decoder: metadata?.source || 'container',
+      field,
+      message: `[VIP][FileIngestion] Cannot import “${file.name || 'file'}” in chunked mode: the container did not provide a measured channel count and a PCM frame count. A duration by itself is not a decode, and the channel count was not guessed. The file was not modified. Export WAV, M4A/AAC, or MP3, or use a shorter file that fits in memory.`,
+    });
+    traceIngest('ingest.metadata.validate', {
+      ok: false, field, strategy: 'chunked', channels: estimate.channels ?? null, frames: estimate.sourceFrames ?? null, sampleRate: estimate.sampleRate ?? null,
+    }, 'error');
+    traceIngest('ingest.failed', {
+      stage: 'ingest.metadata.validate', field, strategy: 'chunked', message: error.message, file: file.name || 'untitled',
+    }, 'error');
+    error.ingestTraced = true;
+    throw error;
   }
   onBudget(estimate);
   emitIngestionDebug('preflight:ready', { strategy: estimate.strategy, duration: estimate.duration });

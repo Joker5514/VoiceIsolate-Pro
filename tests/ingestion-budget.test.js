@@ -54,7 +54,12 @@ test('non-WAV preflight stops after the fixed-size signature read', async () => 
   await expect(preflight.preflightIngestion(blob)).rejects.toMatchObject({
     code: 'INGESTION_METADATA_REQUIRED',
   });
-  expect(ranges).toEqual([[0, 12]]);
+  // Signature stays a 12-byte read. A recognized MPEG prefix then gets one
+  // bounded frame probe, not the geometric WAV header walk.
+  expect(ranges[0]).toEqual([0, 12]);
+  expect(ranges.length).toBeLessThanOrEqual(3);
+  expect(ranges.every(([, end]) => end <= blob.size || end === 12)).toBe(true);
+  expect(ranges.some(([, end]) => end > 1024 * 1024)).toBe(false);
 });
 
 function mp4Box(type, payload) {

@@ -181,6 +181,51 @@ async function preflightIngestion(file, hooks) {
   return estimate;
 }
 function assertDecodedIngestionBudget(_decoded, _fileBytes, estimate) { return estimate; }
+function traceIngest() {}
+function assertAudioBufferContract(buffer) {
+  if (!buffer || !(buffer.numberOfChannels > 0) || !(buffer.length > 0) || !(buffer.sampleRate > 0)) {
+    const error = new Error('Decoded audio is empty or unreadable');
+    error.code = 'DECODE_METADATA_INVALID';
+    error.field = 'frames';
+    throw error;
+  }
+  return {
+    sampleRate: buffer.sampleRate,
+    numberOfChannels: buffer.numberOfChannels,
+    numberOfFrames: buffer.length,
+    duration: buffer.length / buffer.sampleRate,
+    channelLayout: buffer.numberOfChannels === 1 ? 'mono' : 'stereo',
+    metadataAuthority: 'decoded-buffer',
+  };
+}
+function buildChunkedDecodedAudio(plan, file) {
+  const error = new Error('Chunked metadata is not available in this shim');
+  error.code = 'DECODE_METADATA_INVALID';
+  error.file = file && file.name;
+  error.stage = 'ingest.metadata.validate';
+  if (!plan || plan.frameAuthority !== 'pcm') throw error;
+  return {
+    strategy: 'chunked',
+    sampleRate: 48000,
+    numberOfChannels: plan.outputChannels || 1,
+    numberOfFrames: plan.totalFrames,
+    duration: plan.totalFrames / 48000,
+    pcmResident: false,
+    metadataAuthority: 'pcm',
+    channelData: null,
+  };
+}
+function ingestDecodedDetail(decoded, extra) {
+  return {
+    bytes: (extra && extra.bytes) || 0,
+    duration: decoded.duration,
+    sampleRate: decoded.sampleRate,
+    channels: decoded.numberOfChannels,
+    frames: decoded.numberOfFrames,
+    strategy: decoded.strategy || 'full',
+    pcmResident: decoded.pcmResident !== false,
+  };
+}
 async function decodeBlobToAudioBuffer(file, hooks) {
   const onProgress = (hooks && hooks.onProgress) || (() => {});
   onProgress(50);

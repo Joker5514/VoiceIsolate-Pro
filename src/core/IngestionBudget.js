@@ -2,7 +2,7 @@
  * Browser PCM is Float32 regardless of the source bit depth. The estimate is
  * an allocation budget, not a claim about total browser/device memory.
  */
-import { SAMPLE_RATE, MAX_CHANNELS } from './audio-config.js';
+import { SAMPLE_RATE, MAX_CHANNELS, resampledLength } from './audio-config.js';
 import { PerformanceTier, detectPerformanceTier } from './PerformanceTier.js';
 import { MODEL_MANIFEST } from './ModelManifest.js';
 
@@ -388,6 +388,24 @@ export function planChunkWindow(estimate, budget, contract, profile = 'AUTO') {
  * `strategy` is `full` when that verdict fits, `chunked` when a window fits,
  * and `refuse` only when neither does.
  */
+/**
+ * PCM frame count when the container enumerates samples. A duration with no
+ * frame table is not a count.
+ * @returns {{ channels: number, sampleRate: number, frames: number }|null}
+ */
+export function pcmLayoutFromMetadata(metadata, channelsAssumed = false) {
+  if (!metadata || channelsAssumed) return null;
+  const channels = Number.isInteger(metadata.channels) && metadata.channels > 0 ? metadata.channels : null;
+  const sampleRate = Number.isFinite(metadata.sampleRate) && metadata.sampleRate > 0 ? metadata.sampleRate : null;
+  let frames = Number.isInteger(metadata.frames) && metadata.frames > 0 ? metadata.frames : null;
+  if (frames == null && metadata.source === 'wav-header' && metadata.dataBytes > 0 && metadata.blockAlign > 0) {
+    const counted = Math.floor(metadata.dataBytes / metadata.blockAlign);
+    if (counted > 0) frames = counted;
+  }
+  if (!channels || !sampleRate || !frames) return null;
+  return { channels, sampleRate, frames };
+}
+
 export function resolveIngestionPlan(metadata, fileBytes, budget, options = {}) {
   const estimate = estimateIngestionMemory(metadata, fileBytes, budget);
   const contract = options.contract || chunkContractFor(options.modelId || 'bsrnn_vocals');
@@ -400,6 +418,8 @@ export function resolveIngestionPlan(metadata, fileBytes, budget, options = {}) 
       contract,
       chunk: null,
       totalFrames: 0,
+      sourceFrames: null,
+      frameAuthority: null,
       wav: null,
       measurements: {
         compressedBytes: Number.isFinite(fileBytes) ? fileBytes : null,
@@ -415,13 +435,20 @@ export function resolveIngestionPlan(metadata, fileBytes, budget, options = {}) 
   const strategy = estimate.decision === 'refuse'
     ? (chunk.viable ? 'chunked' : 'refuse')
     : 'full';
+  const pcm = pcmLayoutFromMetadata(metadata, estimate.channelsAssumed);
+  const canonicalFrames = pcm ? resampledLength(pcm.frames, pcm.sampleRate) : 0;
+  const frameAuthority = pcm && canonicalFrames > 0 ? 'pcm' : 'duration-estimate';
   return {
     ...estimate,
     strategy,
     profile,
     contract,
     chunk,
-    totalFrames: Math.max(1, Math.round(estimate.duration * SAMPLE_RATE)),
+    sourceFrames: pcm ? pcm.frames : null,
+    frameAuthority,
+    totalFrames: frameAuthority === 'pcm'
+      ? canonicalFrames
+      : Math.max(1, Math.round(estimate.duration * SAMPLE_RATE)),
     wav: metadata?.source === 'wav-header' ? metadata : null,
     measurements: {
       compressedBytes: fileBytes,
