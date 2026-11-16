@@ -530,9 +530,12 @@ describe('worker transfer and provider handshake', () => {
       message: 'ONNX Runtime did not initialize in the worker.',
     })).toEqual({
       terminate: true,
-      backend: 'unavailable',
+      backend: 'wasm',
       message: 'ONNX Runtime did not initialize in the worker.',
     });
+    expect(handshake.planStartupProviderFailure({
+      message: 'Worker init failed',
+    })).toMatchObject({ terminate: true, backend: 'wasm' });
     expect(handshake.planStartupProviderFailure({
       code: 'PROVIDER_INIT_FAILED',
       requestId: 4,

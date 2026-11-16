@@ -73,10 +73,12 @@ export function explainProviderReady(msg = {}) {
  * @returns {{ terminate: true, backend: 'unavailable', message: string }|null}
  */
 export function planStartupProviderFailure(msg = {}) {
-  if (msg.requestId != null || msg.code !== 'PROVIDER_INIT_FAILED') return null;
+  if (msg.requestId != null) return null;
   return {
     terminate: true,
-    backend: 'unavailable',
+    // wasm is the retryable local backend. 'unavailable' makes the outcome
+    // planner throw before Process can construct a replacement worker.
+    backend: 'wasm',
     message: msg.message || 'Local ML worker initialization failed',
   };
 }

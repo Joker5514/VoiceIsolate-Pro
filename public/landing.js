@@ -1163,17 +1163,19 @@ function getWorker() {
         ui.modelSelect.disabled = false;
         break;
       case 'error':
-        if (msg.code === 'PROVIDER_INIT_FAILED') {
-          const provider = explainProviderReady({
-            ...msg,
-            type: 'error',
-            runtimePresent: false,
-          });
-          vipLog('error', 'ingest.provider.verify', provider);
+        if (!msg.requestId && resolveWorkerReady) {
+          if (msg.code === 'PROVIDER_INIT_FAILED') {
+            const provider = explainProviderReady({
+              ...msg,
+              type: 'error',
+              runtimePresent: false,
+            });
+            vipLog('error', 'ingest.provider.verify', provider);
+          }
           vipLog('error', 'ingest.failed', {
-            stage: 'ingest.provider.verify',
-            code: provider.code,
-            message: msg.message || provider.detail,
+            stage: msg.code === 'PROVIDER_INIT_FAILED' ? 'ingest.provider.verify' : 'ingest.worker',
+            code: msg.code || null,
+            message: msg.message || 'Local ML worker initialization failed',
           });
           const startup = planStartupProviderFailure(msg);
           if (startup?.terminate) {

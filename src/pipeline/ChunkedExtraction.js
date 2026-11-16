@@ -346,7 +346,7 @@ export async function runChunkedExtraction(file, plan, options = {}) {
       segments.push(segment);
       options.onSegment?.(segment);
       const input = await readCanonicalWindow(file, plan, readStart, readCount, readState);
-      if (!input?.length || input.length !== channelCount || input[0].length !== readCount) {
+      if (!input?.length || input.length !== channelCount || input.some((channel) => channel?.length !== readCount)) {
         segment.state = 'failed';
         throw fail('CHUNK_FAILED', `[VIP][ChunkedExtraction] Segment ${index} decoded ${input?.length ?? 0} channels and ${input?.[0]?.length ?? 0} frames; expected ${channelCount} channels and ${readCount} frames. Output discarded.`, segment);
       }
@@ -371,9 +371,13 @@ export async function runChunkedExtraction(file, plan, options = {}) {
         error.segment = segment;
         throw error;
       }
-      if (!processed || processed.length < input.length || processed[0].length !== readCount) {
+      const shortChannel = !processed || processed.length < input.length
+        ? 0
+        : processed.slice(0, input.length).findIndex((channel) => channel?.length !== readCount);
+      if (!processed || processed.length < input.length || shortChannel !== -1) {
         segment.state = 'failed';
-        throw fail('CHUNK_FAILED', `[VIP][ChunkedExtraction] Segment ${index} returned ${processed?.[0]?.length ?? 0} frames; expected ${readCount}. The recording was not marked complete.`, segment);
+        const got = processed?.[shortChannel < 0 ? 0 : shortChannel]?.length ?? 0;
+        throw fail('CHUNK_FAILED', `[VIP][ChunkedExtraction] Segment ${index} channel ${Math.max(0, shortChannel)} returned ${got} frames; expected ${readCount}. The recording was not marked complete.`, segment);
       }
       const cleanCore = processed.slice(0, input.length).map((ch) => new Float32Array(ch.subarray(coreOffset, coreOffset + emitLen)));
       const noiseCore = cleanCore.map((ch, c) => {
