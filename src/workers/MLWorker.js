@@ -1574,7 +1574,9 @@ function assertInboundPcm(channelData, sampleRate) {
     throw new Error('[VIP][MLWorker] Refusing to separate audio with no channels.');
   }
   const frames = channelData[0]?.length;
-  if (!Number.isInteger(frames) || frames < 1) {
+  // Length 0 is a present empty channel. The worker returns empty stems.
+  // A missing length is not that case.
+  if (!Number.isInteger(frames) || frames < 0) {
     throw new Error('[VIP][MLWorker] Refusing to separate audio with no frames.');
   }
   for (let i = 0; i < channelData.length; i++) {
@@ -1607,6 +1609,23 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     if (MANIFEST[id].strategy === 'deepfilternet-part') {
       throw new Error(`[VIP][MLWorker] '${id}' is part of a composite model; select its composite entry instead.`);
     }
+  }
+  if (channelData[0].length === 0) {
+    const clean = channelData.map(() => new Float32Array(0));
+    const noise = channelData.map(() => new Float32Array(0));
+    self.postMessage({
+      type: 'stems',
+      requestId,
+      clean,
+      noise,
+      sampleRate,
+      numberOfChannels: clean.length,
+      numberOfFrames: 0,
+      passthrough: true,
+      pipelineMode: 'empty',
+      modelChain: chain,
+    }, [...clean, ...noise].map((channel) => channel.buffer));
+    return;
   }
 
   // Spectral masks are trained on fixed bin frequencies; another rate would
