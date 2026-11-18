@@ -159,8 +159,10 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
     voiceIso: 78,
     bgSuppress: 55,
     derevAmt: 14,
-    // Sub/kick cut at Process time (t26u sweep; tests/whisper-boost-basscrush.test.js).
-    bassCrush: 60,
+    // Sub/kick cut at Process time. 60 (t26u, synthetic whisper) put ~40 % of a
+    // real whisper into the Removed stem; 20 keeps the real whisper-only stem
+    // within 1 dB (t29u; tests/whisper-boost-basscrush.test.js).
+    bassCrush: 20,
     musicKill: 0,
   }),
   'Phone/Radio': base({
