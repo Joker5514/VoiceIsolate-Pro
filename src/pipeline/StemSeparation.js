@@ -393,6 +393,8 @@ export async function separateStems(channelData, sampleRate, options = {}) {
             passthrough: Boolean(m.passthrough),
             pipelineMode: m.pipelineMode || null,
             backend: m.backend || null,
+            preferredBackend: m.preferredBackend || null,
+            sessionBackends: m.sessionBackends || null,
             appliedProcessingConfigRevision: m.appliedProcessingConfigRevision || null,
           };
           if (out.passthrough || options.skipCache) {

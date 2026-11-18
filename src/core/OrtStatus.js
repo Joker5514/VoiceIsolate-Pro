@@ -114,6 +114,41 @@ export async function probeWebGpuAvailable() {
   }
 }
 
+const PROVIDER_LABEL = Object.freeze({ webgpu: 'WebGPU', wasm: 'WASM' });
+
+/**
+ * The execution provider a stems result actually ran on, for logs.
+ * MLWorker attaches backend / preferredBackend / sessionBackends to every
+ * stems message (actualBackendsFor). preferredBackend is the adapter probe;
+ * backend is what InferenceSession.create produced.
+ * @param {{ backend?: string|null, preferredBackend?: string|null, sessionBackends?: object|null, fromCache?: boolean }} [result]
+ * @returns {{ effectiveProvider: string, preferredProvider: string|null, webgpuFallback: boolean, sessionBackends: object|null, summary: string }}
+ */
+export function describeEffectiveProvider(result = {}) {
+  const preferred = result?.preferredBackend ? String(result.preferredBackend).toLowerCase() : null;
+  const sessions = result?.sessionBackends && typeof result.sessionBackends === 'object'
+    ? { ...result.sessionBackends }
+    : null;
+  if (result?.fromCache && !result?.backend) {
+    return { effectiveProvider: 'none', preferredProvider: preferred, webgpuFallback: false, sessionBackends: sessions, summary: 'no ONNX session (stems from cache)' };
+  }
+  const backend = result?.backend ? String(result.backend).toLowerCase() : 'unknown';
+  const webgpuFallback = preferred === 'webgpu' && backend !== 'webgpu' && backend !== 'unknown';
+  let summary;
+  if (backend === 'webgpu') summary = 'WebGPU (session verified)';
+  else if (backend === 'wasm') summary = webgpuFallback ? 'WASM (fell back from WebGPU)' : 'WASM (no WebGPU adapter)';
+  else if (backend === 'mixed') {
+    const parts = Object.entries(sessions || {}).map(([id, b]) => `${id}=${b}`);
+    summary = `mixed (${parts.join(', ')})`;
+  } else summary = 'unknown (worker did not report a backend)';
+  return { effectiveProvider: backend, preferredProvider: preferred, webgpuFallback, sessionBackends: sessions, summary };
+}
+
+/** Provider label for UI strings. */
+export function providerLabel(provider) {
+  return PROVIDER_LABEL[provider] || String(provider || 'unknown');
+}
+
 /**
  * Apply MLWorker `ready` / `error` / `warmed` messages.
  * @param {object} msg
