@@ -53,7 +53,10 @@ async function probeModel(role, url) {
     contentLength: Number.isFinite(len) ? len : null,
     contentEncoding: res.headers?.get?.('content-encoding') || null,
   };
-  if (!res.ok) return { ...out, verdict: 'missing' };
+  // Only 404/410 say the file is absent. A 401/403/405/429/5xx means the
+  // HEAD was refused or failed; existence is unverified (live test t24u:
+  // all three models answered 403 from the browser and were logged missing).
+  if (!res.ok) return { ...out, verdict: res.status === 404 || res.status === 410 ? 'missing' : 'unverified' };
   if (out.contentLength == null) return { ...out, verdict: 'present-unsized' };
   if (out.contentLength <= MIN_MODEL_BYTES) return { ...out, verdict: 'stub' };
   return { ...out, verdict: 'present' };
@@ -61,6 +64,7 @@ async function probeModel(role, url) {
 
 function describeProbe(m) {
   if (m.verdict === 'missing') return `${m.file} (${m.url}: HTTP ${m.status})`;
+  if (m.verdict === 'unverified') return `${m.file} (${m.url}: HTTP ${m.status}, unverified)`;
   if (m.verdict === 'stub') return `${m.file} (${m.url}: ${m.contentLength} bytes, stub)`;
   if (m.verdict === 'unreachable') return `${m.file} (${m.url}: unreachable: ${m.detail})`;
   return `${m.file} (${m.url}: ${m.verdict})`;
@@ -75,7 +79,9 @@ export async function probeDiarizationModels() {
     Object.entries(MODEL_URLS).map(([role, url]) => probeModel(role, url)),
   );
   const bad = models.filter((m) => m.verdict !== 'present' && m.verdict !== 'present-unsized');
-  return { ok: bad.length === 0, models, summary: bad.map(describeProbe).join('; ') };
+  // Every non-present model was only refused at HEAD: a session load (GET) may still work.
+  const onlyUnverified = bad.length > 0 && bad.every((m) => m.verdict === 'unverified');
+  return { ok: bad.length === 0, onlyUnverified, models, summary: bad.map(describeProbe).join('; ') };
 }
 
 /**
@@ -148,7 +154,7 @@ async function loadOnnxSessions() {
       throw err;
     }
     const probe = await probeDiarizationModels();
-    if (!probe.ok) {
+    if (!probe.ok && !probe.onlyUnverified) {
       const err = new Error(`Diarization ONNX models not available: ${probe.summary}`);
       err.code = 'models-unavailable';
       err.models = probe.models;
@@ -309,10 +315,20 @@ export async function detectSpeakers(clean, sampleRate, { signal = null } = {}) 
     if (!onnxDiarizationEnabled()) {
       const probe = await probeDiarizationModels();
       const reachable = probe.models.filter((m) => m.verdict === 'present' || m.verdict === 'present-unsized').length;
-      const err = new Error(probe.ok
-        ? `ONNX diarizer is off by default (models reachable ${reachable}/3; opt in with localStorage vip-onnx-diarization=1)`
-        : `ONNX diarizer is off by default; models not available: ${probe.summary}`);
-      err.code = probe.ok ? 'onnx-diarizer-disabled' : 'models-unavailable';
+      let message;
+      let code;
+      if (probe.ok) {
+        message = `ONNX diarizer is off by default (models reachable ${reachable}/3; opt in with localStorage vip-onnx-diarization=1)`;
+        code = 'onnx-diarizer-disabled';
+      } else if (probe.onlyUnverified) {
+        message = `ONNX diarizer is off by default; model HEAD refused, presence unverified: ${probe.summary}`;
+        code = 'models-unverified';
+      } else {
+        message = `ONNX diarizer is off by default; models not available: ${probe.summary}`;
+        code = 'models-unavailable';
+      }
+      const err = new Error(message);
+      err.code = code;
       err.models = probe.models;
       throw err;
     }
