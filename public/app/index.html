@@ -220,9 +220,9 @@
     </div>
     <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" title="Toggle stats" aria-expanded="false">&#9660;</button>
     <div class="hdr-stats" id="hdrStats">
-      <div class="hdr-stat" title="Share of energy kept as the signal. Raise Voice Iso in Live-Mix if the voice is still buried after Process."><span class="hs-val" id="hVoice">--</span><span class="hs-lbl">Voice %</span></div>
-      <div class="hdr-stat" title="Residual against the original. Raise Background Suppress in Live-Mix, or run Process again after noise reduction."><span class="hs-val" id="hNoise">--</span><span class="hs-lbl">Noise %</span></div>
-      <div class="hdr-stat" title="Processed signal versus the residual, in dB. A higher number means the kept signal sits further above that residual."><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR</span></div>
+      <div class="hdr-stat" title="Measured after Process: share of energy kept in the processed stem (an energy proxy, not a voice detector). Raise Voice Iso in Live-Mix if the voice is still buried after Process."><span class="hs-val" id="hVoice">--</span><span class="hs-lbl">Voice %</span></div>
+      <div class="hdr-stat" title="Measured after Process: share of energy removed (original minus processed). Raise Background Suppress in Live-Mix, or run Process again after noise reduction."><span class="hs-val" id="hNoise">--</span><span class="hs-lbl">Noise %</span></div>
+      <div class="hdr-stat" title="Measured after Process: processed energy versus removed energy, in dB (a proxy, not a true SNR). A higher number means the kept signal sits further above that residual."><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR</span></div>
       <div class="hdr-stat" title="Length of the loaded buffer. This is how much audio Process will cover."><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
       <div class="hdr-stat" title="Sample rate of the decoded buffer. Processing runs at 48 kHz."><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
       <div class="hdr-stat" title="Channel count of the decoded buffer. Phase and crosstalk controls apply to stereo files."><span class="hs-val" id="hCh">--</span><span class="hs-lbl">Channels</span></div>
@@ -427,10 +427,10 @@
           <button type="button" class="vip-compare-toggle__btn" data-compare="removed" aria-pressed="false">Removed (Delta)</button>
         </div>
         <div class="vip-live-metrics" id="engineerLiveMetrics">
-          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Voice Clarity</span><span class="vip-live-metrics__value" id="metricVoiceClarity">--</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricVoiceClarityFill"></div></div></div>
-          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Noise Reduction</span><span class="vip-live-metrics__value" id="metricNoiseReduction">-- dB</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricNoiseReductionFill"></div></div></div>
-          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Whisper Retention</span><span class="vip-live-metrics__value" id="metricWhisperRetention">--</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricWhisperRetentionFill"></div></div></div>
-          <div class="vip-live-metrics__card"><span class="vip-live-metrics__label">Output dBFS</span><span class="vip-live-metrics__value" id="metricOutputDb">-- dBFS</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricOutputDbFill"></div></div></div>
+          <div class="vip-live-metrics__card" title="Measured after Process: share of energy kept in the processed stem versus energy removed. An energy proxy, not a voice detector."><span class="vip-live-metrics__label">Voice Clarity</span><span class="vip-live-metrics__value" id="metricVoiceClarity">--</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricVoiceClarityFill"></div></div></div>
+          <div class="vip-live-metrics__card" title="Measured after Process: how far the quietest 10% of 20 ms frames dropped, original versus processed, in dB."><span class="vip-live-metrics__label">Noise Reduction</span><span class="vip-live-metrics__value" id="metricNoiseReduction">-- dB</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricNoiseReductionFill"></div></div></div>
+          <div class="vip-live-metrics__card" title="Measured after Process: energy kept in quiet frames (2 to 12 dB above the original noise floor), in percent."><span class="vip-live-metrics__label">Whisper Retention</span><span class="vip-live-metrics__value" id="metricWhisperRetention">--</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricWhisperRetentionFill"></div></div></div>
+          <div class="vip-live-metrics__card" title="Measured after Process: RMS level of the processed stem before the Live-Mix chain (gate, EQ, compressor, gain, limiter). Exports are louder or quieter by that chain."><span class="vip-live-metrics__label">Output dBFS</span><span class="vip-live-metrics__value" id="metricOutputDb">-- dBFS</span><div class="vip-live-metrics__bar"><div class="vip-live-metrics__fill" id="metricOutputDbFill"></div></div></div>
         </div>
         </div>
       </details>

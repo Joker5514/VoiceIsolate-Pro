@@ -577,13 +577,13 @@ function updateLiveMetrics(metrics) {
     }
   };
 
-  if (metrics.voiceClarity != null) setMetric('metricVoiceClarity', `${Math.round(metrics.voiceClarity)}%`, 'metricVoiceClarityFill');
-  if (metrics.noiseReduction != null) setMetric('metricNoiseReduction', `${metrics.noiseReduction.toFixed(1)} dB`, 'metricNoiseReductionFill', 60);
-  if (metrics.whisperRetention != null) setMetric('metricWhisperRetention', `${Math.round(metrics.whisperRetention)}%`, 'metricWhisperRetentionFill');
-  if (metrics.outputLevelDb != null || metrics.outputDb != null) {
-    const db = metrics.outputLevelDb ?? metrics.outputDb;
-    setMetric('metricOutputDb', `${db.toFixed(1)} dBFS`, 'metricOutputDbFill', 1);
-  }
+  // Cleared values (new upload) render "--" so the previous file's numbers never linger.
+  const fin = (v) => typeof v === 'number' && Number.isFinite(v);
+  setMetric('metricVoiceClarity', fin(metrics.voiceClarity) ? `${Math.round(metrics.voiceClarity)}%` : '--', 'metricVoiceClarityFill');
+  setMetric('metricNoiseReduction', fin(metrics.noiseReduction) ? `${metrics.noiseReduction.toFixed(1)} dB` : '-- dB', 'metricNoiseReductionFill', 60);
+  setMetric('metricWhisperRetention', fin(metrics.whisperRetention) ? `${Math.round(metrics.whisperRetention)}%` : '--', 'metricWhisperRetentionFill');
+  const outDb = metrics.outputLevelDb ?? metrics.outputDb;
+  setMetric('metricOutputDb', fin(outDb) ? `${outDb.toFixed(1)} dBFS` : '-- dBFS', 'metricOutputDbFill', 1);
 
   // Deep metrics
   const deepMap = {
