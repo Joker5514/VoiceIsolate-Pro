@@ -98,13 +98,28 @@ function finiteOrNull(value) {
 }
 
 /**
+ * Stage timings of the last Process pass (ms, from PipelineTiming) plus the
+ * ML execution provider. Only measured, finite stages are kept.
+ * @param {{ stagesMs?: object, provider?: string }} timing
+ */
+function sanitizeTiming(timing) {
+  const stagesMs = {};
+  const src = timing && typeof timing.stagesMs === 'object' && timing.stagesMs ? timing.stagesMs : {};
+  for (const key of Object.keys(src)) {
+    const v = src[key];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) stagesMs[key] = Math.round(v);
+  }
+  return { stagesMs, provider: strOrNull(timing?.provider) };
+}
+
+/**
  * Build a schema-conforming record. Throws only for missing MANDATORY fields.
  *
  * @param {object} input
  * @param {object} [input.source]   { name, sizeBytes, mimeType, sha256 }
  * @param {object} [input.export]   { timestamp?, format, options, output: { filename, sizeBytes, sha256 } }
  * @param {object} [input.application] { version, inferenceRevision, modelChainRevision, modelIds, models }
- * @param {object} [input.processing]  { parameters, operations }
+ * @param {object} [input.processing]  { parameters, operations, timing? }
  * @param {string} [input.createdAt]
  * @returns {object} provenance record incl. manifestDigest
  */
@@ -153,6 +168,7 @@ export function buildProvenanceRecord(input = {}) {
           detail: strOrNull(op?.detail) || null,
         }))
         : null,
+      ...(input.processing.timing ? { timing: sanitizeTiming(input.processing.timing) } : {}),
     } : null,
     // integrity fields (computed, never supplied):
     manifestDigest: null,

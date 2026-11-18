@@ -32,6 +32,13 @@ describe('Engineer export provenance wiring', () => {
     expect(helper).toContain("this._processingEngine === 'ml'");
     expect(helper).not.toContain('bsrnn_vocals');
   });
+
+  test('the sidecar carries the last Process stage timings (no DevTools needed)', () => {
+    const attach = app.slice(app.indexOf('async _attachExportProvenance'), app.indexOf('async _saveProcessedToGoogleDrive()'));
+    expect(attach).toContain('getTimings()');
+    expect(attach).toMatch(/\n\s+timing,\n/);
+    expect(attach).toContain('__vipOrtStatus');
+  });
 });
 
 describe('publishExportProvenance', () => {
@@ -98,6 +105,39 @@ describe('publishExportProvenance', () => {
     expect(check.checks.sourceSha256).toBe('passed');
     expect(result.record.application.modelIds).toEqual(['bsrnn_vocals']);
     expect(result.record.application.models[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test('records stage timings and the ML provider, dropping unmeasured stages', async () => {
+    const output = new Blob(['out']);
+    const delivered = [];
+    const result = await publishExportProvenance({
+      outputBlob: output,
+      filename: 'timed.wav',
+      appVersion: '25.0.2',
+      timing: {
+        stagesMs: { decode: 180, pipeline: 2458, ml_isolation: 1799, resample: Number.NaN, bogus: 'x' },
+        provider: 'wasm',
+      },
+      deliver: (blob, name) => delivered.push({ blob, name }),
+    });
+    expect(result.ok).toBe(true);
+    const record = JSON.parse(await delivered[0].blob.text());
+    expect(record.processing.timing).toEqual({
+      stagesMs: { decode: 180, pipeline: 2458, ml_isolation: 1799 },
+      provider: 'wasm',
+    });
+    const check = await verifyProvenanceRecord(record, {
+      outputBlob: output,
+      hashFn: async (blob) => (await hashBlobSha256(blob)).hex,
+    });
+    expect(check.ok).toBe(true);
+  });
+
+  test('no timing supplied leaves the record shape unchanged', async () => {
+    const result = await publishExportProvenance({
+      outputBlob: new Blob(['o']), filename: 'o.wav', appVersion: '1', deliver: () => {},
+    });
+    expect(result.record.processing).not.toHaveProperty('timing');
   });
 
   test('cancellation does not deliver a sidecar', async () => {
