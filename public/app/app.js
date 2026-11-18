@@ -5997,6 +5997,24 @@ class VoiceIsolatePro {
   }
 
   /**
+   * Retained stems may be re-used only for the same decoded source, file and
+   * Process-time revision. fileSeq alone was not enough: a loader that did not
+   * bump it (the legacy m4a patch) made a second, different upload re-use the
+   * first file's stems and export identical audio (live test t24u/t25u).
+   */
+  _canReuseRetainedStems(buf, fileSeq, processingRevision) {
+    return Boolean(
+      !this._forceMlRerun
+      && buf
+      && this._stemSourceBuffer === buf
+      && this._stemFileSeq === fileSeq
+      && this._stemProcessingRevision === processingRevision
+      && this._cleanStemChannels?.length
+      && this.outputBuffer,
+    );
+  }
+
+  /**
    * Apply the deterministic time-domain cleanup shared by fresh and durable
    * ML results. Durable storage intentionally keeps raw worker stems, so this
    * must run after clone/expand/post-stem controls on every cache path.
@@ -6083,24 +6101,6 @@ class VoiceIsolatePro {
       });
     }
     return async (ctx, channels, sr) => stemMod.stemsToAudioBuffer(ctx, channels, sr);
-  }
-
-  /**
-   * Retained stems may be re-used only for the same decoded source, file and
-   * Process-time revision. fileSeq alone was not enough: a loader that did not
-   * bump it (the legacy m4a patch) made a second, different upload re-use the
-   * first file's stems and export identical audio (live test t24u/t25u).
-   */
-  _canReuseRetainedStems(buf, fileSeq, processingRevision) {
-    return Boolean(
-      !this._forceMlRerun
-      && buf
-      && this._stemSourceBuffer === buf
-      && this._stemFileSeq === fileSeq
-      && this._stemProcessingRevision === processingRevision
-      && this._cleanStemChannels?.length
-      && this.outputBuffer,
-    );
   }
 
   /**
