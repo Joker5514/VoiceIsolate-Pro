@@ -48,6 +48,7 @@ function harness() {
     `return class {
       constructor() { this._fileSeq = 1; this._sessionMetricsPendingKey = 'k'; }
       getDiarizationSegments() { return []; }
+      _stemStatsAsync() { return Promise.resolve({ voicePct: 97, noisePct: 3, snrDb: 18, noiseReductionDb: 9, whisperRetentionPct: 60, speechFraction: 0.3 }); }
       ${methodSource('_computeSessionMetricsAsync', 'orig, o, p, n, sampleRate, key', { async: true })}
       ${methodSource('_resetSessionMetrics', '')}
     };`,
@@ -62,16 +63,20 @@ describe('session metrics say what they measure', () => {
     const o = sine(n, 0.2);
     const p = sine(n, 0.1);
     const orig = { getChannelData: () => o, numberOfChannels: 1, duration: 1 };
+    app.outputBuffer = { getChannelData: () => p, numberOfChannels: 1 };
     await app._computeSessionMetricsAsync(orig, o, p, n, 48000, 'k');
     expect(metricsPushed).toHaveLength(1);
     const line = logs.find((x) => x.msg === '[VIP] Session metrics');
     expect(line).toBeTruthy();
     expect(line.data.measured).toBe('post-process');
-    expect(line.data.basis.voiceClarity).toMatch(/processed.*removed/i);
-    expect(line.data.basis.outputLevelDb).toMatch(/processed stem.*before Live-Mix/i);
-    expect(line.data.basis.whisperRetention).toMatch(/quiet frames/i);
-    // Output dBFS is the RMS of p: 0.1/sqrt(2) -> -23.01 dBFS.
-    expect(line.data.values.outputLevelDb).toBeCloseTo(20 * Math.log10(0.1 / Math.SQRT2), 1);
+    expect(line.data.basis.voiceClarity).toMatch(/speech-locked share of the processed stem.*level-invariant/i);
+    expect(line.data.basis.snrDb).toMatch(/speech frames vs between-phrase gaps/i);
+    expect(line.data.basis.whisperRetention).toMatch(/Removed/);
+    expect(line.data.basis.outputLevelDb).toMatch(/integrated LUFS.*last export/i);
+    expect(line.data.values.voiceClarity).toBe(97);
+    // Before any export, Output is not claimed (it used to be the stem RMS).
+    expect(line.data.values.exportLufs).toBeNull();
+    expect(metricsPushed[0].outputLevelDb).toBeNull();
   });
 
   test('a new upload clears the previous file\'s numbers', () => {
@@ -101,14 +106,14 @@ describe('session metrics say what they measure', () => {
     const fn = pwSource.slice(pwSource.indexOf('function updateLiveMetrics('), pwSource.indexOf('// Deep metrics'));
     expect(fn).not.toMatch(/if \(metrics\.voiceClarity != null\) setMetric/);
     expect(fn).toMatch(/'metricVoiceClarity'[^\n]*'--'/);
-    expect(fn).toMatch(/'metricOutputDb'[^\n]*'-- dBFS'/);
+    expect(fn).toMatch(/'-- LUFS'/);
   });
 
   test('each live metric card describes its measurement (text only)', () => {
-    for (const label of ['Voice Clarity', 'Noise Reduction', 'Whisper Retention', 'Output dBFS']) {
+    for (const label of ['Voice Clarity', 'Noise Reduction', 'Whisper Retention', 'Export loudness']) {
       const re = new RegExp(`<div class="vip-live-metrics__card" title="[^"]+"><span class="vip-live-metrics__label">${label}</span>`);
       expect(html).toMatch(re);
     }
-    expect(html).toMatch(/title="[^"]*processed stem before the Live-Mix[^"]*"><span class="vip-live-metrics__label">Output dBFS/);
+    expect(html).toMatch(/title="[^"]*file you last exported[^"]*"><span class="vip-live-metrics__label">Export loudness/);
   });
 });

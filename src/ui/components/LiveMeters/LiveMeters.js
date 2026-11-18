@@ -142,8 +142,9 @@ export class LiveMeters {
     }
 
     if (this._meterEls.outputLevel) {
-      const val = m.outputLevelDb ?? (m.rms != null ? 20 * Math.log10(Math.max(1e-6, m.rms)) : null);
-      this._setMeter(this._meterEls.outputLevel, val, ' dBFS', -60, 0, true);
+      // The exported file's integrated loudness; '--' until an export.
+      const val = m.exportLufs ?? null;
+      this._setMeter(this._meterEls.outputLevel, val, ' LUFS', -60, 0, true);
     }
 
     // Advanced
