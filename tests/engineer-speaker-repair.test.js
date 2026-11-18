@@ -202,6 +202,28 @@ describe('live diagnostics', () => {
     diagnostics.clearLiveDiagnostics();
     expect(diagnostics.getLiveDiagnostics()).toEqual([]);
   });
+
+  test('the engineer panel docks to the top, clear of the transport controls', () => {
+    document.body.replaceChildren();
+    diagnostics.clearLiveDiagnostics();
+    diagnostics.mountLiveDiagnostics('engineer');
+    const style = document.getElementById('vip-live-diagnostics-style');
+    expect(style).not.toBeNull();
+    const css = style.textContent;
+    // Engineer page: top-anchored with the bottom offset cleared.
+    expect(css).toContain('#vip-live-diagnostics[data-page="engineer"]{top:12px;bottom:auto}');
+    // Other pages keep the existing bottom-right dock.
+    expect(css).toContain('#vip-live-diagnostics{position:fixed;right:12px;bottom:12px;');
+    const panel = document.getElementById('vip-live-diagnostics');
+    expect(panel).not.toBeNull();
+    expect(panel.dataset.page).toBe('engineer');
+    // Collapse/toggle behavior is unchanged: collapsed by default.
+    expect(panel.dataset.collapsed).toBe('true');
+    // NOTE: jsdom in this suite does not cascade the injected <style> element
+    // into getComputedStyle, so the geometric half of this (computed top/bottom
+    // and no overlap with .transport-card) is covered by the browser shell QA
+    // (pnpm test:shell-qa), not asserted here.
+  });
 });
 
 describe('ONNX status honesty', () => {
