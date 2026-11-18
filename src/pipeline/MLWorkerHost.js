@@ -21,6 +21,40 @@ function resolveWorkerUrl(path) {
   return path;
 }
 
+function diag(level, event, detail) {
+  try { globalThis.VIP_liveDiagnostics?.log?.(level, event, detail); } catch { /* diagnostics must not affect inference */ }
+}
+
+/**
+ * Put the worker's provider facts in the session log. `ready` comes before
+ * any session; ort-provider follows InferenceSession.create; ort-fallback
+ * means WebGPU failed and a WASM retry is starting.
+ * @param {object} msg
+ */
+function logProviderMessage(msg) {
+  if (msg.type === 'ready') {
+    diag('info', 'ort.worker-ready', {
+      effectiveProvider: 'none (no session yet)',
+      webgpuCandidate: msg.gpuCandidate === true,
+      providerVerified: false,
+    });
+  } else if (msg.type === 'ort-provider' && msg.providerVerified === true) {
+    diag('info', 'ort.provider-verified', {
+      provider: String(msg.backend || '').toLowerCase() || null,
+      providerVerified: true,
+      sessionKey: msg.sessionKey || null,
+    });
+  } else if (msg.type === 'stage' && msg.stage === 'ort-fallback') {
+    diag('warn', 'ort.webgpu-fallback', {
+      modelId: msg.modelId || null,
+      sessionKey: msg.sessionKey || null,
+      reason: msg.reason || null,
+      detail: msg.detail || msg.label || null,
+      retry: 'wasm',
+    });
+  }
+}
+
 export function createMLWorker() {
   // Absolute path required so Capacitor Android (https://voiceisolatepro.app/…)
   // and Electron vip://app resolve /src/workers correctly.
@@ -30,6 +64,7 @@ export function createMLWorker() {
   setOrtStatus({ provider: 'probing', detail: null });
   worker.addEventListener('message', (ev) => {
     applyMlWorkerMessage(ev.data || {});
+    logProviderMessage(ev.data || {});
     // Mirror ORT/ML cockpit pills when the worker reports provider/backend.
     const msg = ev.data || {};
     const setPill = globalThis._setVipEnginePill;

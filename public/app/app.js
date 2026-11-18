@@ -604,6 +604,7 @@ const RENDER_SLIDERS = SLIDER_REGISTRY.map((s) => ({
 import { ModelStatusUI } from './model-status-ui.js';
 import WorkflowTier from './workflow-tier.js';
 import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
+import { describeEffectiveProvider } from '/src/core/OrtStatus.js';
 
 // Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
 // drives the "Model Cache & Providers" pills + Local Model Health panel.
@@ -1126,7 +1127,11 @@ class VoiceIsolatePro {
     pill('engMlPill', 'loading');
     void import('/src/pipeline/OrtRuntime.js').then(({ loadOrtRuntime }) => loadOrtRuntime()).then((rt) => {
       if (rt?.ort) {
+        // Page runtime only. The provider that runs stems is logged by
+        // MLWorkerHost (ort.provider-verified / ort.webgpu-fallback) and on
+        // '[VIP] ML isolation done'.
         structuredLog('info', '[VIP] ONNX runtime loaded', {
+          effectiveProvider: 'none (no session yet)',
           providerVerified: false,
           webgpuCandidate: rt.webgpuCandidate === true,
         });
@@ -6352,6 +6357,7 @@ class VoiceIsolatePro {
         });
       }
       structuredLog('info', '[VIP] ML isolation done', {
+        ...describeEffectiveProvider(result),
         fromCache: Boolean(result.fromCache),
         channels: clean.length,
         midOnly: plan.expandStereo,
