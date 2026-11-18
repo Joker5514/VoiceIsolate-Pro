@@ -275,8 +275,7 @@ export function engineerLevelOverrides(level, rmsDb) {
     overrides.gateThresh = -68;
     overrides.compThresh = -36;
     overrides.compMakeup = 6;
-    overrides.eqPresence = 3;
-    overrides.eqMid = 2;
+    // No EQ boosts: Whisper Boost renders flat (t26u, whisper-boost-export-chain.test.js).
     overrides.deEssAmt = 4;
   } else if (level === 'quiet') {
     overrides.outGain = 3;
