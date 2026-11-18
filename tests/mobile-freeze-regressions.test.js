@@ -397,7 +397,13 @@ describe('listener and pipeline duplication guards', () => {
     }
   });
 
-  test('Engineer handleFile ignores a second delivery of the same pick', () => {
-    expect(read('public/app/m4a-decode-fix.js')).toMatch(/if \(this\._vipHandleFileActive === file\) return;/);
+  test('one change listener per pick: the legacy m4a patch no longer re-binds #fileInput', () => {
+    // The double delivery came from m4a-decode-fix.js cloning #fileInput and
+    // adding its own listener next to mobile-upload-fix's. It no longer patches
+    // handleFile or the input (round 8: it re-used stale stems across uploads).
+    const patch = read('public/app/m4a-decode-fix.js');
+    expect(patch).not.toMatch(/prototype\.handleFile\s*=/);
+    expect(patch).not.toMatch(/cloneNode/);
+    expect(read('public/app/app.js')).toMatch(/d\.fileInput\.dataset\.vipAppChangeBound = '1'/);
   });
 });
