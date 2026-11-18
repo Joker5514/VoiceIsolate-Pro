@@ -172,3 +172,33 @@ describe('every preset button applies', () => {
     expect(diff.changedCount).toBeGreaterThan(0);
   });
 });
+
+describe('programmatic applies clear the user pick (t26u follow-up)', () => {
+  // Tier switch (workflow-tier.js applyTierPreset) and WhisperHunter
+  // (app.js _runInternal) call applyPreset(name) with no source. The UI then
+  // shows the new preset, so calibration must not keep the old pick's mix.
+  test.each([['tier switch', 'Podcast Clean'], ['WhisperHunter auto-apply', 'Voice Clarity']])(
+    '%s after a user pick clears _userPresetName',
+    async (_label, next) => {
+      const { app, sel, logs } = buildHarness();
+      app.applyPreset('Whisper Boost', { source: 'user' });
+      expect(app._userPresetName).toBe('Whisper Boost');
+      app.applyPreset(next);
+      expect(sel.value).toBe(next);
+      expect(app._userPresetName).toBeNull();
+      app.outputBuffer = quietBuffer();
+      const rec = app._autoCalibratePreset(app.outputBuffer);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(rec.presetSource).not.toBe('user');
+      const line = logs.filter((l) => l.msg === '[VIP] Auto-calibrated mix').pop();
+      expect(line.data.presetSource).not.toBe('user');
+    },
+  );
+
+  test('a later user pick still wins', () => {
+    const { app } = buildHarness();
+    app.applyPreset('Podcast Clean');
+    app.applyPreset('Room Echo Reduction', { source: 'user' });
+    expect(app._userPresetName).toBe('Room Echo Reduction');
+  });
+});
