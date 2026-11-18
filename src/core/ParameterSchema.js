@@ -269,6 +269,28 @@ export function buildMlProcessingConfig(values = {}) {
   });
 }
 
+/**
+ * What moved between two Process-time snapshots. Only the groups that key
+ * the stem cache (spectral, postStem) are compared, so Live-Mix controls
+ * never appear. Used for the per-Process log line.
+ * @param {ReturnType<typeof buildMlProcessingConfig>|null} prev
+ * @param {ReturnType<typeof buildMlProcessingConfig>} next
+ * @returns {{ previousRevision: string|null, revision: string, changed: Record<string, [number, number]> }}
+ */
+export function diffProcessingConfig(prev, next) {
+  const changed = {};
+  if (prev) {
+    for (const group of ['spectral', 'postStem']) {
+      const a = prev[group] || {};
+      const b = next?.[group] || {};
+      for (const key of Object.keys(b)) {
+        if (a[key] !== b[key]) changed[`${group}.${key}`] = [a[key], b[key]];
+      }
+    }
+  }
+  return { previousRevision: prev?.revision ?? null, revision: next?.revision ?? null, changed };
+}
+
 export default {
   PARAMETER_SCHEMA,
   PARAMETER_BY_ID,
@@ -278,4 +300,5 @@ export default {
   clampParam,
   snapshotParams,
   buildMlProcessingConfig,
+  diffProcessingConfig,
 };
