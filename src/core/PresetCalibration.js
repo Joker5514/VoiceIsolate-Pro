@@ -157,6 +157,9 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
     voiceIso: 78,
     bgSuppress: 55,
     derevAmt: 14,
+    // Sub/kick cut at Process time (t26u sweep; tests/whisper-boost-basscrush.test.js).
+    bassCrush: 60,
+    musicKill: 0,
   }),
   'Phone/Radio': base({
     description: 'Band-limit and isolate speech for phone / radio recovery',
