@@ -23,6 +23,9 @@ import {
 import { detectWhisperRegions } from './WhisperLogic.js';
 import { recommendFromAnalysis } from './RecommendationEngine.js';
 
+/** Shortest merged run reported as a music-bed segment (seconds). */
+export const MUSIC_BED_MIN_SEC = 1.0;
+
 /**
  * Classify each frame into a primary activity label.
  * @param {object} frame
@@ -126,7 +129,12 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
       return 0.5;
     }).filter((x) => x.label === name),
     hopSec,
-    { minSec: name === 'transient' ? 0.04 : 0.12, mergeGapSec: name === 'transient' ? 0.05 : 0.18 },
+    // A music *bed* is sustained: runs within 0.5 s merge (beat-gated beds
+    // stay whole) and a bed must last 1 s, so a few harmonic frames inside a
+    // whisper (a low creak or blip) are no longer reported as music.
+    name === 'music'
+      ? { minSec: MUSIC_BED_MIN_SEC, mergeGapSec: 0.5 }
+      : { minSec: name === 'transient' ? 0.04 : 0.12, mergeGapSec: name === 'transient' ? 0.05 : 0.18 },
   );
 
   const speechSegments = byLabel('speech');

@@ -14,6 +14,7 @@
  */
 
 import { SAMPLE_RATE } from '../../audio-config.js';
+import { detectMainsHum } from '../../FeatureExtractor.js';
 
 export const AnalysisOverlays = Object.freeze({
   SPEECH: 'speech',
@@ -186,39 +187,23 @@ async function detectWhisper(channelData, sampleRate, noiseFloor, speechSegments
 }
 
 /**
- * Hum detection: narrowband 50/60Hz + harmonics
+ * Hum detection: a steady narrow tone at 50/60 Hz + harmonics (Goertzel,
+ * 1 Hz resolution; see FeatureExtractor.detectMainsHum). The old proxy counted
+ * the energy of samples that changed by < 0.001 from the previous one, which
+ * flagged any bass-heavy or quiet file as hum.
  */
 function detectHum(channelData, sampleRate) {
-  // Simplified: check energy around 50, 60, 100, 120, 150, 180
-  const humFreqs = [50, 60, 100, 120, 150, 180];
-  // We can't do FFT here without DSPCore, so heuristic: if overall noise floor is tonal
-  // Return empty for now, but structure for future
-  // For deterministic path, we estimate hum if low-frequency energy is high
-  let lowEnergy = 0;
-  let totalEnergy = 0;
-  const checkLen = Math.min(channelData.length, sampleRate * 2);
-  for (let i = 0; i < checkLen; i++) {
-    const s = channelData[i];
-    totalEnergy += s * s;
-    // crude low-pass via moving average would be expensive; use sample itself as proxy for now
-    // Actually count low freq by checking slow variation: diff between consecutive samples
-    if (i > 0) {
-      const diff = Math.abs(s - channelData[i - 1]);
-      if (diff < 0.001) lowEnergy += s * s;
-    }
-  }
-  const ratio = totalEnergy > 0 ? lowEnergy / totalEnergy : 0;
-  if (ratio > 0.3) {
-    return [{
-      start: 0,
-      end: channelData.length / sampleRate,
-      confidence: Math.min(0.9, ratio),
-      type: AnalysisOverlays.HUM,
-      label: 'Hum',
-      freqs: humFreqs,
-    }];
-  }
-  return [];
+  const mains = detectMainsHum(channelData, sampleRate);
+  if (!mains.present) return [];
+  const f0 = mains.freq;
+  return [{
+    start: 0,
+    end: channelData.length / sampleRate,
+    confidence: Math.min(0.9, mains.strength),
+    type: AnalysisOverlays.HUM,
+    label: 'Hum',
+    freqs: [f0, f0 * 2, f0 * 3, f0 * 4],
+  }];
 }
 
 function detectNoise(channelData, sampleRate, noiseFloor, speechSegments) {

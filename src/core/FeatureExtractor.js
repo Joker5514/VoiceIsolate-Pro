@@ -265,6 +265,74 @@ export function detectHum(mag, sampleRate) {
 }
 
 /**
+ * File-level mains hum: a narrow, steady tone at 50 or 60 Hz (and harmonics).
+ *
+ * detectHum() above sums five ~23 Hz-wide bins of a 25 ms frame, so any bass,
+ * kick or rumble scores as "hum". Here the signal is decimated to ~3 kHz and
+ * each 1 s block is probed with Goertzel filters (1 Hz resolution) at
+ * f0·h (h = 1..4) against neighbours f ± 4/8 Hz. A block is hum-positive for
+ * f0 when the fundamental stands >= 10 dB above its neighbours and at least
+ * one harmonic >= 6 dB, or the fundamental alone >= 20 dB. Strength is the
+ * share of audible blocks that are hum-positive; present needs half of them.
+ * Long files are sampled at up to 120 evenly spaced blocks.
+ *
+ * @param {Float32Array} mono
+ * @param {number} sampleRate
+ * @returns {{ present: boolean, freq: number, strength: number, blocks: number }}
+ */
+export function detectMainsHum(mono, sampleRate) {
+  const D = Math.max(1, Math.floor(sampleRate / 3000));
+  const fs = sampleRate / D;
+  const m = Math.floor(mono.length / D);
+  const dec = new Float32Array(m);
+  for (let i = 0; i < m; i++) {
+    let acc = 0;
+    const o = i * D;
+    for (let k = 0; k < D; k++) acc += mono[o + k];
+    dec[i] = acc / D;
+  }
+  const B = Math.floor(fs); // 1 s blocks
+  const nBlocks = Math.floor(m / B);
+  const goertzel = (off, f) => {
+    const w = (2 * Math.PI * f) / fs;
+    const c = 2 * Math.cos(w);
+    let s1 = 0;
+    let s2 = 0;
+    for (let i = 0; i < B; i++) {
+      const s0 = dec[off + i] + c * s1 - s2;
+      s2 = s1;
+      s1 = s0;
+    }
+    return s1 * s1 + s2 * s2 - c * s1 * s2;
+  };
+  const ratioDb = (off, f) => {
+    const p = goertzel(off, f);
+    const nb = (goertzel(off, f - 8) + goertzel(off, f - 4) + goertzel(off, f + 4) + goertzel(off, f + 8)) / 4;
+    return 10 * Math.log10((p + 1e-20) / (nb + 1e-20));
+  };
+  const votes = { 50: 0, 60: 0 };
+  let audible = 0;
+  // Long files: probe at most 120 evenly spaced blocks (bounded cost).
+  const probe = Math.min(nBlocks, 120);
+  for (let j = 0; j < probe; j++) {
+    const off = Math.floor((j * nBlocks) / probe) * B;
+    let e = 0;
+    for (let i = 0; i < B; i++) e += dec[off + i] * dec[off + i];
+    if (e / B < 1e-10) continue; // digital silence (< -100 dBFS): no evidence either way
+    audible++;
+    for (const f0 of [50, 60]) {
+      const r1 = ratioDb(off, f0);
+      let harm = 0;
+      for (let h = 2; h <= 4; h++) if (ratioDb(off, f0 * h) >= 6) harm++;
+      if ((r1 >= 10 && harm >= 1) || r1 >= 20) votes[f0]++;
+    }
+  }
+  const best = votes[60] >= votes[50] ? 60 : 50;
+  const strength = audible ? votes[best] / audible : 0;
+  return { present: audible > 0 && strength >= 0.5, freq: best, strength, blocks: audible };
+}
+
+/**
  * Voiced / unvoiced heuristic from ZCR + harmonicity + speech ratio.
  */
 export function voicedUnvoicedScore({ zcr, harmonicity, speechRatio }) {
@@ -409,14 +477,16 @@ function finalizeFeaturePass(pass) {
   }
   const reverbEstimate = decayN > 0 ? Math.min(1, decaySum / decayN / 2) : 0;
 
-  // Aggregate hum
-  let humStrength = 0;
-  let humFreqVotes = { 50: 0, 60: 0 };
-  for (const f of frames) {
-    humStrength = Math.max(humStrength, f.humStrength);
-    if (f.humStrength > 0.05) humFreqVotes[f.humFreq] = (humFreqVotes[f.humFreq] || 0) + 1;
+  // File-level hum: a steady narrow tone, not the per-frame low-bin energy.
+  // The per-frame score (5 wide bins near 50/60 Hz) is only kept when the
+  // file really carries hum; otherwise bass, kicks and rumble labelled frames
+  // "hum" ahead of "music" (FullAnalysis.classifyFrame).
+  const mains = detectMainsHum(mono, pass.sampleRate);
+  if (!mains.present) {
+    for (const f of frames) f.humStrength = 0;
   }
-  const humFreq = (humFreqVotes[60] || 0) >= (humFreqVotes[50] || 0) ? 60 : 50;
+  const humStrength = mains.present ? mains.strength : 0;
+  const humFreq = mains.freq;
 
   return {
     frames,
@@ -426,7 +496,7 @@ function finalizeFeaturePass(pass) {
     snrDb,
     reverbEstimate,
     humProfile: {
-      present: humStrength > 0.08,
+      present: mains.present,
       freq: humFreq,
       strength: Math.min(1, humStrength),
     },
@@ -466,6 +536,7 @@ export default {
   speechBandRatio,
   harmonicityScore,
   detectHum,
+  detectMainsHum,
   voicedUnvoicedScore,
   extractFrameFeatures,
   downmixToMono,
