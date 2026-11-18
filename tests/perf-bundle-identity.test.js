@@ -299,9 +299,9 @@ describe('landing / enhance / engineer identity on corpus fixtures', () => {
   });
 
   // The goldens were generated at d7948c9 with these preset values. Later
-  // preset tuning (t26u: Whisper Boost bassCrush 60) is pinned by its own
+  // preset tuning (t26u: Whisper Boost bassCrush 60, nrAmount 30, voiceTunnel 0) is pinned by its own
   // tests; this file checks DSP numerics, so it keeps the golden-time values.
-  const GOLDEN_PRESET_VALUES = { 'Whisper Boost': { bassCrush: 0, musicKill: 0 } };
+  const GOLDEN_PRESET_VALUES = { 'Whisper Boost': { bassCrush: 0, musicKill: 0, nrAmount: 55, voiceTunnel: 65 } };
 
   async function presetConfig(name) {
     const vals = {};
