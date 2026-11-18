@@ -3895,6 +3895,7 @@ class VoiceIsolatePro {
       && this._sourceFile.size === file.size;
     if (!sameSource) {
       clearStemCache();
+      this._resetSessionMetrics?.();
       this._stemFileSeq = null;
       this._stemSourceBuffer = null;
       this._stemProcessingRevision = null;
@@ -8297,13 +8298,9 @@ class VoiceIsolatePro {
       if (!Number.isFinite(snrDb)) snrDb = 0;
       snrDb = Math.max(-40, Math.min(60, snrDb));
 
-      // Prefer analyzer profile when present.
-      const env = this._lastEnvProfile || this.lastEnvProfile;
-      if (env && Number.isFinite(env.voiceRatio)) {
-        voicePct = Math.max(0, Math.min(100, env.voiceRatio * 100));
-        noisePct = Math.max(0, Math.min(100, 100 - voicePct));
-      }
-      if (env && Number.isFinite(env.snrDb)) snrDb = env.snrDb;
+      // Always the processed-vs-removed energy split of the stems on screen.
+      // (An input-analysis override used to sit here; it would have shown a
+      // pre-Process estimate as if it were a result. Round 8, item 4.)
 
       return { voicePct, noisePct, snrDb, oRms, pRms };
     } catch (_) {
@@ -8356,6 +8353,28 @@ class VoiceIsolatePro {
       this._audioMetricSumsPending.delete(key);
     });
     return null;
+  }
+
+  /**
+   * A new source: clear the previous file's readouts. Before, the header and
+   * live cards kept the last file's numbers until the next Process finished.
+   */
+  _resetSessionMetrics() {
+    this._lastMetricsState = null;
+    this._sessionMetricsKey = null;
+    this._sessionMetricsCache = null;
+    this._sessionMetricsPendingKey = null;
+    try {
+      getAudioSessionStore().updateMetrics({
+        voiceClarity: null, noiseReduction: null, whisperRetention: null, outputLevelDb: null,
+        snrDb: null, rms: null, peak: null, lufs: null, voices: null,
+      });
+    } catch (_) { /* metrics must never fail an upload */ }
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+    const blank = { hVoice: '--', hNoise: '--', hSNR: '-- dB', 'stat-voice': '--', 'stat-noise': '--', 'stat-snr': '--' };
+    for (const [id, text] of Object.entries(blank)) {
+      try { const el = document.getElementById(id); if (el) el.textContent = text; } catch (_) { /* ignore */ }
+    }
   }
 
   /**
@@ -8558,6 +8577,25 @@ class VoiceIsolatePro {
       this._sessionMetricsKey = key;
       this._sessionMetricsCache = metrics;
       published = true;
+      // Say what these numbers are: energy proxies from the original vs the
+      // processed stem, measured after Process. Not a voice/noise classifier.
+      if (typeof structuredLog === 'function') structuredLog('info', '[VIP] Session metrics', {
+        measured: 'post-process',
+        basis: {
+          voiceClarity: 'share of energy kept in the processed stem vs removed (original - processed); proxy, not a voice detector',
+          snrDb: 'processed stem energy vs removed energy, dB; proxy, not a true SNR',
+          noiseReduction: 'drop of the 10th-percentile 20 ms frame energy, original vs processed, dB',
+          whisperRetention: 'energy kept in quiet frames (floor+2..floor+12 dB of the original), %',
+          outputLevelDb: 'RMS of the processed stem before Live-Mix/export (gate, EQ, comp, gain, limiter)',
+        },
+        values: {
+          voiceClarity: Math.round(voiceClarity * 10) / 10,
+          snrDb: Math.round(snrDb * 10) / 10,
+          noiseReduction: Math.round(noiseReduction * 10) / 10,
+          whisperRetention: Math.round(whisperRetention * 10) / 10,
+          outputLevelDb: Math.round(outputLevelDb * 100) / 100,
+        },
+      });
       try {
         getAudioSessionStore().updateMetrics(metrics);
       } catch (_) { /* session metrics must never fail the pipeline */ }
