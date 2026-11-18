@@ -54,9 +54,12 @@ describe('Engineer log lines', () => {
   test('every Process logs its snapshot and what moved since the last one', () => {
     const start = app.indexOf('const processingRevision = processingConfig.revision;');
     const window = app.slice(start, start + 900);
-    expect(window).toMatch(/diffProcessingConfig\(this\._lastProcessingConfig, processingConfig\)/);
+    expect(window).toMatch(/this\._processSnapshotDiff\(processingConfig\)/);
     expect(window).toMatch(/structuredLog\('info', '\[VIP\] Process-time snapshot'/);
-    expect(window).toMatch(/this\._lastProcessingConfig = processingConfig;/);
+    const m = app.indexOf('\n  _processSnapshotDiff(processingConfig) {');
+    const body = app.slice(m, app.indexOf('\n  }\n', m));
+    expect(body).toMatch(/diffProcessingConfig\(prev \|\| buildMlProcessingConfig\(\{\}\), processingConfig\)/);
+    expect(body).toMatch(/this\._lastProcessingConfig = processingConfig;/);
   });
 
   test('auto-calibration names the stems revision it measured', () => {

@@ -759,7 +759,7 @@
     if (!sel) return;
     sel.addEventListener('change', () => {
       const name = sel.value;
-      if (typeof app.applyPreset === 'function') app.applyPreset(name);
+      if (typeof app.applyPreset === 'function') app.applyPreset(name, { source: 'user' });
       else if (typeof app.loadPreset === 'function') app.loadPreset(name);
       log('Preset selected', name);
     });
