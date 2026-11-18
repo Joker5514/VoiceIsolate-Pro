@@ -51,6 +51,7 @@ import {
 } from '/src/core/PresetCalibration.js';
 import {
   buildMlProcessingConfig,
+  diffProcessingConfig,
   LIVE_MIX_PARAM_IDS,
   snapshotParams,
 } from '/src/core/ParameterSchema.js';
@@ -3503,7 +3504,12 @@ class VoiceIsolatePro {
     }
 
     const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
-    structuredLog('info', '[VIP] Auto-calibrated mix', { preset, level, rmsDb });
+    structuredLog('info', '[VIP] Auto-calibrated mix', {
+      preset,
+      level,
+      rmsDb,
+      processingRevision: this._stemProcessingRevision ?? null,
+    });
     this.showNotification('Auto-calibrated: ' + detail, 'info');
     return { preset, level, rmsDb };
   }
@@ -3885,6 +3891,7 @@ class VoiceIsolatePro {
       clearStemCache();
       this._stemFileSeq = null;
       this._stemProcessingRevision = null;
+      this._lastProcessingConfig = null;
       this._cleanStemChannels = null;
       this._noiseStemChannels = null;
       this._visualsDrawn = false;
@@ -5040,6 +5047,7 @@ class VoiceIsolatePro {
     this._libraryFileId = null;
     this._stemFileSeq = null;
     this._stemProcessingRevision = null;
+    this._lastProcessingConfig = null;
     this._decodePromise = null;
     this._decodeReady = false;
     this._chunkSession = null;
@@ -6085,6 +6093,14 @@ class VoiceIsolatePro {
       this.getEffectiveParams(window.VIP_PARAMS || {}),
     );
     const processingRevision = processingConfig.revision;
+    // A fresh ML run on an unchanged file means a Process-time control moved.
+    // Name it, so a level change between runs can be traced to its cause.
+    const snapshotDiff = diffProcessingConfig(this._lastProcessingConfig, processingConfig);
+    structuredLog('info', '[VIP] Process-time snapshot', {
+      ...snapshotDiff,
+      changedCount: Object.keys(snapshotDiff.changed).length,
+    });
+    this._lastProcessingConfig = processingConfig;
 
     // Reprocess with retained stems: skip ONNX (audit P-04) unless forced.
     if (
