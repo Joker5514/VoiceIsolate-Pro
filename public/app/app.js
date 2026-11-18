@@ -3439,7 +3439,9 @@ class VoiceIsolatePro {
     this._activePresetName = name;
     // A button or dropdown pick is the user's choice: post-Process
     // calibration must not swap it for its own recommendation (t24u).
-    if (source === 'user') this._userPresetName = name;
+    // Programmatic applies (tier switch, WhisperHunter) replace it: the UI now
+    // shows their preset, so calibration may recommend again (t26u).
+    this._userPresetName = source === 'user' ? name : null;
     // Keep the dropdown on the applied preset. Buttons used to leave it on
     // the tier default ("Podcast Clean"). Set .value only: no change event.
     const sel = this.dom?.presetSel;
