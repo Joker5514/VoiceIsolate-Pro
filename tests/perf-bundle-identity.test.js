@@ -298,12 +298,17 @@ describe('landing / enhance / engineer identity on corpus fixtures', () => {
     worker = await createMlWorker();
   });
 
+  // The goldens were generated at d7948c9 with these preset values. Later
+  // preset tuning (t26u: Whisper Boost bassCrush 60, nrAmount 30, voiceTunnel 0) is pinned by its own
+  // tests; this file checks DSP numerics, so it keeps the golden-time values.
+  const GOLDEN_PRESET_VALUES = { 'Whisper Boost': { bassCrush: 0, musicKill: 0, nrAmount: 55, voiceTunnel: 65 } };
+
   async function presetConfig(name) {
     const vals = {};
     for (const [k, v] of Object.entries(PC.CALIBRATED_ENGINEER_PRESETS[name])) {
       if (typeof v === 'number') vals[k] = v;
     }
-    return engineerConfig(vals);
+    return engineerConfig({ ...vals, ...(GOLDEN_PRESET_VALUES[name] || {}) });
   }
 
   function loadPair(fid, pid) {

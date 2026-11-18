@@ -16,6 +16,9 @@
  *   Aggressive Isolate −60 dB 1.35, Surveillance −60 dB 2.15, Voice Clarity 0.40.
  * Round 2 (vs main 6e60541): Surveillance −60 dB 2.09 → 1.67, −50 dB 3.06 → 2.67;
  *   Whisper Boost 1.285 and Forensic Extract 1.222 unchanged.
+ * Round 9 (t26u): Whisper Boost nrAmount 55 -> 30 and voiceTunnel 65 -> 0
+ *   lower its flutter 1.285 -> 1.197 dB (less gain modulation); the whisper
+ *   confidence is still instantaneous (no Crowd Null).
  */
 'use strict';
 
@@ -112,7 +115,7 @@ test('the SNR-floor cut is continuous in level (no step at the floor)', () => {
 
 // Presets without Crowd Null keep the instantaneous whisper confidence.
 test.each([
-  ['Whisper Boost', 1.285],
+  ['Whisper Boost', 1.197],
   ['Forensic Extract', 1.222],
 ])('%s whisper confidence is not smoothed (flutter stays %s dB)', (preset, value) => {
   expect(flutterDb(preset, -50)).toBeCloseTo(value, 2);
