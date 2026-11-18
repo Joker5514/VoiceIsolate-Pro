@@ -254,6 +254,7 @@ Every slider row (range + number + reset + lock, built by `createDspSliderRow` i
 | `saveOrigBtn` | Download the original as WAV | Original-buffer WAV download |
 | `saveProcBtn` | Download processed audio (or video with processed audio when the source is a video) | Processed WAV/video export via the 16-bit encoder; `ditherAmt` applies here |
 | `saveProvenanceBtn` | Download the SHA-256 provenance sidecar (`.viprovenance.json`) | `ForensicInspectorUI` sidecar download; disabled until an export exists; integrity metadata only, not a signature or legal certification |
+| `procDownloadFallbackLink` | Text link "Download processed-….wav", shown under the Save buttons once an export is ready | Re-downloads the last export from memory if the automatic download did not start; hidden until an export exists and cleared when a new file loads |
 | `auditLogBtn` | Download the processing audit log | `downloadAuditLog()`; disabled until log entries exist |
 | `saveDriveBtn` | Upload the processed export to Google Drive | `GoogleDriveBridge` + Firebase Google Auth (`drive.file` scope); export only, never called from MLWorker / worklets / Process |
 | `projectSelect` / `newProjectBtn` / `libraryRefreshBtn` | Project switching, creation, and library refresh | `FileLibraryUI` project/library handling |
