@@ -128,14 +128,23 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
     nrSpectralSub: 42,
     nrFloor: -78,
     nrSmoothing: 68,
-    eqBody: 2.5,
-    eqLowMid: 2,
-    eqMid: 3,
-    eqPresence: 3.5,
-    eqClarity: 2,
-    eqAir: 0.5,
+    // Export chain (t26u): flat EQ and no compression. The -36 dB / 4.5:1
+    // compressor lifted the music between whisper phrases (+11 dB vs input) and
+    // cost ~8 dB SI-SDR on a 0 dB whisper+music mix; the EQ boosts cost ~1 dB
+    // more. Level: makeup + outGain into the existing true-peak limiter.
+    // See tests/whisper-boost-export-chain.test.js.
+    eqSub: 0,
+    eqBass: 0,
+    eqWarmth: 0,
+    eqBody: 0,
+    eqLowMid: 0,
+    eqMid: 0,
+    eqPresence: 0,
+    eqClarity: 0,
+    eqAir: 0,
+    eqBrill: 0,
     compThresh: -36,
-    compRatio: 4.5,
+    compRatio: 1,
     compMakeup: 7,
     outGain: 5,
     whisperLift: 18,
