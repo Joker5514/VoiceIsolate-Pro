@@ -5,37 +5,140 @@
 
 import { diarizeChannel, speakerLabel, summarizeSpeakers } from '../core/diarization.js';
 import { copyFloat32Channel, createAbortableYield } from './ui-yield.js';
-import { createOrtSession, loadOrtRuntime } from './OrtRuntime.js';
+import { __resetOrtSessionsForTests, createOrtSession, loadOrtRuntime } from './OrtRuntime.js';
 
 const MODEL_URLS = Object.freeze({
   segmentation: '/models/pyannote-segmentation-3.0.onnx',
   embedding: '/models/wespeaker-resnet34.onnx',
   vad: '/models/silero-vad.onnx',
 });
+/** Exact files and same-origin URLs the ONNX diarizer loads. */
+export const DIARIZATION_MODEL_URLS = MODEL_URLS;
 
 const DIAR_MAX_FRAMES = 480;
 const DIAR_BUDGET_MS = 8000;
 const PARENT_TIMEOUT_MS = 20000;
+/** Smaller than any of the three models: a Git LFS pointer or an error page. */
+const MIN_MODEL_BYTES = 100000;
 
 let _sessions = null;
 let _sessionPromise = null;
+/** A model that failed to compile stays failed until reload: no 35 MB retry per pass. */
+let _loadFailure = null;
 
-async function headOk(url) {
+/**
+ * HEAD one model. Vercel's edge Brotli-encodes the rewrite to Blob and
+ * server.js streams its blob proxy chunked, so a 200 often has no
+ * Content-Length. A missing length is unknown, not missing: the session
+ * load that follows is what proves the bytes. A length that is present
+ * and small is a stub. No Range request: one sent through the Vercel
+ * rewrite was cached at the edge and replayed to later full GETs.
+ * @param {string} role
+ * @param {string} url
+ */
+async function probeModel(role, url) {
+  const file = url.slice(url.lastIndexOf('/') + 1);
+  const base = { role, file, url, status: null, contentLength: null, contentEncoding: null };
+  let res;
   try {
-    const res = await fetch(url, { method: 'HEAD' });
-    const len = Number(res.headers.get('content-length') || 0);
-    return res.ok && len > 100000;
+    res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+  } catch (err) {
+    return { ...base, verdict: 'unreachable', detail: err?.message || String(err) };
+  }
+  const rawLen = res.headers?.get?.('content-length');
+  const len = rawLen == null || rawLen === '' ? null : Number(rawLen);
+  const out = {
+    ...base,
+    status: res.status,
+    contentLength: Number.isFinite(len) ? len : null,
+    contentEncoding: res.headers?.get?.('content-encoding') || null,
+  };
+  if (!res.ok) return { ...out, verdict: 'missing' };
+  if (out.contentLength == null) return { ...out, verdict: 'present-unsized' };
+  if (out.contentLength <= MIN_MODEL_BYTES) return { ...out, verdict: 'stub' };
+  return { ...out, verdict: 'present' };
+}
+
+function describeProbe(m) {
+  if (m.verdict === 'missing') return `${m.file} (${m.url}: HTTP ${m.status})`;
+  if (m.verdict === 'stub') return `${m.file} (${m.url}: ${m.contentLength} bytes, stub)`;
+  if (m.verdict === 'unreachable') return `${m.file} (${m.url}: unreachable: ${m.detail})`;
+  return `${m.file} (${m.url}: ${m.verdict})`;
+}
+
+/**
+ * Probe the three diarization models without downloading them.
+ * @returns {Promise<{ ok: boolean, models: object[], summary: string }>}
+ */
+export async function probeDiarizationModels() {
+  const models = await Promise.all(
+    Object.entries(MODEL_URLS).map(([role, url]) => probeModel(role, url)),
+  );
+  const bad = models.filter((m) => m.verdict !== 'present' && m.verdict !== 'present-unsized');
+  return { ok: bad.length === 0, models, summary: bad.map(describeProbe).join('; ') };
+}
+
+/**
+ * The ONNX diarizer is opt-in. With the presence probe fixed, a 4:07 file on
+ * the local server loaded all three models (WebGPU) and then failed inside
+ * speaker-diarizer.js after ~29 s on the main thread ("Session already
+ * started" from two passes sharing sessions, then an ORT internal null
+ * read). Until that path is validated, the default never downloads the
+ * 35 MB of models; it probes them and says exactly why k-means ran.
+ * Opt in with localStorage 'vip-onnx-diarization' = '1' or
+ * globalThis.VIP_ONNX_DIARIZATION = true.
+ */
+export function onnxDiarizationEnabled() {
+  if (globalThis.VIP_ONNX_DIARIZATION === true) return true;
+  try {
+    return globalThis.localStorage?.getItem?.('vip-onnx-diarization') === '1';
   } catch {
     return false;
   }
+}
+
+/** One ONNX diarization at a time: ORT sessions reject concurrent run(). */
+let _onnxQueue = Promise.resolve();
+function serialiseOnnx(task) {
+  const run = _onnxQueue.then(task, task);
+  _onnxQueue = run.then(() => {}, () => {});
+  return run;
+}
+
+/** Test hook: forget memoised sessions and load failures. */
+export function __resetDiarizationModelStateForTests() {
+  _sessions = null;
+  _sessionPromise = null;
+  _loadFailure = null;
+  __resetOrtSessionsForTests();
 }
 
 function diag(level, event, detail) {
   try { globalThis.VIP_liveDiagnostics?.log?.(level, event, detail); } catch { /* ignore */ }
 }
 
+async function createNamedSession(role, cacheKey) {
+  const url = MODEL_URLS[role];
+  try {
+    return await createOrtSession(url, { cacheKey, quietFailure: true });
+  } catch (cause) {
+    const file = url.slice(url.lastIndexOf('/') + 1);
+    const err = new Error(`${file} (${url}): ${cause?.message || cause}`);
+    err.code = 'model-load-failed';
+    err.models = [{ role, file, url, verdict: 'load-failed', detail: cause?.message || String(cause) }];
+    throw err;
+  }
+}
+
 async function loadOnnxSessions() {
   if (_sessions) return _sessions;
+  if (_loadFailure) {
+    const again = new Error(_loadFailure.message);
+    again.code = _loadFailure.code;
+    again.models = _loadFailure.models;
+    again.cached = true;
+    throw again;
+  }
   if (_sessionPromise) return _sessionPromise;
   const pending = (async () => {
     const runtime = await loadOrtRuntime();
@@ -44,21 +147,30 @@ async function loadOnnxSessions() {
       err.code = 'ort-unavailable';
       throw err;
     }
-    const checks = await Promise.all([
-      headOk(MODEL_URLS.segmentation),
-      headOk(MODEL_URLS.embedding),
-      headOk(MODEL_URLS.vad),
-    ]);
-    if (!checks.every(Boolean)) {
-      const err = new Error('Diarization ONNX models not available locally');
+    const probe = await probeDiarizationModels();
+    if (!probe.ok) {
+      const err = new Error(`Diarization ONNX models not available: ${probe.summary}`);
       err.code = 'models-unavailable';
+      err.models = probe.models;
       throw err;
     }
-    const [seg, emb, vad] = await Promise.all([
-      createOrtSession(MODEL_URLS.segmentation, { cacheKey: 'diar-seg' }),
-      createOrtSession(MODEL_URLS.embedding, { cacheKey: 'diar-emb' }),
-      createOrtSession(MODEL_URLS.vad, { cacheKey: 'diar-vad' }),
+    const results = await Promise.allSettled([
+      createNamedSession('segmentation', 'diar-seg'),
+      createNamedSession('embedding', 'diar-emb'),
+      createNamedSession('vad', 'diar-vad'),
     ]);
+    const failed = results.filter((r) => r.status === 'rejected').map((r) => r.reason);
+    if (failed.length) {
+      for (const r of results) {
+        if (r.status === 'fulfilled') Promise.resolve(r.value?.release?.()).catch(() => {});
+      }
+      const err = new Error(`Diarization ONNX model failed to load: ${failed.map((e) => e.message).join('; ')}`);
+      err.code = 'model-load-failed';
+      err.models = failed.flatMap((e) => e.models || []);
+      _loadFailure = err;
+      throw err;
+    }
+    const [seg, emb, vad] = results.map((r) => r.value);
     _sessions = { seg, emb, vad };
     return _sessions;
   })();
@@ -194,14 +306,27 @@ export async function detectSpeakers(clean, sampleRate, { signal = null } = {}) 
   let onnxReason = 'onnxruntime-web not loaded';
   try {
     throwIfAborted();
-    const { seg, emb, vad } = await loadOnnxSessions();
-    throwIfAborted();
-    const { default: SpeakerDiarizer } = await import('/app/speaker-diarizer.js');
-    const diarizer = new SpeakerDiarizer(seg, emb, vad, 16000);
-    const ctx = new OfflineAudioContext(1, mono.length, sampleRate);
-    const buf = ctx.createBuffer(1, mono.length, sampleRate);
-    buf.copyToChannel(mono, 0);
-    const timeline = await diarizer.diarize(buf);
+    if (!onnxDiarizationEnabled()) {
+      const probe = await probeDiarizationModels();
+      const reachable = probe.models.filter((m) => m.verdict === 'present' || m.verdict === 'present-unsized').length;
+      const err = new Error(probe.ok
+        ? `ONNX diarizer is off by default (models reachable ${reachable}/3; opt in with localStorage vip-onnx-diarization=1)`
+        : `ONNX diarizer is off by default; models not available: ${probe.summary}`);
+      err.code = probe.ok ? 'onnx-diarizer-disabled' : 'models-unavailable';
+      err.models = probe.models;
+      throw err;
+    }
+    const timeline = await serialiseOnnx(async () => {
+      throwIfAborted();
+      const { seg, emb, vad } = await loadOnnxSessions();
+      throwIfAborted();
+      const { default: SpeakerDiarizer } = await import('/app/speaker-diarizer.js');
+      const diarizer = new SpeakerDiarizer(seg, emb, vad, 16000);
+      const ctx = new OfflineAudioContext(1, mono.length, sampleRate);
+      const buf = ctx.createBuffer(1, mono.length, sampleRate);
+      buf.copyToChannel(mono, 0);
+      return diarizer.diarize(buf);
+    });
     throwIfAborted();
     const mapped = timelineToPlaybackSegments(timeline);
     diag('info', 'speaker.onnx', { segments: mapped.segments.length, speakers: mapped.speakers.length });
@@ -210,7 +335,12 @@ export async function detectSpeakers(clean, sampleRate, { signal = null } = {}) 
     if (onnxErr?.name === 'AbortError') throw onnxErr;
     onnxReason = onnxErr?.message || String(onnxErr);
     console.warn('[VIP][SpeakerDetection] ONNX path unavailable:', onnxReason);
-    diag('warn', 'speaker.onnx-unavailable', { reason: onnxReason, code: onnxErr?.code || null });
+    diag('warn', 'speaker.onnx-unavailable', {
+      reason: onnxReason,
+      code: onnxErr?.code || null,
+      models: onnxErr?.models || null,
+      cached: onnxErr?.cached === true,
+    });
   }
 
   try {

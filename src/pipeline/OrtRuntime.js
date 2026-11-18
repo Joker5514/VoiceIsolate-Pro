@@ -193,7 +193,8 @@ function createSessionAttempt(ort, source, providers) {
  * The cached session is reused for the same cacheKey.
  *
  * @param {string|ArrayBuffer} source
- * @param {{ cacheKey?: string }} [options]
+ * @param {{ cacheKey?: string, quietFailure?: boolean }} [options] quietFailure keeps a failed
+ *   optional model from publishing provider 'error' over a working runtime
  */
 export async function createOrtSession(source, options = {}) {
   const cacheKey = options.cacheKey || null;
@@ -243,13 +244,22 @@ export async function createOrtSession(source, options = {}) {
     return await pending;
   } catch (err) {
     if (cacheKey) _sessions.delete(cacheKey);
-    publish({
-      provider: 'error',
-      providerVerified: false,
-      detail: err?.message || String(err),
-    });
+    // An optional page model (diarization) that fails to load must not mark
+    // the runtime as errored while MLWorker's verified session keeps working.
+    if (!options.quietFailure) {
+      publish({
+        provider: 'error',
+        providerVerified: false,
+        detail: err?.message || String(err),
+      });
+    }
     throw err;
   }
+}
+
+/** Test hook: drop memoised page sessions. */
+export function __resetOrtSessionsForTests() {
+  _sessions.clear();
 }
 
 export function getOrtRuntimeStatus() {

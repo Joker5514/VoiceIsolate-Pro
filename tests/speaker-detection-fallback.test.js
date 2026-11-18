@@ -24,7 +24,7 @@ describe('speaker detection does not block enhancement', () => {
     expect(Array.isArray(result.speakers)).toBe(true);
     expect(result.provider).toBe('js-kmeans');
     expect(result.providerVerified).toBe(false);
-    expect(String(result.reason)).toMatch(/onnxruntime-web not loaded|not available locally/i);
+    expect(String(result.reason)).toMatch(/onnxruntime-web not loaded|not available locally|off by default; models not available/i);
   }, 15000);
 
   test('cancellation still rejects and does not invent speakers', async () => {
