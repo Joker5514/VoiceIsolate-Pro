@@ -1018,6 +1018,7 @@ class VoiceIsolatePro {
     this._libraryFileId = null;
     /** @type {number|null} fileSeq for which _cleanStemChannels were produced */
     this._stemFileSeq = null;
+    this._stemSourceBuffer = null;
     /** @type {string|null} Process-time Engineer snapshot used for retained stems */
     this._stemProcessingRevision = null;
     /** @type {ReturnType<typeof setTimeout>|null} */
@@ -3895,6 +3896,7 @@ class VoiceIsolatePro {
     if (!sameSource) {
       clearStemCache();
       this._stemFileSeq = null;
+      this._stemSourceBuffer = null;
       this._stemProcessingRevision = null;
       this._lastProcessingConfig = null;
       this._cleanStemChannels = null;
@@ -5051,6 +5053,7 @@ class VoiceIsolatePro {
     // Clear only the working set — library entries remain until Remove/Delete.
     this._libraryFileId = null;
     this._stemFileSeq = null;
+    this._stemSourceBuffer = null;
     this._stemProcessingRevision = null;
     this._lastProcessingConfig = null;
     this._decodePromise = null;
@@ -5994,6 +5997,24 @@ class VoiceIsolatePro {
   }
 
   /**
+   * Retained stems may be re-used only for the same decoded source, file and
+   * Process-time revision. fileSeq alone was not enough: a loader that did not
+   * bump it (the legacy m4a patch) made a second, different upload re-use the
+   * first file's stems and export identical audio (live test t24u/t25u).
+   */
+  _canReuseRetainedStems(buf, fileSeq, processingRevision) {
+    return Boolean(
+      !this._forceMlRerun
+      && buf
+      && this._stemSourceBuffer === buf
+      && this._stemFileSeq === fileSeq
+      && this._stemProcessingRevision === processingRevision
+      && this._cleanStemChannels?.length
+      && this.outputBuffer,
+    );
+  }
+
+  /**
    * Apply the deterministic time-domain cleanup shared by fresh and durable
    * ML results. Durable storage intentionally keeps raw worker stems, so this
    * must run after clone/expand/post-stem controls on every cache path.
@@ -6108,13 +6129,7 @@ class VoiceIsolatePro {
     this._lastProcessingConfig = processingConfig;
 
     // Reprocess with retained stems: skip ONNX (audit P-04) unless forced.
-    if (
-      !this._forceMlRerun
-      && this._stemFileSeq === fileSeq
-      && this._stemProcessingRevision === processingRevision
-      && this._cleanStemChannels?.length
-      && this.outputBuffer
-    ) {
+    if (this._canReuseRetainedStems(buf, fileSeq, processingRevision)) {
       this.updatePipelineProgress(20, 'ML isolation (retained stems)', 90);
       try {
         await this._loadSeparationStemsToBridge();
@@ -6176,6 +6191,7 @@ class VoiceIsolatePro {
           this.outputBuffer = await toAudioBuffer(this.ctx, clean, durable.sampleRate || buf.sampleRate);
           this.procBuffer = this.outputBuffer;
           this._stemFileSeq = fileSeq;
+          this._stemSourceBuffer = buf;
           this._stemProcessingRevision = processingRevision;
           // Processed channel copies are separate from the immutable raw cache artifact.
           this._cleanStemChannels = clean;
@@ -6312,6 +6328,7 @@ class VoiceIsolatePro {
       this.outputBuffer = await toAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       this._stemFileSeq = fileSeq;
+      this._stemSourceBuffer = buf;
       this._stemProcessingRevision = processingRevision;
       // Retain residual/noise stem for Live-Mix isolation refinements (bgSuppress).
       // Separation once → isolation sliders only rebalance stems (never re-ML).
@@ -6498,6 +6515,7 @@ class VoiceIsolatePro {
     // compatible stem pair, so invalidate it before any passthrough/DSP return
     // can hand stale audio to the Live-Mix bridge.
     this._stemFileSeq = null;
+    this._stemSourceBuffer = null;
     this._stemProcessingRevision = null;
     this._cleanStemChannels = null;
     this._noiseStemChannels = null;
