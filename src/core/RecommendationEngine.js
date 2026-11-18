@@ -62,7 +62,9 @@ export function recommendFromAnalysis(analysis) {
     ? 20 * Math.log10(analysis.rms + 1e-12)
     : (analysis.loudnessEstimate ?? -30);
 
-  findings.push(`Estimated SNR ≈ ${snr.toFixed ? snr.toFixed(1) : snr} dB`);
+  // Input file level vs its quietest 10% of frames: not the post-Process
+  // header SNR (kept vs removed stems), so it can differ in sign.
+  findings.push(`Input SNR estimate ≈ ${snr.toFixed ? snr.toFixed(1) : snr} dB (file level vs its quietest 10% of frames)`);
   findings.push(`Level ≈ ${Number(rmsDb).toFixed(1)} dBFS RMS`);
 
   if (hum.present || (hum.strength && hum.strength > 0.15)) {
