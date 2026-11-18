@@ -468,7 +468,7 @@ describe('VoiceIsolatePro class structure', () => {
   });
 
   test('Engineer imports pipeline stage timing for debug scripts', () => {
-    expect(appSrc).toContain("import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js'");
+    expect(appSrc).toContain("import { getTimings, resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js'");
   });
 
   test('pipeline has 32 stages to match STAGES array', () => {

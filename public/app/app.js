@@ -94,7 +94,7 @@ import {
 } from '/src/pipeline/ui-yield.js';
 import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
-import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
+import { getTimings, resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { formatTransportSelection } from '/src/presentation/PremiumAudioControl.js';
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
@@ -4641,6 +4641,12 @@ class VoiceIsolatePro {
     const engine = this._processingEngine === 'dsp-fallback'
       ? 'dsp-fallback'
       : this._processingEngine === 'ml' ? 'ml' : 'export';
+    // Stage timings of the last Process (decode/resample/pipeline/ml_isolation)
+    // and the ML provider, so latency is readable from the sidecar without DevTools.
+    let timing = null;
+    try {
+      timing = { stagesMs: getTimings(), provider: globalThis.__vipOrtStatus?.provider || null };
+    } catch { /* timing stays null — not measured */ }
     return publishExportProvenance({
       outputBlob: blob,
       filename,
@@ -4649,6 +4655,7 @@ class VoiceIsolatePro {
       signal,
       options,
       parameters,
+      timing,
       modelIds: this._exportModelIds(),
       operations: [{ id: engine, status: 'completed', detail: detail || null }],
       ...(typeof deliver === 'function' ? { deliver } : {}),

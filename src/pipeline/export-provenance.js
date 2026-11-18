@@ -59,6 +59,7 @@ async function readAppVersion() {
  * @param {Array<{id?: string, status?: string, detail?: string}>|null} [input.operations]
  * @param {string[]} [input.modelIds]
  * @param {string|null} [input.appVersion]
+ * @param {{ stagesMs?: object, provider?: string }|null} [input.timing] last Process stage timings (ms) + ML provider
  * @param {(blob: Blob, filename: string) => void} [input.deliver]
  * @returns {Promise<{ ok: boolean, filename?: string, record?: object, blob?: Blob, error?: string }>}
  */
@@ -74,6 +75,7 @@ export async function publishExportProvenance(input = {}) {
     operations = null,
     modelIds = [],
     appVersion = null,
+    timing = null,
     deliver = triggerBlobDownload,
   } = input;
 
@@ -117,6 +119,7 @@ export async function publishExportProvenance(input = {}) {
       processing: {
         parameters: parameters && typeof parameters === 'object' ? parameters : null,
         operations: Array.isArray(operations) ? operations : null,
+        ...(timing && typeof timing === 'object' ? { timing } : {}),
       },
     });
 
