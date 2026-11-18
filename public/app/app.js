@@ -2812,9 +2812,9 @@ class VoiceIsolatePro {
 
     // PATCHED BY vip-fixes.js — consider merging
     // Preset selector
-    bind('presetSel', d.presetSel, 'change', e => this.applyPreset(e.target.value));
+    bind('presetSel', d.presetSel, 'change', e => this.applyPreset(e.target.value, { source: 'user' }));
     qsa('.btn-preset').forEach(b => {
-      b.addEventListener('click', () => this.applyPreset(b.dataset.preset));
+      b.addEventListener('click', () => this.applyPreset(b.dataset.preset, { source: 'user' }));
     });
 
     // Reset sliders — locked rows preserved unless user chooses "reset unlocked only"
@@ -3271,6 +3271,7 @@ class VoiceIsolatePro {
   }
 
   _resetSliders({ unlockedOnly = true } = {}) {
+    this._userPresetName = null; // back to defaults: calibration may recommend again
     const rows = (typeof document !== 'undefined' && document.querySelectorAll)
       ? document.querySelectorAll('[id^="sl_"]')
       : [];
@@ -3411,7 +3412,7 @@ class VoiceIsolatePro {
 
   // ── Preset application ────────────────────────────────────────────────────
   applyPreset(name, options = {}) {
-    const { preserveWhisperMode = false } = options;
+    const { preserveWhisperMode = false, source = 'default' } = options;
     const resolved = resolvePresetNameLocal(name);
     const preset = PRESETS[resolved] || PRESETS[name];
     if (!preset) return;
@@ -3435,6 +3436,16 @@ class VoiceIsolatePro {
       }
     }
     this._activePresetName = name;
+    // A button or dropdown pick is the user's choice: post-Process
+    // calibration must not swap it for its own recommendation (t24u).
+    if (source === 'user') this._userPresetName = name;
+    // Keep the dropdown on the applied preset. Buttons used to leave it on
+    // the tier default ("Podcast Clean"). Set .value only: no change event.
+    const sel = this.dom?.presetSel;
+    if (sel && sel.value !== name) {
+      const opt = [...(sel.options || [])].find((o) => (o.value || o.textContent) === name);
+      if (opt) sel.value = opt.value || opt.textContent;
+    }
     this._scheduleSessionPersist();
     this.showNotification('Preset applied: ' + name, 'info');
   }
@@ -3476,8 +3487,17 @@ class VoiceIsolatePro {
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       channels.push(buffer.getChannelData(ch));
     }
-    const { preset, level, rmsDb, overrides = {} } = recommendEngineerPreset(channels);
-    this._applyPresetValues(preset, { preserveWhisperMode: true, respectUserTouched: true, liveMixOnly: true });
+    const { preset: recommended, level, rmsDb, overrides: recOverrides = {} } = recommendEngineerPreset(channels);
+    // The user picked a preset (button or dropdown): keep its Live-Mix values
+    // and only report the recommendation. Before, a Whisper Boost pick was
+    // overwritten by "Voice Clarity" after every Process (live test t24u).
+    const userPreset = this._userPresetName && PRESETS[this._userPresetName] ? this._userPresetName : null;
+    const preset = userPreset || recommended;
+    const presetSource = userPreset ? 'user' : 'calibration';
+    const overrides = userPreset ? {} : recOverrides;
+    if (!userPreset) {
+      this._applyPresetValues(preset, { preserveWhisperMode: true, respectUserTouched: true, liveMixOnly: true });
+    }
 
     for (const [key, val] of Object.entries(overrides)) {
       if (!BRIDGE_RT_SLIDER_IDS.has(key)) continue;
@@ -3492,7 +3512,7 @@ class VoiceIsolatePro {
     // held the main thread ~0.6 s per 5 min of audio, so it runs in yielding
     // chunks and applies its suggestions when done (if the file is unchanged).
     const AI = globalThis.AIIntelligence;
-    if (AI && typeof AI.autoTuneParamsAsync === 'function') {
+    if (!userPreset && AI && typeof AI.autoTuneParamsAsync === 'function') {
       const fileSeq = this._fileSeq;
       AI.autoTuneParamsAsync(channels[0], buffer.sampleRate, this.params, { yieldBudget: createYieldBudget() })
         .then((tune) => {
@@ -3511,12 +3531,17 @@ class VoiceIsolatePro {
     const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
     structuredLog('info', '[VIP] Auto-calibrated mix', {
       preset,
+      presetSource,
+      recommended,
       level,
       rmsDb,
       processingRevision: this._stemProcessingRevision ?? null,
     });
-    this.showNotification('Auto-calibrated: ' + detail, 'info');
-    return { preset, level, rmsDb };
+    this.showNotification(
+      userPreset ? `Kept ${preset}; calibration suggests ${recommended} (${level}, ${rmsDb.toFixed(1)} dBFS)` : 'Auto-calibrated: ' + detail,
+      'info',
+    );
+    return { preset, recommended, presetSource, level, rmsDb };
   }
 
   _showFileLoading(text) {
@@ -6083,6 +6108,27 @@ class VoiceIsolatePro {
   }
 
   /**
+   * What moved since the last Process. The first Process for a file has no
+   * previous snapshot, so it is compared with the schema defaults instead;
+   * otherwise a preset applied before the first Process logged changed {}
+   * (live test t24u). Names the active preset and records the snapshot.
+   */
+  _processSnapshotDiff(processingConfig) {
+    const prev = this._lastProcessingConfig;
+    const baseline = prev ? 'previous-process' : 'schema-defaults';
+    const diff = diffProcessingConfig(prev || buildMlProcessingConfig({}), processingConfig);
+    this._lastProcessingConfig = processingConfig;
+    return {
+      ...diff,
+      previousRevision: prev?.revision ?? null,
+      baseline,
+      preset: this._activePresetName || null,
+      presetSource: this._userPresetName ? 'user' : 'default',
+      changedCount: Object.keys(diff.changed).length,
+    };
+  }
+
+  /**
    * Offline ML isolation — BS-RNN vocals (DEFAULT_ML_CHAIN). Stereo files are
    * reduced to mid for a single inference pass (≈2× faster than per-channel).
    * @returns {Promise<boolean>} true when ML produced a non-passthrough result
@@ -6100,12 +6146,8 @@ class VoiceIsolatePro {
     const processingRevision = processingConfig.revision;
     // A fresh ML run on an unchanged file means a Process-time control moved.
     // Name it, so a level change between runs can be traced to its cause.
-    const snapshotDiff = diffProcessingConfig(this._lastProcessingConfig, processingConfig);
-    structuredLog('info', '[VIP] Process-time snapshot', {
-      ...snapshotDiff,
-      changedCount: Object.keys(snapshotDiff.changed).length,
-    });
-    this._lastProcessingConfig = processingConfig;
+    const snapshotDiff = this._processSnapshotDiff(processingConfig);
+    structuredLog('info', '[VIP] Process-time snapshot', snapshotDiff);
 
     // Reprocess with retained stems: skip ONNX (audit P-04) unless forced.
     if (
