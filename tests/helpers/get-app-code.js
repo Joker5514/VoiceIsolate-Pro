@@ -277,6 +277,7 @@ function removeAllInfoPopovers() {}
 function sliceAudioBuffer(buf) { return buf; }
 function exportVideoWithProcessedAudio() { return Promise.resolve(null); }
 function triggerBlobDownload() {}
+function offerDownloadLink() { return null; }
 const WHISPER_HUNTER_IMPORTS = {};
 `;
 }

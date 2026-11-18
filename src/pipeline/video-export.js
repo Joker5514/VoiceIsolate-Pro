@@ -75,10 +75,49 @@ export function triggerBlobDownload(blob, filename) {
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
+  // Keep the URL alive for a minute: a Save-As dialog or Chrome's "download
+  // multiple files" prompt can hold the download open well past 4 s, and a
+  // revoked blob URL fails the download with no file (round 10, item 5).
   setTimeout(() => {
     try { a.remove(); } catch { /* ignore */ }
     try { URL.revokeObjectURL(url); } catch { /* ignore */ }
-  }, 4000);
+  }, DOWNLOAD_URL_TTL_MS);
+}
+
+/** How long an automatic download keeps its blob URL (ms). */
+export const DOWNLOAD_URL_TTL_MS = 60000;
+
+let _fallbackUrl = null;
+
+/**
+ * Show (or, with a null blob, hide) the Save section's "Download WAV" link for
+ * the finished export, in case the automatic download did not start. The link
+ * owns its own object URL until the next export or a new file.
+ * @param {Blob|null} blob
+ * @param {string} [filename]
+ * @returns {string|null} the link URL
+ */
+export function offerDownloadLink(blob, filename) {
+  if (typeof document === 'undefined') return null;
+  const wrap = document.getElementById('procDownloadFallback');
+  const link = document.getElementById('procDownloadFallbackLink');
+  if (_fallbackUrl) {
+    try { URL.revokeObjectURL(_fallbackUrl); } catch { /* ignore */ }
+    _fallbackUrl = null;
+  }
+  if (!wrap || !link) return null;
+  if (!blob) {
+    wrap.hidden = true;
+    link.setAttribute('href', '#');
+    link.removeAttribute('download');
+    return null;
+  }
+  _fallbackUrl = URL.createObjectURL(blob);
+  link.setAttribute('href', _fallbackUrl);
+  link.setAttribute('download', filename || 'processed.wav');
+  link.textContent = `Download ${filename || 'processed.wav'}`;
+  wrap.hidden = false;
+  return _fallbackUrl;
 }
 
 /**

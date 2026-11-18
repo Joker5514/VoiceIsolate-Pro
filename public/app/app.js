@@ -132,6 +132,7 @@ import { createLoudnessMeter, measureIntegratedLufs } from '/src/core/Loudness.j
 import { computeStemStats, measureExportLoudness } from '/src/core/SessionStats.js';
 import {
   exportVideoWithProcessedAudio,
+  offerDownloadLink,
   triggerBlobDownload,
 } from '/src/pipeline/video-export.js';
 import { publishExportProvenance } from '/src/pipeline/export-provenance.js';
@@ -4833,6 +4834,7 @@ class VoiceIsolatePro {
           } else {
             triggerBlobDownload(result.blob, result.filename);
           }
+          offerDownloadLink(result.blob, result.filename);
           sidecar.flush();
           this._publishExportLoudness(mixBuf);
           await this._recordExportProvenance({
@@ -4919,6 +4921,7 @@ class VoiceIsolatePro {
       } else {
         triggerBlobDownload(blob, filename);
       }
+      offerDownloadLink(blob, filename);
       sidecar.flush();
       this._publishExportLoudness(buf);
       await this._recordExportProvenance({
@@ -8391,6 +8394,7 @@ class VoiceIsolatePro {
     this._sessionMetricsCache = null;
     this._sessionMetricsPendingKey = null;
     this._exportLoudness = null;
+    try { offerDownloadLink(null); } catch (_) { /* no Save section in this view */ }
     try {
       getAudioSessionStore().updateMetrics({
         voiceClarity: null, noiseReduction: null, whisperRetention: null, outputLevelDb: null,
