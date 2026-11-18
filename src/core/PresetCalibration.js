@@ -123,7 +123,9 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
     gateRange: -78,
     gateAttack: 2,
     gateRelease: 140,
-    nrAmount: 55,
+    // Gentle Process-time NR, no formant tunnel: both pushed whisper into the
+    // Removed stem (t26u; tests/whisper-boost-gentle-cleanup.test.js).
+    nrAmount: 30,
     nrSensitivity: 45,
     nrSpectralSub: 42,
     nrFloor: -78,
@@ -148,7 +150,7 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
     compMakeup: 7,
     outGain: 5,
     whisperLift: 18,
-    voiceTunnel: 65,
+    voiceTunnel: 0,
     whisperMode: 1,
     whisperClarity: 78,
     whisperSensitivity: 72,
