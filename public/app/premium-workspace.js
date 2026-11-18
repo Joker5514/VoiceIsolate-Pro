@@ -582,8 +582,12 @@ function updateLiveMetrics(metrics) {
   setMetric('metricVoiceClarity', fin(metrics.voiceClarity) ? `${Math.round(metrics.voiceClarity)}%` : '--', 'metricVoiceClarityFill');
   setMetric('metricNoiseReduction', fin(metrics.noiseReduction) ? `${metrics.noiseReduction.toFixed(1)} dB` : '-- dB', 'metricNoiseReductionFill', 60);
   setMetric('metricWhisperRetention', fin(metrics.whisperRetention) ? `${Math.round(metrics.whisperRetention)}%` : '--', 'metricWhisperRetentionFill');
-  const outDb = metrics.outputLevelDb ?? metrics.outputDb;
-  setMetric('metricOutputDb', fin(outDb) ? `${outDb.toFixed(1)} dBFS` : '-- dBFS', 'metricOutputDbFill', 1);
+  // Output = the exported file: integrated LUFS + 4x true peak, "--" until an export.
+  const expLufs = metrics.exportLufs;
+  const expTp = metrics.exportTruePeakDb;
+  setMetric('metricOutputDb', fin(expLufs)
+    ? `${expLufs.toFixed(1)} LUFS${fin(expTp) ? ` · ${expTp.toFixed(1)} dBTP` : ''}`
+    : '-- LUFS', 'metricOutputDbFill', 1);
 
   // Deep metrics
   const deepMap = {

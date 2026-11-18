@@ -129,6 +129,7 @@ import { persistAppSession, restoreAppSession } from './session-persist.js';
 import { migrateParamSnapshot } from '/src/core/ParamMigration.js';
 import { sharedSessionStatus } from '/src/core/SessionStatus.js';
 import { createLoudnessMeter, measureIntegratedLufs } from '/src/core/Loudness.js';
+import { computeStemStats, measureExportLoudness } from '/src/core/SessionStats.js';
 import {
   exportVideoWithProcessedAudio,
   triggerBlobDownload,
@@ -4701,6 +4702,7 @@ class VoiceIsolatePro {
     else if (ditherAmt > 0) meta.ditherSeed = (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0) || 1;
     const blob = encodeWav(channels, mixBuf.sampleRate, { ditherAmt, ditherSeed: meta.ditherSeed, bitDepth, truePeakDb });
     const filename = `processed-${Date.now()}.wav`;
+    this._publishExportLoudness(mixBuf);
     let prov = { ok: false };
     try {
       prov = await this._attachExportProvenance({
@@ -4832,6 +4834,7 @@ class VoiceIsolatePro {
             triggerBlobDownload(result.blob, result.filename);
           }
           sidecar.flush();
+          this._publishExportLoudness(mixBuf);
           await this._recordExportProvenance({
             outputBlob: result.blob,
             filename: result.filename,
@@ -4917,6 +4920,7 @@ class VoiceIsolatePro {
         triggerBlobDownload(blob, filename);
       }
       sidecar.flush();
+      this._publishExportLoudness(buf);
       await this._recordExportProvenance({
         outputBlob: blob,
         filename,
@@ -8310,100 +8314,71 @@ class VoiceIsolatePro {
   }
 
   /**
-   * Derive Voice %, Noise %, SNR dB from current buffers / analysis once.
+   * Voice %, Noise %, SNR dB for the header: the same level-invariant stem
+   * stats as the session cards (src/core/SessionStats.js), describing the
+   * last Process pass regardless of A/B audition mode. "--" until ready.
    */
   _computeAudioMetricsState() {
     const orig = this.origBuffer || this.inputBuffer;
-    const proc = this.abMode === 'original'
-      ? orig
-      : (this.outputBuffer || this.procBuffer || orig);
+    const proc = this.outputBuffer || this.procBuffer || null;
+    const none = { voicePct: null, noisePct: null, snrDb: null };
     if (!orig || typeof orig.getChannelData !== 'function') {
-      return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
+      return this._lastMetricsState || none;
     }
+    if (!proc || proc === orig || typeof proc.getChannelData !== 'function') return none;
     try {
-      const o = cachedChannelData(orig, 0);
-      const p = (proc && proc.getChannelData) ? cachedChannelData(proc, 0) : o;
-      const n = Math.min(o.length, p.length);
-      if (n < 32) return { voicePct: null, noisePct: null, snrDb: null };
-
-      // Exact sums over every sample, computed off the progress tick and
-      // cached per stem pair; until ready the header shows "--".
-      const sums = this._audioMetricSums(orig, proc, o, p, n);
-      if (!sums) return { voicePct: null, noisePct: null, snrDb: null };
-      const { oSq, pSq, noiseEnergy } = sums;
-      const voiceEnergy = pSq;
-      const oCount = n;
-      const oRms = Math.sqrt(oSq / oCount);
-      const pRms = Math.sqrt(pSq / oCount);
-      const total = voiceEnergy + noiseEnergy + 1e-12;
-      let voicePct = (voiceEnergy / total) * 100;
-      let noisePct = (noiseEnergy / total) * 100;
-      // Clamp + normalize to 100
-      voicePct = Math.max(0, Math.min(100, voicePct));
-      noisePct = Math.max(0, Math.min(100, 100 - voicePct));
-
-      // SNR estimate: processed signal vs residual (noise proxy)
-      const noiseRms = Math.sqrt(noiseEnergy / oCount) + 1e-10;
-      const sigRms = pRms + 1e-10;
-      let snrDb = 20 * Math.log10(sigRms / noiseRms);
-      if (!Number.isFinite(snrDb)) snrDb = 0;
-      snrDb = Math.max(-40, Math.min(60, snrDb));
-
-      // Always the processed-vs-removed energy split of the stems on screen.
-      // (An input-analysis override used to sit here; it would have shown a
-      // pre-Process estimate as if it were a result. Round 8, item 4.)
-
-      return { voicePct, noisePct, snrDb, oRms, pRms };
+      const st = this._stemStats(orig, proc);
+      if (!st) return none;
+      return { voicePct: st.voicePct, noisePct: st.noisePct, snrDb: st.snrDb };
     } catch (_) {
-      return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
+      return this._lastMetricsState || none;
     }
   }
 
+  /** Removed stem for the stats: the ML noise stem when it matches, else null (o - p). */
+  _statsRemovedBuffer(proc) {
+    const r = this.noiseBuffer;
+    if (!r || typeof r.getChannelData !== 'function' || r === proc) return null;
+    return r.length === proc.length ? r : null;
+  }
+
   /**
-   * Exact energy sums for the Voice/Noise/SNR header, over every sample of
-   * the stem pair, in yielding chunks. Cached by buffer identity + content
-   * revision for the last few pairs, so A/B toggles are
-   * instant. Returns null while a pass is running; when it finishes the
-   * header is repainted through updateAudioMetrics().
+   * Level-invariant stem stats (SessionStats.computeStemStats) for an
+   * original/processed pair, computed once in yielding chunks and cached by
+   * buffer identity + revision. Returns the stats when ready, else null and
+   * repaints the header through updateAudioMetrics() when they arrive.
    */
-  _audioMetricSums(orig, proc, o, p, n) {
-    const key = `${bufferRevisionKey(orig)}|${proc === orig ? '=' : bufferRevisionKey(proc)}`;
-    if (!this._audioMetricSumsCache) this._audioMetricSumsCache = new Map();
-    const cache = this._audioMetricSumsCache;
+  _stemStats(orig, proc) {
+    const promise = this._stemStatsAsync(orig, proc);
+    return promise && promise.value ? promise.value : null;
+  }
+
+  _stemStatsAsync(orig, proc) {
+    const removed = this._statsRemovedBuffer(proc);
+    const key = `${bufferRevisionKey(orig)}|${bufferRevisionKey(proc)}|${removed ? bufferRevisionKey(removed) : '-'}`;
+    if (!this._stemStatsCache) this._stemStatsCache = new Map();
+    const cache = this._stemStatsCache;
     if (cache.has(key)) return cache.get(key);
-    if (!this._audioMetricSumsPending) this._audioMetricSumsPending = new Set();
-    if (this._audioMetricSumsPending.has(key)) return null;
-    this._audioMetricSumsPending.add(key);
-    let oSq = 0;
-    let pSq = 0;
-    let noiseEnergy = 0;
-    processInChunks({
-      total: n,
-      chunkSize: 48000 * 2,
-      runChunk: (start, end) => {
-        for (let i = start; i < end; i++) {
-          const ov = o[i];
-          const pv = p[i];
-          oSq += ov * ov;
-          pSq += pv * pv;
-          // Proxy: residual |orig-proc| ≈ noise removed; retained energy ≈ voice.
-          const resid = ov - pv;
-          noiseEnergy += resid * resid;
-        }
-      },
-    }).then(() => {
-      cache.set(key, { oSq, pSq, noiseEnergy });
-      while (cache.size > 4) cache.delete(cache.keys().next().value);
-      // Repaint only if these are still the stems on screen.
-      const curOrig = this.origBuffer || this.inputBuffer;
-      const curProc = this.abMode === 'original' ? curOrig : (this.outputBuffer || this.procBuffer || curOrig);
-      if (curOrig === orig && curProc === proc) this.updateAudioMetrics();
-    }).catch((err) => {
-      structuredLog('warn', '[VIP] audio metrics failed', { err: err?.message });
-    }).finally(() => {
-      this._audioMetricSumsPending.delete(key);
-    });
-    return null;
+    const o = cachedChannelData(orig, 0);
+    const p = cachedChannelData(proc, 0);
+    const r = removed ? cachedChannelData(removed, 0) : null;
+    const sampleRate = proc.sampleRate || orig.sampleRate || 48000;
+    const entry = computeStemStats(o, p, r, sampleRate, { yieldFn: yieldToBrowser })
+      .then((st) => {
+        entry.value = st;
+        const curOrig = this.origBuffer || this.inputBuffer;
+        const curProc = this.outputBuffer || this.procBuffer;
+        if (curOrig === orig && curProc === proc) this.updateAudioMetrics();
+        return st;
+      })
+      .catch((err) => {
+        cache.delete(key);
+        structuredLog('warn', '[VIP] stem stats failed', { err: err?.message });
+        return null;
+      });
+    cache.set(key, entry);
+    while (cache.size > 4) cache.delete(cache.keys().next().value);
+    return entry;
   }
 
   /**
@@ -8415,9 +8390,11 @@ class VoiceIsolatePro {
     this._sessionMetricsKey = null;
     this._sessionMetricsCache = null;
     this._sessionMetricsPendingKey = null;
+    this._exportLoudness = null;
     try {
       getAudioSessionStore().updateMetrics({
         voiceClarity: null, noiseReduction: null, whisperRetention: null, outputLevelDb: null,
+        exportLufs: null, exportTruePeakDb: null,
         snrDb: null, rms: null, peak: null, lufs: null, voices: null,
       });
     } catch (_) { /* metrics must never fail an upload */ }
@@ -8470,126 +8447,39 @@ class VoiceIsolatePro {
   }
 
   /**
-   * Exact session metrics over every sample and every 20 ms frame, in
-   * budgeted chunks. Superseded runs (stems changed again) are dropped.
+   * Session cards: the level-invariant stem stats shared with the header
+   * (SessionStats.computeStemStats), stem RMS/peak/LUFS as deep readouts, and
+   * Output = the last export's integrated LUFS + true peak (null until an
+   * export of these stems). Superseded runs (stems changed again) are dropped.
    */
   async _computeSessionMetricsAsync(orig, o, p, n, sampleRate, key) {
-    // Stale when the stems changed again or the file was replaced/cleared.
     const fileSeq = this._fileSeq;
     const stale = () => this._fileSeq !== fileSeq || this._sessionMetricsPendingKey !== key;
-    // Thrown from a chunk to stop work for a replaced source mid-pass.
-    const STALE = {};
+    const proc = this.outputBuffer || this.procBuffer || null;
     let published = false;
     try {
-      // Pass 1: processed RMS/peak + retained-vs-removed energy.
+      const st = proc ? await this._stemStatsAsync(orig, proc) : null;
+      if (stale() || !st) return;
+      // Deep readouts of the processed stem (before Live-Mix/export).
       let pSum = 0;
       let peak = 0;
-      let voiceEnergy = 0;
-      let noiseEnergy = 0;
       await processInChunks({
         total: n,
         chunkSize: 48000 * 2,
         runChunk: (start, end) => {
-          if (stale()) throw STALE;
           for (let i = start; i < end; i++) {
-            const ov = o[i];
             const pv = p[i];
             pSum += pv * pv;
             const abs = pv < 0 ? -pv : pv;
             if (abs > peak) peak = abs;
-            // Proxy (same as _computeAudioMetricsState): residual ≈ removed noise,
-            // retained energy ≈ voice.
-            const resid = ov - pv;
-            noiseEnergy += resid * resid;
-            voiceEnergy += pv * pv;
           }
         },
       });
       if (stale()) return;
-      const pCount = n;
-      const rms = Math.sqrt(pSum / Math.max(1, pCount));
-      const total = voiceEnergy + noiseEnergy + 1e-12;
-      const voiceClarity = Math.max(0, Math.min(100, (voiceEnergy / total) * 100));
-      let snrDb = 20 * Math.log10((Math.sqrt(voiceEnergy) + 1e-10) / (Math.sqrt(noiseEnergy) + 1e-10));
-      if (!Number.isFinite(snrDb)) snrDb = 0;
-      snrDb = Math.max(-40, Math.min(60, snrDb));
-
-      // Pass 2 (every 20 ms frame): noise floor reduction + whisper-band retention.
-      const frame = Math.max(64, Math.floor(sampleRate * 0.02));
-      const frameCount = Math.floor(n / frame);
-      const preFrames = new Float64Array(frameCount);
-      const postFrames = new Float64Array(frameCount);
-      await processInChunks({
-        total: frameCount,
-        chunkSize: 100,
-        runChunk: (fStart, fEnd) => {
-          if (stale()) throw STALE;
-          for (let f = fStart; f < fEnd; f++) {
-            const pos = f * frame;
-            let ePre = 0;
-            let ePost = 0;
-            for (let i = 0; i < frame; i++) {
-              const ov = o[pos + i];
-              const pv = p[pos + i];
-              ePre += ov * ov;
-              ePost += pv * pv;
-            }
-            preFrames[f] = ePre / frame;
-            postFrames[f] = ePost / frame;
-          }
-        },
-      });
-      if (stale()) return;
-      const dbOf = (v) => (v <= 1e-12 ? -120 : 10 * Math.log10(v));
-      const percentileDb = (arr) => {
-        if (!arr.length) return -120;
-        const sorted = Float64Array.from(arr).sort();
-        return dbOf(sorted[Math.max(0, Math.floor(sorted.length * 0.1))]);
-      };
-      const floorPreDb = percentileDb(preFrames);
-      const floorPostDb = percentileDb(postFrames);
-      // Noise Reduction: how far the noise floor dropped, in dB (≥ 0).
-      let noiseReduction = Math.max(0, Math.min(60, floorPreDb - floorPostDb));
-      if (!preFrames.length) noiseReduction = Math.max(0, snrDb);
-
-      // Whisper Retention: energy kept in quiet (floor+2..floor+12 dB) frames.
-      let whisperPre = 0;
-      let whisperPost = 0;
-      for (let f = 0; f < preFrames.length; f++) {
-        const frameDb = dbOf(preFrames[f]);
-        if (frameDb > floorPreDb + 2 && frameDb < floorPreDb + 12) {
-          whisperPre += preFrames[f];
-          whisperPost += postFrames[f];
-        }
-      }
-      let whisperRetention;
-      if (whisperPre > 1e-12) {
-        whisperRetention = Math.max(0, Math.min(100, (whisperPost / whisperPre) * 100));
-      } else {
-        // No whisper-band frames: fall back to overall energy retention.
-        let ePre = 0;
-        let ePost = 0;
-        for (let f = 0; f < preFrames.length; f++) {
-          ePre += preFrames[f];
-          ePost += postFrames[f];
-        }
-        whisperRetention = ePre > 1e-12
-          ? Math.max(0, Math.min(100, (ePost / ePre) * 100))
-          : voiceClarity;
-      }
-
-      const outputLevelDb = Math.max(-120, Math.min(0, rms > 0 ? 20 * Math.log10(rms) : -120));
-      // ITU-R BS.1770-4 integrated loudness (K-weighted, gated). Channel 0,
-      // plus channel 1 when the processed buffer is stereo. Not the export limiter.
-      // `proc` is the stem from _computeSessionMetricsState; eval extracts of
-      // this method (audio-metrics-exact) do not close over it, so fall back
-      // to the same output/proc buffer that method already selected.
-      const procBuf = (typeof proc !== 'undefined' && proc)
-        || (this && (this.outputBuffer || this.procBuffer))
-        || orig;
+      const rms = Math.sqrt(pSum / Math.max(1, n));
       const lufsChannels = [p.subarray(0, n)];
-      if (procBuf && procBuf.numberOfChannels > 1 && typeof procBuf.getChannelData === 'function') {
-        const right = cachedChannelData(procBuf, 1);
+      if (proc && proc.numberOfChannels > 1 && typeof proc.getChannelData === 'function') {
+        const right = cachedChannelData(proc, 1);
         lufsChannels.push(right.subarray(0, Math.min(n, right.length)));
       }
       const measureLufs = (typeof globalThis !== 'undefined'
@@ -8600,24 +8490,26 @@ class VoiceIsolatePro {
       const lufsRaw = measureLufs ? measureLufs(lufsChannels, sampleRate) : NaN;
       const lufs = Number.isFinite(lufsRaw) ? Math.max(-120, Math.min(5, lufsRaw)) : -70;
 
-      // Voices: distinct diarization speakers when available, otherwise a
-      // speech-energy presence call.
+      const exp = this._exportLoudness && this._exportLoudness.stemKey === key ? this._exportLoudness : null;
+
       let voices = null;
       const segs = this.getDiarizationSegments();
       if (Array.isArray(segs) && segs.length) {
         voices = new Set(segs.map((sg) => sg.speakerId || sg.speaker || sg.id).filter(Boolean)).size;
-      } else if (voiceClarity >= 15) {
+      } else if (Number.isFinite(st.voicePct) && st.speechFraction > 0) {
         voices = 1;
       } else {
         voices = 0;
       }
 
       const metrics = {
-        voiceClarity,
-        noiseReduction,
-        whisperRetention,
-        outputLevelDb,
-        snrDb,
+        voiceClarity: st.voicePct,
+        noiseReduction: st.noiseReductionDb,
+        whisperRetention: st.whisperRetentionPct,
+        outputLevelDb: exp ? exp.lufs : null,
+        exportLufs: exp ? exp.lufs : null,
+        exportTruePeakDb: exp ? exp.truePeakDb : null,
+        snrDb: st.snrDb,
         rms,
         peak,
         lufs,
@@ -8628,35 +8520,55 @@ class VoiceIsolatePro {
       this._sessionMetricsKey = key;
       this._sessionMetricsCache = metrics;
       published = true;
-      // Say what these numbers are: energy proxies from the original vs the
-      // processed stem, measured after Process. Not a voice/noise classifier.
+      const r1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
       if (typeof structuredLog === 'function') structuredLog('info', '[VIP] Session metrics', {
         measured: 'post-process',
         basis: {
-          voiceClarity: 'share of energy kept in the processed stem vs removed (original - processed); proxy, not a voice detector',
-          snrDb: 'processed stem energy vs removed energy, dB; proxy, not a true SNR',
-          noiseReduction: 'drop of the 10th-percentile 20 ms frame energy, original vs processed, dB',
-          whisperRetention: 'energy kept in quiet frames (floor+2..floor+12 dB of the original), %',
-          outputLevelDb: 'RMS of the processed stem before Live-Mix/export (gate, EQ, comp, gain, limiter)',
+          voiceClarity: 'speech-locked share of the processed stem (energy above its between-phrase level), %; level-invariant estimate',
+          snrDb: 'processed stem: speech frames vs between-phrase gaps, dB; level-invariant estimate',
+          noiseReduction: 'SNR of the processed stem minus the same measure on the original, dB',
+          whisperRetention: '100 x (1 - speech-locked energy in Removed / speech-locked energy in the original), %',
+          outputLevelDb: 'integrated LUFS (BS.1770) of the last export of these stems; null until you export',
         },
         values: {
-          voiceClarity: Math.round(voiceClarity * 10) / 10,
-          snrDb: Math.round(snrDb * 10) / 10,
-          noiseReduction: Math.round(noiseReduction * 10) / 10,
-          whisperRetention: Math.round(whisperRetention * 10) / 10,
-          outputLevelDb: Math.round(outputLevelDb * 100) / 100,
+          voiceClarity: r1(st.voicePct),
+          snrDb: r1(st.snrDb),
+          noiseReduction: r1(st.noiseReductionDb),
+          whisperRetention: r1(st.whisperRetentionPct),
+          exportLufs: r1(exp?.lufs),
+          exportTruePeakDb: r1(exp?.truePeakDb),
         },
       });
       try {
         getAudioSessionStore().updateMetrics(metrics);
       } catch (_) { /* session metrics must never fail the pipeline */ }
-    } catch (err) {
-      if (err !== STALE) throw err;
     } finally {
       // A stale run must not leave its key marked pending: a later request
       // for the same stems would otherwise never start a calculation.
       if (!published && this._sessionMetricsPendingKey === key) this._sessionMetricsPendingKey = null;
     }
+  }
+
+  /**
+   * Output readout: integrated LUFS + 4x true peak of the file that was just
+   * exported (the Live-Mix render), pushed to the session cards.
+   * @param {AudioBuffer} buf the exported mix
+   */
+  _publishExportLoudness(buf) {
+    try {
+      const channels = [];
+      for (let c = 0; c < buf.numberOfChannels; c++) channels.push(buf.getChannelData(c));
+      const { lufs, truePeakDb } = measureExportLoudness(channels, buf.sampleRate);
+      const orig = this.origBuffer || this.inputBuffer;
+      const proc = this.outputBuffer || this.procBuffer;
+      const stemKey = orig && proc ? `${bufferRevisionKey(orig)}|${bufferRevisionKey(proc)}` : null;
+      this._exportLoudness = { lufs, truePeakDb, stemKey };
+      if (this._sessionMetricsCache && this._sessionMetricsKey === stemKey) {
+        this._sessionMetricsCache = { ...this._sessionMetricsCache, outputLevelDb: lufs, exportLufs: lufs, exportTruePeakDb: truePeakDb };
+      }
+      getAudioSessionStore().updateMetrics({ outputLevelDb: lufs, exportLufs: lufs, exportTruePeakDb: truePeakDb });
+      structuredLog('info', '[VIP] Export loudness', { lufs: Number.isFinite(lufs) ? Math.round(lufs * 10) / 10 : null, truePeakDb: Number.isFinite(truePeakDb) ? Math.round(truePeakDb * 10) / 10 : null });
+    } catch (_) { /* a readout must never fail an export */ }
   }
 
   _setScrubPos(frac) {
