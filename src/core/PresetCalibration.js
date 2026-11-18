@@ -138,6 +138,9 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
     compRatio: 4.5,
     compMakeup: 7,
     outGain: 5,
+    // Whispers carry no F0 energy (Ito et al. 2005, Speech Commun. 45:139); a 150 Hz
+    // HPF keeps kick/bass out of the -36 dB compressor. See tests/whisper-boost-hpf.test.js.
+    hpFreq: 150,
     whisperLift: 18,
     voiceTunnel: 65,
     whisperMode: 1,
