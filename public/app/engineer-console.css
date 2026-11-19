@@ -870,7 +870,10 @@ body.eng-console.ws .main-grid.ec-grid {
   margin: 0;
   padding: 10px 12px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(380px, 24vw, 460px) clamp(300px, 19vw, 360px);
+  /* Third track: the rack column. --vip-rack-w is set by PanelResize.js
+     when the user drags a panel's right-edge handle (300-900px,
+     viewport-clamped); unset, the default 300-360px column is unchanged. */
+  grid-template-columns: minmax(0, 1fr) clamp(380px, 24vw, 460px) var(--vip-rack-w, clamp(300px, 19vw, 360px));
   grid-template-rows: minmax(0, 1fr);
   gap: 10px;
   align-items: stretch;
@@ -1207,3 +1210,106 @@ body.eng-console .np-legend {
 body.eng-console .np-legend:empty { display: none; }
 body.eng-console .np-legend-item { display: inline-flex; align-items: center; gap: 5px; }
 body.eng-console .np-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+/* ── Resizable rack panels (workstation mode only) ──────────────────────
+   PanelResize.js injects two drag handles into each slider-group section
+   inside #section-presets. Everything here is gated on body.ws, so below
+   the workstation breakpoint the handles never render and the stacked
+   layout is untouched. Handles live inside their <details>, so a closed
+   group hides its handles automatically. */
+body.eng-console.ws details.vip-section[data-vip-resizable] {
+  position: relative;
+}
+
+/* A sized panel keeps its height and scrolls its own body, so the sliders
+   stay reachable instead of pushing the rest of the rack off-screen. */
+body.eng-console.ws details.vip-section[data-vip-sized][open] > .vip-section-body {
+  height: var(--vip-panel-h);
+  overflow-y: auto;
+}
+
+/* Bottom-edge handle: drags this block's height. */
+body.eng-console.ws .vip-panel-resize-handle--height {
+  display: block;
+  height: 12px;
+  margin: 4px 0 0;
+  cursor: ns-resize;
+  touch-action: none;
+  border-radius: 6px;
+  position: relative;
+  outline: none;
+}
+body.eng-console.ws .vip-panel-resize-handle--height::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--ec-border-hi);
+}
+body.eng-console.ws .vip-panel-resize-handle--height:hover,
+body.eng-console.ws .vip-panel-resize-handle--height:focus-visible {
+  background: rgba(56, 189, 248, 0.12);
+}
+body.eng-console.ws .vip-panel-resize-handle--height:hover::after,
+body.eng-console.ws .vip-panel-resize-handle--height:focus-visible::after {
+  background: rgba(56, 189, 248, 0.8);
+}
+
+/* Right-edge handle: drags the shared rack column width. It covers only
+   the outer 10px of the section, so the centre of every control (including
+   the row lock buttons) stays clickable. */
+body.eng-console.ws .vip-panel-resize-handle--width {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 5;
+  border-radius: 6px;
+  outline: none;
+}
+body.eng-console.ws .vip-panel-resize-handle--width::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  bottom: 12px;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--ec-border-hi);
+}
+body.eng-console.ws .vip-panel-resize-handle--width:hover,
+body.eng-console.ws .vip-panel-resize-handle--width:focus-visible {
+  background: rgba(56, 189, 248, 0.12);
+}
+body.eng-console.ws .vip-panel-resize-handle--width:hover::after,
+body.eng-console.ws .vip-panel-resize-handle--width:focus-visible::after {
+  background: rgba(56, 189, 248, 0.8);
+}
+
+/* Reset-all control injected into the sticky rack nav. */
+body.eng-console.ws .vip-panel-reset {
+  margin-left: auto;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-muted);
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--ec-border);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+body.eng-console.ws .vip-panel-reset:hover {
+  color: var(--ec-text);
+  border-color: var(--ec-border-hi);
+  background: rgba(56, 189, 248, 0.08);
+}

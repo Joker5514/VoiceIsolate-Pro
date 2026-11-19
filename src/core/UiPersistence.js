@@ -2,6 +2,66 @@
  * UI-only persistence. Never stores audio. Memory profile and research
  * checkboxes survive reload; factory DSP defaults stay in the slider registry.
  */
+export const PANEL_SIZES_KEY = 'vip-panel-sizes';
+
+/**
+ * Read the persisted resizable-panel sizes.
+ * Shape: `{ rackW: number|null, heights: { [sectionId]: number } }`.
+ * Anything malformed, non-numeric, or non-positive is dropped; the result is
+ * always a valid object so callers never have to null-check.
+ */
+export function readStoredPanelSizes(storage) {
+  const fallback = { rackW: null, heights: {} };
+  let raw;
+  try {
+    raw = storageOf(storage).getItem(PANEL_SIZES_KEY);
+  } catch {
+    return fallback;
+  }
+  if (!raw) return fallback;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback;
+  const out = { rackW: null, heights: {} };
+  if (Number.isFinite(parsed.rackW) && parsed.rackW > 0) out.rackW = parsed.rackW;
+  if (parsed.heights && typeof parsed.heights === 'object' && !Array.isArray(parsed.heights)) {
+    for (const [id, value] of Object.entries(parsed.heights)) {
+      if (typeof id === 'string' && id && Number.isFinite(value) && value > 0) {
+        out.heights[id] = value;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Persist resizable-panel sizes. Returns false (never throws) when storage
+ * is unavailable, matching the other helpers in this module.
+ */
+export function writeStoredPanelSizes(sizes, storage) {
+  try {
+    const clean = { rackW: null, heights: {} };
+    if (sizes && typeof sizes === 'object') {
+      if (Number.isFinite(sizes.rackW) && sizes.rackW > 0) clean.rackW = sizes.rackW;
+      if (sizes.heights && typeof sizes.heights === 'object') {
+        for (const [id, value] of Object.entries(sizes.heights)) {
+          if (typeof id === 'string' && id && Number.isFinite(value) && value > 0) {
+            clean.heights[id] = value;
+          }
+        }
+      }
+    }
+    storageOf(storage).setItem(PANEL_SIZES_KEY, JSON.stringify(clean));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const MEMORY_PROFILE_KEY = 'vip-memory-profile';
 export const MEMORY_PROFILES = Object.freeze(['AUTO', 'LOW', 'BALANCED', 'HIGH']);
 export const RESEARCH_ENABLE_KEY = 'vip-research-enable';

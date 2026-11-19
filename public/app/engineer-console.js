@@ -40,6 +40,7 @@
       wireFocusExplain();
       installPrecisionStudioShell();
       installWorkstation();
+      installPanelResize();
       installNeuralChrome();
       pinEngineerDock();
       installExplainBullets();
@@ -499,6 +500,14 @@
         });
       });
     }
+  }
+
+  function installPanelResize() {
+    import('/src/presentation/PanelResize.js').then((mod) => {
+      mod.initPanelResize();
+    }).catch((err) => {
+      console.warn('[VIP] panel resize unavailable', err);
+    });
   }
 
   function installExplainBullets() {
