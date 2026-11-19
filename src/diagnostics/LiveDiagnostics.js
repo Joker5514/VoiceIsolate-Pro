@@ -164,15 +164,22 @@ function ensureStyle(doc) {
   style.id = 'vip-live-diagnostics-style';
   style.textContent = [
     '#vip-live-diagnostics{position:fixed;right:12px;bottom:12px;z-index:10000;width:min(420px,calc(100vw - 24px));',
-    // Engineer Console: dock to the top instead of the bottom. The bottom-right
-    // dock sat over the transport/play controls (.transport-card, pinned to the
-    // bottom edge by the workstation shell). The top anchor keeps the same fixed
-    // placement, width, and collapse behavior; bottom:auto is required because
-    // the base rule sets bottom:12px and both offsets would over-constrain the
-    // box. Other pages keep the bottom-right dock.
-    '#vip-live-diagnostics[data-page="engineer"]{top:12px;bottom:auto}',
     'font:12px/1.4 ui-monospace,Consolas,monospace;color:#c9d1d9;background:rgba(10,10,15,.94);',
     'border:1px solid rgba(0,212,255,.28);border-radius:8px}',
+    // Engineer Console: dock below the sticky header instead of the
+    // bottom-right. The bottom-right dock sat over the transport/play
+    // controls (.transport-card, pinned to the bottom edge by the
+    // workstation shell), and a top:12px dock would cover the header's
+    // top-right corner instead. --vip-hdr-h is the header's real rendered
+    // height, published on documentElement by engineer-console.js (48px
+    // fallback matches the shell's own convention). The rule MUST be a
+    // top-level sibling after the base rule's closing '}' — an earlier
+    // revision nested it inside the still-open base rule, where it
+    // resolved to a descendant selector that never matches and broke the
+    // whole stylesheet's parse in jsdom. bottom:auto is required because
+    // the base rule sets bottom:12px. Other pages keep the bottom-right
+    // dock.
+    '#vip-live-diagnostics[data-page="engineer"]{top:calc(var(--vip-hdr-h, 48px) + 12px);bottom:auto}',
     '#vip-live-diagnostics[data-collapsed="true"] .vip-diag-body{display:none}',
     '.vip-diag-bar{display:flex;gap:8px;align-items:center;padding:6px 8px}',
     '.vip-diag-bar button,.vip-diag-tools button{background:transparent;color:#00d4ff;border:1px solid rgba(0,212,255,.35);border-radius:4px;padding:4px 8px;cursor:pointer}',

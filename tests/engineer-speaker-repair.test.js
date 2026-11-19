@@ -174,6 +174,16 @@ describe('bounded diarization', () => {
 });
 
 describe('live diagnostics', () => {
+  beforeEach(() => {
+    // Reset both containers the panel touches: body (panel root) and head
+    // (injected stylesheet). ensureStyle() appends to head while the tests
+    // only cleared body, so the stylesheet leaked across tests and the
+    // engineer-only path was never exercised on a fresh mount.
+    document.body.replaceChildren();
+    document.getElementById('vip-live-diagnostics-style')?.remove();
+    diagnostics.clearLiveDiagnostics();
+  });
+
   test('both pages mount the shared panel and logs omit raw audio', async () => {
     expect(read('public/landing.js')).toContain("mountLiveDiagnostics('stems')");
     expect(read('public/app/index.html')).toContain("mountLiveDiagnostics('engineer')");
@@ -203,17 +213,35 @@ describe('live diagnostics', () => {
     expect(diagnostics.getLiveDiagnostics()).toEqual([]);
   });
 
-  test('the engineer panel docks to the top, clear of the transport controls', () => {
-    document.body.replaceChildren();
-    diagnostics.clearLiveDiagnostics();
+  test('the engineer panel docks below the sticky header, clear of the transport controls', () => {
     diagnostics.mountLiveDiagnostics('engineer');
     const style = document.getElementById('vip-live-diagnostics-style');
     expect(style).not.toBeNull();
-    const css = style.textContent;
-    // Engineer page: top-anchored with the bottom offset cleared.
-    expect(css).toContain('#vip-live-diagnostics[data-page="engineer"]{top:12px;bottom:auto}');
+    // Parse-level assertions, not substring matching: a substring check
+    // passes while the rule is nested inside another rule and never applies
+    // (PR #953 round 6). The stylesheet must parse, and the engineer rule
+    // must exist as a top-level sibling rule AFTER the base rule.
+    expect(style.sheet).not.toBeNull();
+    const rules = Array.from(style.sheet.cssRules);
+    const baseRule = rules.find(
+      (rule) => rule.selectorText === '#vip-live-diagnostics',
+    );
+    const engineerRule = rules.find(
+      (rule) => rule.selectorText === '#vip-live-diagnostics[data-page="engineer"]',
+    );
+    expect(baseRule).toBeDefined();
+    expect(engineerRule).toBeDefined();
+    expect(rules.indexOf(engineerRule)).toBeGreaterThan(rules.indexOf(baseRule));
     // Other pages keep the existing bottom-right dock.
-    expect(css).toContain('#vip-live-diagnostics{position:fixed;right:12px;bottom:12px;');
+    expect(baseRule.style.getPropertyValue('position')).toBe('fixed');
+    expect(baseRule.style.getPropertyValue('right')).toBe('12px');
+    expect(baseRule.style.getPropertyValue('bottom')).toBe('12px');
+    // Engineer page: anchored below the sticky header (its real height is
+    // published as --vip-hdr-h by engineer-console.js; 48px fallback
+    // matches the shell convention) with the bottom offset cleared.
+    expect(engineerRule.style.getPropertyValue('top')).toContain('var(--vip-hdr-h');
+    expect(engineerRule.style.getPropertyValue('top')).toContain('12px');
+    expect(engineerRule.style.getPropertyValue('bottom')).toBe('auto');
     const panel = document.getElementById('vip-live-diagnostics');
     expect(panel).not.toBeNull();
     expect(panel.dataset.page).toBe('engineer');
@@ -221,8 +249,8 @@ describe('live diagnostics', () => {
     expect(panel.dataset.collapsed).toBe('true');
     // NOTE: jsdom in this suite does not cascade the injected <style> element
     // into getComputedStyle, so the geometric half of this (computed top/bottom
-    // and no overlap with .transport-card) is covered by the browser shell QA
-    // (pnpm test:shell-qa), not asserted here.
+    // and no overlap with .transport-card or the header) is covered by the
+    // browser shell QA (pnpm test:shell-qa), not asserted here.
   });
 });
 
