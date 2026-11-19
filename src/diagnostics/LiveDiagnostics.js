@@ -177,9 +177,15 @@ function ensureStyle(doc) {
     // revision nested it inside the still-open base rule, where it
     // resolved to a descendant selector that never matches and broke the
     // whole stylesheet's parse in jsdom. bottom:auto is required because
-    // the base rule sets bottom:12px. Other pages keep the bottom-right
-    // dock.
+    // the base rule sets bottom:12px.
+    // Stems page (Landing): same top dock, for the same reason — the
+    // bottom-right dock covers the play button in #landingTransport.
+    // Landing does NOT publish --vip-hdr-h, so this rule anchors to the
+    // real landing header height instead: body.v3 .v3-header is a fixed
+    // 52px sticky header (public/landing-v3.css), plus the same 12px gap.
+    // Any other page keeps the bottom-right dock.
     '#vip-live-diagnostics[data-page="engineer"]{top:calc(var(--vip-hdr-h, 48px) + 12px);bottom:auto}',
+    '#vip-live-diagnostics[data-page="stems"]{top:calc(52px + 12px);bottom:auto}',
     '#vip-live-diagnostics[data-collapsed="true"] .vip-diag-body{display:none}',
     '.vip-diag-bar{display:flex;gap:8px;align-items:center;padding:6px 8px}',
     '.vip-diag-bar button,.vip-diag-tools button{background:transparent;color:#00d4ff;border:1px solid rgba(0,212,255,.35);border-radius:4px;padding:4px 8px;cursor:pointer}',
