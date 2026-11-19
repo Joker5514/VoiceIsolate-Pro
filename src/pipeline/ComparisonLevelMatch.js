@@ -9,7 +9,19 @@ import { measureAudioBuffer, reviewGains } from './AudioReview.js';
  * side is so the louder one can be trimmed down (RMS, attenuation only, with a
  * common peak ceiling — see core/AudioReview.reviewGains). Switching never
  * waits on it: until a match lands the lanes play at unity.
+ *
+ * The match measures a BOUNDED excerpt, never the whole file. It runs after
+ * every slider move (debounced, once edits settle), so a full-file render
+ * froze the tab for seconds on long recordings: renderMix() renders the
+ * entire file offline and then runs synchronous full-buffer true-peak scans
+ * on the main thread (measureTruePeak is ~3.4 s at 25M frames). A 30 s
+ * excerpt is ample for a stable RMS/peak ratio — both lanes are measured
+ * over the same fixed window, so the ratio is like-for-like — and it cuts
+ * the per-move synchronous true-peak scan from multi-second (3.4–11 s
+ * measured at 25M frames, content- and load-dependent) to well under a
+ * second. Short files (< 30 s) still measure in full, exactly as before.
  */
+export const LEVEL_MATCH_EXCERPT_SEC = 30;
 export class ComparisonLevelMatcher {
   /** @param {import('./PlaybackMixer.js').PlaybackMixer} mixer */
   constructor(mixer) {
@@ -28,16 +40,25 @@ export class ComparisonLevelMatcher {
   async match(original, { signal } = {}) {
     if (!original) throw new Error('Process a recording before comparing.');
     const cancelled = () => Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+    // Bounded excerpt window (see header): the match runs after every slider
+    // move, so the measured window must not scale with file length.
+    const endSec = Math.min(
+      LEVEL_MATCH_EXCERPT_SEC,
+      Number.isFinite(original.duration) ? original.duration : LEVEL_MATCH_EXCERPT_SEC,
+    );
     // Both lanes pass through Master Volume live, but the render already
     // includes it; scale the original's stats by the same volume so the
     // comparison is like-for-like at any volume setting.
     const master = this.mixer.masterGain?.gain;
     const volume = master ? (this.mixer._parameterTargets?.get(master) ?? master.value) : 1;
-    const cleaned = await this.mixer.renderMix({ signal });
+    const cleaned = await this.mixer.renderMix({ signal, startSec: 0, endSec });
     if (signal?.aborted) throw cancelled();
-    // The original is immutable: measure it once per reference.
+    // The original is immutable: measure it once per reference. Both sides
+    // are measured over the same fixed excerpt window, so the ratio stays
+    // like-for-like; the cached stats remain valid because the window is
+    // fixed per reference.
     if (this._originalFor !== original || !this._originalStats) {
-      const stats = await measureAudioBuffer(original, { signal });
+      const stats = await measureAudioBuffer(original, { signal, startSec: 0, endSec });
       this._originalFor = original;
       this._originalStats = stats;
     }

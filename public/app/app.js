@@ -2076,7 +2076,17 @@ class VoiceIsolatePro {
             }
           }
           this._scheduleSessionPersist();
-          if (meta.source !== 'programmatic') this._applyControlFilters?.();
+          // A slider move can only change the filter outcome via the touched
+          // set, which only matters in 'changed' mode (or with a search
+          // query). Skip the full 67-row rack scan on every input event when
+          // the filter is in its no-op state (empty query, 'all' mode): every
+          // row is shown either way. Search/mode changes still call
+          // _applyControlFilters() directly, so deactivating a filter
+          // re-shows everything as before.
+          if (meta.source !== 'programmatic') {
+            const q = (this.dom?.sliderSearch?.value || '').trim();
+            if (q !== '' || (this._sliderFilterMode || 'all') !== 'all') this._applyControlFilters?.();
+          }
         },
       });
 

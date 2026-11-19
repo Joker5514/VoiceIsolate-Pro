@@ -36,8 +36,38 @@ function copyChannels(buffer) {
   return Array.from({ length: buffer.numberOfChannels }, (_, ch) => buffer.getChannelData(ch).slice());
 }
 
+/**
+ * Copy only the requested [startSec, endSec) window of an AudioBuffer's
+ * channels (pure helper, no worker). Without a window the whole buffer is
+ * copied, as before. Callers that run per slider move MUST pass a bounded
+ * window: copying a long file's channels on the main thread is a freeze
+ * (a 522 s mono file is ~100 MB per channel).
+ * @param {AudioBuffer} buffer
+ * @param {{ startSec?: number, endSec?: number }} [window]
+ * @returns {Float32Array[]}
+ */
+export function sliceBufferChannels(buffer, { startSec, endSec } = {}) {
+  const sr = Number.isFinite(buffer.sampleRate) && buffer.sampleRate > 0 ? buffer.sampleRate : 48000;
+  const length = buffer.length ?? buffer.getChannelData(0)?.length ?? 0;
+  const start = startSec != null
+    ? Math.max(0, Math.min(length, Math.floor(startSec * sr)))
+    : 0;
+  const end = endSec != null
+    ? Math.max(start, Math.min(length, Math.ceil(endSec * sr)))
+    : length;
+  return Array.from(
+    { length: buffer.numberOfChannels },
+    (_, ch) => buffer.getChannelData(ch).subarray(start, end).slice(),
+  );
+}
+
 export function measureAudioBuffer(buffer, options) {
-  return audioWorkerTask('/src/workers/AudioReviewWorker.js', { channels: copyChannels(buffer) }, options);
+  const { signal, startSec, endSec } = options || {};
+  return audioWorkerTask(
+    '/src/workers/AudioReviewWorker.js',
+    { channels: sliceBufferChannels(buffer, { startSec, endSec }) },
+    { signal },
+  );
 }
 
 export function encodeReviewedWav(buffer, options) {
