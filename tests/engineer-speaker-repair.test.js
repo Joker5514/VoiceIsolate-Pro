@@ -252,6 +252,48 @@ describe('live diagnostics', () => {
     // and no overlap with .transport-card or the header) is covered by the
     // browser shell QA (pnpm test:shell-qa), not asserted here.
   });
+
+  test('the stems panel docks below the sticky landing header, clear of the play button', () => {
+    diagnostics.mountLiveDiagnostics('stems');
+    const style = document.getElementById('vip-live-diagnostics-style');
+    expect(style).not.toBeNull();
+    // Parse-level assertions, not substring matching: a substring check
+    // passes while the rule is nested inside another rule and never applies
+    // (PR #953 round 6). The stylesheet must parse, and the stems rule
+    // must exist as a top-level sibling rule AFTER the base rule.
+    expect(style.sheet).not.toBeNull();
+    const rules = Array.from(style.sheet.cssRules);
+    const baseRule = rules.find(
+      (rule) => rule.selectorText === '#vip-live-diagnostics',
+    );
+    const stemsRule = rules.find(
+      (rule) => rule.selectorText === '#vip-live-diagnostics[data-page="stems"]',
+    );
+    expect(baseRule).toBeDefined();
+    expect(stemsRule).toBeDefined();
+    expect(rules.indexOf(stemsRule)).toBeGreaterThan(rules.indexOf(baseRule));
+    // The base rule is unchanged: other pages keep the bottom-right dock.
+    expect(baseRule.style.getPropertyValue('position')).toBe('fixed');
+    expect(baseRule.style.getPropertyValue('right')).toBe('12px');
+    expect(baseRule.style.getPropertyValue('bottom')).toBe('12px');
+    // Stems page: anchored below the sticky landing header (body.v3
+    // .v3-header is a fixed 52px in public/landing-v3.css; landing does
+    // not publish --vip-hdr-h, so the rule uses the real 52px height)
+    // with the bottom offset cleared, so it cannot cover the play button
+    // in #landingTransport.
+    expect(stemsRule.style.getPropertyValue('top')).toContain('52px');
+    expect(stemsRule.style.getPropertyValue('top')).toContain('12px');
+    expect(stemsRule.style.getPropertyValue('bottom')).toBe('auto');
+    const panel = document.getElementById('vip-live-diagnostics');
+    expect(panel).not.toBeNull();
+    expect(panel.dataset.page).toBe('stems');
+    // Collapse/toggle behavior is unchanged: collapsed by default.
+    expect(panel.dataset.collapsed).toBe('true');
+    // NOTE: jsdom in this suite does not cascade the injected <style> element
+    // into getComputedStyle, so the geometric half of this (computed top/bottom
+    // and no overlap with #landingTransport or the header) is covered by the
+    // browser shell QA (pnpm test:shell-qa), not asserted here.
+  });
 });
 
 describe('ONNX status honesty', () => {
