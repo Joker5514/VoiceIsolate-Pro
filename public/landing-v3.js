@@ -44,10 +44,19 @@ function wireSectionNav() {
   sections.forEach((s) => io.observe(s));
 }
 
+function installWorkspaceBlocks() {
+  import('/src/presentation/WorkspaceBlocks.js').then((mod) => {
+    mod.initWorkspaceBlocks({ mode: 'stems' });
+  }).catch((err) => {
+    console.warn('[VIP] workspace layout unavailable', err);
+  });
+}
+
 function init() {
   void mountHeroStage();
   wireScrollTilt();
   wireSectionNav();
+  installWorkspaceBlocks();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

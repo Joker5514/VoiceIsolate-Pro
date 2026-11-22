@@ -53,6 +53,21 @@ export class LandingVisualizer {
 
     this._onResize = () => this._resize();
     window.addEventListener('resize', this._onResize);
+    this._resizeObserver = null;
+    if (typeof ResizeObserver === 'function') {
+      let pending = 0;
+      const schedule = () => {
+        if (pending) return;
+        const raf = window.requestAnimationFrame || ((cb) => window.setTimeout(cb, 16));
+        pending = raf(() => {
+          pending = 0;
+          this._resize();
+        });
+      };
+      this._resizeObserver = new ResizeObserver(schedule);
+      this._resizeObserver.observe(waveCanvas);
+      this._resizeObserver.observe(specCanvas);
+    }
     this._resize();
 
     // Click-to-seek on the waveform overview.
@@ -74,14 +89,20 @@ export class LandingVisualizer {
   }
 
   _resize() {
+    const dpr = window.devicePixelRatio || 1;
+    let changed = false;
     for (const canvas of [this.waveCanvas, this.specCanvas]) {
-      const dpr = window.devicePixelRatio || 1;
       const w = canvas.clientWidth || 300;
       const h = canvas.clientHeight || 100;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
+      const key = `${w}x${h}x${dpr}`;
+      if (canvas.dataset.vipFit === key) continue;
+      canvas.dataset.vipFit = key;
+      changed = true;
+      canvas.width = Math.max(1, Math.round(w * dpr));
+      canvas.height = Math.max(1, Math.round(h * dpr));
       canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
     }
+    if (!changed) return;
     this._waveDirty = true;
     this._spectrumDirty = true;
     if (this._envelope && !this._running) this._drawWave();
@@ -194,6 +215,10 @@ export class LandingVisualizer {
   dispose() {
     ++this._loadGeneration;
     this.stop();
+    if (this._resizeObserver) {
+      try { this._resizeObserver.disconnect(); } catch { /* already disconnected */ }
+      this._resizeObserver = null;
+    }
     window.removeEventListener('resize', this._onResize);
     this.waveCanvas.removeEventListener('click', this._onWaveClick);
     this.waveCanvas.removeEventListener('touchstart', this._onWaveTouch);
