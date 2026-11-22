@@ -5,6 +5,10 @@
 > same-origin manifest described in [`docs/guides/MODEL_DELIVERY.md`](../../docs/guides/MODEL_DELIVERY.md).
 > The Hugging Face links below are third-party source references and are never
 > used as browser runtime fallback URLs.
+>
+> These three files are now committed in this directory and served as
+> same-origin static assets. Production no longer rewrites `/models/*` to
+> Vercel Blob.
 
 Place the following ONNX model files at these **exact** URL paths (served from `public/models/`):
 
@@ -68,6 +72,21 @@ try {
 - **Output:** speech probability `float32` (frame-level; 10 ms resolution after post-processing)
 
 ---
+
+
+## Licenses (redistribution)
+
+| File | Source | License |
+|------|--------|---------|
+| `pyannote-segmentation-3.0.onnx` | [onnx-community/pyannote-segmentation-3.0](https://huggingface.co/onnx-community/pyannote-segmentation-3.0) (upstream [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)) | MIT |
+| `wespeaker-resnet34.onnx` | [onnx-community/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM) | CC-BY-4.0 (attribution via this table) |
+| `silero-vad.onnx` | Copy of the shipped `/app/models/silero_vad.onnx` | Same as the isolation-model Silero VAD already in the repo |
+
+Pinned SHA-256 (production gate in `tests/model-integrity.test.js`):
+
+- `pyannote-segmentation-3.0.onnx` (5,986,908 bytes) `057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25`
+- `wespeaker-resnet34.onnx` (26,535,549 bytes) `3955447b0499dc9e0a4541a895df08b03c69098eba4e56c02b5603e9f7f4fcbb`
+- `silero-vad.onnx` (2,327,524 bytes) `1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3`
 
 ## Local Setup
 

@@ -37,7 +37,9 @@ app.use(securityHeaders());
 // ── API Routes ──────────────────────────────────────────────────────────
 app.use('/api', apiRouter);
 
-// ── Blob proxy for large ONNX models not committed locally (Demucs, diarization) ──
+// ── Optional Blob fallback for unshipped models not present locally (e.g. Demucs) ──
+// Shipped isolation and diarization ONNX files are served from public/ below.
+// This proxy only runs when the local file is missing; a blocked Blob store will 403.
 async function proxyOnnxFromBlob(req, res, next) {
   const filename = req.params.filename;
   if (!filename || !filename.endsWith('.onnx')) return next();

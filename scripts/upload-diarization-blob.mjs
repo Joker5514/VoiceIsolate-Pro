@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Upload diarization ONNX models to Vercel Blob (root pathnames).
- * Matches vercel.json rewrite: /models/:filename → blob/:filename
+ * Legacy Blob upload helper. Production no longer rewrites /models/:filename
+ * to Blob; prefer committing the files under public/models/.
  *
  * Usage:
  *   BLOB_READ_WRITE_TOKEN=... node scripts/upload-diarization-blob.mjs

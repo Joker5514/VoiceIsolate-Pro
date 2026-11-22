@@ -72,10 +72,15 @@ package-lock.json
 # Build artifact: canonical src/ copied for static /src/ imports
 public/src/
 
-# Large ONNX models — serve via Vercel Blob (see docs/MODEL_DELIVERY.md)
+# Optional / unshipped large ONNX models. Isolation models under
+# public/app/models/ and the three diarization models under public/models/
+# are committed and served as same-origin static files (see docs/guides/MODEL_DELIVERY.md).
 public/app/models/demucs_v4_*.onnx
 public/app/models/ecapa_tdnn.onnx
 public/models/*.onnx
+!public/models/pyannote-segmentation-3.0.onnx
+!public/models/wespeaker-resnet34.onnx
+!public/models/silero-vad.onnx
 
 # Parallel redesign workspace (not part of production tree)
 Voice enhancement/
