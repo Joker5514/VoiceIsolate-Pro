@@ -40,10 +40,11 @@ describe('model integrity validator', () => {
     );
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
-    expect(result.notices.some((n) => /remote Blob hashes were not downloaded/.test(n))).toBe(true);
-    expect(result.rewrites.hasAppModelsRewrite).toBe(true);
-    expect(result.rewrites.usesBlobStorage).toBe(true);
-    expect(result.rewrites.destinations.join(' ')).not.toMatch(/MUST_MATCH_PLACEHOLDER_HOST/);
+    expect(result.notices.some((n) => /remote hashes were not downloaded/.test(n))).toBe(true);
+    expect(result.rewrites.hasAppModelsRewrite).toBe(false);
+    expect(result.rewrites.usesBlobStorage).toBe(false);
+    expect(result.rewrites.count).toBe(0);
+    expect(result.rewrites.destinations).toEqual([]);
   });
 
   test('does not treat optional/unshipped Demucs as required', () => {
@@ -212,5 +213,53 @@ describe('model integrity validator', () => {
     });
     expect(state.hasAppModelsRewrite).toBe(true);
     expect(state.usesBlobStorage).toBe(true);
+  });
+
+  test('a Vercel Blob model rewrite fails closed even when local files match', () => {
+    const bytes = Buffer.from('ok-model');
+    const entry = fixtureEntry('probe', bytes);
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-models-blob-rewrite-'));
+    writeOnnx(tmp, 'public/app/models/probe.onnx', bytes);
+    const result = integrity.validateModelIntegrity({
+      root: tmp,
+      manifest: { probe: entry },
+      vercelJson: {
+        rewrites: [
+          { source: '/models/:filename', destination: 'https://x.public.blob.vercel-storage.com/:filename' },
+        ],
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.rewrites.usesBlobStorage).toBe(true);
+    expect(result.errors.join('\n')).toMatch(/must not rewrite \/app\/models\/ or \/models\/ to Vercel Blob/);
+  });
+
+  test('ships the three diarization models as static public/models files', () => {
+    const files = {
+      'pyannote-segmentation-3.0.onnx': {
+        size: 5986908,
+        sha256: '057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25',
+      },
+      'wespeaker-resnet34.onnx': {
+        size: 26535549,
+        sha256: '3955447b0499dc9e0a4541a895df08b03c69098eba4e56c02b5603e9f7f4fcbb',
+      },
+      'silero-vad.onnx': {
+        size: 2327524,
+        sha256: '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
+      },
+    };
+    for (const [name, expected] of Object.entries(files)) {
+      const abs = path.join(__dirname, '..', 'public', 'models', name);
+      expect(fs.existsSync(abs)).toBe(true);
+      const buf = fs.readFileSync(abs);
+      expect(buf.length).toBe(expected.size);
+      expect(crypto.createHash('sha256').update(buf).digest('hex')).toBe(expected.sha256);
+    }
+    const sileroApp = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', 'models', 'silero_vad.onnx'));
+    const sileroDiar = fs.readFileSync(path.join(__dirname, '..', 'public', 'models', 'silero-vad.onnx'));
+    expect(crypto.createHash('sha256').update(sileroApp).digest('hex')).toBe(
+      crypto.createHash('sha256').update(sileroDiar).digest('hex'),
+    );
   });
 });

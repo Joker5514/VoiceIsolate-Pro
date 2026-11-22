@@ -3,7 +3,9 @@
  * Model integrity validator — src/core/ModelManifest.js is the only registry.
  *
  * Checks shipped entries against local files (and optionally build output).
- * Does not claim remote Blob hashes passed unless bytes were downloaded
+ * Production model paths are same-origin static files under public/; vercel.json
+ * must not rewrite /app/models/ or /models/ to Vercel Blob.
+ * Does not claim remote hashes passed unless bytes were downloaded
  * and hashed (--download-remote).
  */
 'use strict';
@@ -173,17 +175,17 @@ export function validateModelIntegrity(options = {}) {
   let rewrites = null;
   if (vercelJson) {
     rewrites = inspectVercelModelRewrites(vercelJson);
-    if (!rewrites.hasAppModelsRewrite) {
-      errors.push('vercel.json must rewrite /app/models/ as the logical Blob delivery path');
-    } else if (!rewrites.usesBlobStorage) {
-      notices.push('vercel.json /app/models rewrite is present but not a *.blob.vercel-storage.com destination');
+    if (rewrites.usesBlobStorage) {
+      errors.push('vercel.json must not rewrite /app/models/ or /models/ to Vercel Blob; those paths are served as committed static files');
+    } else if (rewrites.hasAppModelsRewrite || rewrites.count > 0) {
+      notices.push('vercel.json has a model-path rewrite that is not Vercel Blob; shipped models must still exist as static files');
     }
   }
 
   if (options.downloadRemote) {
-    errors.push('--download-remote is not implemented; refusing to claim remote Blob hashes without downloading bytes');
+    errors.push('--download-remote is not implemented; refusing to claim remote hashes without downloading bytes');
   } else {
-    notices.push('remote Blob hashes were not downloaded and are not claimed as passed');
+    notices.push('remote hashes were not downloaded and are not claimed as passed');
   }
 
   return {

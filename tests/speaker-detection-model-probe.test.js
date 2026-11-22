@@ -1,13 +1,12 @@
 /**
  * Diarization model presence probe (Engineer Console session, Nov 17).
  *
- * The three diarization models are served through a rewrite to Vercel Blob
- * (vercel.json) and, locally, through server.js's streaming blob proxy.
- * Both answer HEAD with 200 and no Content-Length: the production edge
- * Brotli-encodes the response, the local proxy streams it chunked. The old
- * probe required Content-Length > 100 000, so every pass logged
- * "Diarization ONNX models not available locally" and never tried to load
- * models that were there. A missing length is unknown, not missing.
+ * The three diarization models are committed under public/models/ and served
+ * as same-origin static files (and, locally, by server.js static middleware).
+ * A HEAD may include Content-Length, or it may omit it on a compressed or
+ * chunked path. The old probe required Content-Length > 100 000, so every
+ * pass logged "Diarization ONNX models not available locally" and never tried
+ * to load models that were there. A missing length is unknown, not missing.
  */
 'use strict';
 

@@ -8,8 +8,8 @@ has to preserve the local-processing and CSP boundaries.
 
 ```text
 Browser
-  -> same-origin /app/models/*.onnx URL
-  -> Vercel rewrite to the configured Blob object
+  -> same-origin /app/models/*.onnx or /models/*.onnx URL
+  -> static files committed under public/app/models/ and public/models/
   -> browser cache / service worker cache where available
 ```
 
@@ -40,7 +40,7 @@ not downloaded, bundled, or redistributed by the generator.
 
 ## Hugging Face model-card status
 
-The production VoiceIsolate model delivery path is the same-origin Vercel Blob
+The production VoiceIsolate model delivery path is the same-origin static
 route above. `scripts/upload-to-huggingface.py` names
 `Joker5514/voice-isolate-models` as an **optional publishing target**, but the
 current release manifest has no Hugging Face source, immutable revision, or
@@ -55,8 +55,8 @@ following in the owned model repository and then mirror the immutable revision
 here: model name/version, license, input/output tensor schema, sample rate,
 quantization, platform compatibility, limitations, SHA-256, and the exact
 `ModelManifest` entry. Until a maintainer publishes and pins an accessible
-revision, the Vercel Blob manifest is the only canonical shipped-model
-reference.
+revision, `ModelManifest.js` and the committed files under `public/` are the
+canonical shipped-model reference.
 
 ## Runtime Responsibilities
 
@@ -77,12 +77,14 @@ reference.
 - Legacy fetch-cache/worker consumers use the generated compatibility projection;
   pinned models fail closed on missing/unavailable verification or mismatch.
   HEAD presence is labelled unverified, never “ML active”.
-- `vercel.json` rewrites `/app/models/:filename` and `/models/:filename` to the
-  configured Vercel Blob object route. Remote delivery liveness is checked only
-  in the `--network` tier of `pnpm prod:verify` (`model-delivery`); the static
-  tier verifies shipped bytes locally against `ModelManifest.js` hashes.
-  Optional/unshipped entries (demucs, ecapa_tdnn, research models) never block
-  the gate and are never claimed as passed.
+- `vercel.json` must not rewrite `/app/models/:filename` or `/models/:filename`
+  to Vercel Blob. Those paths are served as committed static files so a blocked
+  Hobby Blob store cannot 403 required models. Remote delivery liveness is
+  checked only in the `--network` tier of `pnpm prod:verify` (`model-delivery`);
+  the static tier verifies shipped bytes locally against `ModelManifest.js`
+  hashes (isolation models) and the pinned diarization files under
+  `public/models/`. Optional/unshipped entries (demucs, ecapa_tdnn, research
+  models) never block the gate and are never claimed as passed.
 
 ## Privacy Boundary
 
@@ -93,10 +95,13 @@ reference.
 
 ## Adding Or Replacing A Model
 
-1. Upload the `.onnx` object to the configured Vercel Blob store.
-2. Add or update the matching entry in `src/core/ModelManifest.js`.
+1. Commit the `.onnx` object under `public/app/models/` (isolation) or
+   `public/models/` (diarization). Do not add a Vercel Blob rewrite for it.
+2. Add or update the matching entry in `src/core/ModelManifest.js` for
+   isolation models, or the pinned hashes in `tests/model-integrity.test.js`
+   for the three diarization files.
 3. Include the expected SHA-256 when the model is required for production.
-4. Keep the browser URL under `/app/models/*.onnx`.
+4. Keep isolation-model browser URLs under `/app/models/*.onnx`.
 5. Run `pnpm models:manifests`, `pnpm models:validate`,
    `pnpm models:validate:urls`, `pnpm worklets:verify`, and the model-loading
    tests before shipping.
