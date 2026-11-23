@@ -1,0 +1,28 @@
+{
+ "name": "libri_2spk_mm",
+ "speakers": 2,
+ "turns": [
+  {
+   "speaker": "251",
+   "start": 0.0,
+   "end": 6.0
+  },
+  {
+   "speaker": "3752",
+   "start": 6.4,
+   "end": 9.735
+  },
+  {
+   "speaker": "251",
+   "start": 10.135,
+   "end": 13.86
+  },
+  {
+   "speaker": "3752",
+   "start": 14.26,
+   "end": 18.675
+  }
+ ],
+ "source": "LibriSpeech dev-clean (mini LibriSpeech dev-clean-2, OpenSLR SLR31), speakers 251 and 3752, CC BY 4.0",
+ "seconds": 19.07
+}

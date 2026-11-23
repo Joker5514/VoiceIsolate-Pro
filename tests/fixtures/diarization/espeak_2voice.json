@@ -1,0 +1,38 @@
+{
+ "name": "espeak_2voice",
+ "speakers": 2,
+ "turns": [
+  {
+   "speaker": "en-us",
+   "start": 0.0,
+   "end": 4.314
+  },
+  {
+   "speaker": "en-us+f3",
+   "start": 4.714,
+   "end": 8.595
+  },
+  {
+   "speaker": "en-us",
+   "start": 8.995,
+   "end": 12.535
+  },
+  {
+   "speaker": "en-us+f3",
+   "start": 12.935,
+   "end": 16.974
+  },
+  {
+   "speaker": "en-us",
+   "start": 17.374,
+   "end": 20.888
+  },
+  {
+   "speaker": "en-us+f3",
+   "start": 21.288,
+   "end": 25.014
+  }
+ ],
+ "source": "Synthesised locally with espeak-ng (voices en-us and en-us+f3); generated audio, no third-party recording",
+ "seconds": 25.41
+}

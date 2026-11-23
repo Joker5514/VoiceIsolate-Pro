@@ -6,158 +6,195 @@
  *   → agglomerative cosine clustering → SpeakerTimeline
  *
  * Requires global `ort` (onnxruntime-web 1.25.1) for Tensor construction.
- * Pure-JS Cooley-Tukey FFT for log-mel features (Worker-safe, no WASM dep).
+ * Pure-JS Kaldi fbank for WeSpeaker features (Worker-safe, no WASM dep).
  */
 'use strict';
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const ANALYSIS_SR = 16000;
-const FRAME_MS = 10;
-const FRAME_SAMPLES = Math.floor(ANALYSIS_SR * FRAME_MS / 1000); // 160 @ 16 kHz
-const VAD_THRESHOLD = 0.5;
-const MIN_SPEECH_MS = 200;
-const MIN_SEGMENT_MS = 500;
-const CLUSTER_THRESHOLD = 0.75;
+
+// Silero VAD v5 (official get_speech_timestamps defaults). The graph takes
+// 512 new samples at 16 kHz with the previous chunk's last 64 samples prepended
+// ([1, 576]) and a recurrent state carried between chunks. Without the context
+// the model returns ~0.003–0.16 on clear speech.
 const SILERO_CHUNK = 512;
+const SILERO_CONTEXT = 64;
+const VAD_THRESHOLD = 0.5;
+const VAD_NEG_THRESHOLD = 0.35; // max(threshold - 0.15, 0.01)
+const MIN_SPEECH_MS = 250;
+const MIN_SILENCE_MS = 100;
+const SPEECH_PAD_MS = 30;
+
+// pyannote segmentation 3.0: one frame per 270 samples (16.875 ms) at 16 kHz,
+// trained on 10 s chunks, 7 powerset classes (0 = none, 1–3 = one speaker,
+// 4–6 = overlapping pairs).
+const SEG_FRAME_SAMPLES = 270;
+const SEG_WINDOW_SAMPLES = 10 * ANALYSIS_SR;
+const SEG_MIN_WINDOW_SAMPLES = 4000;
+const POWERSET_SINGLE = Object.freeze({ 1: 0, 2: 1, 3: 2 });
+
+// Clustering, calibrated on real two-speaker speech: LibriSpeech dev-clean
+// speakers disjoint from the test fixtures, 17 two-speaker and 18 one-speaker
+// conversations. Average-linkage cosine threshold 0.30 counted all 35
+// correctly; 0.25 and 0.35 each miss one.
+const MIN_SEGMENT_MS = 500;   // shorter turn pieces join their neighbour
+const MIN_EMBED_MS = 1000;    // shorter segments take a neighbour's label
+const CLUSTER_THRESHOLD = 0.3;
+const MIN_CLUSTER_SEC = 3;    // smaller clusters merge into the nearest big one
+const EMB_DIM = 256;
+
+// WeSpeaker ResNet34 front end = Kaldi fbank (wespeaker compute_fbank,
+// torchaudio.compliance.kaldi.fbank): input ×32768, 25/10 ms, DC removal,
+// 0.97 pre-emphasis, hamming, 512-pt power spectrum, 80 Kaldi mel bins from
+// 20 Hz to Nyquist, log floor FLT_EPSILON; then per-segment CMN.
 const MEL_BANDS = 80;
-const MEL_WIN_SAMPLES = 400;  // 25 ms @ 16 kHz
-const MEL_HOP_SAMPLES = 160;    // 10 ms @ 16 kHz
+const MEL_WIN_SAMPLES = 400;
+const MEL_HOP_SAMPLES = 160;
 const MEL_FFT_SIZE = 512;
-const MEL_FMIN = 0;
-const MEL_FMAX = 8000;
+const MEL_LOW_HZ = 20;
+const PREEMPH = 0.97;
+const FLT_EPSILON = 1.1920928955078125e-7;
 // WeSpeaker HF preprocessor (onnx-community/wespeaker-voxceleb-resnet34-LM):
-// window_type=hamming, min_num_frames=9, 80 mel bins, 25/10 ms @ 16 kHz.
+// min_num_frames=9.
 const MIN_MEL_FRAMES = 9;
 
 const SPEAKER_COLORS = Object.freeze([
   '#4f98a3', '#a86fdf', '#fdab43', '#6daa45', '#dd6974', '#5591c7',
 ]);
 
-// ─── Pure-JS radix-2 Cooley-Tukey FFT (power-of-two sizes only) ─────────────
+// ─── Kaldi fbank (pure JS, Worker-safe) ─────────────────────────────────────
 
-/**
- * In-place iterative Cooley-Tukey FFT.
- * @param {Float32Array} re  real part (length = power of 2)
- * @param {Float32Array} im  imaginary part (same length)
- */
-function fftRadix2(re, im) {
-  const n = re.length;
-  // Bit-reversal permutation
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) {
-      const tr = re[i]; re[i] = re[j]; re[j] = tr;
-      const ti = im[i]; im[i] = im[j]; im[j] = ti;
+let _fbankTables = null;
+function fbankTables() {
+  if (_fbankTables) return _fbankTables;
+  const melScale = (f) => 1127 * Math.log(1 + f / 700);
+  const win = new Float64Array(MEL_WIN_SAMPLES);
+  for (let i = 0; i < MEL_WIN_SAMPLES; i++) {
+    win[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (MEL_WIN_SAMPLES - 1));
+  }
+  // Kaldi MelBanks: num_fft_bins = NFFT / 2 (the Nyquist bin gets no weight).
+  const nBins = MEL_FFT_SIZE / 2;
+  const melLow = melScale(MEL_LOW_HZ);
+  const melHigh = melScale(ANALYSIS_SR / 2);
+  const delta = (melHigh - melLow) / (MEL_BANDS + 1);
+  const banks = [];
+  for (let m = 0; m < MEL_BANDS; m++) {
+    const left = melLow + m * delta;
+    const center = left + delta;
+    const right = center + delta;
+    const w = new Float64Array(nBins);
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < nBins; i++) {
+      const mel = melScale((ANALYSIS_SR * i) / MEL_FFT_SIZE);
+      if (mel > left && mel < right) {
+        w[i] = mel <= center ? (mel - left) / (center - left) : (right - mel) / (right - center);
+        if (first < 0) first = i;
+        last = i;
+      }
+    }
+    banks.push({ first, last, w });
+  }
+  const cos = new Float64Array(MEL_FFT_SIZE / 2);
+  const sin = new Float64Array(MEL_FFT_SIZE / 2);
+  for (let i = 0; i < MEL_FFT_SIZE / 2; i++) {
+    cos[i] = Math.cos((-2 * Math.PI * i) / MEL_FFT_SIZE);
+    sin[i] = Math.sin((-2 * Math.PI * i) / MEL_FFT_SIZE);
+  }
+  const rev = new Uint16Array(MEL_FFT_SIZE);
+  for (let i = 0, j = 0; i < MEL_FFT_SIZE; i++) {
+    rev[i] = j;
+    let bit = MEL_FFT_SIZE >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j |= bit;
+  }
+  _fbankTables = { win, banks, cos, sin, rev };
+  return _fbankTables;
+}
+
+function fft512(re, im, t) {
+  const n = MEL_FFT_SIZE;
+  for (let i = 0; i < n; i++) {
+    const j = t.rev[i];
+    if (j > i) {
+      let tmp = re[i]; re[i] = re[j]; re[j] = tmp;
+      tmp = im[i]; im[i] = im[j]; im[j] = tmp;
     }
   }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = (-2 * Math.PI) / len;
-    const wlenRe = Math.cos(ang);
-    const wlenIm = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let wRe = 1;
-      let wIm = 0;
-      for (let j = 0; j < len / 2; j++) {
-        const uRe = re[i + j];
-        const uIm = im[i + j];
-        const vRe = re[i + j + len / 2] * wRe - im[i + j + len / 2] * wIm;
-        const vIm = re[i + j + len / 2] * wIm + im[i + j + len / 2] * wRe;
-        re[i + j] = uRe + vRe;
-        im[i + j] = uIm + vIm;
-        re[i + j + len / 2] = uRe - vRe;
-        im[i + j + len / 2] = uIm - vIm;
-        const nwRe = wRe * wlenRe - wIm * wlenIm;
-        wIm = wRe * wlenIm + wIm * wlenRe;
-        wRe = nwRe;
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1;
+    const step = n / size;
+    for (let s = 0; s < n; s += size) {
+      for (let k = 0; k < half; k++) {
+        const c = t.cos[k * step];
+        const sn = t.sin[k * step];
+        const a = s + k;
+        const b = a + half;
+        const xr = re[b] * c - im[b] * sn;
+        const xi = re[b] * sn + im[b] * c;
+        re[b] = re[a] - xr; im[b] = im[a] - xi;
+        re[a] += xr; im[a] += xi;
       }
     }
   }
 }
 
-/** Magnitude spectrum from real time-domain frame (zero-padded to fftSize). */
-function magnitudeSpectrum(frame, fftSize) {
-  const re = new Float32Array(fftSize);
-  const im = new Float32Array(fftSize);
-  const n = Math.min(frame.length, fftSize);
-  for (let i = 0; i < n; i++) re[i] = frame[i];
-  fftRadix2(re, im);
-  const mag = new Float32Array(fftSize / 2 + 1);
-  for (let k = 0; k < mag.length; k++) {
-    mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
-  }
-  return mag;
-}
-
-// ─── Mel filterbank (built once per sample rate) ────────────────────────────
-
-function hzToMel(hz) {
-  return 2595 * Math.log10(1 + hz / 700);
-}
-
-function melToHz(mel) {
-  return 700 * (Math.pow(10, mel / 2595) - 1);
-}
-
-function buildMelFilterbank(sr, nFft, nMels, fmin, fmax) {
-  const nBins = nFft / 2 + 1;
-  const melMin = hzToMel(fmin);
-  const melMax = hzToMel(fmax);
-  const melPts = new Float64Array(nMels + 2);
-  for (let i = 0; i < nMels + 2; i++) {
-    melPts[i] = melMin + (i * (melMax - melMin)) / (nMels + 1);
-  }
-  const hzPts = melPts.map(melToHz);
-  const binPts = hzPts.map((hz) => Math.floor((nFft + 1) * hz / sr));
-  const bank = Array.from({ length: nMels }, () => new Float32Array(nBins));
-  for (let m = 1; m <= nMels; m++) {
-    const fLeft = binPts[m - 1];
-    const fCenter = binPts[m];
-    const fRight = binPts[m + 1];
-    for (let k = fLeft; k < fCenter && k < nBins; k++) {
-      bank[m - 1][k] = (k - fLeft) / Math.max(1, fCenter - fLeft);
-    }
-    for (let k = fCenter; k < fRight && k < nBins; k++) {
-      bank[m - 1][k] = (fRight - k) / Math.max(1, fRight - fCenter);
-    }
-  }
-  return bank;
-}
-
-const _melBank = buildMelFilterbank(ANALYSIS_SR, MEL_FFT_SIZE, MEL_BANDS, MEL_FMIN, MEL_FMAX);
-const _hammingWin = (() => {
-  const w = new Float32Array(MEL_WIN_SAMPLES);
-  for (let i = 0; i < MEL_WIN_SAMPLES; i++) {
-    w[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (MEL_WIN_SAMPLES - 1));
-  }
-  return w;
-})();
-
 /**
- * Compute log-mel spectrogram for WeSpeaker input (Hamming, 80 bins, 25/10 ms).
- * @param {Float32Array} pcm  mono @ 16 kHz
- * @returns {Float32Array[]}  array of [80] frames
+ * Kaldi log-mel fbank for WeSpeaker (no CMN; see applyCmn).
+ * @param {Float32Array} pcm  mono @ 16 kHz in [-1, 1]
+ * @returns {Float32Array[]}  array of [80] frames (snip_edges framing)
  */
 function computeLogMelFrames(pcm) {
   const frames = [];
   if (pcm.length < MEL_WIN_SAMPLES) return frames;
+  const t = fbankTables();
   const nFrames = 1 + Math.floor((pcm.length - MEL_WIN_SAMPLES) / MEL_HOP_SAMPLES);
-  const scratch = new Float32Array(MEL_WIN_SAMPLES);
+  const re = new Float64Array(MEL_FFT_SIZE);
+  const im = new Float64Array(MEL_FFT_SIZE);
   for (let f = 0; f < nFrames; f++) {
     const off = f * MEL_HOP_SAMPLES;
-    for (let i = 0; i < MEL_WIN_SAMPLES; i++) scratch[i] = pcm[off + i] * _hammingWin[i];
-    const mag = magnitudeSpectrum(scratch, MEL_FFT_SIZE);
+    let mean = 0;
+    for (let i = 0; i < MEL_WIN_SAMPLES; i++) {
+      re[i] = pcm[off + i] * 32768;
+      mean += re[i];
+    }
+    mean /= MEL_WIN_SAMPLES;
+    for (let i = 0; i < MEL_WIN_SAMPLES; i++) re[i] -= mean;
+    for (let i = MEL_WIN_SAMPLES - 1; i > 0; i--) re[i] -= PREEMPH * re[i - 1];
+    re[0] -= PREEMPH * re[0];
+    for (let i = 0; i < MEL_WIN_SAMPLES; i++) re[i] *= t.win[i];
+    re.fill(0, MEL_WIN_SAMPLES);
+    im.fill(0);
+    fft512(re, im, t);
     const mel = new Float32Array(MEL_BANDS);
     for (let m = 0; m < MEL_BANDS; m++) {
+      const { first, last, w } = t.banks[m];
       let e = 0;
-      for (let k = 0; k < mag.length; k++) e += mag[k] * mag[k] * _melBank[m][k];
-      mel[m] = Math.log(Math.max(e, 1e-10));
+      for (let i = first; i <= last; i++) e += w[i] * (re[i] * re[i] + im[i] * im[i]);
+      mel[m] = Math.log(Math.max(e, FLT_EPSILON));
     }
     frames.push(mel);
   }
   return frames;
+}
+
+/** Cepstral mean normalisation across frames (in place). */
+function applyCmn(frames) {
+  if (!frames.length) return frames;
+  const mean = new Float64Array(MEL_BANDS);
+  for (const fr of frames) for (let m = 0; m < MEL_BANDS; m++) mean[m] += fr[m];
+  for (let m = 0; m < MEL_BANDS; m++) mean[m] /= frames.length;
+  for (const fr of frames) for (let m = 0; m < MEL_BANDS; m++) fr[m] -= mean[m];
+  return frames;
+}
+
+function l2Normalize(v) {
+  let s = 0;
+  for (let i = 0; i < v.length; i++) s += v[i] * v[i];
+  const n = Math.sqrt(s);
+  if (n > 1e-12) for (let i = 0; i < v.length; i++) v[i] /= n;
+  return v;
 }
 
 // ─── Math helpers ────────────────────────────────────────────────────────────
@@ -178,6 +215,8 @@ function cosineSimilarity(a, b) {
 
 /**
  * Agglomerative clustering by average-linkage cosine similarity.
+ * Similarities are computed once; merged rows use the Lance–Williams
+ * average-linkage update, so a merge equals the mean of member pairs.
  * @param {Float32Array[]} embeddings
  * @param {number} threshold  merge while best pair similarity ≥ threshold
  * @returns {number[]}  cluster label per embedding index
@@ -186,39 +225,43 @@ function agglomerativeCluster(embeddings, threshold) {
   const n = embeddings.length;
   if (n === 0) return [];
   if (n === 1) return [0];
-
-  const clusters = embeddings.map((_, i) => [i]);
-
-  function avgSim(c1, c2) {
-    let sum = 0;
-    let cnt = 0;
-    for (const i of c1) {
-      for (const j of c2) {
-        sum += cosineSimilarity(embeddings[i], embeddings[j]);
-        cnt++;
+  const sim = Array.from({ length: n }, () => new Float64Array(n));
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const s = cosineSimilarity(embeddings[i], embeddings[j]);
+      sim[i][j] = s;
+      sim[j][i] = s;
+    }
+  }
+  const size = new Array(n).fill(1);
+  const alive = new Array(n).fill(true);
+  const parent = Array.from({ length: n }, (_, i) => i);
+  for (;;) {
+    let best = -Infinity;
+    let bi = -1;
+    let bj = -1;
+    for (let i = 0; i < n; i++) {
+      if (!alive[i]) continue;
+      for (let j = i + 1; j < n; j++) {
+        if (alive[j] && sim[i][j] > best) { best = sim[i][j]; bi = i; bj = j; }
       }
     }
-    return cnt ? sum / cnt : 0;
-  }
-
-  while (clusters.length > 1) {
-    let best = -1;
-    let bi = 0;
-    let bj = 1;
-    for (let i = 0; i < clusters.length; i++) {
-      for (let j = i + 1; j < clusters.length; j++) {
-        const s = avgSim(clusters[i], clusters[j]);
-        if (s > best) { best = s; bi = i; bj = j; }
-      }
+    if (bi < 0 || best < threshold) break;
+    for (let k = 0; k < n; k++) {
+      if (!alive[k] || k === bi || k === bj) continue;
+      const s = (size[bi] * sim[bi][k] + size[bj] * sim[bj][k]) / (size[bi] + size[bj]);
+      sim[bi][k] = s;
+      sim[k][bi] = s;
     }
-    if (best < threshold) break;
-    clusters[bi] = clusters[bi].concat(clusters[bj]);
-    clusters.splice(bj, 1);
+    size[bi] += size[bj];
+    alive[bj] = false;
+    for (let k = 0; k < n; k++) if (parent[k] === bj) parent[k] = bi;
   }
-
-  const labels = new Array(n);
-  clusters.forEach((cl, cid) => cl.forEach((idx) => { labels[idx] = cid; }));
-  return labels;
+  const ids = new Map();
+  return parent.map((p) => {
+    if (!ids.has(p)) ids.set(p, ids.size);
+    return ids.get(p);
+  });
 }
 
 function getOrt() {
@@ -325,86 +368,103 @@ export class SpeakerDiarizer {
     const rendered = await ctx.startRendering();
     return rendered.getChannelData(0).slice();
   }
-
   /**
-   * Run Silero VAD over full PCM; returns per-10ms-frame speech probabilities.
+   * Silero VAD v5 over full PCM, exactly as the official Python OnnxWrapper:
+   * 512-sample chunks, 64 samples of context prepended, state carried.
    * @param {Float32Array} pcm  @ 16 kHz
-   * @returns {Promise<Float32Array>}
+   * @returns {Promise<Float32Array>} one speech probability per 512-sample chunk
    */
   async _runVAD(pcm) {
     const ort = getOrt();
-    this._vadState = new Float32Array(2 * 1 * 128);
-    const nFrames = Math.ceil(pcm.length / FRAME_SAMPLES);
-    const probs = new Float32Array(nFrames);
-
-    for (let fi = 0; fi < nFrames; fi++) {
-      const start = fi * FRAME_SAMPLES;
-      const chunk = new Float32Array(SILERO_CHUNK);
-      for (let i = 0; i < SILERO_CHUNK; i++) {
-        const idx = start + i;
-        chunk[i] = idx < pcm.length ? pcm[idx] : 0;
-      }
-      const inputTensor = new ort.Tensor('float32', chunk, [1, SILERO_CHUNK]);
-      const stateTensor = new ort.Tensor('float32', this._vadState, [2, 1, 128]);
-      const srData = typeof BigInt64Array !== 'undefined'
-        ? BigInt64Array.from([BigInt(this.sampleRate)])
-        : new Int32Array([this.sampleRate]);
-      const srTensor = new ort.Tensor(
-        typeof BigInt64Array !== 'undefined' ? 'int64' : 'int32',
-        srData,
-        [],
-      );
+    let state = new Float32Array(2 * 1 * 128);
+    const context = new Float32Array(SILERO_CONTEXT);
+    const nChunks = Math.ceil(pcm.length / SILERO_CHUNK);
+    const probs = new Float32Array(nChunks);
+    const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(ANALYSIS_SR)]), []);
+    for (let c = 0; c < nChunks; c++) {
+      const start = c * SILERO_CHUNK;
+      const input = new Float32Array(SILERO_CONTEXT + SILERO_CHUNK);
+      input.set(context, 0);
+      const end = Math.min(pcm.length, start + SILERO_CHUNK);
+      input.set(pcm.subarray(start, end), SILERO_CONTEXT);
       const result = await this.vadSession.run({
-        input: inputTensor,
-        state: stateTensor,
+        input: new ort.Tensor('float32', input, [1, SILERO_CONTEXT + SILERO_CHUNK]),
+        state: new ort.Tensor('float32', state, [2, 1, 128]),
         sr: srTensor,
       });
-      if (result.stateN?.data) {
-        this._vadState = new Float32Array(result.stateN.data);
-      }
-      const outKey = result.output ? 'output' : Object.keys(result)[0];
-      probs[fi] = Number(result[outKey]?.data?.[0] ?? 0);
+      state = new Float32Array(result.stateN.data);
+      context.set(input.subarray(input.length - SILERO_CONTEXT));
+      probs[c] = Number(result.output.data[0]);
     }
+    this._vadState = state;
     return probs;
   }
 
-  /** Convert VAD probabilities to contiguous speech regions (sample indices). */
+  /**
+   * Speech regions from per-chunk probabilities: a port of silero-vad's
+   * get_speech_timestamps (threshold 0.5, neg 0.35, min speech 250 ms,
+   * min silence 100 ms, 30 ms padding, no max speech length).
+   */
   _vadSpeechRegions(pcm, vadProbs) {
-    const minFrames = Math.ceil(MIN_SPEECH_MS / FRAME_MS);
-    const regions = [];
-    let inSpeech = false;
-    let startFrame = 0;
-    for (let fi = 0; fi < vadProbs.length; fi++) {
-      const speech = vadProbs[fi] >= VAD_THRESHOLD;
-      if (speech && !inSpeech) {
-        inSpeech = true;
-        startFrame = fi;
-      } else if (!speech && inSpeech) {
-        if (fi - startFrame >= minFrames) {
-          regions.push({
-            startSample: startFrame * FRAME_SAMPLES,
-            endSample: Math.min(fi * FRAME_SAMPLES, pcm.length),
-          });
-        }
-        inSpeech = false;
+    const ms = ANALYSIS_SR / 1000;
+    const minSpeech = MIN_SPEECH_MS * ms;
+    const minSilence = MIN_SILENCE_MS * ms;
+    const pad = SPEECH_PAD_MS * ms;
+    const n = pcm.length;
+    const speeches = [];
+    let triggered = false;
+    let tempEnd = 0;
+    let cur = null;
+    for (let i = 0; i < vadProbs.length; i++) {
+      const p = vadProbs[i];
+      const s = i * SILERO_CHUNK;
+      if (p >= VAD_THRESHOLD && tempEnd) tempEnd = 0;
+      if (p >= VAD_THRESHOLD && !triggered) {
+        triggered = true;
+        cur = { startSample: s, endSample: 0 };
+        continue;
+      }
+      if (p < VAD_NEG_THRESHOLD && triggered) {
+        if (!tempEnd) tempEnd = s;
+        if (s - tempEnd < minSilence) continue;
+        cur.endSample = tempEnd;
+        if (cur.endSample - cur.startSample > minSpeech) speeches.push(cur);
+        cur = null;
+        tempEnd = 0;
+        triggered = false;
       }
     }
-    if (inSpeech && vadProbs.length - startFrame >= minFrames) {
-      regions.push({
-        startSample: startFrame * FRAME_SAMPLES,
-        endSample: pcm.length,
-      });
+    if (cur && n - cur.startSample > minSpeech) {
+      cur.endSample = n;
+      speeches.push(cur);
     }
-    return regions;
+    for (let i = 0; i < speeches.length; i++) {
+      const sp = speeches[i];
+      if (i === 0) sp.startSample = Math.max(0, sp.startSample - pad);
+      if (i !== speeches.length - 1) {
+        const nx = speeches[i + 1];
+        const gap = nx.startSample - sp.endSample;
+        if (gap < 2 * pad) {
+          sp.endSample += Math.floor(gap / 2);
+          nx.startSample = Math.max(0, nx.startSample - Math.floor(gap / 2));
+        } else {
+          sp.endSample = Math.min(n, sp.endSample + pad);
+          nx.startSample = Math.max(0, nx.startSample - pad);
+        }
+      } else {
+        sp.endSample = Math.min(n, sp.endSample + pad);
+      }
+    }
+    return speeches;
   }
 
   /**
-   * Run pyannote on one speech region; return frame labels (argmax class per 10 ms).
+   * Run pyannote on one window (≤ 10 s); powerset argmax per 270-sample frame.
    * @returns {Promise<{ labels: number[], confidences: number[] }>}
    */
   async _runSegmentation(pcm, start, end) {
     const ort = getOrt();
-    const seg = pcm.subarray(start, end);
+    const seg = pcm.slice(start, end);
     const input = new ort.Tensor('float32', seg, [1, 1, seg.length]);
     const result = await this.segSession.run(sessionFeed(this.segSession, input));
     const logits = sessionOutput(this.segSession, result);
@@ -429,91 +489,76 @@ export class SpeakerDiarizer {
     return { labels, confidences };
   }
 
-  /** Merge consecutive frames with same label into segments (global sample indices). */
-  _mergeFrameLabels(labels, confidences, regionStart) {
-    const segments = [];
-    if (!labels.length) return segments;
-    let cur = labels[0];
-    let segStart = 0;
-    let confSum = confidences[0];
-    let confCnt = 1;
-    for (let f = 1; f < labels.length; f++) {
-      if (labels[f] === cur) {
-        confSum += confidences[f];
-        confCnt++;
-      } else {
-        segments.push({
-          localLabel: cur,
-          startSample: regionStart + segStart * FRAME_SAMPLES,
-          endSample: regionStart + f * FRAME_SAMPLES,
-          confidence: confSum / confCnt,
-        });
-        cur = labels[f];
-        segStart = f;
-        confSum = confidences[f];
-        confCnt = 1;
+  /**
+   * Split one VAD region into single-speaker turns with pyannote, 10 s at a time.
+   * Non-speech and overlap frames inherit the current local speaker so they do
+   * not fragment a turn (VAD already decided this is speech).
+   */
+  async _segmentRegion(pcm, start, end) {
+    const out = [];
+    for (let w0 = start; w0 < end; w0 += SEG_WINDOW_SAMPLES) {
+      const w1 = Math.min(end, w0 + SEG_WINDOW_SAMPLES);
+      if (w1 - w0 < SEG_MIN_WINDOW_SAMPLES && out.length) {
+        out[out.length - 1].endSample = w1;
+        continue;
       }
+      const { labels, confidences } = await this._runSegmentation(pcm, w0, w1);
+      const local = new Array(labels.length);
+      let last = -1;
+      for (let f = 0; f < labels.length; f++) {
+        const spk = POWERSET_SINGLE[labels[f]];
+        if (spk !== undefined) last = spk;
+        local[f] = last;
+      }
+      const first = local.find((v) => v >= 0) ?? 0;
+      for (let f = 0; f < local.length && local[f] < 0; f++) local[f] = first;
+      let k = 0;
+      while (k < local.length) {
+        let j = k;
+        let conf = confidences[k];
+        while (j + 1 < local.length && local[j + 1] === local[k]) { j++; conf += confidences[j]; }
+        const s0 = w0 + k * SEG_FRAME_SAMPLES;
+        const s1 = j === local.length - 1 ? w1 : Math.min(w1, w0 + (j + 1) * SEG_FRAME_SAMPLES);
+        out.push({ localLabel: local[k], startSample: s0, endSample: s1, confidence: conf / (j - k + 1) });
+        k = j + 1;
+      }
+      if (!labels.length) out.push({ localLabel: 0, startSample: w0, endSample: w1, confidence: 0 });
     }
-    segments.push({
-      localLabel: cur,
-      startSample: regionStart + segStart * FRAME_SAMPLES,
-      endSample: regionStart + labels.length * FRAME_SAMPLES,
-      confidence: confSum / confCnt,
-    });
-    return segments;
+    return out;
   }
 
-  /** Assign segments shorter than MIN_SEGMENT_MS to nearest temporal neighbor. */
+  /** Join pieces shorter than MIN_SEGMENT_MS to a directly preceding piece. */
   _mergeShortSegments(segments) {
     const minSamples = Math.floor((MIN_SEGMENT_MS / 1000) * this.sampleRate);
-    if (segments.length < 2) return segments.slice();
-    const out = segments.map((s) => ({ ...s }));
-    for (let i = 0; i < out.length; i++) {
-      const dur = out[i].endSample - out[i].startSample;
-      if (dur >= minSamples) continue;
-      const prev = i > 0 ? out[i - 1] : null;
-      const next = i < out.length - 1 ? out[i + 1] : null;
-      if (prev && next) {
-        const dPrev = out[i].startSample - prev.endSample;
-        const dNext = next.startSample - out[i].endSample;
-        if (dPrev <= dNext) {
-          prev.endSample = out[i].endSample;
-          prev.localLabel = out[i].localLabel;
-          prev.confidence = (prev.confidence + out[i].confidence) / 2;
-        } else {
-          next.startSample = out[i].startSample;
-          next.localLabel = out[i].localLabel;
-          next.confidence = (next.confidence + out[i].confidence) / 2;
-        }
-      } else if (prev) {
-        prev.endSample = out[i].endSample;
-        prev.confidence = (prev.confidence + out[i].confidence) / 2;
-      } else if (next) {
-        next.startSample = out[i].startSample;
-        next.confidence = (next.confidence + out[i].confidence) / 2;
+    const touch = Math.floor(0.05 * this.sampleRate);
+    const out = [];
+    for (const s of segments) {
+      const prev = out[out.length - 1];
+      if (prev && s.endSample - s.startSample < minSamples && s.startSample - prev.endSample < touch) {
+        prev.endSample = s.endSample;
+      } else {
+        out.push({ ...s });
       }
-      out.splice(i, 1);
-      i--;
     }
     return out;
   }
 
   /**
-   * WeSpeaker embedding for one PCM slice.
+   * L2-normalised WeSpeaker embedding for one PCM slice (Kaldi fbank + CMN).
    * @returns {Promise<Float32Array>}
    */
   async _runEmbedding(pcm, start, end) {
     const ort = getOrt();
     const slice = pcm.subarray(start, end);
-    const melFrames = padMelFrames(computeLogMelFrames(slice), MIN_MEL_FRAMES);
-    if (!melFrames.length) return new Float32Array(256);
+    const melFrames = padMelFrames(applyCmn(computeLogMelFrames(slice)), MIN_MEL_FRAMES);
+    if (!melFrames.length) return new Float32Array(EMB_DIM);
     const nFrames = melFrames.length;
     const flat = new Float32Array(nFrames * MEL_BANDS);
     for (let f = 0; f < nFrames; f++) flat.set(melFrames[f], f * MEL_BANDS);
     const input = new ort.Tensor('float32', flat, [1, nFrames, MEL_BANDS]);
     const result = await this.embSession.run(sessionFeed(this.embSession, input));
     const out = sessionOutput(this.embSession, result);
-    return new Float32Array(out.data.slice(0, 256));
+    return l2Normalize(new Float32Array(out.data.slice(0, EMB_DIM)));
   }
 
   /**
@@ -525,68 +570,91 @@ export class SpeakerDiarizer {
     if (!audioBuffer || typeof audioBuffer.getChannelData !== 'function') {
       throw new TypeError('[SpeakerDiarizer] diarize() requires an AudioBuffer.');
     }
+    const empty = (pcm) => ({
+      speakers: new Map(),
+      segments: [],
+      totalSpeakers: 0,
+      analysisSampleRate: this.sampleRate,
+      totalSamples: pcm.length,
+      durationSec: pcm.length / this.sampleRate,
+    });
 
     const pcm = await this._resampleTo16k(audioBuffer);
     const vadProbs = await this._runVAD(pcm);
     const speechRegions = this._vadSpeechRegions(pcm, vadProbs);
 
-    /** @type {Array<{ localLabel: number, startSample: number, endSample: number, confidence: number }>} */
     let rawSegments = [];
     for (const region of speechRegions) {
-      const { labels, confidences } = await this._runSegmentation(
-        pcm,
-        region.startSample,
-        region.endSample,
-      );
-      const merged = this._mergeFrameLabels(labels, confidences, region.startSample);
-      rawSegments = rawSegments.concat(merged);
+      rawSegments = rawSegments.concat(await this._segmentRegion(pcm, region.startSample, region.endSample));
     }
-
     rawSegments.sort((a, b) => a.startSample - b.startSample);
     rawSegments = this._mergeShortSegments(rawSegments);
+    if (!rawSegments.length) return empty(pcm);
 
-    if (!rawSegments.length) {
-      return {
-        speakers: new Map(),
-        segments: [],
-        totalSpeakers: 0,
-        analysisSampleRate: this.sampleRate,
-        totalSamples: pcm.length,
-        durationSec: pcm.length / this.sampleRate,
-      };
+    // Embed segments long enough for a stable WeSpeaker vector.
+    const minEmbed = Math.floor((MIN_EMBED_MS / 1000) * this.sampleRate);
+    const dur = (s) => s.endSample - s.startSample;
+    let embedIdx = rawSegments.map((s, i) => (dur(s) >= minEmbed ? i : -1)).filter((i) => i >= 0);
+    if (!embedIdx.length) {
+      embedIdx = [rawSegments.reduce((b, s, i) => (dur(s) > dur(rawSegments[b]) ? i : b), 0)];
     }
-
     const embeddings = [];
-    for (const seg of rawSegments) {
-      const emb = await this._runEmbedding(pcm, seg.startSample, seg.endSample);
-      embeddings.push(emb);
+    for (const i of embedIdx) {
+      embeddings.push(await this._runEmbedding(pcm, rawSegments[i].startSample, rawSegments[i].endSample));
+    }
+    const labels = agglomerativeCluster(embeddings, CLUSTER_THRESHOLD);
+
+    // Merge clusters with < MIN_CLUSTER_SEC of speech into the most similar big cluster.
+    const clusterSec = new Map();
+    const centroid = new Map();
+    labels.forEach((c, k) => {
+      clusterSec.set(c, (clusterSec.get(c) || 0) + dur(rawSegments[embedIdx[k]]) / this.sampleRate);
+      const acc = centroid.get(c) || new Float32Array(EMB_DIM);
+      for (let d = 0; d < EMB_DIM; d++) acc[d] += embeddings[k][d];
+      centroid.set(c, acc);
+    });
+    centroid.forEach((v) => l2Normalize(v));
+    let big = [...clusterSec.keys()].filter((c) => clusterSec.get(c) >= MIN_CLUSTER_SEC);
+    if (!big.length) big = [[...clusterSec.keys()].reduce((a, b) => (clusterSec.get(b) > clusterSec.get(a) ? b : a))];
+    const remap = new Map();
+    for (const c of clusterSec.keys()) {
+      if (big.includes(c)) { remap.set(c, c); continue; }
+      let bestC = big[0];
+      let bestS = -Infinity;
+      for (const b of big) {
+        const s = cosineSimilarity(centroid.get(c), centroid.get(b));
+        if (s > bestS) { bestS = s; bestC = b; }
+      }
+      remap.set(c, bestC);
     }
 
-    const clusterIds = agglomerativeCluster(embeddings, CLUSTER_THRESHOLD);
-    const uniqueClusters = [...new Set(clusterIds)].sort((a, b) => a - b);
-    const clusterToGlobal = new Map(uniqueClusters.map((c, i) => [c, `S${i + 1}`]));
+    // Segments too short to embed take the label of the nearest embedded segment.
+    const cluster = new Array(rawSegments.length).fill(null);
+    embedIdx.forEach((i, k) => { cluster[i] = remap.get(labels[k]); });
+    for (let i = 0; i < rawSegments.length; i++) {
+      if (cluster[i] !== null) continue;
+      let bestJ = embedIdx[0];
+      for (const j of embedIdx) if (Math.abs(j - i) < Math.abs(bestJ - i)) bestJ = j;
+      cluster[i] = cluster[bestJ];
+    }
+
+    // Speaker ids in order of first appearance.
+    const clusterToGlobal = new Map();
+    for (const c of cluster) if (!clusterToGlobal.has(c)) clusterToGlobal.set(c, `S${clusterToGlobal.size + 1}`);
 
     const speakers = new Map();
-    uniqueClusters.forEach((c, i) => {
-      const id = clusterToGlobal.get(c);
-      const mean = new Float32Array(256);
-      let cnt = 0;
-      clusterIds.forEach((cid, idx) => {
-        if (cid !== c) return;
-        const e = embeddings[idx];
-        for (let d = 0; d < 256; d++) mean[d] += e[d];
-        cnt++;
+    let colorIdx = 0;
+    for (const [c, id] of clusterToGlobal) {
+      const mean = new Float32Array(EMB_DIM);
+      embedIdx.forEach((i, k) => {
+        if (cluster[i] !== c) return;
+        for (let d = 0; d < EMB_DIM; d++) mean[d] += embeddings[k][d];
       });
-      if (cnt > 0) for (let d = 0; d < 256; d++) mean[d] /= cnt;
-      speakers.set(id, {
-        id,
-        color: SPEAKER_COLORS[i % SPEAKER_COLORS.length],
-        embedding: mean,
-      });
-    });
+      speakers.set(id, { id, color: SPEAKER_COLORS[colorIdx++ % SPEAKER_COLORS.length], embedding: l2Normalize(mean) });
+    }
 
     const segments = rawSegments.map((seg, i) => ({
-      speakerId: clusterToGlobal.get(clusterIds[i]),
+      speakerId: clusterToGlobal.get(cluster[i]),
       startSample: seg.startSample,
       endSample: Math.min(seg.endSample, pcm.length),
       confidence: seg.confidence,
@@ -601,6 +669,7 @@ export class SpeakerDiarizer {
       durationSec: pcm.length / this.sampleRate,
     };
   }
+
 
   /**
    * Build a per-sample gain mask for one speaker (0..1) with 5 ms linear ramps.

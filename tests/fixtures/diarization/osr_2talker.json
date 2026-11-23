@@ -1,0 +1,28 @@
+{
+ "name": "osr_2talker",
+ "speakers": 2,
+ "turns": [
+  {
+   "speaker": "OSR_0010_F",
+   "start": 0.0,
+   "end": 6.0
+  },
+  {
+   "speaker": "OSR_0030_M",
+   "start": 6.4,
+   "end": 12.4
+  },
+  {
+   "speaker": "OSR_0010_F",
+   "start": 12.8,
+   "end": 18.8
+  },
+  {
+   "speaker": "OSR_0030_M",
+   "start": 19.2,
+   "end": 25.2
+  }
+ ],
+ "source": "Open Speech Repository, OSR_us_000_0010_8k (F) + OSR_us_000_0030_8k (M), 8 kHz upsampled to 16 kHz",
+ "seconds": 25.6
+}

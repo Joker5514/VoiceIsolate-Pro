@@ -1,0 +1,28 @@
+{
+ "name": "libri_2spk_mf",
+ "speakers": 2,
+ "turns": [
+  {
+   "speaker": "1462",
+   "start": 0.0,
+   "end": 4.715
+  },
+  {
+   "speaker": "2428",
+   "start": 5.115,
+   "end": 11.115
+  },
+  {
+   "speaker": "1462",
+   "start": 11.515,
+   "end": 17.515
+  },
+  {
+   "speaker": "2428",
+   "start": 17.915,
+   "end": 19.985
+  }
+ ],
+ "source": "LibriSpeech dev-clean (mini LibriSpeech dev-clean-2, OpenSLR SLR31), speakers 1462 and 2428, CC BY 4.0",
+ "seconds": 20.39
+}
