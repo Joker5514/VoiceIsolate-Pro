@@ -276,11 +276,11 @@ describe('live diagnostics', () => {
     expect(baseRule.style.getPropertyValue('position')).toBe('fixed');
     expect(baseRule.style.getPropertyValue('right')).toBe('12px');
     expect(baseRule.style.getPropertyValue('bottom')).toBe('12px');
-    // Stems page: anchored below the sticky landing header (body.v3
-    // .v3-header is a fixed 52px in public/landing-v3.css; landing does
-    // not publish --vip-hdr-h, so the rule uses the real 52px height)
-    // with the bottom offset cleared, so it cannot cover the play button
-    // in #landingTransport.
+    // Stems page: anchored below the landing header. The fallback is the
+    // 52px one-row header; --vip-hdr-h is the measured height once the
+    // header wraps. The bottom offset is cleared so the open panel cannot
+    // cover the play button in #landingTransport.
+    expect(stemsRule.style.getPropertyValue('top')).toContain('var(--vip-hdr-h');
     expect(stemsRule.style.getPropertyValue('top')).toContain('52px');
     expect(stemsRule.style.getPropertyValue('top')).toContain('12px');
     expect(stemsRule.style.getPropertyValue('bottom')).toBe('auto');

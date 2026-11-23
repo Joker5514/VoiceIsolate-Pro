@@ -451,13 +451,30 @@ function refresh() {
 }
 
 /* ── Open / Close ──────────────────────────────────────────────────────── */
+function setToggleExpanded(on) {
+  if (!_btn) return;
+  _btn.classList.toggle('active', on);
+  _btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+}
+
+function placeDebugPanel() {
+  if (!_panel) return;
+  const header = document.querySelector('.v3-header') || document.querySelector('.hdr');
+  const bottom = header ? Math.ceil(header.getBoundingClientRect().bottom) : 52;
+  const top = Math.max(8, bottom + 8);
+  const dock = window.matchMedia('(max-width: 640px)').matches ? 72 + 64 : 72;
+  _panel.style.top = `${top}px`;
+  _panel.style.maxHeight = `calc(100dvh - ${top}px - ${dock}px)`;
+}
+
 function openPanel(reason) {
   if (reason !== 'user' && userDismissedDebug()) return;
   if (!_panel || _open) return;
   rememberDebugDismissed(false);
   _open = true;
+  placeDebugPanel();
   _panel.classList.remove('hidden');
-  if (_btn) _btn.classList.add('active');
+  setToggleExpanded(true);
   _lastLogId = _log.length > 0 ? _log[_log.length - 1].id - 1 : 0;
   checkWorker('./ml-worker.js', 'ml');
   checkWorker('./dsp-processor.js', 'dsp');
@@ -469,7 +486,7 @@ function closePanel() {
   rememberDebugDismissed(true);
   _open = false;
   if (_panel) _panel.classList.add('hidden');
-  if (_btn) _btn.classList.remove('active');
+  setToggleExpanded(false);
   clearInterval(_timer);
 }
 
@@ -628,18 +645,23 @@ function mount() {
   _panel.classList.add('hidden');
   document.body.appendChild(_panel);
 
-  // Toggle button in header
-  const hdrActions = document.querySelector('.hdr-actions') || document.querySelector('.hdr') || document.querySelector('.v3-header__links') || document.querySelector('.v3-header');
+  // Toggle button in the page toolbar. Appended so it trails the
+  // page's own actions instead of shoving them aside.
+  const hdrActions = document.querySelector('.hdr-actions') || document.querySelector('.v3-header__links') || document.querySelector('.hdr') || document.querySelector('.v3-header');
   if (hdrActions) {
     _btn = document.createElement('button');
     _btn.id = 'vip-debug-toggle';
     _btn.type = 'button';
+    _btn.className = 'vip-tool-btn';
     _btn.setAttribute('aria-label', 'Toggle live debug menu');
+    _btn.setAttribute('aria-expanded', 'false');
+    _btn.setAttribute('aria-controls', 'vip-debug-panel');
     _btn.setAttribute('title', 'Live Debug Menu (` key)');
-    _btn.innerHTML = '<span class="dbg-dot"></span>DBG';
+    _btn.innerHTML = '<span class="dbg-dot" aria-hidden="true"></span><span class="vip-tool-label">DBG</span>';
     _btn.addEventListener('click', togglePanel);
-    hdrActions.prepend(_btn);
+    hdrActions.appendChild(_btn);
     if (document.querySelector('.v3-header__links')) _btn.classList.add('vip-debug-toggle--landing');
+    else _btn.classList.add('vip-debug-toggle--engineer');
   }
 
   // Keyboard shortcut: backtick
@@ -661,6 +683,8 @@ function mount() {
   initDrag(_panel);
   initResize(_panel);
   initButtons();
+  placeDebugPanel();
+  window.addEventListener('resize', () => { if (_open) placeDebugPanel(); });
 }
 
 /* ── Bootstrap ─────────────────────────────────────────────────────────── */
@@ -676,7 +700,7 @@ function enforceDebugDismissed() {
   if (!userDismissedDebug() || !_panel) return;
   _open = false;
   _panel.classList.add('hidden');
-  if (_btn) _btn.classList.remove('active');
+  setToggleExpanded(false);
   clearInterval(_timer);
 }
 

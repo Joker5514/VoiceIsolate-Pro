@@ -180,21 +180,52 @@ function ensureStyle(doc) {
     // the base rule sets bottom:12px.
     // Stems page (Landing): same top dock, for the same reason — the
     // bottom-right dock covers the play button in #landingTransport.
-    // Landing does NOT publish --vip-hdr-h, so this rule anchors to the
-    // real landing header height instead: body.v3 .v3-header is a fixed
-    // 52px sticky header (public/landing-v3.css), plus the same 12px gap.
-    // Any other page keeps the bottom-right dock.
+    // The rule falls back to the 52px landing header and prefers the
+    // measured --vip-hdr-h once the header has wrapped. Any other page
+    // keeps the bottom-right dock.
     '#vip-live-diagnostics[data-page="engineer"]{top:calc(var(--vip-hdr-h, 48px) + 12px);bottom:auto}',
-    '#vip-live-diagnostics[data-page="stems"]{top:calc(52px + 12px);bottom:auto}',
+    // Landing header is 52px when it is one row. mobile-fit lets it wrap,
+    // and the page publishes the measured height as --vip-hdr-h. The 52px
+    // fallback stays in the rule for the first paint.
+    '#vip-live-diagnostics[data-page="stems"]{top:calc(var(--vip-hdr-h, 52px) + 12px);bottom:auto}',
     '#vip-live-diagnostics[data-collapsed="true"] .vip-diag-body{display:none}',
+    // Toolbar placement: the toggle lives in the header, so a collapsed
+    // panel must not keep a fixed hit target over the page.
+    '#vip-live-diagnostics[data-dock="toolbar"][data-collapsed="true"]{width:0;height:0;overflow:hidden;border:0;padding:0;margin:0;opacity:0;pointer-events:none;transform:translateY(-6px)}',
+    '#vip-live-diagnostics[data-dock="toolbar"]{transition:opacity 180ms cubic-bezier(0.16,1,0.3,1),transform 180ms cubic-bezier(0.16,1,0.3,1)}',
     '.vip-diag-bar{display:flex;gap:8px;align-items:center;padding:6px 8px}',
-    '.vip-diag-bar button,.vip-diag-tools button{background:transparent;color:#00d4ff;border:1px solid rgba(0,212,255,.35);border-radius:4px;padding:4px 8px;cursor:pointer}',
+    '.vip-diag-bar button,.vip-diag-tools button{background:transparent;color:var(--vip-text-secondary,#9a8a90);border:1px solid var(--vip-border-strong,#3a2c30);border-radius:6px;padding:4px 8px;cursor:pointer}',
     '.vip-diag-list{max-height:240px;overflow:auto;margin:0;padding:0 8px 8px;list-style:none}',
     '.vip-diag-list li{border-top:1px solid rgba(255,255,255,.06);padding:4px 0}',
     '.vip-diag-list .warn{color:#f5c16c}.vip-diag-list .error{color:#ff8b8b}',
     '.vip-diag-detail{white-space:pre-wrap;color:#9aa4b2;margin:4px 0 0}',
+    '@media (prefers-reduced-motion:reduce){#vip-live-diagnostics,#vip-live-diagnostics[data-dock="toolbar"],#vip-live-diagnostics[data-dock="toolbar"][data-collapsed="true"]{transition:none;transform:none}}',
   ].join('');
   doc.head.appendChild(style);
+}
+
+function toolbarSlot(doc) {
+  return doc.querySelector('.hdr-actions')
+    || doc.querySelector('.v3-header__links')
+    || doc.querySelector('.hdr')
+    || doc.querySelector('.v3-header');
+}
+
+function trackLandingHeader(doc) {
+  const header = doc.querySelector('.v3-header');
+  if (!header || header.dataset.vipHdrTracked === '1') return;
+  header.dataset.vipHdrTracked = '1';
+  const apply = () => {
+    const h = Math.round(header.getBoundingClientRect().height);
+    if (h > 0) doc.documentElement.style.setProperty('--vip-hdr-h', `${h}px`);
+  };
+  apply();
+  if (typeof globalThis.ResizeObserver === 'function') {
+    const observer = new globalThis.ResizeObserver(apply);
+    observer.observe(header);
+  } else if (typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('resize', apply);
+  }
 }
 
 function renderList(list, events) {
@@ -245,15 +276,28 @@ export function mountLiveDiagnostics(page) {
   const bar = document.createElement('div');
   bar.className = 'vip-diag-bar';
   const toggle = document.createElement('button');
+  toggle.id = 'vip-diag-toggle';
   toggle.type = 'button';
-  toggle.textContent = `Diagnostics · ${_page}`;
+  toggle.className = 'vip-tool-btn';
+  toggle.textContent = 'Diagnostics';
+  toggle.setAttribute('aria-label', 'Toggle live diagnostics');
   toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'vip-live-diagnostics');
   toggle.addEventListener('click', () => {
     const collapsed = root.dataset.collapsed !== 'true';
     root.dataset.collapsed = collapsed ? 'true' : 'false';
     toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   });
-  bar.appendChild(toggle);
+  const slot = toolbarSlot(document);
+  if (slot) {
+    if (slot.classList.contains('v3-header__links')) toggle.classList.add('vip-debug-toggle--landing');
+    else toggle.classList.add('vip-debug-toggle--engineer');
+    slot.appendChild(toggle);
+    root.dataset.dock = 'toolbar';
+    trackLandingHeader(document);
+  } else {
+    bar.appendChild(toggle);
+  }
 
   const body = document.createElement('div');
   body.className = 'vip-diag-body';
@@ -273,7 +317,8 @@ export function mountLiveDiagnostics(page) {
   clearBtn.addEventListener('click', () => { clearLiveDiagnostics(); });
   tools.append(copyBtn, clearBtn);
   body.append(list, tools);
-  root.append(bar, body);
+  if (bar.childElementCount) root.append(bar);
+  root.append(body);
   document.body.appendChild(root);
 
   const paint = () => renderList(list, _events);
