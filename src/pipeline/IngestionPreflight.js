@@ -110,6 +110,21 @@ export async function preflightIngestion(file, {
     } catch (error) {
       if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
       if (error?.code === 'DECODE_METADATA_INVALID') throw error;
+      if (error?.code === 'NO_AUDIO_TRACK') {
+        // Refuse here: the browser decoder would otherwise fall back to a
+        // realtime capture of a silent video for its whole length.
+        traceIngest('ingest.failed', {
+          failureStage: 'ingest.demux',
+          code: error.code,
+          message: error.message,
+          file: file.name || 'untitled',
+        }, 'error');
+        error.ingestTraced = true;
+        throw error;
+      }
+      // Visible in the live log: a slow or failed container probe otherwise
+      // leaves nothing after ingest.start until the next stage resolves.
+      traceIngest('ingest.probe', { probe: 'bitstream', ok: false, code: error?.code || error?.name || 'ERROR', message: error?.message || String(error) }, 'warn');
       emitIngestionDebug('metadata:bitstream:error', { code: error?.code || error?.name || 'ERROR', message: error?.message || String(error) });
     }
   }

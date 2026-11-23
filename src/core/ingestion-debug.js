@@ -2,6 +2,7 @@
 
 export const INGEST_EVENTS = Object.freeze([
   'ingest.start',
+  'ingest.probe',
   'ingest.demux',
   'ingest.decode.start',
   'ingest.decode.chunk',

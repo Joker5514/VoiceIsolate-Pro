@@ -396,12 +396,144 @@ function parseSampleTable(buf, stbl) {
   return samples;
 }
 
+function trackHandler(buf, mdia) {
+  const hdlr = findChild(buf, mdia.start, mdia.end, 'hdlr');
+  return hdlr && hdlr.start + 12 <= hdlr.end ? fourcc(buf, hdlr.start + 8) : '';
+}
+
+function trackId(buf, trak) {
+  const tkhd = findChild(buf, trak.start, trak.end, 'tkhd');
+  if (!tkhd) return null;
+  const version = buf[tkhd.start];
+  const at = tkhd.start + (version === 1 ? 20 : 12);
+  if (at + 4 > tkhd.end) return null;
+  return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(at);
+}
+
+/** `trex` defaults for one track from `moov/mvex`. */
+function trackExtends(buf, moov, id) {
+  const mvex = findChild(buf, moov.start, moov.end, 'mvex');
+  if (!mvex) return null;
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  for (const trex of walkBoxes(buf, mvex.start, mvex.end)) {
+    if (trex.type !== 'trex' || trex.start + 24 > trex.end) continue;
+    if (view.getUint32(trex.start + 4) !== id) continue;
+    return {
+      duration: view.getUint32(trex.start + 12),
+      size: view.getUint32(trex.start + 16),
+    };
+  }
+  return { duration: 0, size: 0 };
+}
+
+/**
+ * Audio samples of one track from a single `moof` (ISO/IEC 14496-12 8.8).
+ * `moofAt` is the file offset of the moof box. Offsets are absolute file
+ * offsets; times are decode times in the track timescale.
+ */
+function samplesFromMoof(buf, moofAt, id, defaults, cursor) {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const moof = findChild(buf, 0, buf.length, 'moof');
+  const out = [];
+  if (!moof) return out;
+  // Without base-data-offset or default-base-is-moof, the first traf's base
+  // is the moof and each later traf continues where the previous data ended.
+  let implicitBase = moofAt;
+  for (const traf of walkBoxes(buf, moof.start, moof.end)) {
+    if (traf.type !== 'traf') continue;
+    const tfhd = findChild(buf, traf.start, traf.end, 'tfhd');
+    if (!tfhd || tfhd.start + 8 > tfhd.end) continue;
+    const flags = (buf[tfhd.start + 1] << 16) | (buf[tfhd.start + 2] << 8) | buf[tfhd.start + 3];
+    const tid = view.getUint32(tfhd.start + 4);
+    let p = tfhd.start + 8;
+    let base = implicitBase;
+    if (flags & 0x000001) { if (p + 8 > tfhd.end) continue; base = Number(view.getBigUint64(p)); p += 8; }
+    else if (flags & 0x020000) base = moofAt;
+    if (flags & 0x000002) p += 4;
+    let defaultDuration = defaults?.duration || 0;
+    let defaultSize = defaults?.size || 0;
+    if (flags & 0x000008) { if (p + 4 > tfhd.end) continue; defaultDuration = view.getUint32(p); p += 4; }
+    if (flags & 0x000010) { if (p + 4 > tfhd.end) continue; defaultSize = view.getUint32(p); p += 4; }
+    let dataAt = base;
+    let dataEnd = base;
+    const tfdt = findChild(buf, traf.start, traf.end, 'tfdt');
+    if (tid === id && tfdt) {
+      const version = buf[tfdt.start];
+      if (version === 1 && tfdt.start + 12 <= tfdt.end) cursor.time = Number(view.getBigUint64(tfdt.start + 4));
+      else if (version === 0 && tfdt.start + 8 <= tfdt.end) cursor.time = view.getUint32(tfdt.start + 4);
+    }
+    for (const trun of walkBoxes(buf, traf.start, traf.end)) {
+      if (trun.type !== 'trun' || trun.start + 8 > trun.end) continue;
+      const tflags = (buf[trun.start + 1] << 16) | (buf[trun.start + 2] << 8) | buf[trun.start + 3];
+      const count = view.getUint32(trun.start + 4);
+      let ep = trun.start + 8;
+      if (tflags & 0x000001) { dataAt = base + view.getInt32(ep); ep += 4; }
+      if (tflags & 0x000004) ep += 4;
+      const hasDuration = (tflags & 0x000100) !== 0;
+      const hasSize = (tflags & 0x000200) !== 0;
+      const entry = 4 * ((hasDuration ? 1 : 0) + (hasSize ? 1 : 0)
+        + ((tflags & 0x000400) ? 1 : 0) + ((tflags & 0x000800) ? 1 : 0));
+      for (let i = 0; i < count; i++) {
+        const o = ep + i * entry;
+        if (o + entry > trun.end) break;
+        let q = o;
+        const duration = hasDuration ? view.getUint32(q) : defaultDuration;
+        if (hasDuration) q += 4;
+        const size = hasSize ? view.getUint32(q) : defaultSize;
+        if (tid === id) {
+          out.push({ offset: dataAt, size, time: cursor.time, duration });
+          cursor.time += duration;
+        }
+        dataAt += size;
+      }
+      dataEnd = Math.max(dataEnd, dataAt);
+    }
+    implicitBase = dataEnd;
+  }
+  return out;
+}
+
+/**
+ * Walk the top-level boxes after `moov` and collect the audio track's
+ * samples from every `moof`. Only box headers and the (small) moof boxes
+ * are read; media payloads stay in the file.
+ */
+async function fragmentSamples(file, firstAt, id, defaults, signal) {
+  const samples = [];
+  const cursor = { time: 0 };
+  let at = firstAt;
+  for (let count = 0; count < 2_000_000 && at + 8 <= file.size; count++) {
+    if (signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
+    const head = new Uint8Array(await file.slice(at, Math.min(file.size, at + 16)).arrayBuffer());
+    if (head.length < 8) break;
+    const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
+    let size = view.getUint32(0);
+    const type = fourcc(head, 4);
+    if (size === 1) {
+      if (head.length < 16) break;
+      size = Number(view.getBigUint64(8));
+    } else if (size === 0) size = file.size - at;
+    if (!Number.isSafeInteger(size) || size < 8) break;
+    if (type === 'moof') {
+      if (size > 16 * 1024 * 1024) break;
+      const bytes = new Uint8Array(await file.slice(at, Math.min(file.size, at + size)).arrayBuffer());
+      for (const sample of samplesFromMoof(bytes, at, id, defaults, cursor)) {
+        // A truncated download: keep only packets whose bytes are present.
+        if (sample.offset + sample.size <= file.size && sample.size > 0) samples.push(sample);
+      }
+    }
+    at += size;
+  }
+  return samples;
+}
+
 /** @returns {Promise<{codec:string, sampleRate:number, channels:number, description:Uint8Array|null, timescale:number, samples:object[]}|null>} */
 export async function parseMp4Audio(file, options = {}) {
   if (options.signal?.aborted) throw fail('ABORT_ERR', 'MP4 metadata read cancelled');
   const boxes = [];
   let at = 0;
   let moovBuf = null;
+  let moovEnd = 0;
   while (at + 8 <= file.size && boxes.length < 64) {
     const headBuf = await file.slice(at, Math.min(file.size, at + 16)).arrayBuffer();
     const head = new Uint8Array(headBuf);
@@ -417,6 +549,7 @@ export async function parseMp4Audio(file, options = {}) {
     boxes.push(type);
     if (type === 'moov') {
       moovBuf = new Uint8Array(await file.slice(at, at + size).arrayBuffer());
+      moovEnd = at + size;
       break;
     }
     at += size;
@@ -427,10 +560,17 @@ export async function parseMp4Audio(file, options = {}) {
   let audio = null;
   let samples = null;
   let timescale = null;
+  let tracks = 0;
+  let soundTracks = 0;
+  let unknownTracks = 0;
   for (const trak of walkBoxes(moovBuf, moov.start, moov.end)) {
     if (trak.type !== 'trak') continue;
+    tracks += 1;
     const mdia = findChild(moovBuf, trak.start, trak.end, 'mdia');
-    if (!mdia) continue;
+    if (!mdia) { unknownTracks += 1; continue; }
+    const handler = trackHandler(moovBuf, mdia);
+    if (handler === 'soun') soundTracks += 1;
+    else if (!handler) unknownTracks += 1;
     const mdhd = findChild(moovBuf, mdia.start, mdia.end, 'mdhd');
     const minf = findChild(moovBuf, mdia.start, mdia.end, 'minf');
     if (!minf) continue;
@@ -442,6 +582,16 @@ export async function parseMp4Audio(file, options = {}) {
     audio = parsed;
     timescale = mdhd ? parseMdhdTimescale(moovBuf, mdhd) : parsed.sampleRate;
     samples = parseSampleTable(moovBuf, stbl);
+    if (!samples?.length) {
+      // Fragmented MP4 (moov + moof/mdat pairs): the moov sample table is
+      // empty and each moof carries its own run of samples.
+      const id = trackId(moovBuf, trak);
+      const defaults = id != null ? trackExtends(moovBuf, moov, id) : null;
+      if (id != null && defaults) {
+        samples = await fragmentSamples(file, moovEnd, id, defaults, options.signal);
+        if (samples.length) audio.fragmented = true;
+      }
+    }
     const edits = parseElstEntries(moovBuf, trak);
     const mediaTime = edits?.find((entry) => entry.mediaTime > 0)?.mediaTime || 0;
     const scale = timescale || parsed.sampleRate || 1;
@@ -449,11 +599,15 @@ export async function parseMp4Audio(file, options = {}) {
     audio.editPlaybackFrames = editPlaybackFrames(edits, parseMovieTimescale(moovBuf, moov), parsed.sampleRate);
     break;
   }
+  // Video-only only when every track declares a handler and none is sound;
+  // a track we cannot classify is left to the browser decoder.
+  if (!audio && tracks > 0 && soundTracks === 0 && unknownTracks === 0) {
+    throw fail('NO_AUDIO_TRACK', `[VIP][FileIngestion] “${file.name || 'file'}” has no audio track (video only), so there is nothing to isolate. The file was not modified.`);
+  }
   if (!audio || !samples?.length) return null;
   return { ...audio, timescale: timescale || audio.sampleRate, samples };
 }
 
-/** MPEG-1, MPEG-2, and MPEG-2.5 Layer III. Reserved version and free/bad bitrates return null. */
 function mp3FrameLayout(header) {
   const version = (header >>> 19) & 3;
   const layer = (header >>> 17) & 3;
