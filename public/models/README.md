@@ -16,7 +16,7 @@ Place the following ONNX model files at these **exact** URL paths (served from `
 
 | Path | Model | Purpose |
 |------|-------|---------|
-| `/models/pyannote-segmentation-3.0.onnx` | pyannote segmentation 3.0 | Frame-level multi-speaker segmentation (7 classes / 10 ms) |
+| `/models/pyannote-segmentation-3.0.onnx` | pyannote segmentation 3.0 | Frame-level multi-speaker segmentation (7 powerset classes, one frame per 270 samples ≈ 16.9 ms) |
 | `/models/wespeaker-resnet34.onnx` | WeSpeaker ResNet34 | 256-dim speaker embeddings |
 | `/models/silero-vad.onnx` | Silero VAD v5 | Voice activity detection gate |
 
@@ -56,22 +56,22 @@ try {
 - **ONNX file:** [onnx/model.onnx](https://huggingface.co/onnx-community/pyannote-segmentation-3.0/tree/main/onnx) (rename to `pyannote-segmentation-3.0.onnx`)
 - **Upstream:** [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
 - **Input:** `input_values` — `float32 [1, 1, num_samples]` @ 16 kHz
-- **Output:** logits `float32 [1, num_frames, 7]` (10 ms per frame)
+- **Output:** logits `float32 [1, num_frames, 7]`, one frame per 270 samples (≈ 16.9 ms; 589 frames per 10 s). The diarizer runs it on windows of up to 10 s.
 
 ### 2. wespeaker-resnet34.onnx
 
 - **Repo:** [onnx-community/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM) (community ONNX export)
 - **Alternate:** [k2-fsa/sherpa-onnx model collection](https://github.com/k2-fsa/sherpa-onnx) — obtain a compatible ONNX ResNet34 256-dim export; access conditions are defined upstream
 - **Place as:** `/models/wespeaker-resnet34.onnx`
-- **Input:** `input_features` — `float32 [1, num_frames, 80]` log-mel spectrogram (Hamming window, 25 ms window, 10 ms hop @ 16 kHz, 80 mel bins; pad to at least 9 frames)
+- **Input:** `input_features` — `float32 [1, num_frames, 80]` Kaldi fbank as in wespeaker `compute_fbank` / `torchaudio.compliance.kaldi.fbank` (input ×32768, DC removal, 0.97 pre-emphasis, Hamming window, 25 ms window, 10 ms hop @ 16 kHz, 80 mel bins from 20 Hz to Nyquist), then per-segment mean normalisation (CMN); pad to at least 9 frames. Output embeddings are L2-normalised before cosine clustering
 - **Output:** `last_hidden_state` — `float32 [1, 256]` speaker embedding
 
 ### 3. silero-vad.onnx
 
 - **Repo:** [onnx-community/silero-vad](https://huggingface.co/onnx-community/silero-vad)
 - **Alternate (shipped in app):** `/app/models/silero_vad.onnx` — copy or symlink to `/models/silero-vad.onnx`
-- **Input:** `input` `float32 [1, 512]` + recurrent `state` `[2, 1, 128]` + `sr` scalar `16000`
-- **Output:** speech probability `float32` (frame-level; 10 ms resolution after post-processing)
+- **Input:** `input` `float32 [1, 576]` = the previous chunk's last 64 samples + 512 new samples @ 16 kHz in [-1, 1]; `state` `float32 [2, 1, 128]` carried from the previous chunk's `stateN`; `sr` `int64` scalar 16000. Without the 64-sample context the model outputs ≈ 0 on clear speech.
+- **Output:** `output` speech probability `float32 [1, 1]` per 512-sample chunk (32 ms) and `stateN`. Regions follow silero-vad `get_speech_timestamps` (threshold 0.5, neg 0.35, min speech 250 ms, min silence 100 ms, pad 30 ms)
 
 ---
 
