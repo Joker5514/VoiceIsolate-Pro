@@ -154,21 +154,24 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
   // Music beds must be sustained AND dense. Music frames outside a kept bed
   // are relabelled by the remaining rules (usually speech / noise), so they
   // neither count toward musicRatio nor punch holes in speech segments.
-  const musicSegments = byLabel('music').filter((seg) => {
-    let total = 0;
-    let music = 0;
-    for (let i = 0; i < frames.length; i++) {
-      const t = frames[i].t;
-      if (t < seg.start - 1e-9 || t >= seg.end) continue;
-      total++;
-      if (labels[i] === 'music') music++;
-    }
-    return total > 0 && music / total >= MUSIC_BED_MIN_DENSITY;
-  });
-  for (let i = 0; i < labels.length; i++) {
-    if (labels[i] !== 'music') continue;
+  // Frames and segments are both time-ordered: one pass marks bed frames.
+  const musicCandidates = byLabel('music');
+  const segOf = new Int32Array(frames.length).fill(-1);
+  const segTotal = new Int32Array(musicCandidates.length);
+  const segMusic = new Int32Array(musicCandidates.length);
+  for (let i = 0, j = 0; i < frames.length && j < musicCandidates.length; i++) {
     const t = frames[i].t;
-    if (!musicSegments.some((seg) => t >= seg.start - 1e-9 && t < seg.end)) {
+    while (j < musicCandidates.length && t >= musicCandidates[j].end) j++;
+    if (j >= musicCandidates.length) break;
+    if (t < musicCandidates[j].start - 1e-9) continue;
+    segOf[i] = j;
+    segTotal[j]++;
+    if (labels[i] === 'music') segMusic[j]++;
+  }
+  const keepSeg = musicCandidates.map((_, j) => segTotal[j] > 0 && segMusic[j] / segTotal[j] >= MUSIC_BED_MIN_DENSITY);
+  const musicSegments = musicCandidates.filter((_, j) => keepSeg[j]);
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i] === 'music' && !(segOf[i] >= 0 && keepSeg[segOf[i]])) {
       labels[i] = classifyFrame(frames[i], ctx, true);
     }
   }
