@@ -187,10 +187,11 @@ async function detectWhisper(channelData, sampleRate, noiseFloor, speechSegments
 }
 
 /**
- * Hum detection: a steady narrow tone at 50/60 Hz + harmonics (Goertzel,
- * 1 Hz resolution; see FeatureExtractor.detectMainsHum). The old proxy counted
- * the energy of samples that changed by < 0.001 from the previous one, which
- * flagged any bass-heavy or quiet file as hum.
+ * Hum detection: a steady narrow tone at 50/60 Hz + harmonics, or a lone
+ * stationary 100/120 Hz buzz (Goertzel, 1 Hz resolution; see
+ * FeatureExtractor.detectMainsHum). The old proxy counted the energy of
+ * samples that changed by < 0.001 from the previous one, which flagged any
+ * bass-heavy or quiet file as hum.
  */
 function detectHum(channelData, sampleRate) {
   const mains = detectMainsHum(channelData, sampleRate);
