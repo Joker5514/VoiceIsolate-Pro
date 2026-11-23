@@ -94,7 +94,7 @@ import {
 } from '/src/pipeline/ui-yield.js';
 import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
-import { getTimings, resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
+import { captureProcessTiming, resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { formatTransportSelection } from '/src/presentation/PremiumAudioControl.js';
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
@@ -4657,7 +4657,7 @@ class VoiceIsolatePro {
     // and the ML provider, so latency is readable from the sidecar without DevTools.
     let timing = null;
     try {
-      timing = { stagesMs: getTimings(), provider: globalThis.__vipOrtStatus?.provider || null };
+      timing = captureProcessTiming();
     } catch { /* timing stays null — not measured */ }
     return publishExportProvenance({
       outputBlob: blob,

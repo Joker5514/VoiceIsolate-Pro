@@ -21,6 +21,7 @@ import {
 } from '../core/ModelManifest.js';
 import { snapshotParams } from '../core/ParameterSchema.js';
 import { hashSourceBlob } from './SourceHash.js';
+import { captureProcessTiming } from './PipelineTiming.js';
 
 const MAX_OPERATIONS = 200;
 
@@ -193,10 +194,15 @@ export class EngineerProvenanceCoordinator {
       : [];
     const modelIds = engine === 'dsp-fallback' ? [] : [...rawIds];
     const paramsSnap = info.effectiveParams ? snapshotParams(info.effectiveParams) : null;
+    let timing = info.timing && typeof info.timing === 'object' ? info.timing : null;
+    if (!timing) {
+      try { timing = captureProcessTiming(); } catch { timing = null; }
+    }
     this._lastProcessSnapshot = {
       modelIds,
       processingEngine: engine,
       effectiveParams: paramsSnap,
+      timing,
       timestamp: new Date().toISOString(),
     };
     this.recordOperation({
@@ -266,6 +272,11 @@ export class EngineerProvenanceCoordinator {
       ? snapshotParams(opts.effectiveParams)
       : (this._lastProcessSnapshot?.effectiveParams || null);
 
+    let timing = opts.timing && typeof opts.timing === 'object' ? opts.timing : this._lastProcessSnapshot?.timing || null;
+    if (!timing) {
+      try { timing = captureProcessTiming(); } catch { timing = null; }
+    }
+
     const exportTimestamp = new Date().toISOString();
     const opsWithExport = [
       ...this._operations,
@@ -315,6 +326,8 @@ export class EngineerProvenanceCoordinator {
       processing: {
         parameters: paramsSnap,
         operations: opsWithExport,
+        // Last Process stage timings, mlMs and provider, always (no debug flag).
+        timing: timing || undefined,
       },
     });
 

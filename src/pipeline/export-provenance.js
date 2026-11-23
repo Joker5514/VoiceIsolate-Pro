@@ -23,6 +23,7 @@ import {
 } from '../core/ModelManifest.js';
 import { hashSourceBlob, HashAbortError } from './SourceHash.js';
 import { triggerBlobDownload } from './video-export.js';
+import { captureProcessTiming } from './PipelineTiming.js';
 
 function isCancellation(err, signal) {
   return Boolean(signal?.aborted)
@@ -75,7 +76,7 @@ export async function publishExportProvenance(input = {}) {
     operations = null,
     modelIds = [],
     appVersion = null,
-    timing = null,
+    timing = undefined,
     deliver = triggerBlobDownload,
   } = input;
 
@@ -119,7 +120,8 @@ export async function publishExportProvenance(input = {}) {
       processing: {
         parameters: parameters && typeof parameters === 'object' ? parameters : null,
         operations: Array.isArray(operations) ? operations : null,
-        ...(timing && typeof timing === 'object' ? { timing } : {}),
+        // Always record the last Process timings + provider (no debug flag).
+        timing: timing && typeof timing === 'object' ? timing : captureProcessTiming(),
       },
     });
 

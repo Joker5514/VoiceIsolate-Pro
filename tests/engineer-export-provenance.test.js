@@ -35,9 +35,11 @@ describe('Engineer export provenance wiring', () => {
 
   test('the sidecar carries the last Process stage timings (no DevTools needed)', () => {
     const attach = app.slice(app.indexOf('async _attachExportProvenance'), app.indexOf('async _saveProcessedToGoogleDrive()'));
-    expect(attach).toContain('getTimings()');
+    expect(attach).toContain('captureProcessTiming()');
     expect(attach).toMatch(/\n\s+timing,\n/);
-    expect(attach).toContain('__vipOrtStatus');
+    // captureProcessTiming reads the effective provider from the ORT status.
+    const timingSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'pipeline', 'PipelineTiming.js'), 'utf8');
+    expect(timingSrc).toContain('__vipOrtStatus');
   });
 });
 
@@ -124,7 +126,10 @@ describe('publishExportProvenance', () => {
     const record = JSON.parse(await delivered[0].blob.text());
     expect(record.processing.timing).toEqual({
       stagesMs: { decode: 180, pipeline: 2458, ml_isolation: 1799 },
+      mlMs: 1799,
+      pipelineMs: 2458,
       provider: 'wasm',
+      providerVerified: false,
     });
     const check = await verifyProvenanceRecord(record, {
       outputBlob: output,
@@ -133,11 +138,19 @@ describe('publishExportProvenance', () => {
     expect(check.ok).toBe(true);
   });
 
-  test('no timing supplied leaves the record shape unchanged', async () => {
+  // Round 13 (#948 follow-up): every downloaded sidecar carries the last Process
+  // timings and provider, so a caller that passes no timing still gets them.
+  test('no timing supplied still records the last Process timing and provider', async () => {
     const result = await publishExportProvenance({
       outputBlob: new Blob(['o']), filename: 'o.wav', appVersion: '1', deliver: () => {},
     });
-    expect(result.record.processing).not.toHaveProperty('timing');
+    expect(result.record.processing.timing).toEqual(expect.objectContaining({
+      stagesMs: expect.any(Object),
+      providerVerified: expect.any(Boolean),
+    }));
+    for (const key of ['mlMs', 'pipelineMs', 'provider']) {
+      expect(result.record.processing.timing).toHaveProperty(key);
+    }
   });
 
   test('cancellation does not deliver a sidecar', async () => {

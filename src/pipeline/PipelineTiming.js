@@ -42,3 +42,21 @@ export function getTimings() {
   flush();
   return { ...globalThis.__vipStageTimings };
 }
+/**
+ * Snapshot of the last Process for export sidecars: stage timings (ms), the
+ * ML stage and whole pipeline in ms, and the effective ONNX Runtime provider.
+ * Always available; no debug flag.
+ * @returns {{ stagesMs: object, mlMs: number|null, pipelineMs: number|null, provider: string|null, providerVerified: boolean }}
+ */
+export function captureProcessTiming() {
+  const stagesMs = getTimings();
+  const ort = (typeof globalThis !== 'undefined' && globalThis.__vipOrtStatus) || null;
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    stagesMs,
+    mlMs: num(stagesMs.ml_isolation),
+    pipelineMs: num(stagesMs.pipeline),
+    provider: ort && typeof ort.provider === 'string' ? ort.provider : null,
+    providerVerified: ort?.providerVerified === true,
+  };
+}
