@@ -7063,37 +7063,71 @@ class VoiceIsolatePro {
       opts.onProgress?.(1);
       return;
     }
-    // ~11 kHz cutoff — speech stays clear, whistle/hiss ring dies.
-    const fc = 11000;
-    const x = Math.exp(-2 * Math.PI * fc / sr);
-    const a0 = 1 - x;
+    // Zero-phase 4th-order Butterworth low-pass at 15 kHz: the whistle/hiss
+    // ring above ~16 kHz dies, the speech band is untouched. The one-pole
+    // (~11 kHz) it replaces drooped and phase-shifted the speech band, so
+    // Removed (input − clean) carried a high-passed copy of the whole voice
+    // (−22 dB at 2 kHz; Removed STOI 0.86 on a real whisper, round 13).
+    // Forward + backward biquad passes and the slew pass all stream chunks.
+    const fc = Math.min(15000, sr * 0.45);
+    const K = Math.tan(Math.PI * fc / sr);
+    const sections = [0.5411961, 1.3065630].map((Q) => {
+      const n = 1 / (1 + K / Q + K * K);
+      const b0 = K * K * n;
+      return { b0, b1: 2 * b0, b2: b0, a1: 2 * (K * K - 1) * n, a2: (1 - K / Q + K * K) * n };
+    });
     const CHUNK = this._postMlChunkSamples();
     const signal = this._processAbortSignal();
     const chCount = channels.length;
+    const passes = 3;
     for (let ch = 0; ch < chCount; ch++) {
       const d = channels[ch];
       if (!d?.length) continue;
-      let y = 0;
-      let prev = 0;
-      await processInChunks({
-        total: d.length,
-        chunkSize: CHUNK,
-        signal,
-        onProgress: (r) => {
-          const overall = (ch + r) / chCount;
-          opts.onProgress?.(overall);
-        },
-        runChunk: (start, end) => {
-          for (let i = start; i < end; i++) {
-            y = a0 * d[i] + x * y;
-            const delta = y - prev;
-            const limited = Math.max(-0.08, Math.min(0.08, delta));
-            const out = prev + limited * 0.35 + (y - prev) * 0.65;
-            prev = out;
-            d[i] = out;
-          }
-        },
-      });
+      const total = d.length;
+      for (let pass = 0; pass < passes; pass++) {
+        const backward = pass === 1;
+        // Steady-state start (unit DC gain) at the pass's first sample: no
+        // edge transient, like filtfilt's initial conditions.
+        const u = backward ? d[total - 1] : d[0];
+        const z = sections.map((c) => [u * (1 - c.b0), u * (c.b2 - c.a2)]);
+        let prev = 0;
+        await processInChunks({
+          total,
+          chunkSize: CHUNK,
+          signal,
+          onProgress: (r) => {
+            const overall = (ch + (pass + r) / passes) / chCount;
+            opts.onProgress?.(overall);
+          },
+          runChunk: (start, end) => {
+            if (pass === 2) {
+              for (let i = start; i < end; i++) {
+                const delta = d[i] - prev;
+                const limited = Math.max(-0.08, Math.min(0.08, delta));
+                const out = prev + limited * 0.35 + delta * 0.65;
+                prev = out;
+                d[i] = out;
+              }
+              return;
+            }
+            const lo = backward ? total - end : start;
+            const hi = backward ? total - start : end;
+            for (let j = 0; j < hi - lo; j++) {
+              const i = backward ? hi - 1 - j : lo + j;
+              let v = d[i];
+              for (let s = 0; s < sections.length; s++) {
+                const c = sections[s];
+                const zz = z[s];
+                const y = c.b0 * v + zz[0];
+                zz[0] = c.b1 * v - c.a1 * y + zz[1];
+                zz[1] = c.b2 * v - c.a2 * y;
+                v = y;
+              }
+              d[i] = v;
+            }
+          },
+        });
+      }
       await yieldToBrowser();
     }
     opts.onProgress?.(1);

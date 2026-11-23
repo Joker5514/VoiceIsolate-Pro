@@ -311,6 +311,14 @@ describe('landing / enhance / engineer identity on corpus fixtures', () => {
     return engineerConfig({ ...vals, ...(GOLDEN_PRESET_VALUES[name] || {}) });
   }
 
+  // The round-13 whisper-path reroute (Removed-leak fix) deliberately changes
+  // whisper-mode output, so the goldens are compared with it switched off:
+  // every other stage stays pinned bit-for-bit to main. The reroute itself is
+  // covered by tests/whisper-removed-leak-r13.test.js and by the check below.
+  function withoutReroute(cfg) {
+    return { ...cfg, spectral: { ...(cfg?.spectral || {}), whisperReroute: false } };
+  }
+
   function loadPair(fid, pid) {
     const input = readF32(path.join(FIX, `${fid}.in.f32`));
     const clean = readF32(path.join(FIX, `${fid}.${pid}.clean.f32`));
@@ -341,7 +349,7 @@ describe('landing / enhance / engineer identity on corpus fixtures', () => {
     for (const fid of FILES) {
       test(`${name} is bit-identical (max abs 0) on ${fid}`, async () => {
         const { input, clean, noise } = loadPair(fid, pid);
-        const processingConfig = await presetConfig(name);
+        const processingConfig = withoutReroute(await presetConfig(name));
         const res = await worker.separate([input], { modelIds: ['bsrnn_vocals'], processingConfig });
         const mc = maxAbs(res.clean[0], clean);
         const mn = maxAbs(res.noise[0], noise);
@@ -350,4 +358,15 @@ describe('landing / enhance / engineer identity on corpus fixtures', () => {
       });
     }
   }
+
+  test('Whisper Boost with the reroute on differs from the golden and keeps clean + noise = input', async () => {
+    const fid = 'syn-whisper-white-10db';
+    const { input, clean } = loadPair(fid, 'Whisper-Boost');
+    const processingConfig = await presetConfig('Whisper Boost');
+    const res = await worker.separate([input], { modelIds: ['bsrnn_vocals'], processingConfig });
+    expect(maxAbs(res.clean[0], clean)).toBeGreaterThan(0);
+    let m = 0;
+    for (let i = 0; i < input.length; i++) m = Math.max(m, Math.abs(res.clean[0][i] + res.noise[0][i] - input[i]));
+    expect(m).toBeLessThan(1e-6);
+  });
 });
