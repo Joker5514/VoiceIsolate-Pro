@@ -15,7 +15,7 @@ import { ingestFile, assertIngestible, isDesktopShell, pickAudioFile } from '/sr
 import { runChunkedExtraction } from '/src/pipeline/ChunkedExtraction.js';
 import { formatIngestionPlan, resolveIngestionPlan } from '/src/core/IngestionBudget.js';
 import { describeTransferredChannels, ingestDecodedDetail } from '/src/core/DecodedAudio.js';
-import { explainProviderReady, planStartupProviderFailure } from '/src/core/ProviderHandshake.js';
+import { explainProviderReady, planStartupProviderFailure, providerLogLevel } from '/src/core/ProviderHandshake.js';
 import { separateStems } from '/src/pipeline/StemSeparation.js';
 import { createMediaTransport } from '/src/presentation/MediaTransport.js';
 import { mountExplainBullets, foldParagraph, INGESTION_EXPLAINS } from '/src/presentation/ExplainBullets.js';
@@ -1096,8 +1096,12 @@ function getWorker() {
             backendLine.textContent = `Backend: ${label} · Fast/Balanced/Max via model chain · 100% local`;
             backendLine.dataset.backend = verified ? String(provider.backend) : 'unverified';
           }
-          vipLog(verified && provider.backend === 'webgpu' ? 'info' : 'warn', 'worker.ready', provider);
-          vipLog(verified ? 'info' : 'warn', 'ingest.provider.verify', provider);
+          // Pre-session "unverified" is pending (info). A verified WASM
+          // session on a GPU-candidate device is still flagged as a fallback.
+          const verifyLevel = providerLogLevel(provider, { ...msg, type: 'ready' });
+          const readyLevel = verified && provider.backend !== 'webgpu' && provider.gpuCandidate ? 'warn' : verifyLevel;
+          vipLog(readyLevel, 'worker.ready', provider);
+          vipLog(verifyLevel, 'ingest.provider.verify', provider);
         } catch (_) { /* ignore */ }
         quickClean.setBackend(verified && provider.backend === 'webgpu' ? 'webgpu' : 'wasm');
         void refreshPreflight();
@@ -1105,7 +1109,7 @@ function getWorker() {
       }
       case 'ort-provider': {
         const provider = explainProviderReady({ ...msg, type: 'ort-provider' });
-        vipLog(provider.providerVerified ? 'info' : 'warn', 'ingest.provider.verify', provider);
+        vipLog(providerLogLevel(provider, { ...msg, type: 'ort-provider' }), 'ingest.provider.verify', provider);
         if (provider.providerVerified !== true) break;
         const backend = provider.backend === 'webgpu' ? 'webgpu' : 'wasm';
         const label = backend === 'webgpu' ? 'WebGPU' : 'WASM';

@@ -67,6 +67,22 @@ export function explainProviderReady(msg = {}) {
 }
 
 /**
+ * Live-log level for a provider status. Before any InferenceSession exists
+ * the provider is unverified by definition (#939): that is pending, not a
+ * fault, so it is info. A session-backed status that is still unverified is
+ * a warning; an init failure is an error.
+ * @param {ReturnType<typeof explainProviderReady>} provider
+ * @param {object} [msg] the worker message it was explained from
+ * @returns {'info'|'warn'|'error'}
+ */
+export function providerLogLevel(provider, msg = {}) {
+  if (!provider || provider.ready === false) return 'error';
+  if (provider.providerVerified === true) return 'info';
+  const sessionBacked = msg.type === 'ort-provider' || msg.sessionCreated === true;
+  return sessionBacked ? 'warn' : 'info';
+}
+
+/**
  * Eager startup failed before any Process request. The dead worker has to be
  * dropped. Leaving it allocated keeps the backend probing and disables Process.
  * An error that belongs to a request returns null so that path can clean itself up.
