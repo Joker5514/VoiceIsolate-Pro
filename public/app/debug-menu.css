@@ -110,7 +110,10 @@
   font-family: var(--fm);
   font-size: 11px;
   color: #b0b8c8;
-  z-index: 9000;
+  /* Above #toastRegion (9999, toasts take pointer events) and
+     #processingOverlay (99999): at 9000 both covered Run Audit while
+     processing / after Process. Stacking only; no layout change. */
+  z-index: 100000;
   display: flex;
   flex-direction: column;
   overflow: hidden;

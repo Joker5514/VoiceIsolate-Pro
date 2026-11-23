@@ -240,12 +240,14 @@ function fmtBytes(b) {
   if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
   return (b / 1048576).toFixed(1) + ' MB';
 }
-function showToast(msg) {
+let _toastTimer = null;
+function showToast(msg, ms = 1800) {
   const t = document.getElementById('dbgToast');
   if (!t) return;
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 1800);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 /* ── Worker reachability (one-shot at open) ──────────────────────────── */
@@ -564,10 +566,21 @@ function initButtons() {
     closePanel();
   });
 
-  document.getElementById('dbgRunAudit').addEventListener('click', () => {
+  document.getElementById('dbgRunAudit').addEventListener('click', async () => {
     if (typeof window.VIP_runAudit === 'function') {
-      window.VIP_runAudit();
-      showToast('Audit ran — check console');
+      // The audit is async; show its score (e.g. "Audit 20/20 pass"), not
+      // "check console" before it has even finished.
+      showToast('Audit running…', 30000);
+      try {
+        const r = await window.VIP_runAudit();
+        const total = Array.isArray(r?.results) ? r.results.length
+          : (r?.passCount || 0) + (r?.failCount || 0) + (r?.warnCount || 0);
+        const score = `Audit ${r?.passCount ?? 0}/${total} pass · ${r?.failCount ?? 0} fail · ${r?.warnCount ?? 0} warn`;
+        document.getElementById('dbgRunAudit').title = score;
+        showToast(score, 8000);
+      } catch (err) {
+        showToast(`Audit failed: ${err?.message || err}`, 8000);
+      }
     } else {
       showToast('VIP_runAudit not available');
     }
