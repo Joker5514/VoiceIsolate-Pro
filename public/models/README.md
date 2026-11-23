@@ -6,9 +6,11 @@
 > The Hugging Face links below are third-party source references and are never
 > used as browser runtime fallback URLs.
 >
-> These three files are now committed in this directory and served as
-> same-origin static assets. Production no longer rewrites `/models/*` to
-> Vercel Blob.
+> These three files are committed in this directory and served as same-origin
+> static assets. Production (from PR #958, commit `b561794`) no longer rewrites
+> `/models/*` or `/app/models/*` to Vercel Blob. `server.js` still proxies
+> **unshipped** `/models/*.onnx` and `/app/models/*.onnx` files to Blob when
+> the local file is missing (a blocked store will 403 those optional files).
 
 Place the following ONNX model files at these **exact** URL paths (served from `public/models/`):
 
@@ -61,8 +63,8 @@ try {
 - **Repo:** [onnx-community/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM) (community ONNX export)
 - **Alternate:** [k2-fsa/sherpa-onnx model collection](https://github.com/k2-fsa/sherpa-onnx) — obtain a compatible ONNX ResNet34 256-dim export; access conditions are defined upstream
 - **Place as:** `/models/wespeaker-resnet34.onnx`
-- **Input:** `float32 [1, num_frames, 80]` log-mel spectrogram (25 ms window, 10 ms hop @ 16 kHz)
-- **Output:** `float32 [1, 256]` speaker embedding
+- **Input:** `input_features` — `float32 [1, num_frames, 80]` log-mel spectrogram (Hamming window, 25 ms window, 10 ms hop @ 16 kHz, 80 mel bins; pad to at least 9 frames)
+- **Output:** `last_hidden_state` — `float32 [1, 256]` speaker embedding
 
 ### 3. silero-vad.onnx
 
@@ -80,7 +82,7 @@ try {
 |------|--------|---------|
 | `pyannote-segmentation-3.0.onnx` | [onnx-community/pyannote-segmentation-3.0](https://huggingface.co/onnx-community/pyannote-segmentation-3.0) (upstream [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)) | MIT |
 | `wespeaker-resnet34.onnx` | [onnx-community/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM) | CC-BY-4.0 (attribution via this table) |
-| `silero-vad.onnx` | Copy of the shipped `/app/models/silero_vad.onnx` | Same as the isolation-model Silero VAD already in the repo |
+| `silero-vad.onnx` | Copy of the shipped `/app/models/silero_vad.onnx` (upstream [onnx-community/silero-vad](https://huggingface.co/onnx-community/silero-vad) / [snakers4/silero-vad](https://github.com/snakers4/silero-vad)) | MIT |
 
 Pinned SHA-256 (production gate in `tests/model-integrity.test.js`):
 
@@ -90,16 +92,11 @@ Pinned SHA-256 (production gate in `tests/model-integrity.test.js`):
 
 ## Local Setup
 
-```bash
-# From repo root — create public/models/ and place files:
-public/models/pyannote-segmentation-3.0.onnx
-public/models/wespeaker-resnet34.onnx
-public/models/silero-vad.onnx
-
-# Optional: symlink existing Silero VAD from the app bundle
-# Windows (PowerShell, run as admin if needed):
-# New-Item -ItemType HardLink -Path public/models/silero-vad.onnx -Target public/app/models/silero_vad.onnx
-```
+The three files above are already committed in this directory. A clean checkout
+is enough for production and for local `server.js` static serving. To restore
+them if they were deleted, run `pnpm models:diarization` from the repo root
+(that copies `silero-vad.onnx` from `public/app/models/silero_vad.onnx` and
+downloads the other two from the Hugging Face sources listed above).
 
 ---
 

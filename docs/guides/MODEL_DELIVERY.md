@@ -13,9 +13,11 @@ Browser
   -> browser cache / service worker cache where available
 ```
 
-There are no browser-facing fallback providers. The model loader only accepts
-same-origin `/app/models/*.onnx` paths, and `src/core/ModelManifest.js` is the
-canonical source for model filenames, sizes, and SHA-256 hashes.
+There are no browser-facing fallback providers. Isolation-model loaders accept
+same-origin `/app/models/*.onnx` paths (`src/core/ModelManifest.js`). The opt-in
+diarizer loads same-origin `/models/*.onnx` paths
+(`src/core/DiarizationModelManifest.js`). Those two manifests are the canonical
+sources for filenames, sizes, and SHA-256 hashes.
 
 ## Canonical Registry And Generated Projections
 
@@ -34,9 +36,10 @@ derive from the same canonical shipped entries. Historical training/provenance
 notes preserved from the old manifests are in `docs/MODEL_PROVENANCE.md`; they
 are publisher statements, not independently re-audited guarantees.
 
-The currently shipped ONNX files are committed under `public/app/models/` and
-also served through the Vercel rewrite. Optional/unshipped research weights are
-not downloaded, bundled, or redistributed by the generator.
+The currently shipped isolation ONNX files are committed under
+`public/app/models/`. The three diarization models are committed under
+`public/models/`. Optional/unshipped research weights are not downloaded,
+bundled, or redistributed by the generator.
 
 ## Hugging Face model-card status
 
@@ -60,7 +63,11 @@ canonical shipped-model reference.
 
 ## Runtime Responsibilities
 
-- `src/core/ModelManifest.js` defines canonical model URLs and expected hashes.
+- `src/core/ModelManifest.js` defines canonical isolation-model URLs and hashes.
+- `src/core/DiarizationModelManifest.js` defines the three shipped diarization
+  models (`/models/*.onnx` URLs, sizes, and SHA-256). The Vercel build
+  validator hash-checks them so a truncated file fails the build. Opt-in
+  session load also verifies those pins before creating an ORT session.
 - `public/app/models-manifest.json` is a **generated packaging registry** — its
   `models` section is rebuilt from `ModelManifest.js` by
   `node scripts/sync-model-manifests.mjs` (verify with `--check`, enforced by
@@ -79,12 +86,14 @@ canonical shipped-model reference.
   HEAD presence is labelled unverified, never “ML active”.
 - `vercel.json` must not rewrite `/app/models/:filename` or `/models/:filename`
   to Vercel Blob. Those paths are served as committed static files so a blocked
-  Hobby Blob store cannot 403 required models. Remote delivery liveness is
-  checked only in the `--network` tier of `pnpm prod:verify` (`model-delivery`);
-  the static tier verifies shipped bytes locally against `ModelManifest.js`
-  hashes (isolation models) and the pinned diarization files under
-  `public/models/`. Optional/unshipped entries (demucs, ecapa_tdnn, research
-  models) never block the gate and are never claimed as passed.
+  Hobby Blob store cannot 403 required models. The static `model-delivery`
+  step of `pnpm prod:verify` is offline: it hash-checks isolation models from
+  `ModelManifest.js` and diarization models from `DiarizationModelManifest.js`.
+  Live URL delivery is the `model-delivery-remote` step
+  (`pnpm models:validate:urls -- --remote`, also run by
+  `pnpm prod:verify -- --network`). Optional/unshipped entries (demucs,
+  ecapa_tdnn, research models) never block the gate and are never claimed as
+  passed.
 
 ## Privacy Boundary
 
@@ -98,10 +107,12 @@ canonical shipped-model reference.
 1. Commit the `.onnx` object under `public/app/models/` (isolation) or
    `public/models/` (diarization). Do not add a Vercel Blob rewrite for it.
 2. Add or update the matching entry in `src/core/ModelManifest.js` for
-   isolation models, or the pinned hashes in `tests/model-integrity.test.js`
-   for the three diarization files.
+   isolation models, or `src/core/DiarizationModelManifest.js` for the three
+   diarization files (keep isolation-only projections scoped to isolation
+   entries).
 3. Include the expected SHA-256 when the model is required for production.
-4. Keep isolation-model browser URLs under `/app/models/*.onnx`.
+4. Keep isolation-model browser URLs under `/app/models/*.onnx` and
+   diarization URLs under `/models/*.onnx`.
 5. Run `pnpm models:manifests`, `pnpm models:validate`,
    `pnpm models:validate:urls`, `pnpm worklets:verify`, and the model-loading
    tests before shipping.

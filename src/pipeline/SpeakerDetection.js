@@ -6,6 +6,10 @@
 import { diarizeChannel, speakerLabel, summarizeSpeakers } from '../core/diarization.js';
 import { copyFloat32Channel, createAbortableYield } from './ui-yield.js';
 import { __resetOrtSessionsForTests, createOrtSession, loadOrtRuntime } from './OrtRuntime.js';
+import {
+  DIARIZATION_MODEL_MANIFEST,
+  verifyDiarizationModelBytes,
+} from '../core/DiarizationModelManifest.js';
 
 const MODEL_URLS = Object.freeze({
   segmentation: '/models/pyannote-segmentation-3.0.onnx',
@@ -123,14 +127,32 @@ function diag(level, event, detail) {
   try { globalThis.VIP_liveDiagnostics?.log?.(level, event, detail); } catch { /* ignore */ }
 }
 
+async function loadVerifiedDiarizationSource(entry, url) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  if (typeof res.arrayBuffer !== 'function') {
+    throw new Error('model GET response has no arrayBuffer()');
+  }
+  const bytes = await res.arrayBuffer();
+  if (entry) await verifyDiarizationModelBytes(entry, bytes);
+  return bytes;
+}
+
 async function createNamedSession(role, cacheKey) {
-  const url = MODEL_URLS[role];
+  const entry = DIARIZATION_MODEL_MANIFEST[role];
+  const url = entry?.url || MODEL_URLS[role];
   try {
-    return await createOrtSession(url, { cacheKey, quietFailure: true });
+    const source = await loadVerifiedDiarizationSource(entry, url);
+    return await createOrtSession(source, { cacheKey, quietFailure: true });
   } catch (cause) {
-    const file = url.slice(url.lastIndexOf('/') + 1);
+    const file = (entry?.file) || url.slice(url.lastIndexOf('/') + 1);
+    const code = cause?.code === 'model-integrity' ? 'model-integrity' : 'model-load-failed';
     const err = new Error(`${file} (${url}): ${cause?.message || cause}`);
-    err.code = 'model-load-failed';
+    err.code = code;
     err.models = [{ role, file, url, verdict: 'load-failed', detail: cause?.message || String(cause) }];
     throw err;
   }
@@ -357,6 +379,7 @@ export async function detectSpeakers(clean, sampleRate, { signal = null } = {}) 
       models: onnxErr?.models || null,
       cached: onnxErr?.cached === true,
     });
+    console.warn('[VIP][SpeakerDetection] Falling back to k-means diarization because the ONNX path failed:', onnxReason);
   }
 
   try {

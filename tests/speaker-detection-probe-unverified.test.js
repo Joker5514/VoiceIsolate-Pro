@@ -6,13 +6,10 @@
  */
 'use strict';
 
+const { diarizationFetchMock, headResponse } = require('./helpers/diarization-fetch.js');
+
 let mod;
 const realFetch = globalThis.fetch;
-
-function headResponse(status, headers = {}) {
-  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v)]));
-  return { ok: status >= 200 && status < 300, status, headers: { get: (n) => lower[n.toLowerCase()] ?? null } };
-}
 function tone() {
   const s = new Float32Array(48000);
   for (let i = 0; i < s.length; i++) s[i] = 0.25 * Math.sin((2 * Math.PI * 180 * i) / 48000);
@@ -61,10 +58,39 @@ describe('non-2xx HEAD that is not 404/410', () => {
 
   test('opt-in: a refused HEAD does not block the load; the GET decides', async () => {
     globalThis.VIP_ONNX_DIARIZATION = true;
-    globalThis.fetch = jest.fn(async () => headResponse(403, {}));
+    globalThis.fetch = jest.fn(diarizationFetchMock({ headStatus: 403 }));
     const create = jest.fn(async () => ({ release: async () => {} }));
     globalThis.ort = { InferenceSession: { create }, env: { wasm: {} } };
     await mod.detectSpeakers([tone()], 48000);
     expect(create).toHaveBeenCalledTimes(3);
+    const heads = globalThis.fetch.mock.calls.filter(([, init]) => String(init?.method || '').toUpperCase() === 'HEAD');
+    const gets = globalThis.fetch.mock.calls.filter(([, init]) => String(init?.method || 'GET').toUpperCase() !== 'HEAD');
+    expect(gets).toHaveLength(3);
+    expect(create.mock.calls.every(([src]) => src instanceof ArrayBuffer && src.byteLength > 100000)).toBe(true);
+    // HEAD may still be issued by the probe, but a 403 there must not prevent GET.
+    void heads;
+  }, 15000);
+
+  test('opt-in: a truncated GET fails hash verification and falls back to k-means with a warning', async () => {
+    globalThis.VIP_ONNX_DIARIZATION = true;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = jest.fn(async (url, init = {}) => {
+      const method = String(init.method || 'GET').toUpperCase();
+      if (method === 'HEAD') return headResponse(200, { 'content-length': 26535549 });
+      const stub = new Uint8Array(1024);
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => stub.buffer,
+        headers: { get: () => '1024' },
+      };
+    });
+    const create = jest.fn();
+    globalThis.ort = { InferenceSession: { create }, env: { wasm: {} } };
+    const result = await mod.detectSpeakers([tone()], 48000);
+    expect(create).not.toHaveBeenCalled();
+    expect(result.method).toBe('kmeans');
+    expect(String(result.reason || '') + warn.mock.calls.map((c) => c.join(' ')).join('\n')).toMatch(/expected size|model-integrity|Falling back to k-means/i);
+    warn.mockRestore();
   }, 15000);
 });

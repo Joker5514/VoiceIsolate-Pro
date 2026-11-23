@@ -10,17 +10,13 @@
  */
 'use strict';
 
+const {
+  diarizationFetchMock,
+  headResponse,
+} = require('./helpers/diarization-fetch.js');
+
 let mod;
 const realFetch = globalThis.fetch;
-
-function headResponse(status, headers = {}) {
-  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v)]));
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    headers: { get: (name) => (name.toLowerCase() in lower ? lower[name.toLowerCase()] : null) },
-  };
-}
 
 function tone() {
   const samples = new Float32Array(48000);
@@ -112,14 +108,19 @@ describe('detectSpeakers with the probe', () => {
 
   test('opt-in: unsized HEAD responses go on to create the three sessions', async () => {
     globalThis.VIP_ONNX_DIARIZATION = true;
-    globalThis.fetch = jest.fn(async () => headResponse(200, { 'content-encoding': 'br' }));
+    globalThis.fetch = jest.fn(diarizationFetchMock({ headStatus: 200, headHeaders: { 'content-encoding': 'br' } }));
     const create = jest.fn(async () => ({ release: async () => {} }));
     globalThis.ort = { InferenceSession: { create }, env: { wasm: {} } };
     const diag = [];
     globalThis.VIP_liveDiagnostics = { log: (level, event, detail) => diag.push({ level, event, detail }) };
     const result = await mod.detectSpeakers([tone()], 48000);
-    const urls = create.mock.calls.map(([src]) => src).sort();
-    expect(urls).toEqual([
+    const sizes = create.mock.calls.map(([src]) => src.byteLength).sort((a, b) => a - b);
+    expect(sizes).toEqual([2327524, 5986908, 26535549]);
+    const gets = globalThis.fetch.mock.calls
+      .filter(([, init]) => String(init?.method || 'GET').toUpperCase() !== 'HEAD')
+      .map(([url]) => url)
+      .sort();
+    expect(gets).toEqual([
       '/models/pyannote-segmentation-3.0.onnx',
       '/models/silero-vad.onnx',
       '/models/wespeaker-resnet34.onnx',
@@ -154,9 +155,10 @@ describe('detectSpeakers with the probe', () => {
 
   test('a model that fails to load is named, and is not re-downloaded on every pass', async () => {
     globalThis.VIP_ONNX_DIARIZATION = true;
-    globalThis.fetch = jest.fn(async () => headResponse(200, {}));
+    globalThis.fetch = jest.fn(diarizationFetchMock({ headStatus: 200 }));
     const create = jest.fn(async (src) => {
-      if (String(src).includes('pyannote')) throw new Error('protobuf parsing failed');
+      // pyannote-segmentation-3.0.onnx is 5,986,908 bytes
+      if (src && src.byteLength === 5986908) throw new Error('protobuf parsing failed');
       return { release: async () => {} };
     });
     globalThis.ort = { InferenceSession: { create }, env: { wasm: {} } };
@@ -192,7 +194,7 @@ describe('default path with missing models', () => {
 
   test('opt-in runs are serialised so two passes never share a running session', async () => {
     globalThis.VIP_ONNX_DIARIZATION = true;
-    globalThis.fetch = jest.fn(async () => headResponse(200, {}));
+    globalThis.fetch = jest.fn(diarizationFetchMock({ headStatus: 200 }));
     let active = 0;
     let maxActive = 0;
     const create = jest.fn(async () => {
@@ -208,4 +210,17 @@ describe('default path with missing models', () => {
     expect(maxActive).toBeLessThanOrEqual(3);
     expect(create).toHaveBeenCalledTimes(3);
   }, 20000);
+});
+
+describe('k-means fallback warning', () => {
+  test('logs a visible warning when detectSpeakers falls back to k-means', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = jest.fn(async () => headResponse(200, { 'content-encoding': 'br' }));
+    globalThis.ort = { InferenceSession: { create: jest.fn() }, env: { wasm: {} } };
+    const result = await mod.detectSpeakers([tone()], 48000);
+    expect(result.method).toBe('kmeans');
+    const messages = warn.mock.calls.map((c) => c.map(String).join(' '));
+    expect(messages.some((m) => /Falling back to k-means diarization because the ONNX path failed/i.test(m))).toBe(true);
+    warn.mockRestore();
+  }, 15000);
 });

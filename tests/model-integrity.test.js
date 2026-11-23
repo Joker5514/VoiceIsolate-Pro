@@ -261,5 +261,64 @@ describe('model integrity validator', () => {
     expect(crypto.createHash('sha256').update(sileroApp).digest('hex')).toBe(
       crypto.createHash('sha256').update(sileroDiar).digest('hex'),
     );
+    const full = integrity.validateModelIntegrity();
+    expect(full.ok).toBe(true);
+    expect(full.checked.filter((c) => c.role === 'diarization').map((c) => c.id).sort()).toEqual([
+      'diarization:embedding',
+      'diarization:segmentation',
+      'diarization:vad',
+    ].sort());
+  });
+
+  test('a truncated diarization model fails the build validator', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-diar-trunc-'));
+    const src = path.join(__dirname, '..', 'public', 'models', 'wespeaker-resnet34.onnx');
+    writeOnnx(root, 'public/models/wespeaker-resnet34.onnx', fs.readFileSync(src).subarray(0, 1024));
+    const diarizationManifest = {
+      embedding: {
+        id: 'embedding',
+        file: 'wespeaker-resnet34.onnx',
+        url: '/models/wespeaker-resnet34.onnx',
+        sizeBytes: 26535549,
+        sha256: '3955447b0499dc9e0a4541a895df08b03c69098eba4e56c02b5603e9f7f4fcbb',
+      },
+    };
+    const bytes = Buffer.from('ok-model');
+    const entry = fixtureEntry('probe', bytes);
+    writeOnnx(root, 'public/app/models/probe.onnx', bytes);
+    const result = integrity.validateModelIntegrity({
+      root,
+      manifest: { probe: entry },
+      diarizationManifest,
+      vercelJson: null,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/diarization:embedding/);
+    expect(result.errors.join('\n')).toMatch(/expected size 26535549/);
+    expect(result.errors.join('\n')).toMatch(/actual size 1024/);
+  });
+
+  test('a missing diarization model fails the build validator', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-diar-missing-'));
+    const bytes = Buffer.from('ok-model');
+    const entry = fixtureEntry('probe', bytes);
+    writeOnnx(root, 'public/app/models/probe.onnx', bytes);
+    const result = integrity.validateModelIntegrity({
+      root,
+      manifest: { probe: entry },
+      diarizationManifest: {
+        segmentation: {
+          id: 'segmentation',
+          file: 'pyannote-segmentation-3.0.onnx',
+          url: '/models/pyannote-segmentation-3.0.onnx',
+          sizeBytes: 5986908,
+          sha256: '057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25',
+        },
+      },
+      vercelJson: null,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/diarization:segmentation/);
+    expect(result.errors.join('\n')).toMatch(/actual size missing/);
   });
 });

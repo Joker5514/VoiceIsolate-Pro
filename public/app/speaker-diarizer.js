@@ -26,6 +26,9 @@ const MEL_HOP_SAMPLES = 160;    // 10 ms @ 16 kHz
 const MEL_FFT_SIZE = 512;
 const MEL_FMIN = 0;
 const MEL_FMAX = 8000;
+// WeSpeaker HF preprocessor (onnx-community/wespeaker-voxceleb-resnet34-LM):
+// window_type=hamming, min_num_frames=9, 80 mel bins, 25/10 ms @ 16 kHz.
+const MIN_MEL_FRAMES = 9;
 
 const SPEAKER_COLORS = Object.freeze([
   '#4f98a3', '#a86fdf', '#fdab43', '#6daa45', '#dd6974', '#5591c7',
@@ -124,16 +127,16 @@ function buildMelFilterbank(sr, nFft, nMels, fmin, fmax) {
 }
 
 const _melBank = buildMelFilterbank(ANALYSIS_SR, MEL_FFT_SIZE, MEL_BANDS, MEL_FMIN, MEL_FMAX);
-const _hannWin = (() => {
+const _hammingWin = (() => {
   const w = new Float32Array(MEL_WIN_SAMPLES);
   for (let i = 0; i < MEL_WIN_SAMPLES; i++) {
-    w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (MEL_WIN_SAMPLES - 1)));
+    w[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (MEL_WIN_SAMPLES - 1));
   }
   return w;
 })();
 
 /**
- * Compute log-mel spectrogram for WeSpeaker input.
+ * Compute log-mel spectrogram for WeSpeaker input (Hamming, 80 bins, 25/10 ms).
  * @param {Float32Array} pcm  mono @ 16 kHz
  * @returns {Float32Array[]}  array of [80] frames
  */
@@ -144,7 +147,7 @@ function computeLogMelFrames(pcm) {
   const scratch = new Float32Array(MEL_WIN_SAMPLES);
   for (let f = 0; f < nFrames; f++) {
     const off = f * MEL_HOP_SAMPLES;
-    for (let i = 0; i < MEL_WIN_SAMPLES; i++) scratch[i] = pcm[off + i] * _hannWin[i];
+    for (let i = 0; i < MEL_WIN_SAMPLES; i++) scratch[i] = pcm[off + i] * _hammingWin[i];
     const mag = magnitudeSpectrum(scratch, MEL_FFT_SIZE);
     const mel = new Float32Array(MEL_BANDS);
     for (let m = 0; m < MEL_BANDS; m++) {
@@ -224,6 +227,43 @@ function getOrt() {
     throw new Error('[SpeakerDiarizer] onnxruntime-web (ort) is not loaded. Use /lib/ort.min.js v1.25.1.');
   }
   return ort;
+}
+
+/**
+ * Bind a tensor to the session's first declared input. Hardcoded names
+ * (`input`, `feats`) miss the shipped WeSpeaker graph (`input_features`).
+ * @param {{ inputNames?: string[] }} session
+ * @param {object} tensor
+ */
+export function sessionFeed(session, tensor) {
+  const name = session?.inputNames?.[0];
+  if (!name || typeof name !== 'string') {
+    throw new Error('[SpeakerDiarizer] ONNX session is missing inputNames[0]');
+  }
+  return { [name]: tensor };
+}
+
+/**
+ * Read the session's first declared output, falling back to the sole result key.
+ * @param {{ outputNames?: string[] }} session
+ * @param {object} result
+ */
+export function sessionOutput(session, result) {
+  const name = session?.outputNames?.[0];
+  if (name && result?.[name]) return result[name];
+  const keys = result ? Object.keys(result) : [];
+  if (!keys.length) {
+    throw new Error('[SpeakerDiarizer] ONNX session returned no outputs');
+  }
+  return result[keys[0]];
+}
+
+function padMelFrames(frames, minFrames) {
+  if (frames.length >= minFrames) return frames;
+  const out = frames.slice();
+  const last = out.length ? out[out.length - 1] : new Float32Array(MEL_BANDS);
+  while (out.length < minFrames) out.push(new Float32Array(last));
+  return out;
 }
 
 // ─── SpeakerDiarizer ───────────────────────────────────────────────────────
@@ -366,15 +406,8 @@ export class SpeakerDiarizer {
     const ort = getOrt();
     const seg = pcm.subarray(start, end);
     const input = new ort.Tensor('float32', seg, [1, 1, seg.length]);
-    const feeds = { input_values: input };
-    let result;
-    try {
-      result = await this.segSession.run(feeds);
-    } catch {
-      result = await this.segSession.run({ input });
-    }
-    const logitsKey = result.logits ? 'logits' : Object.keys(result)[0];
-    const logits = result[logitsKey];
+    const result = await this.segSession.run(sessionFeed(this.segSession, input));
+    const logits = sessionOutput(this.segSession, result);
     const data = logits.data;
     const shape = logits.dims || logits.shape || [1, 0, 7];
     const numFrames = shape[1] || 0;
@@ -472,20 +505,14 @@ export class SpeakerDiarizer {
   async _runEmbedding(pcm, start, end) {
     const ort = getOrt();
     const slice = pcm.subarray(start, end);
-    const melFrames = computeLogMelFrames(slice);
+    const melFrames = padMelFrames(computeLogMelFrames(slice), MIN_MEL_FRAMES);
     if (!melFrames.length) return new Float32Array(256);
     const nFrames = melFrames.length;
     const flat = new Float32Array(nFrames * MEL_BANDS);
     for (let f = 0; f < nFrames; f++) flat.set(melFrames[f], f * MEL_BANDS);
     const input = new ort.Tensor('float32', flat, [1, nFrames, MEL_BANDS]);
-    let result;
-    try {
-      result = await this.embSession.run({ input });
-    } catch {
-      result = await this.embSession.run({ feats: input });
-    }
-    const outKey = result.embedding ? 'embedding' : result.embs ? 'embs' : Object.keys(result)[0];
-    const out = result[outKey];
+    const result = await this.embSession.run(sessionFeed(this.embSession, input));
+    const out = sessionOutput(this.embSession, result);
     return new Float32Array(out.data.slice(0, 256));
   }
 
@@ -604,5 +631,14 @@ export class SpeakerDiarizer {
     return mask;
   }
 }
+
+export {
+  MEL_BANDS,
+  MEL_WIN_SAMPLES,
+  MEL_HOP_SAMPLES,
+  MIN_MEL_FRAMES,
+  computeLogMelFrames,
+  padMelFrames,
+};
 
 export default SpeakerDiarizer;
