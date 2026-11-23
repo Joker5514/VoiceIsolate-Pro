@@ -295,6 +295,10 @@
     if (!fi.dataset.vipChangeBound && !fi.dataset.vipAppChangeBound) {
       fi.dataset.vipChangeBound = '1';
       fi.addEventListener('change', function (e) {
+        // app.js binds the canonical handler after this fallback may already
+        // be attached (this layer polls from DOMContentLoaded). Decide at
+        // event time, or every pick runs handleFile() twice.
+        if (fi.dataset.vipAppChangeBound === '1') return;
         var file = e.target.files && e.target.files[0];
         if (!file) return;
         var live = window._vipApp;
@@ -320,6 +324,7 @@
       });
       dropZone.addEventListener('drop', async function (e) {
         e.preventDefault();
+        if (dropZone.dataset.vipAppDropBound === '1') return;
         dropZone.classList.remove('drag-over', 'dragover', 'over');
         var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
         if (!file) return;
