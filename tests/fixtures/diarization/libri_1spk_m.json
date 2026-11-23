@@ -1,0 +1,28 @@
+{
+ "name": "libri_1spk_m",
+ "speakers": 1,
+ "turns": [
+  {
+   "speaker": "1272",
+   "start": 0.0,
+   "end": 6.0
+  },
+  {
+   "speaker": "1272",
+   "start": 6.4,
+   "end": 12.4
+  },
+  {
+   "speaker": "1272",
+   "start": 12.8,
+   "end": 18.8
+  },
+  {
+   "speaker": "1272",
+   "start": 19.2,
+   "end": 23.955
+  }
+ ],
+ "source": "LibriSpeech dev-clean (OpenSLR SLR31), speaker 1272, CC BY 4.0",
+ "seconds": 24.36
+}
