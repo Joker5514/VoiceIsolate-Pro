@@ -19,6 +19,7 @@ import {
   estimateStemPackBytes,
 } from './memory-limits.js';
 import { modelChainRevision } from '../ModelManifest.js';
+import { ANALYZER_VERSION } from '../FullAnalysis.js';
 
 const META_DB = 'vip-derived-cache';
 const META_VER = 1;
@@ -298,7 +299,12 @@ export async function loadAnalysisDurable(fileId) {
     if (!meta?.blobRef) return null;
     const blob = await readSourceBlob(meta.blobRef);
     if (!blob) return null;
-    return JSON.parse(await blob.text());
+    const parsed = JSON.parse(await blob.text());
+    // An analysis cached by another analyzer build is stale: restoring it
+    // showed pre-#950 hum/music readouts on files the current analyzer
+    // reads clean. Treat it as a miss so a fresh analysis runs (and saves).
+    if (!parsed || parsed.analyzerVersion !== ANALYZER_VERSION) return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -358,9 +364,28 @@ export function compactAnalysisForStorage(analysis) {
     'jointPlan',
     'platformProfile',
     'version',
+    // Restored readouts must match a fresh run: without these the hum class
+    // fell back to "~60 Hz" at hum-coverage severity and the audition layers
+    // to placeholder confidences.
+    'humProfile',
+    'confidenceScores',
+    'snrDb',
+    'reverbEstimate',
+    'transientSegments',
+    'reverbSegments',
+    'rms',
+    'peak',
+    'loudnessEstimate',
+    'globalNoiseProfile',
+    'roomEstimate',
+    'difficultSpeechRegions',
+    'speakerSegments',
+    'overlapRegions',
+    'detectedSources',
   ]);
+  base.analyzerVersion = ANALYZER_VERSION;
   // Clamp segment arrays
-  for (const k of ['speechSegments', 'whisperRegions', 'noiseSegments', 'musicSegments', 'humSegments', 'impulseRegions', 'recommendations']) {
+  for (const k of ['speechSegments', 'whisperRegions', 'noiseSegments', 'musicSegments', 'humSegments', 'impulseRegions', 'transientSegments', 'reverbSegments', 'difficultSpeechRegions', 'speakerSegments', 'overlapRegions', 'recommendations']) {
     if (Array.isArray(base[k]) && base[k].length > 500) {
       base[k] = base[k].slice(0, 500);
     }
