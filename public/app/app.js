@@ -2668,6 +2668,7 @@ class VoiceIsolatePro {
     // Mark the canonical handler so mobile-upload-fix does not attach a second
     // change listener and race a second handleFile() against this upload.
     if (d.fileInput?.dataset) d.fileInput.dataset.vipAppChangeBound = '1';
+    // The mobile compatibility layer must not run a duplicate drop handler.
     if (d.dropZone) {
       d.dropZone.addEventListener('dragover', e => { e.preventDefault(); d.dropZone.classList.add('drag-over'); });
       d.dropZone.addEventListener('dragleave', () => d.dropZone.classList.remove('drag-over'));
@@ -2676,7 +2677,6 @@ class VoiceIsolatePro {
         d.dropZone.classList.remove('drag-over');
         acceptUpload(e.dataTransfer?.files?.[0]);
       });
-      // The mobile compatibility layer must not register a duplicate drop handler.
       if (d.dropZone.dataset) d.dropZone.dataset.vipAppDropBound = '1';
     }
     // Engineer upload zone (id=uploadZone) also drops files.
@@ -2686,10 +2686,13 @@ class VoiceIsolatePro {
         d.uploadZone.classList.add('drag-over');
       });
       d.uploadZone.addEventListener('dragleave', () => d.uploadZone.classList.remove('drag-over'));
+      // Inside #dropZone the drop bubbles to that handler; ingesting here too
+      // ran handleFile() twice for one drop.
+      const nestedInDropZone = !!d.dropZone?.contains?.(d.uploadZone);
       d.uploadZone.addEventListener('drop', (e) => {
         e.preventDefault();
         d.uploadZone.classList.remove('drag-over');
-        acceptUpload(e.dataTransfer?.files?.[0]);
+        if (!nestedInDropZone) acceptUpload(e.dataTransfer?.files?.[0]);
       });
     }
     bind('clearFile', d.clearFile, 'click', () => { if (this.inputBuffer && !confirm('Are you sure you want to clear the current file? Unsaved processed audio will be lost.')) return; this._clearFile(); });
