@@ -37,7 +37,7 @@ describe('debug toolbar button', () => {
     expect(menu).toMatch(/setAttribute\('aria-label', 'Toggle live debug menu'\)/);
     expect(css).toMatch(/@media \(min-width: 769px\)/);
     expect(css).toMatch(/body\.v3 \.v3-nav,\s*body\.v3 \.v3-header__status\s*\{[^}]*flex:\s*0 0 auto/);
-    expect(css).toMatch(/body\.v3 #vip-debug-toggle\.vip-debug-toggle--landing \.vip-tool-label/);
+    expect(css).toMatch(/body\.v3 #vip-debug-toggle\.vip-debug-toggle--landing \.vip-tool-label\s*\{[^}]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/);
   });
 
   test('motion is transform and opacity on the shared curve, with a 44px mobile target', () => {

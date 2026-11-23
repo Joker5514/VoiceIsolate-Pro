@@ -9,8 +9,23 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
+const { resolveExecutable } = require('../scripts/lib/launch-chromium.cjs');
 
 const ROOT = path.join(__dirname, '..');
+
+function chromeBinary() {
+  const fromEnv = resolveExecutable();
+  if (fromEnv) return fromEnv;
+  const candidates = [
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ];
+  return candidates.find((file) => {
+    try { return fs.statSync(file).isFile(); } catch { return false; }
+  }) || null;
+}
 
 describe('landing header geometry', () => {
   let server;
@@ -45,10 +60,14 @@ describe('landing header geometry', () => {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     origin = `http://127.0.0.1:${server.address().port}`;
     const debugPort = 9600 + (server.address().port % 300);
-    chrome = spawn('/usr/bin/google-chrome-stable', [
+    const binary = chromeBinary();
+    if (!binary) throw new Error('No Chrome binary. Set VIP_CHROMIUM_PATH to the executable.');
+    let spawnError = null;
+    chrome = spawn(binary, [
       '--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage',
       `--remote-debugging-port=${debugPort}`, 'about:blank',
     ], { stdio: 'ignore' });
+    chrome.on('error', (err) => { spawnError = err; });
     let version;
     for (let i = 0; i < 50; i += 1) {
       try {
@@ -60,7 +79,8 @@ describe('landing header geometry', () => {
       } catch { /* chrome is still booting */ }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    if (!version) throw new Error('headless Chrome did not open a debug port');
+    if (spawnError) throw new Error(`Chrome failed to start (${binary}): ${spawnError.message}`);
+    if (!version) throw new Error(`headless Chrome did not open a debug port (${binary})`);
     const ws = new WebSocket(version.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
       ws.addEventListener('open', resolve);
