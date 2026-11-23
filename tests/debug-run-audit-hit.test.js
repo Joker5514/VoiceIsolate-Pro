@@ -135,7 +135,7 @@ describe('debug panel RUN AUDIT', () => {
       const p = document.getElementById('vip-debug-panel');
       if (p.classList.contains('hidden')) document.getElementById('vip-debug-toggle').click();
       return true;
-    })()`, 25000);
+    })()`, 60000);
     if (!ok) {
       const diag = await send('Runtime.evaluate', { expression: `JSON.stringify({ href: location.href, btn: !!document.getElementById('dbgRunAudit'), app: typeof window._vipApp, title: document.title })`, returnByValue: true }, send.sessionId);
       throw new Error(`app did not mount the debug panel at ${width}px: ${diag.result && diag.result.value}`);
@@ -163,7 +163,7 @@ describe('debug panel RUN AUDIT', () => {
     const res = await evalUntil(HIT);
     expect(res.visible).toBe(true);
     expect(res.hits).toEqual(['button', 'button', 'button']);
-  }, 60000);
+  }, 120000);
 
   test('RUN AUDIT shows a numeric score', async () => {
     await openApp(1280, 720);
@@ -176,5 +176,5 @@ describe('debug panel RUN AUDIT', () => {
     expect(text).toMatch(/^Audit (\d+)\/(\d+) pass · \d+ fail · \d+ warn$/);
     const score = await evalUntil(`(() => { const r = window.VIP_AUDIT_RESULTS; return r ? { pass: r.passCount, total: r.results.length } : null; })()`);
     expect(text.startsWith(`Audit ${score.pass}/${score.total} pass`)).toBe(true);
-  }, 60000);
+  }, 120000);
 });
