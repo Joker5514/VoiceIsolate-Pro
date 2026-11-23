@@ -93,7 +93,7 @@
 /* ── Panel ── */
 #vip-debug-panel {
   position: fixed;
-  top: 52px;
+  top: calc(var(--vip-hdr-h, 52px) + 8px);
   right: 10px;
   width: 440px;
   /* Keep the footer, including Run Audit, above the fixed transport dock
@@ -478,6 +478,22 @@
 #vip-diag-toggle.vip-debug-toggle--landing {
   align-self: center;
   margin: 0;
+}
+@media (min-width: 769px) and (max-width: 880px) {
+  /* One row does not fit brand + section nav + the toolbar buttons here.
+     Wrap the link cluster onto its own row so "03 Engineer" stays on screen. */
+  body.v3 .v3-header {
+    height: auto;
+    min-height: 52px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  body.v3 .v3-header__links {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    border-left: 0;
+    padding-left: 0;
+  }
 }
 @media (min-width: 769px) {
   body.v3 .v3-nav,

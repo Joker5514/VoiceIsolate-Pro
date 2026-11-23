@@ -161,7 +161,7 @@ describe('landing header geometry', () => {
     return data;
   }
 
-  test.each([1024, 1180, 1280, 1440])('no header link is clipped at %ipx', async (width) => {
+  test.each([769, 1024, 1180, 1280, 1440])('no header link is clipped at %ipx', async (width) => {
     const data = await measure(width);
     expect(data.header.scroll).toBeLessThanOrEqual(data.header.client + 1);
     expect(data.nav.scroll).toBeLessThanOrEqual(data.nav.client + 1);
@@ -195,5 +195,45 @@ describe('landing header geometry', () => {
     for (const link of data.links) {
       expect(link.scroll).toBeLessThanOrEqual(link.client + 1);
     }
+  }, 20000);
+
+  test('a second click on DBG still reaches the toggle when the header wraps', async () => {
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
+    }, send.sessionId);
+    await send('Page.navigate', { url: `${origin}/` }, send.sessionId);
+    const expr = `(() => {
+      const btn = document.getElementById('vip-debug-toggle');
+      const panel = document.getElementById('vip-debug-panel');
+      if (!btn || !panel) return null;
+      const hitAt = () => {
+        const rect = btn.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return !!(hit && (hit === btn || btn.contains(hit)));
+      };
+      btn.click();
+      const openHit = hitAt();
+      const openTop = parseFloat(panel.style.top || '0');
+      const btnBottom = btn.getBoundingClientRect().bottom;
+      btn.click();
+      return {
+        openHit,
+        closed: panel.classList.contains('hidden'),
+        expanded: btn.getAttribute('aria-expanded'),
+        panelClearsButton: openTop >= btnBottom - 0.5,
+      };
+    })()`;
+    let data = null;
+    for (let i = 0; i < 40; i += 1) {
+      const evaluated = await send('Runtime.evaluate', { expression: expr, returnByValue: true }, send.sessionId);
+      data = evaluated.result && evaluated.result.value ? evaluated.result.value : null;
+      if (data) break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    expect(data).not.toBeNull();
+    expect(data.openHit).toBe(true);
+    expect(data.panelClearsButton).toBe(true);
+    expect(data.closed).toBe(true);
+    expect(data.expanded).toBe('false');
   }, 20000);
 });

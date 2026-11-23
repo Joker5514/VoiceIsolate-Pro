@@ -457,11 +457,22 @@ function setToggleExpanded(on) {
   _btn.setAttribute('aria-expanded', on ? 'true' : 'false');
 }
 
+function placeDebugPanel() {
+  if (!_panel) return;
+  const header = document.querySelector('.v3-header') || document.querySelector('.hdr');
+  const bottom = header ? Math.ceil(header.getBoundingClientRect().bottom) : 52;
+  const top = Math.max(8, bottom + 8);
+  const dock = window.matchMedia('(max-width: 640px)').matches ? 72 + 64 : 72;
+  _panel.style.top = `${top}px`;
+  _panel.style.maxHeight = `calc(100dvh - ${top}px - ${dock}px)`;
+}
+
 function openPanel(reason) {
   if (reason !== 'user' && userDismissedDebug()) return;
   if (!_panel || _open) return;
   rememberDebugDismissed(false);
   _open = true;
+  placeDebugPanel();
   _panel.classList.remove('hidden');
   setToggleExpanded(true);
   _lastLogId = _log.length > 0 ? _log[_log.length - 1].id - 1 : 0;
@@ -672,6 +683,8 @@ function mount() {
   initDrag(_panel);
   initResize(_panel);
   initButtons();
+  placeDebugPanel();
+  window.addEventListener('resize', () => { if (_open) placeDebugPanel(); });
 }
 
 /* ── Bootstrap ─────────────────────────────────────────────────────────── */

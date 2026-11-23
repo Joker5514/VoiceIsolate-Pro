@@ -199,7 +199,7 @@ function ensureStyle(doc) {
     '.vip-diag-list li{border-top:1px solid rgba(255,255,255,.06);padding:4px 0}',
     '.vip-diag-list .warn{color:#f5c16c}.vip-diag-list .error{color:#ff8b8b}',
     '.vip-diag-detail{white-space:pre-wrap;color:#9aa4b2;margin:4px 0 0}',
-    '@media (prefers-reduced-motion:reduce){#vip-live-diagnostics{transition:none;transform:none}}',
+    '@media (prefers-reduced-motion:reduce){#vip-live-diagnostics,#vip-live-diagnostics[data-dock="toolbar"],#vip-live-diagnostics[data-dock="toolbar"][data-collapsed="true"]{transition:none;transform:none}}',
   ].join('');
   doc.head.appendChild(style);
 }

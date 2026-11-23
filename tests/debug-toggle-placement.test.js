@@ -91,7 +91,10 @@ describe('live diagnostics toggle placement', () => {
     expect(collapsed).toBeDefined();
     expect(collapsed.style.getPropertyValue('pointer-events')).toBe('none');
     expect(collapsed.style.getPropertyValue('width')).toBe('0');
-    expect(rules.some((rule) => rule.cssRules && /prefers-reduced-motion/.test(rule.cssText || rule.conditionText || ''))).toBe(true);
+    const reduced = rules.find((rule) => rule.conditionText && /prefers-reduced-motion/.test(rule.conditionText));
+    expect(reduced).toBeDefined();
+    expect(reduced.cssText).toContain('[data-dock="toolbar"]');
+    expect(reduced.cssText).toContain('transition: none');
 
     button.click();
     expect(button.getAttribute('aria-expanded')).toBe('true');
