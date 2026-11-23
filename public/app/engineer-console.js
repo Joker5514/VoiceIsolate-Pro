@@ -41,6 +41,7 @@
       installPrecisionStudioShell();
       installWorkstation();
       installPanelResize();
+      installWorkspaceBlocks();
       installNeuralChrome();
       pinEngineerDock();
       installExplainBullets();
@@ -507,6 +508,14 @@
       mod.initPanelResize();
     }).catch((err) => {
       console.warn('[VIP] panel resize unavailable', err);
+    });
+  }
+
+  function installWorkspaceBlocks() {
+    import('/src/presentation/WorkspaceBlocks.js').then((mod) => {
+      mod.initWorkspaceBlocks({ mode: 'engineer' });
+    }).catch((err) => {
+      console.warn('[VIP] workspace layout unavailable', err);
     });
   }
 

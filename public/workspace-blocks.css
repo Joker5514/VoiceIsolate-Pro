@@ -1,0 +1,232 @@
+/* Shared workspace blocks. Web, Android, and Desktop load this same sheet.
+   Sizes are presentation-only. Tokens come from design-tokens.css. */
+
+.vip-block {
+  position: relative;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.vip-block-chrome {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.vip-block-btn,
+.vip-workspace-reset {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--vip-border-subtle, #2a2226);
+  background: var(--vip-surface-raised, #1a1618);
+  color: var(--vip-text-secondary, #9a8a90);
+  font: 600 10px/1 var(--vip-font-ui, ui-sans-serif, system-ui, sans-serif);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.vip-block-btn:hover,
+.vip-block-btn:focus-visible,
+.vip-workspace-reset:hover,
+.vip-workspace-reset:focus-visible {
+  color: var(--vip-text-primary, #f4eef1);
+  border-color: var(--vip-border-focus, rgba(255, 45, 85, 0.55));
+  outline: none;
+}
+
+.vip-block-handle {
+  touch-action: none;
+  background: transparent;
+  border-radius: 6px;
+  outline: none;
+}
+
+.vip-block-handle--height {
+  display: block;
+  height: 14px;
+  margin-top: 2px;
+  cursor: ns-resize;
+  position: relative;
+}
+
+.vip-block-handle--height::after,
+.vip-block-handle--corner::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--vip-border-strong, #3a2c30);
+}
+
+.vip-block-handle--width {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  cursor: ew-resize;
+  z-index: 6;
+}
+
+.vip-block-handle--width::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  bottom: 12px;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--vip-border-strong, #3a2c30);
+}
+
+.vip-block-handle--corner {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 7;
+}
+
+.vip-block-handle:hover::after,
+.vip-block-handle:focus-visible::after {
+  background: var(--vip-signal-primary, #ff2d55);
+}
+
+.vip-block-handle:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--vip-border-focus, rgba(255, 45, 85, 0.55));
+}
+
+.vip-block--sized {
+  overflow: auto;
+  min-height: 0;
+}
+
+.vip-block--sized-w {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.vip-block--fill.vip-block--sized {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.v3 .vip-block--fill.vip-block--sized > canvas.vis-canvas {
+  flex: 1 1 0;
+  width: 100%;
+  height: auto !important;
+  min-height: 48px;
+  max-height: none;
+}
+
+.vip-block--collapsed:not(details) {
+  height: auto !important;
+  min-height: 44px;
+  overflow: hidden;
+}
+
+.vip-block--collapsed:not(details) > :not(.vip-block-chrome):not(.vip-block-handle) {
+  display: none !important;
+}
+
+.vip-block--overlay > .vip-block-chrome {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  z-index: 8;
+  padding: 0;
+}
+
+.vip-block--overlay > .vip-block-handle--height {
+  position: absolute;
+  left: 8px;
+  right: 18px;
+  bottom: 0;
+  z-index: 7;
+  margin: 0;
+}
+
+#enhancePanel > .v3-tilt {
+  display: flex;
+  flex-direction: column;
+}
+
+body.eng-console.ws .ec-col-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+.vip-workspace-reset {
+  margin-left: auto;
+}
+
+@media (min-width: 1280px) {
+  .vip-block > .vip-block-chrome {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    z-index: 8;
+    opacity: 0;
+    padding: 0;
+  }
+
+  .vip-block:hover > .vip-block-chrome,
+  .vip-block:focus-within > .vip-block-chrome,
+  .vip-block--collapsed > .vip-block-chrome {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 1279px) {
+  .vip-block-handle--width,
+  .vip-block-handle--corner {
+    display: none;
+  }
+
+  .vip-block--sized-w {
+    width: auto !important;
+    max-width: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .vip-block-btn,
+  .vip-workspace-reset,
+  .vip-block-handle--height {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .vip-block-btn,
+  .vip-workspace-reset {
+    min-width: 44px;
+    padding: 0 12px;
+  }
+
+  .vip-block-handle--width {
+    width: 44px;
+  }
+
+  .vip-block-handle--corner {
+    width: 44px;
+    height: 44px;
+  }
+
+  .vip-block:not(.vip-block--overlay) > .vip-block-chrome {
+    position: static;
+    opacity: 1;
+  }
+}

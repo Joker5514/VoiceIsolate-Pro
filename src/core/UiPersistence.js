@@ -144,3 +144,98 @@ export function bindCheckbox(input, key, storage) {
   input.addEventListener('change', onToggle);
   return () => input.removeEventListener('change', onToggle);
 }
+
+/**
+ * Per-mode workspace layout. Audio is never stored.
+ * Shape: `{ v: 1, stems: { blocks }, engineer: { blocks } }`.
+ * Each block is `{ h?, w?, collapsed?, maximized?, order?, pre?: { h?, w? } }`.
+ * A bad version, a non-object, or a junk field is dropped. Callers always
+ * receive both modes.
+ */
+export const WORKSPACE_LAYOUT_KEY = 'vip-workspace-layouts';
+export const WORKSPACE_LAYOUT_VERSION = 1;
+
+export function emptyWorkspaceLayouts() {
+  return {
+    v: WORKSPACE_LAYOUT_VERSION,
+    stems: { blocks: {} },
+    engineer: { blocks: {} },
+  };
+}
+
+function cleanLayoutNumber(value) {
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+}
+
+export function cleanWorkspaceBlock(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = {};
+  const h = cleanLayoutNumber(value.h);
+  const w = cleanLayoutNumber(value.w);
+  if (h != null) out.h = h;
+  if (w != null) out.w = w;
+  if (value.collapsed === true) out.collapsed = true;
+  if (value.maximized === true) out.maximized = true;
+  if (Number.isInteger(value.order)) out.order = value.order;
+  if (value.pre && typeof value.pre === 'object' && !Array.isArray(value.pre)) {
+    const pre = {};
+    const preH = cleanLayoutNumber(value.pre.h);
+    const preW = cleanLayoutNumber(value.pre.w);
+    if (preH != null) pre.h = preH;
+    if (preW != null) pre.w = preW;
+    if (pre.h != null || pre.w != null) out.pre = pre;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function cleanModeBlocks(mode) {
+  const blocks = {};
+  if (!mode || typeof mode !== 'object' || Array.isArray(mode)) return blocks;
+  const source = mode.blocks;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return blocks;
+  for (const [id, value] of Object.entries(source)) {
+    if (typeof id !== 'string' || !id) continue;
+    const clean = cleanWorkspaceBlock(value);
+    if (clean) blocks[id] = clean;
+  }
+  return blocks;
+}
+
+export function readWorkspaceLayouts(storage) {
+  const fallback = emptyWorkspaceLayouts();
+  let raw;
+  try {
+    raw = storageOf(storage).getItem(WORKSPACE_LAYOUT_KEY);
+  } catch {
+    return fallback;
+  }
+  if (!raw) return fallback;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback;
+  if (parsed.v !== WORKSPACE_LAYOUT_VERSION) return fallback;
+  return {
+    v: WORKSPACE_LAYOUT_VERSION,
+    stems: { blocks: cleanModeBlocks(parsed.stems) },
+    engineer: { blocks: cleanModeBlocks(parsed.engineer) },
+  };
+}
+
+export function writeWorkspaceLayouts(layouts, storage) {
+  try {
+    const current = layouts && typeof layouts === 'object' ? layouts : {};
+    const clean = {
+      v: WORKSPACE_LAYOUT_VERSION,
+      stems: { blocks: cleanModeBlocks(current.stems) },
+      engineer: { blocks: cleanModeBlocks(current.engineer) },
+    };
+    storageOf(storage).setItem(WORKSPACE_LAYOUT_KEY, JSON.stringify(clean));
+    return true;
+  } catch {
+    return false;
+  }
+}
