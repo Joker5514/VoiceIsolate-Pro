@@ -7068,7 +7068,7 @@ class VoiceIsolatePro {
     // (~11 kHz) it replaces drooped and phase-shifted the speech band, so
     // Removed (input − clean) carried a high-passed copy of the whole voice
     // (−22 dB at 2 kHz; Removed STOI 0.86 on a real whisper, round 13).
-    // Forward + backward biquad passes and the slew pass all stream chunks.
+    // Two streamed chunk passes (forward, then backward + slew): no FFT.
     const fc = Math.min(15000, sr * 0.45);
     const K = Math.tan(Math.PI * fc / sr);
     const sections = [0.5411961, 1.3065630].map((Q) => {
@@ -7079,7 +7079,9 @@ class VoiceIsolatePro {
     const CHUNK = this._postMlChunkSamples();
     const signal = this._processAbortSignal();
     const chCount = channels.length;
-    const passes = 3;
+    // Pass 0: forward biquads. Pass 1: backward biquads with the slew
+    // limiter fused in (it only acts on |Δ| > 0.08, symmetric in time).
+    const passes = 2;
     for (let ch = 0; ch < chCount; ch++) {
       const d = channels[ch];
       if (!d?.length) continue;
@@ -7090,7 +7092,11 @@ class VoiceIsolatePro {
         // edge transient, like filtfilt's initial conditions.
         const u = backward ? d[total - 1] : d[0];
         const z = sections.map((c) => [u * (1 - c.b0), u * (c.b2 - c.a2)]);
-        let prev = 0;
+        const s0 = sections[0];
+        const s1 = sections[1];
+        const z0 = z[0];
+        const z1 = z[1];
+        let prev = null;
         await processInChunks({
           total,
           chunkSize: CHUNK,
@@ -7100,30 +7106,27 @@ class VoiceIsolatePro {
             opts.onProgress?.(overall);
           },
           runChunk: (start, end) => {
-            if (pass === 2) {
-              for (let i = start; i < end; i++) {
-                const delta = d[i] - prev;
+            const lo = backward ? total - end : start;
+            const hi = backward ? total - start : end;
+            for (let j = 0; j < hi - lo; j++) {
+              const i = backward ? hi - 1 - j : lo + j;
+              const v = d[i];
+              const y0 = s0.b0 * v + z0[0];
+              z0[0] = s0.b1 * v - s0.a1 * y0 + z0[1];
+              z0[1] = s0.b2 * v - s0.a2 * y0;
+              const y1 = s1.b0 * y0 + z1[0];
+              z1[0] = s1.b1 * y0 - s1.a1 * y1 + z1[1];
+              z1[1] = s1.b2 * y0 - s1.a2 * y1;
+              if (!backward) {
+                d[i] = y1;
+              } else {
+                if (prev === null) prev = y1;
+                const delta = y1 - prev;
                 const limited = Math.max(-0.08, Math.min(0.08, delta));
                 const out = prev + limited * 0.35 + delta * 0.65;
                 prev = out;
                 d[i] = out;
               }
-              return;
-            }
-            const lo = backward ? total - end : start;
-            const hi = backward ? total - start : end;
-            for (let j = 0; j < hi - lo; j++) {
-              const i = backward ? hi - 1 - j : lo + j;
-              let v = d[i];
-              for (let s = 0; s < sections.length; s++) {
-                const c = sections[s];
-                const zz = z[s];
-                const y = c.b0 * v + zz[0];
-                zz[0] = c.b1 * v - c.a1 * y + zz[1];
-                zz[1] = c.b2 * v - c.a2 * y;
-                v = y;
-              }
-              d[i] = v;
             }
           },
         });
