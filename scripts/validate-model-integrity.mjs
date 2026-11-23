@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODEL_MANIFEST } from '../src/core/ModelManifest.js';
+import { DIARIZATION_MODEL_MANIFEST } from '../src/core/DiarizationModelManifest.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(path.dirname(__filename), '..');
@@ -158,6 +159,38 @@ export function validateModelIntegrity(options = {}) {
       if (!buildResult.ok) {
         errors.push(formatMismatch(entry, buildPath, buildResult.size, buildResult.hash));
       }
+    }
+  }
+
+  const diarizationManifest = options.diarizationManifest === undefined
+    ? (root === ROOT ? DIARIZATION_MODEL_MANIFEST : null)
+    : options.diarizationManifest;
+  if (diarizationManifest) {
+    for (const id of Object.keys(diarizationManifest)) {
+      const entry = diarizationManifest[id];
+      if (!entry || typeof entry !== 'object') {
+        errors.push(`diarization model ${id} is missing from the inventory`);
+        continue;
+      }
+      if (entry.id && entry.id !== id) {
+        errors.push(`diarization manifest key ${id} does not match entry.id ${entry.id}`);
+      }
+      if (typeof entry.sha256 !== 'string' || !SHA256_RE.test(entry.sha256)) {
+        errors.push(`diarization model ${id} has an invalid sha256`);
+        continue;
+      }
+      if (!Number.isInteger(entry.sizeBytes) || entry.sizeBytes <= 0) {
+        errors.push(`diarization model ${id} has an invalid sizeBytes`);
+        continue;
+      }
+      if (typeof entry.url !== 'string' || !entry.url.startsWith('/models/')) {
+        errors.push(`diarization model ${id} url must be same-origin /models/...`);
+        continue;
+      }
+      const sourcePath = localPathForUrl(entry.url, root, { build: false });
+      const result = verifyFile(entry, sourcePath);
+      checked.push({ id: `diarization:${id}`, path: sourcePath, ...result, role: 'diarization' });
+      if (!result.ok) errors.push(formatMismatch({ ...entry, id: `diarization:${id}` }, sourcePath, result.size, result.hash));
     }
   }
 
