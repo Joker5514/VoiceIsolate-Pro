@@ -181,7 +181,8 @@ export class SourceAuditionEngine {
       this.setLazyLayer({
         id: 'music',
         label: 'Music / other residual',
-        confidence: analysis?.confidenceScores?.musicRatio ?? 0.4,
+        // Measured music share only; no bed found reads 0, not a 40 % placeholder.
+        confidence: analysis?.musicSegments?.length ? (analysis?.confidenceScores?.musicRatio ?? 0) : 0,
         quality: 'low',
       }, () => this._residualBuffer(original, clean, ctx), Math.min(original.duration, clean.duration));
     }
@@ -219,7 +220,8 @@ export class SourceAuditionEngine {
       this.setLazyLayer({
         id: 'hum',
         label: 'Hum (reconstructed)',
-        confidence: analysis?.humProfile?.strength ?? 0.3,
+        // Detected hum strength only; no tonal hum reads 0, not a 30 % placeholder.
+        confidence: analysis?.humProfile?.present ? (analysis.humProfile.strength ?? 0) : 0,
         quality: analysis?.humProfile?.present ? 'medium' : 'low',
       }, () => this._extractHumBuffer(humSrc, ctx, humFreq), humSrc.duration);
 

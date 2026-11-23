@@ -27,17 +27,31 @@ import { recommendFromAnalysis } from './RecommendationEngine.js';
 export const MUSIC_BED_MIN_SEC = 1.0;
 
 /**
+ * Share of a merged music run's frames that must themselves be music. Runs
+ * merge across 0.5 s gaps, so without this a whisper whose odd frames pass
+ * the harmonic test (a 120 Hz buzz plus sub-bass rumble pulls speechRatio
+ * down) bridged into "beds" at 10-20 % density. Club beds measure 33-95 %.
+ */
+export const MUSIC_BED_MIN_DENSITY = 0.25;
+
+/**
+ * Bump whenever analysis output changes meaning. Durable analysis caches
+ * written by another version are not restored (DerivedCache).
+ */
+export const ANALYZER_VERSION = 'fa-2026-11-r13';
+
+/**
  * Classify each frame into a primary activity label.
  * @param {object} frame
  * @param {object} ctx
  */
-function classifyFrame(frame, ctx) {
+function classifyFrame(frame, ctx, noMusic = false) {
   const noiseFloor = ctx.noiseFloor || 0.001;
   if (frame.rms < noiseFloor * 1.5 || frame.rmsDb < -55) return 'silence';
   if (frame.flux > ctx.fluxThresh && frame.flatness > 0.4) return 'transient';
   if (frame.humStrength > 0.2 && frame.speechRatio < 0.2) return 'hum';
   // Music: harmonic, lower speech band ratio, mid flatness
-  if (frame.harmonicity > 0.25 && frame.speechRatio < 0.28 && frame.flatness < 0.45 && frame.rmsDb > -40) {
+  if (!noMusic && frame.harmonicity > 0.25 && frame.speechRatio < 0.28 && frame.flatness < 0.45 && frame.rmsDb > -40) {
     return 'music';
   }
   // Broadband noise: high flatness, low harmonicity
@@ -137,9 +151,30 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
       : { minSec: name === 'transient' ? 0.04 : 0.12, mergeGapSec: name === 'transient' ? 0.05 : 0.18 },
   );
 
+  // Music beds must be sustained AND dense. Music frames outside a kept bed
+  // are relabelled by the remaining rules (usually speech / noise), so they
+  // neither count toward musicRatio nor punch holes in speech segments.
+  const musicSegments = byLabel('music').filter((seg) => {
+    let total = 0;
+    let music = 0;
+    for (let i = 0; i < frames.length; i++) {
+      const t = frames[i].t;
+      if (t < seg.start - 1e-9 || t >= seg.end) continue;
+      total++;
+      if (labels[i] === 'music') music++;
+    }
+    return total > 0 && music / total >= MUSIC_BED_MIN_DENSITY;
+  });
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i] !== 'music') continue;
+    const t = frames[i].t;
+    if (!musicSegments.some((seg) => t >= seg.start - 1e-9 && t < seg.end)) {
+      labels[i] = classifyFrame(frames[i], ctx, true);
+    }
+  }
+
   const speechSegments = byLabel('speech');
   const silenceSegments = byLabel('silence');
-  const musicSegments = byLabel('music');
   const noiseSegments = byLabel('noise');
   const transientSegments = byLabel('transient');
   const reverbSegments = byLabel('reverb');
