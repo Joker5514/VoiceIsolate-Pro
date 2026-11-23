@@ -121,6 +121,12 @@
   transform: translateY(-8px) scale(0.98);
   pointer-events: none;
 }
+/* The close control sets pointer-events:auto so it stays clickable while the
+   panel is open. That also punches through a hidden panel, so a toolbar
+   button under the closed panel's corner never receives the hit. */
+#vip-debug-panel.hidden * {
+  pointer-events: none;
+}
 
 /* ── Panel Header ── */
 .dbg-header {
@@ -464,11 +470,47 @@
   }
 }
 
-/* Landing/Stems: sit in the link cluster with the same alignment as Studio. */
+/* Landing/Stems: sit in the link cluster with the same alignment as Studio.
+   Above 768px the header is one row. The section nav used to shrink and
+   clip "03 Engineer" once Diagnostics joined Download and Studio. The nav
+   and the status cluster keep their content width; DBG is the dot only. */
 #vip-debug-toggle.vip-debug-toggle--landing,
 #vip-diag-toggle.vip-debug-toggle--landing {
   align-self: center;
   margin: 0;
+}
+@media (min-width: 769px) {
+  body.v3 .v3-nav,
+  body.v3 .v3-header__status {
+    flex: 0 0 auto;
+    min-width: max-content;
+    overflow: visible;
+  }
+  body.v3 .v3-header__links {
+    gap: 4px;
+    padding-left: 8px;
+  }
+  body.v3 #vip-diag-toggle.vip-debug-toggle--landing {
+    padding-inline: 8px;
+  }
+  body.v3 #vip-debug-toggle.vip-debug-toggle--landing {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+    gap: 0;
+  }
+  body.v3 #vip-debug-toggle.vip-debug-toggle--landing .vip-tool-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 body.eng-console #vip-debug-toggle.vip-debug-toggle--engineer,
 body.eng-console #vip-diag-toggle.vip-debug-toggle--engineer {

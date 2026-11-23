@@ -32,6 +32,14 @@ describe('debug toolbar button', () => {
     expect(menu).toMatch(/setAttribute\('aria-expanded', on \? 'true' : 'false'\)/);
   });
 
+  test('the landing section nav keeps its content width beside a compact DBG', () => {
+    expect(menu).toMatch(/<span class="vip-tool-label">DBG<\/span>/);
+    expect(menu).toMatch(/setAttribute\('aria-label', 'Toggle live debug menu'\)/);
+    expect(css).toMatch(/@media \(min-width: 769px\)/);
+    expect(css).toMatch(/body\.v3 \.v3-nav,\s*body\.v3 \.v3-header__status\s*\{[^}]*flex:\s*0 0 auto/);
+    expect(css).toMatch(/body\.v3 #vip-debug-toggle\.vip-debug-toggle--landing \.vip-tool-label/);
+  });
+
   test('motion is transform and opacity on the shared curve, with a 44px mobile target', () => {
     expect(css).toMatch(/cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/);
     expect(css).toMatch(/transition:\s*transform 180ms cubic-bezier\(0\.16, 1, 0\.3, 1\), opacity 180ms/);

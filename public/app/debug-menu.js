@@ -646,7 +646,7 @@ function mount() {
     _btn.setAttribute('aria-expanded', 'false');
     _btn.setAttribute('aria-controls', 'vip-debug-panel');
     _btn.setAttribute('title', 'Live Debug Menu (` key)');
-    _btn.innerHTML = '<span class="dbg-dot" aria-hidden="true"></span>DBG';
+    _btn.innerHTML = '<span class="dbg-dot" aria-hidden="true"></span><span class="vip-tool-label">DBG</span>';
     _btn.addEventListener('click', togglePanel);
     hdrActions.appendChild(_btn);
     if (document.querySelector('.v3-header__links')) _btn.classList.add('vip-debug-toggle--landing');
