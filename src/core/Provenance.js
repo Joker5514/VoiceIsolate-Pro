@@ -109,7 +109,14 @@ function sanitizeTiming(timing) {
     const v = src[key];
     if (typeof v === 'number' && Number.isFinite(v) && v >= 0) stagesMs[key] = Math.round(v);
   }
-  return { stagesMs, provider: strOrNull(timing?.provider) };
+  const ms = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+  return {
+    stagesMs,
+    mlMs: ms(timing?.mlMs ?? src.ml_isolation),
+    pipelineMs: ms(timing?.pipelineMs ?? src.pipeline),
+    provider: strOrNull(timing?.provider),
+    providerVerified: timing?.providerVerified === true,
+  };
 }
 
 /**
