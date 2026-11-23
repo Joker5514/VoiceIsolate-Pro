@@ -62,6 +62,44 @@ function withHum(x, f0, level = 0.01) {
   return y;
 }
 
+/** Steady narrowband tone at one frequency, no harmonics. */
+function loneTone(sec, f0, level = 0.01) {
+  const n = SR * sec; const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) x[i] = level * Math.sin(2 * Math.PI * f0 * i / SR);
+  return x;
+}
+
+/** Lone tone under the whisper+rumble fixture (fundamental still missing). */
+function whisperWithLoneTone(f0, level = 0.01, sec = 8) {
+  const x = whisperWithRumble(sec);
+  for (let i = 0; i < x.length; i++) x[i] += level * Math.sin(2 * Math.PI * f0 * i / SR);
+  return x;
+}
+
+/** Pitch-varying tone around f0 (vibrato), not a stationary mains line. */
+function warbledTone(sec, f0, depthHz = 6, rate = 5, level = 0.01) {
+  const n = SR * sec; const x = new Float32Array(n);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const f = f0 + depthHz * Math.sin(2 * Math.PI * rate * t);
+    phase += (2 * Math.PI * f) / SR;
+    x[i] = level * Math.sin(phase);
+  }
+  return x;
+}
+
+/** Level-gated 120 Hz bursts (on 200 ms / off 300 ms), not a steady hum. */
+function pulsedTone(sec, f0, level = 0.01) {
+  const n = SR * sec; const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const on = (t % 0.5) < 0.2 ? 1 : 0;
+    x[i] = on * level * Math.sin(2 * Math.PI * f0 * i / SR);
+  }
+  return x;
+}
+
 describe('hum detection', () => {
   test('whisper over room rumble is not hum', () => {
     const a = analyzeAudio([whisperWithRumble()], SR);
@@ -86,6 +124,43 @@ describe('hum detection', () => {
     const e = extractFrameFeatures(withHum(whisperWithRumble(), 50), SR);
     expect(e.humProfile.present).toBe(true);
     expect(e.humProfile.freq).toBe(50);
+  });
+
+  test('a steady lone 120 Hz tone (no fundamental or higher harmonics) is 60 Hz mains hum', () => {
+    const a = analyzeAudio([loneTone(8, 120)], SR);
+    expect(a.humProfile.present).toBe(true);
+    expect(a.humProfile.freq).toBe(60);
+  });
+
+  test('a steady lone 100 Hz tone is 50 Hz mains hum', () => {
+    const e = extractFrameFeatures(loneTone(8, 100), SR);
+    expect(e.humProfile.present).toBe(true);
+    expect(e.humProfile.freq).toBe(50);
+  });
+
+  test('a steady 120 Hz buzz under whisper and rumble is still 60 Hz mains hum', () => {
+    const a = analyzeAudio([whisperWithLoneTone(120)], SR);
+    expect(a.humProfile.present).toBe(true);
+    expect(a.humProfile.freq).toBe(60);
+    expect(a.musicSegments).toHaveLength(0);
+  });
+
+  test('a sustained bass note off the mains series is not hum', () => {
+    const a = analyzeAudio([loneTone(8, 110, 0.05)], SR);
+    expect(a.humProfile.present).toBe(false);
+    expect(a.humSegments).toHaveLength(0);
+  });
+
+  test('a 120 Hz tone that warbles in pitch is not hum', () => {
+    const a = analyzeAudio([warbledTone(8, 120)], SR);
+    expect(a.humProfile.present).toBe(false);
+    expect(a.humSegments).toHaveLength(0);
+  });
+
+  test('a level-gated 120 Hz burst train is not hum', () => {
+    const a = analyzeAudio([pulsedTone(8, 120)], SR);
+    expect(a.humProfile.present).toBe(false);
+    expect(a.humSegments).toHaveLength(0);
   });
 });
 
@@ -121,6 +196,13 @@ describe('workspace auto-analysis hum', () => {
   test('real 60 Hz hum is still reported, with its frequency', async () => {
     const { runAutoAnalysis } = await import('../src/core/audio/analysis/AutoAnalysis.js');
     const r = await runAutoAnalysis([withHum(whisperWithRumble(), 60)], SR);
+    expect(r.humSegments).toHaveLength(1);
+    expect(r.humSegments[0].freqs[0]).toBe(60);
+  });
+
+  test('a lone 120 Hz tone is reported as 60 Hz hum', async () => {
+    const { runAutoAnalysis } = await import('../src/core/audio/analysis/AutoAnalysis.js');
+    const r = await runAutoAnalysis([loneTone(8, 120)], SR);
     expect(r.humSegments).toHaveLength(1);
     expect(r.humSegments[0].freqs[0]).toBe(60);
   });

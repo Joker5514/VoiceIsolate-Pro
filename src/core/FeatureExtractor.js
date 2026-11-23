@@ -271,8 +271,13 @@ export function detectHum(mag, sampleRate) {
  * kick or rumble scores as "hum". Here the signal is decimated to ~3 kHz and
  * each 1 s block is probed with Goertzel filters (1 Hz resolution) at
  * f0·h (h = 1..4) against neighbours f ± 4/8 Hz. A block is hum-positive for
- * f0 when the fundamental stands >= 10 dB above its neighbours and at least
- * one harmonic >= 6 dB, or the fundamental alone >= 20 dB. Strength is the
+ * f0 when the candidate carries at least SHARE_MIN of the block energy and
+ * either: the fundamental stands >= 10 dB above its neighbours and at least
+ * one harmonic >= 6 dB, or the fundamental alone >= 20 dB, or a lone 2nd
+ * harmonic (100/120 Hz) is a tight (>= 20 dB vs every 1 Hz neighbour in
+ * ±8 Hz) and level-stable (quarter-second power within 6 dB) peak. The
+ * energy floor stops a ratio of two empty bins (leakage from a nearby
+ * non-mains tone) from looking like a 50/60 Hz fundamental. Strength is the
  * share of audible blocks that are hum-positive; present needs half of them.
  * Long files are sampled at up to 120 evenly spaced blocks.
  *
@@ -293,22 +298,46 @@ export function detectMainsHum(mono, sampleRate) {
   }
   const B = Math.floor(fs); // 1 s blocks
   const nBlocks = Math.floor(m / B);
-  const goertzel = (off, f) => {
+  // A real partial is a few percent of block energy; empty-bin leakage is ~1e-17.
+  const SHARE_MIN = 0.02;
+  const goertzel = (off, f, len = B) => {
     const w = (2 * Math.PI * f) / fs;
     const c = 2 * Math.cos(w);
     let s1 = 0;
     let s2 = 0;
-    for (let i = 0; i < B; i++) {
+    for (let i = 0; i < len; i++) {
       const s0 = dec[off + i] + c * s1 - s2;
       s2 = s1;
       s1 = s0;
     }
     return s1 * s1 + s2 * s2 - c * s1 * s2;
   };
+  const shareOf = (p, blockE) => p / (blockE * B * B + 1e-20);
   const ratioDb = (off, f) => {
     const p = goertzel(off, f);
     const nb = (goertzel(off, f - 8) + goertzel(off, f - 4) + goertzel(off, f + 4) + goertzel(off, f + 8)) / 4;
     return 10 * Math.log10((p + 1e-20) / (nb + 1e-20));
+  };
+  // Tightness vs every 1 Hz bin in ±8 Hz: a warble's Bessel sidebands
+  // (e.g. 115/125 Hz) sit between the old ±4/8 Hz neighbours.
+  const tightDb = (off, f) => {
+    const p = goertzel(off, f);
+    let maxNb = 0;
+    for (let d = 1; d <= 8; d++) {
+      maxNb = Math.max(maxNb, goertzel(off, f - d), goertzel(off, f + d));
+    }
+    return 10 * Math.log10((p + 1e-20) / (maxNb + 1e-20));
+  };
+  const levelStable = (off, f) => {
+    const sub = Math.floor(B / 4);
+    let minP = Infinity;
+    let maxP = 0;
+    for (let q = 0; q < 4; q++) {
+      const p = goertzel(off + q * sub, f, sub);
+      if (p < minP) minP = p;
+      if (p > maxP) maxP = p;
+    }
+    return 10 * Math.log10((maxP + 1e-20) / (minP + 1e-20)) <= 6;
   };
   const votes = { 50: 0, 60: 0 };
   let audible = 0;
@@ -318,13 +347,23 @@ export function detectMainsHum(mono, sampleRate) {
     const off = Math.floor((j * nBlocks) / probe) * B;
     let e = 0;
     for (let i = 0; i < B; i++) e += dec[off + i] * dec[off + i];
-    if (e / B < 1e-10) continue; // digital silence (< -100 dBFS): no evidence either way
+    const blockE = e / B;
+    if (blockE < 1e-10) continue; // digital silence (< -100 dBFS): no evidence either way
     audible++;
     for (const f0 of [50, 60]) {
+      const p1 = goertzel(off, f0);
       const r1 = ratioDb(off, f0);
       let harm = 0;
-      for (let h = 2; h <= 4; h++) if (ratioDb(off, f0 * h) >= 6) harm++;
-      if ((r1 >= 10 && harm >= 1) || r1 >= 20) votes[f0]++;
+      for (let h = 2; h <= 4; h++) {
+        const ph = goertzel(off, f0 * h);
+        if (ratioDb(off, f0 * h) >= 6 && shareOf(ph, blockE) >= SHARE_MIN) harm++;
+      }
+      const series = shareOf(p1, blockE) >= SHARE_MIN && ((r1 >= 10 && harm >= 1) || r1 >= 20);
+      const p2 = goertzel(off, f0 * 2);
+      const loneSecond = shareOf(p2, blockE) >= SHARE_MIN
+        && tightDb(off, f0 * 2) >= 20
+        && levelStable(off, f0 * 2);
+      if (series || loneSecond) votes[f0]++;
     }
   }
   const best = votes[60] >= votes[50] ? 60 : 50;
