@@ -13,6 +13,7 @@
  * hit-testing and the native filechooser event.
  */
 'use strict';
+/* global window, document, addEventListener, DataTransfer, DragEvent, File, atob, globalThis */
 
 const fs = require('fs');
 const http = require('http');
