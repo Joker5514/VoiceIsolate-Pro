@@ -906,6 +906,51 @@ async function runSpectralMask(entry, session, samples, onProgress, processingCo
 /** Spectral heads already warned about missing calibration (once per id). */
 const _uncalibratedWarned = new Set();
 
+/**
+ * Whisper path, Removed-stem leak (round 13). Removed = input − clean, so any
+ * bin whose final gain is not 1 puts voice into Removed: a mask below 1 leaves
+ * whisper there, and Whisper Lift above 1 leaves an inverted copy. On Randy's
+ * whisper-only file Removed scored STOI 0.86 against the whisper (Processed
+ * 0.94). After the frame's full chain (mask, HF filter, Engineer controls),
+ * a bin whose output is mostly voice by the chain's own estimate
+ * (|out|² / (|out|² + |in − out|²) > WHISPER_REROUTE_P) passes the input bin
+ * unchanged, so its residual goes to Processed instead of Removed. Bins below
+ * WHISPER_REROUTE_MIN_HZ (sub-bass, mains hum) and uncertain bins keep their
+ * gain. A few multiply-adds per bin in the existing STFT pass: no extra
+ * transform, no added latency.
+ */
+const WHISPER_REROUTE_P = 0.7;
+const WHISPER_REROUTE_MIN_HZ = 150;
+function whisperRerouteEnabled(processingConfig) {
+  // spectral.whisperReroute === false is the numerics-golden escape hatch
+  // (tests/perf-bundle-identity pins the rest of the chain bit-for-bit).
+  if (processingConfig?.spectral?.whisperReroute === false) return false;
+  const mode = Number(processingConfig?.spectral?.whisperMode);
+  return Number.isFinite(mode) && Math.round(mode) >= 1;
+}
+
+/**
+ * In place: re/im (processed bins) take the input bin where the processed
+ * share of the bin exceeds pThresh. Exported on self for tests.
+ */
+function rerouteConfidentResidual(re, im, inRe, inIm, off, k0, bins, pThresh) {
+  const q = pThresh / (1 - pThresh);
+  for (let k = k0; k < bins; k++) {
+    const xr = inRe[off + k];
+    const xi = inIm[off + k];
+    const yr = re[k];
+    const yi = im[k];
+    const dr = xr - yr;
+    const di = xi - yi;
+    // |y|² / (|y|² + |x − y|²) > p  ⇔  |y|² > q·|x − y|²
+    if (yr * yr + yi * yi > q * (dr * dr + di * di)) {
+      re[k] = xr;
+      im[k] = xi;
+    }
+  }
+}
+self.rerouteConfidentResidual = rerouteConfidentResidual;
+
 async function runFusedSpectralMaskChain(
   heads,
   samples,
@@ -1030,6 +1075,8 @@ async function runFusedSpectralMaskChain(
   const prevMask = new Float32Array(bins);
   let hasPrevMask = false;
   const maskSmooth = 0.55;
+  const reroute = whisperRerouteEnabled(processingConfig);
+  const rerouteK0 = Math.ceil(WHISPER_REROUTE_MIN_HZ / ((entry0.sampleRate || sampleRate) / N));
 
   for (let f0 = 0; f0 < totalFrames; f0 += batchMax) {
     checkCancelled(requestId);
@@ -1095,6 +1142,9 @@ async function runFusedSpectralMaskChain(
       if (hfPostFilter) hfPostFilter.applyFrame(re, im, cur.batchMags, off, prevMask);
       if (engineerProcessor) {
         engineerProcessor.applyFrame(re, im, cur.batchMags, off, (f0 + b) * hop < pad);
+      }
+      if (reroute) {
+        rerouteConfidentResidual(re, im, cur.batchRe, cur.batchIm, off, rerouteK0, bins, WHISPER_REROUTE_P);
       }
       hasPrevMask = true;
       realFftInverse(re, im, N, frame, halfRe, halfIm);
