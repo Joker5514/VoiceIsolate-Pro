@@ -3,54 +3,91 @@
    Live debug panel overlay — dark industrial theme
    ============================================================ */
 
+/* Toolbar control. Same metrics as the header links on each page.
+   Colour and background change instantly; only transform and opacity move. */
+.vip-tool-btn,
 #vip-debug-toggle {
   position: relative;
-  font-family: var(--fm);
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: rgba(0, 255, 180, 0.7);
-  background: rgba(0, 255, 180, 0.06);
-  border: 1px solid rgba(0, 255, 180, 0.18);
-  border-radius: 4px;
-  padding: 3px 8px;
-  cursor: pointer;
-  transition: all 0.2s;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vip-sp-2, 8px);
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 var(--vip-sp-3, 12px);
+  border-radius: var(--vip-radius-md, 6px);
+  border: 1px solid var(--vip-border-strong, var(--v3-line-2, #3a2c30));
+  background: transparent;
+  color: var(--vip-text-secondary, var(--v3-fg-2, #9a8a90));
+  font: var(--vip-fw-medium, 500) var(--vip-fs-sm, 12.5px)/1 var(--vip-font-ui, var(--v3-sans, ui-sans-serif, system-ui, sans-serif));
+  letter-spacing: 0.04em;
   white-space: nowrap;
+  cursor: pointer;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-#vip-debug-toggle:focus-visible {
-  outline: 2px solid rgba(0, 255, 180, 0.9);
+.vip-tool-btn:hover,
+#vip-debug-toggle:hover {
+  color: var(--vip-text-primary, var(--v3-fg, #f4eef1));
+  background: var(--v3-hover, var(--vip-surface-raised, #1a1618));
+  border-color: var(--vip-border-focus, rgba(255, 45, 85, 0.55));
+  opacity: 1;
+}
+.vip-tool-btn:active,
+#vip-debug-toggle:active {
+  transform: translateY(1px);
+}
+.vip-tool-btn:focus-visible,
+#vip-debug-toggle:focus-visible,
+#vip-diag-toggle:focus-visible {
+  outline: 2px solid var(--vip-signal-primary, var(--action-process, #ff2d55));
   outline-offset: 2px;
 }
-#vip-debug-toggle:hover {
-  color: rgba(0, 255, 180, 1);
-  background: rgba(0, 255, 180, 0.12);
-  border-color: rgba(0, 255, 180, 0.4);
-  box-shadow: 0 0 10px rgba(0, 255, 180, 0.2);
+.vip-tool-btn.active,
+.vip-tool-btn[aria-expanded="true"],
+#vip-debug-toggle.active,
+#vip-debug-toggle[aria-expanded="true"] {
+  color: var(--vip-text-primary, #f4eef1);
+  background: var(--vip-selection-wash, rgba(255, 45, 85, 0.14));
+  border-color: var(--vip-border-focus, rgba(255, 45, 85, 0.55));
 }
-#vip-debug-toggle.active {
-  color: #00ffb4;
-  background: rgba(0, 255, 180, 0.14);
-  border-color: rgba(0, 255, 180, 0.5);
-  box-shadow: 0 0 14px rgba(0, 255, 180, 0.3);
-}
+.vip-tool-btn .dbg-dot,
 #vip-debug-toggle .dbg-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(0, 255, 180, 0.5);
-  margin-right: 4px;
-  vertical-align: middle;
-  animation: dbg-pulse 2s ease-in-out infinite;
+  background: currentColor;
+  opacity: 0.72;
+  flex: none;
 }
+.vip-tool-btn.active .dbg-dot,
 #vip-debug-toggle.active .dbg-dot {
-  background: #00ffb4;
-  box-shadow: 0 0 6px #00ffb4;
+  opacity: 1;
 }
-@keyframes dbg-pulse {
-  0%, 100% { opacity: 0.5; }
-  50%       { opacity: 1; }
+@media (max-width: 768px) {
+  .vip-tool-btn,
+  #vip-debug-toggle,
+  #vip-diag-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
+    padding: 0 12px;
+    flex: 0 0 auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vip-tool-btn,
+  #vip-debug-toggle,
+  #vip-diag-toggle,
+  .vip-tool-btn .dbg-dot,
+  #vip-debug-panel {
+    transition: none;
+    animation: none;
+  }
+  .vip-tool-btn:active,
+  #vip-debug-toggle:active { transform: none; }
+  #vip-debug-panel.hidden { transform: none; }
 }
 
 /* ── Panel ── */
@@ -77,7 +114,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: opacity 0.15s, transform 0.15s;
+  transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 #vip-debug-panel.hidden {
   opacity: 0;
@@ -427,16 +464,14 @@
   }
 }
 
-/* Landing/Stems header placement: keep the diagnostic toggle visible on compact screens. */
-#vip-debug-toggle.vip-debug-toggle--landing {
-  margin-inline: 8px;
-  min-height: 30px;
+/* Landing/Stems: sit in the link cluster with the same alignment as Studio. */
+#vip-debug-toggle.vip-debug-toggle--landing,
+#vip-diag-toggle.vip-debug-toggle--landing {
   align-self: center;
+  margin: 0;
 }
-@media (max-width: 720px) {
-  #vip-debug-toggle.vip-debug-toggle--landing {
-    padding: 5px 7px;
-    font-size: 9px;
-    margin-inline: 4px;
-  }
+body.eng-console #vip-debug-toggle.vip-debug-toggle--engineer,
+body.eng-console #vip-diag-toggle.vip-debug-toggle--engineer {
+  border-radius: 7px;
+  align-self: center;
 }
