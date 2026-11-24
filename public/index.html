@@ -276,7 +276,7 @@
             <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
             <span class="v3-drop__actions">
               <label for="fileInput" id="browseBtn" class="btn btn-primary vip-tap" role="button">Browse files</label>
-              <button id="openDriveBtn" class="btn btn-outline vip-tap" type="button" title="Open audio/video from Google Drive (local processing)">Open from Drive</button>
+              <button id="openDriveBtn" class="btn btn-outline vip-tap" type="button" hidden title="Open audio/video from Google Drive (local processing)">Open from Drive</button>
             </span>
             <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/*,video/*" aria-label="Choose audio or video file">
           </div>
@@ -475,7 +475,7 @@
                     <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled title="Download isolated voice">Download Processed</button>
                     <button id="downloadVideoBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled title="Download video with isolated audio track">Download Video</button>
                     <button id="downloadProvenanceBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled title="Download local SHA-256 integrity record (.viprovenance.json) — integrity check only, not certification or signature">Integrity Record (.json)</button>
-                    <button id="saveDriveBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled title="Upload processed export to Google Drive">Save to Drive</button>
+                    <button id="saveDriveBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled title="Upload processed export to Google Drive">Save to Drive</button>
                     <span id="downloadStatus" class="hint" role="status" aria-live="polite"></span>
                   </div>
                 </div>
