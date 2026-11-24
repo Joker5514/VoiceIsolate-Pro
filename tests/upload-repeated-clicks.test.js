@@ -129,14 +129,22 @@ run('upload controls survive repeated clicks (Stems + Engineer, desktop + Androi
           let clicks = 0;
           // Click where the user sees the control; fail loudly if something covers it.
           async function press({ double = false } = {}) {
-            const at = await page.evaluate((sel) => {
-              const b = document.querySelector(sel);
-              b.scrollIntoView({ block: 'center', behavior: 'instant' });
-              const r = b.getBoundingClientRect();
-              const x = r.left + r.width / 2; const y = r.top + r.height / 2;
-              const top = document.elementFromPoint(x, y);
-              return { x, y, onButton: !!top && (top === b || b.contains(top)), top: top ? `${top.tagName}#${top.id}.${top.className}` : null };
-            }, control.button);
+            // After an ingest the Engineer workspace re-lays out; under a loaded
+            // full-suite run the hit test can land mid-reflow. Re-measure until the
+            // layout is stable (max 5 s), then require the button to be on top.
+            let at = null;
+            for (let tries = 0; tries < 25; tries += 1) {
+              at = await page.evaluate((sel) => {
+                const b = document.querySelector(sel);
+                b.scrollIntoView({ block: 'center', behavior: 'instant' });
+                const r = b.getBoundingClientRect();
+                const x = r.left + r.width / 2; const y = r.top + r.height / 2;
+                const top = document.elementFromPoint(x, y);
+                return { x, y, onButton: !!top && (top === b || b.contains(top)), top: top ? `${top.tagName}#${top.id}.${top.className}` : null };
+              }, control.button);
+              if (at.onButton) break;
+              await page.waitForTimeout(200);
+            }
             expect(at.onButton ? 'button' : at.top).toBe('button');
             const n = double ? 2 : 1;
             for (let i = 0; i < n; i += 1) {
