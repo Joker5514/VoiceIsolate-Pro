@@ -101,9 +101,20 @@ describe('DeepFilterNet3 helper', () => {
   // Cold-started norms and GRUs cut speech that starts at t = 0 (round 2:
   // -30.6 dB in the first 5 ms of real-quiet-speech-001). The mirrored
   // lead-in lets the network settle before the file's first sample.
+  //
+  // The corpus clip is git-ignored, so this used to fail in every fresh
+  // checkout. It now uses committed real speech (LibriSpeech dev-clean speaker
+  // 1272, CC BY 4.0, tests/fixtures/diarization/README.md), cut 3 s from
+  // sample 9024 so a voiced onset sits at t = 0 (the first point where the 5 ms
+  // RMS reaches twice the clip RMS), and scaled to -34 dBFS RMS like
+  // real-quiet-speech-001. Same thresholds as before.
   it('keeps a speech onset at t = 0 (pre-roll) and keeps the output length', async () => {
-    const clip = readWav(path.join(ROOT, 'scripts/quality/corpus/audio/real-quiet-speech-001.wav'));
-    const x = upsampleLinear(clip.samples.subarray(0, 16000 * 3), clip.sampleRate, D.SR);
+    const clip = readWav(path.join(__dirname, 'fixtures/diarization/libri_1spk_m.wav'));
+    expect(clip.sampleRate).toBe(16000);
+    const cut = clip.samples.slice(9024, 9024 + 16000 * 3);
+    const gain = 10 ** ((-34 - M.rmsDb(cut)) / 20);
+    for (let i = 0; i < cut.length; i++) cut[i] *= gain;
+    const x = upsampleLinear(cut, clip.sampleRate, D.SR);
     const head = (y) => M.rmsDb(y.subarray(0, 240)) - M.rmsDb(x.subarray(0, 240));
     const cold = await runDeepFilterNet(x, run, { preRoll: 0 });
     const warm = await runDeepFilterNet(x, run);

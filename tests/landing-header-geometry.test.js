@@ -124,10 +124,15 @@ describe('landing header geometry', () => {
     await send('Emulation.setDeviceMetricsOverride', {
       width, height: 900, deviceScaleFactor: 1, mobile: width < 800,
     }, send.sessionId);
-    await send('Page.navigate', { url: `${origin}/` }, send.sessionId);
+    // Measure the settled page, not whatever is on screen when navigate returns:
+    // a per-call query tells the new document from the previous one, and the
+    // workspace blocks (which add chrome inside the nav) must have mounted.
+    const nonce = `w${width}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await send('Page.navigate', { url: `${origin}/?geom=${nonce}` }, send.sessionId);
     const expr = `(() => {
+      if (location.search !== '?geom=${nonce}' || document.readyState !== 'complete') return null;
       const header = document.querySelector('.v3-header');
-      const ready = header && document.getElementById('vip-debug-toggle') && document.getElementById('vip-diag-toggle') && header.querySelectorAll('.v3-nav a').length === 3;
+      const ready = header && document.querySelector('.v3-nav.vip-block') && document.getElementById('vip-debug-toggle') && document.getElementById('vip-diag-toggle') && header.querySelectorAll('.v3-nav a').length === 3;
       if (!ready) return null;
       const links = [...header.querySelectorAll('a')].map((el) => {
         const rect = el.getBoundingClientRect();
@@ -170,14 +175,24 @@ describe('landing header geometry', () => {
         viewport: window.innerWidth,
       };
     })()`;
+    const settle = `document.fonts.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))))`;
     let data = null;
-    for (let i = 0; i < 40; i += 1) {
+    let last = null;
+    // A loaded full-suite run can take a while to boot the page: allow 20 s.
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
       const evaluated = await send('Runtime.evaluate', { expression: expr, returnByValue: true }, send.sessionId);
-      data = evaluated.result && evaluated.result.value ? evaluated.result.value : null;
-      if (data) break;
+      const now = evaluated.result && evaluated.result.value ? evaluated.result.value : null;
+      if (now) {
+        await send('Runtime.evaluate', { expression: settle, awaitPromise: true }, send.sessionId);
+        // Two identical measurements in a row: fonts loaded and layout stable.
+        const key = JSON.stringify(now);
+        if (key === last) { data = now; break; }
+        last = key;
+      }
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
-    if (!data) throw new Error(`landing header did not mount at ${width}px`);
+    if (!data) throw new Error(`landing header did not mount and settle at ${width}px (${last ? "mounted, layout kept changing" : "never mounted"})`);
     return data;
   }
 
@@ -203,7 +218,7 @@ describe('landing header geometry', () => {
       expect(toggle.hit).toBe(true);
       expect(toggle.label.length).toBeGreaterThan(0);
     }
-  }, 20000);
+  }, 45000);
 
   test.each([375, 390, 768])('toolbar toggles do not overlap header controls at %ipx', async (width) => {
     const data = await measure(width);
@@ -215,7 +230,7 @@ describe('landing header geometry', () => {
     for (const link of data.links) {
       expect(link.scroll).toBeLessThanOrEqual(link.client + 1);
     }
-  }, 20000);
+  }, 45000);
 
   test('a second click on DBG still reaches the toggle when the header wraps', async () => {
     await send('Emulation.setDeviceMetricsOverride', {
@@ -255,5 +270,5 @@ describe('landing header geometry', () => {
     expect(data.panelClearsButton).toBe(true);
     expect(data.closed).toBe(true);
     expect(data.expanded).toBe('false');
-  }, 20000);
+  }, 45000);
 });
