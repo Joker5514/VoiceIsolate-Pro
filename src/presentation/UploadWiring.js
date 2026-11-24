@@ -148,6 +148,46 @@ export function fixUploadTouchTargets(root = globalThis.document) {
   }
 }
 
+/** A second activation this soon after the first is the same gesture (double-click, double-tap, re-tap while the picker opens). */
+export const PICKER_REOPEN_GUARD_MS = 1500;
+
+/**
+ * One file picker per gesture. A double-click, a double-tap, or a second tap
+ * while the picker is still opening activated the input twice. Chrome then
+ * opened two pickers: the file chosen in the first was dropped (no change
+ * event, no ingest) and the second picker stayed open, so the button looked
+ * like it only worked some of the time. Swallow a repeat activation until the
+ * first picker reports back (change or cancel), capped at
+ * PICKER_REOPEN_GUARD_MS so a browser without the cancel event can never lock
+ * the control. Window focus is not a settle signal: clicking back into the page
+ * while the first picker is still open refocuses the window and would let the
+ * second activation through.
+ *
+ * @param {HTMLInputElement|null|undefined} fileInput
+ * @param {{ now?: () => number }} [opts]
+ * @returns {boolean} true when the guard is (already) installed
+ */
+export function guardSinglePicker(fileInput, opts = {}) {
+  if (!fileInput || typeof fileInput.addEventListener !== 'function') return false;
+  if (fileInput.dataset?.vipPickerGuard === '1') return true;
+  if (fileInput.dataset) fileInput.dataset.vipPickerGuard = '1';
+  const now = opts.now || (() => Date.now());
+  let openedAt = 0;
+  const settle = () => { openedAt = 0; };
+  fileInput.addEventListener('click', (event) => {
+    const t = now();
+    if (openedAt && t - openedAt < PICKER_REOPEN_GUARD_MS) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    openedAt = t;
+  }, true);
+  fileInput.addEventListener('change', settle);
+  fileInput.addEventListener('cancel', settle);
+  return true;
+}
+
 /**
  * Reset file input so the same path can be re-selected (change fires again).
  * @param {HTMLInputElement|null|undefined} fileInput
