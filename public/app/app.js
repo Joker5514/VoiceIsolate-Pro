@@ -136,7 +136,7 @@ import {
   triggerBlobDownload,
 } from '/src/pipeline/video-export.js';
 import { publishExportProvenance } from '/src/pipeline/export-provenance.js';
-import { openFilePicker as triggerFileInput, primeAudioGesture, fixUploadTouchTargets, resetFileInput } from '/src/presentation/UploadWiring.js';
+import { openFilePicker as triggerFileInput, primeAudioGesture, fixUploadTouchTargets, resetFileInput, guardSinglePicker } from '/src/presentation/UploadWiring.js';
 import { startWorkletStatusDriver } from '/src/presentation/WorkletStatus.js';
 import {
   analyzeAcousticEnvironment,
@@ -2609,6 +2609,7 @@ class VoiceIsolatePro {
   bindEvents() {
     const d = this.dom;
     if (d.fileInput?.setAttribute) d.fileInput.setAttribute('accept', getFileInputAccept());
+    guardSinglePicker(d.fileInput);
 
     // Helper: safe addEventListener
     const bind = (name, el, event, fn) => {
@@ -2664,7 +2665,13 @@ class VoiceIsolatePro {
         this.setStatus?.('ERROR');
       });
     };
-    bind('fileInput', d.fileInput, 'change', (e) => acceptUpload(e.target?.files?.[0]));
+    bind('fileInput', d.fileInput, 'change', (e) => {
+      const file = e.target?.files?.[0];
+      // Clear now: handleFile() only reset the value after its early returns
+      // (rejected type, superseded pick), so the same file then fired no change.
+      resetFileInput(d.fileInput);
+      acceptUpload(file);
+    });
     // Mark the canonical handler so mobile-upload-fix does not attach a second
     // change listener and race a second handleFile() against this upload.
     if (d.fileInput?.dataset) d.fileInput.dataset.vipAppChangeBound = '1';

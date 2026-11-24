@@ -19,7 +19,7 @@ import { explainProviderReady, planStartupProviderFailure, providerLogLevel } fr
 import { separateStems } from '/src/pipeline/StemSeparation.js';
 import { createMediaTransport } from '/src/presentation/MediaTransport.js';
 import { mountExplainBullets, foldParagraph, INGESTION_EXPLAINS } from '/src/presentation/ExplainBullets.js';
-import { openFilePicker, primeAudioGesture, fixUploadTouchTargets, classifyClientRejection } from '/src/presentation/UploadWiring.js';
+import { openFilePicker, primeAudioGesture, fixUploadTouchTargets, classifyClientRejection, guardSinglePicker } from '/src/presentation/UploadWiring.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
 import { LANDING_PRESETS, RT_SLIDER_DEFAULTS } from '/src/core/MixCalibration.js';
@@ -1770,10 +1770,26 @@ async function ingestFrom(file) {
   }
 }
 
+// Browse is locked while a file imports, processes or exports. Say so instead
+// of a dead click (the label of a disabled input does nothing) or a pick that
+// ingestFrom() drops without a word.
+function importBusyMessage() {
+  if (processingInFlight) return 'Processing is running. Choose another file when it finishes, or press Cancel.';
+  if (ingestInFlight) return 'Still importing the current file. Choose another file when it finishes.';
+  if (downloadInFlight) return 'Export is running. Choose another file when it finishes.';
+  return '';
+}
+
 async function onFileChosen() {
+  const file = ui.fileInput.files && ui.fileInput.files[0];
+  // Clear now, whatever happens next: a refused or failed pick used to keep
+  // the value, so choosing the same file again fired no change event.
+  try { ui.fileInput.value = ''; } catch { /* ignore */ }
   try {
+    const busy = importBusyMessage();
+    if (file && busy) { setStatus(busy, 'warn'); return; }
     try { await primeAudioGesture(); } catch { /* best-effort */ }
-    await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
+    await ingestFrom(file);
   } catch (err) {
     console.error('[VIP][landing] file choice failed:', err);
     setStatus(err?.message || 'Import failed', 'error');
@@ -1808,6 +1824,13 @@ function wireUploadDropZone() {
     });
   };
   zone.addEventListener('click', (event) => {
+    // The Browse label's activation click on #fileInput bubbles here too;
+    // handling it ran a second, programmatic fileInput.click() on every Browse.
+    if (event.target === ui.fileInput) return;
+    if (ui.fileInput.disabled && !event.target.closest('#openDriveBtn')) {
+      setStatus(importBusyMessage() || 'Import is busy. Try again in a moment.', 'warn');
+      return;
+    }
     if (event.target.closest('#browseBtn') || event.target.closest('#openDriveBtn')) return;
     openPickerSafely();
   });
@@ -2561,6 +2584,7 @@ function wireDragAndDrop() {
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
 if (ui.fileInput?.setAttribute) ui.fileInput.setAttribute('accept', getFileInputAccept());
+guardSinglePicker(ui.fileInput);
 ui.fileInput.addEventListener('click', () => { primeAudioGesture().catch(() => {}); });
 ui.fileInput.addEventListener('change', onFileChosen);
 fixUploadTouchTargets();
