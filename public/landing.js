@@ -824,40 +824,29 @@ function setDownloadHint(msg) {
 }
 
 function paintDriveConfigNote(report) {
-  const text = report?.message || '';
-  for (const id of ['openDriveBtn', 'saveDriveBtn']) {
-    const btn = document.getElementById(id);
-    if (!btn) continue;
-    let note = btn.parentElement?.querySelector(`[data-drive-status-for="${id}"]`);
-    if (!note) {
-      note = document.createElement('p');
-      note.className = 'hint vip-drive-status';
-      note.dataset.driveStatusFor = id;
-      note.setAttribute('role', 'status');
-      btn.insertAdjacentElement('afterend', note);
-    }
-    note.textContent = text;
-  }
+  // Do not inject new nodes — that would shift the upload/export layout.
+  // Flag-off hides the buttons; flag-on leaves a short status in downloadStatus only when the user acts.
+  const slot = document.getElementById('downloadStatus');
+  if (!slot || !report?.configured) return;
+  if (report.message && !slot.textContent) slot.textContent = report.message;
 }
 
 async function showDriveConfigStatus() {
   try {
-    const { describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
-    paintDriveConfigNote(describeDriveConfiguration());
-  } catch (err) {
-    paintDriveConfigNote({
-      message: `Google Drive status could not be read (${err?.message || 'unavailable'}). Local WAV export still works.`,
-    });
+    const { loadDriveClientConfig, applyDriveFeatureFlag } = await import('/src/core/GoogleDriveBridge.js');
+    const report = await loadDriveClientConfig();
+    applyDriveFeatureFlag(report);
+  } catch {
+    // Unconfigured: buttons stay hidden (they ship with the hidden attribute).
   }
 }
 
 async function onOpenFromDrive() {
   try {
-    const { openMediaFileFromDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
-    const driveReport = describeDriveConfiguration();
-    paintDriveConfigNote(driveReport);
+    const { openMediaFileFromDrive, loadDriveClientConfig, applyDriveFeatureFlag } = await import('/src/core/GoogleDriveBridge.js');
+    const driveReport = await loadDriveClientConfig();
+    applyDriveFeatureFlag(driveReport);
     if (!driveReport.configured) {
-      setStatus(driveReport.message, 'error');
       return;
     }
     setStatus('Sign in to Google Drive to pick a file…', 'warn');
@@ -968,10 +957,10 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
     // Primary audio/video artifact is ALWAYS delivered first; if the save is
     // cancelled or fails, no orphan sidecar is published or downloaded.
     if (drive) {
-      const { saveBlobToDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
-      const driveReport = describeDriveConfiguration();
-      paintDriveConfigNote(driveReport);
-      if (!driveReport.configured) throw new Error(`${driveReport.message} Use Export mix as WAV.`);
+      const { saveBlobToDrive, loadDriveClientConfig, applyDriveFeatureFlag } = await import('/src/core/GoogleDriveBridge.js');
+      const driveReport = await loadDriveClientConfig();
+      applyDriveFeatureFlag(driveReport);
+      if (!driveReport.configured) throw new Error('Google Drive is not configured. Use Export mix as WAV.');
       throwIfAborted(signal);
       // Drive's API has no abort support: disable Cancel before the explicit external file transfer.
       setLandingCancelVisible(false);

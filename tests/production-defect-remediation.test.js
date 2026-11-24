@@ -359,10 +359,7 @@ describe('defect 02 — Drive status names missing settings and hides secrets', 
     const empty = describeDriveConfiguration({});
     expect(empty.configured).toBe(false);
     expect(empty.missing).toEqual(expect.arrayContaining([
-      'FIREBASE_API_KEY',
-      'FIREBASE_AUTH_DOMAIN',
-      'FIREBASE_PROJECT_ID',
-      'FIREBASE_APP_ID',
+      'GOOGLE_OAUTH_CLIENT_ID',
       'GOOGLE_API_KEY',
     ]));
     expect(empty.message).toMatch(/Local WAV export still works/);
@@ -370,26 +367,21 @@ describe('defect 02 — Drive status names missing settings and hides secrets', 
 
     const secret = 'super-secret-drive-value';
     const ready = describeDriveConfiguration({
-      FIREBASE_API_KEY: secret,
-      FIREBASE_AUTH_DOMAIN: 'app.firebaseapp.com',
-      FIREBASE_PROJECT_ID: 'voiceisolate',
-      FIREBASE_APP_ID: '1:2:web:abc',
+      GOOGLE_OAUTH_CLIENT_ID: 'cid.apps.googleusercontent.com',
       GOOGLE_API_KEY: secret,
+      GOOGLE_APP_ID: '1234567890',
     });
     expect(ready.configured).toBe(true);
     expect(JSON.stringify(ready)).not.toContain(secret);
-    expect(ready.optionalMissing).toEqual(['GOOGLE_OAUTH_CLIENT_ID']);
+    expect(ready.optionalMissing).toEqual([]);
 
-    const electron = describeDriveConfiguration({
-      FIREBASE_API_KEY: secret,
-      FIREBASE_PROJECT_ID: 'voiceisolate',
-      FIREBASE_APP_ID: '1:2:web:abc',
+    const withoutAppId = describeDriveConfiguration({
+      GOOGLE_OAUTH_CLIENT_ID: 'cid.apps.googleusercontent.com',
       GOOGLE_API_KEY: secret,
-      vipDesktop: { firebaseAuthDomain: 'app.firebaseapp.com' },
     });
-    expect(electron.configured).toBe(true);
-    expect(electron.missing).not.toContain('FIREBASE_AUTH_DOMAIN');
-    expect(JSON.stringify(electron)).not.toContain(secret);
+    expect(withoutAppId.configured).toBe(true);
+    expect(withoutAppId.optionalMissing).toEqual(['GOOGLE_APP_ID']);
+    expect(JSON.stringify(withoutAppId)).not.toContain(secret);
   });
 
   test('both pages paint status before a Drive action', () => {
@@ -397,9 +389,11 @@ describe('defect 02 — Drive status names missing settings and hides secrets', 
     const app = read('public/app/app.js');
     const html = read('public/app/index.html');
     expect(landing).toMatch(/showDriveConfigStatus/);
-    expect(landing).toMatch(/describeDriveConfiguration/);
+    expect(landing).toMatch(/loadDriveClientConfig/);
+    expect(landing).toMatch(/applyDriveFeatureFlag/);
     expect(app).toMatch(/_paintDriveConfigStatus/);
-    expect(app).toMatch(/describeDriveConfiguration\(\)/);
+    expect(app).toMatch(/loadDriveClientConfig/);
+    expect(app).toMatch(/applyDriveFeatureFlag/);
     expect(html).toMatch(/id="driveConfigStatus"/);
     expect(html).toMatch(/Processing never uses Drive/i);
   });

@@ -15,7 +15,21 @@ const express = require('express');
 const request = require('supertest');
 
 // ── Minimal Express app that mirrors api/client-config.js ─────────────────────
-function buildApp({ rcAndroid = '', rcIos = '' } = {}) {
+const CLIENT_CONFIG_KEYS = [
+  'rcApiKeyAndroid',
+  'rcApiKeyIos',
+  'googleOAuthClientId',
+  'googleApiKey',
+  'googleAppId',
+];
+
+function buildApp({
+  rcAndroid = '',
+  rcIos = '',
+  googleOAuthClientId = '',
+  googleApiKey = '',
+  googleAppId = '',
+} = {}) {
   const app = express();
 
   app.get('/api/client-config', (req, res) => {
@@ -26,6 +40,9 @@ function buildApp({ rcAndroid = '', rcIos = '' } = {}) {
     res.json({
       rcApiKeyAndroid: rcAndroid,
       rcApiKeyIos:     rcIos,
+      googleOAuthClientId,
+      googleApiKey,
+      googleAppId,
     });
   });
 
@@ -47,16 +64,20 @@ describe('GET /api/client-config', () => {
       expect(res.headers['content-type']).toMatch(/application\/json/);
     });
 
-    test('body has rcApiKeyAndroid and rcApiKeyIos fields', async () => {
+    test('body has RevenueCat and Google Drive fields', async () => {
       const res = await request(app).get('/api/client-config');
-      expect(res.body).toHaveProperty('rcApiKeyAndroid');
-      expect(res.body).toHaveProperty('rcApiKeyIos');
+      for (const key of CLIENT_CONFIG_KEYS) {
+        expect(res.body).toHaveProperty(key);
+      }
     });
 
-    test('both keys default to empty strings when env vars are unset', async () => {
+    test('keys default to empty strings when env vars are unset', async () => {
       const res = await request(app).get('/api/client-config');
       expect(res.body.rcApiKeyAndroid).toBe('');
       expect(res.body.rcApiKeyIos).toBe('');
+      expect(res.body.googleOAuthClientId).toBe('');
+      expect(res.body.googleApiKey).toBe('');
+      expect(res.body.googleAppId).toBe('');
     });
 
     test('response carries Cache-Control: no-store', async () => {
@@ -67,14 +88,20 @@ describe('GET /api/client-config', () => {
     test('body contains only the expected keys (no secret leakage)', async () => {
       const res = await request(app).get('/api/client-config');
       const keys = Object.keys(res.body);
-      // Exactly these two keys — no extras (guards against accidental secret exposure)
-      expect(keys).toHaveLength(2);
-      expect(keys).toEqual(expect.arrayContaining(['rcApiKeyAndroid', 'rcApiKeyIos']));
+      // Exactly these keys — no extras (guards against accidental secret exposure)
+      expect(keys).toHaveLength(CLIENT_CONFIG_KEYS.length);
+      expect(keys).toEqual(expect.arrayContaining(CLIENT_CONFIG_KEYS));
     });
   });
 
   describe('when env vars are set', () => {
-    const app = buildApp({ rcAndroid: 'rcb_android_test_key', rcIos: 'rcb_ios_test_key' });
+    const app = buildApp({
+      rcAndroid: 'rcb_android_test_key',
+      rcIos: 'rcb_ios_test_key',
+      googleOAuthClientId: 'cid.apps.googleusercontent.com',
+      googleApiKey: 'dev-key',
+      googleAppId: '1234567890',
+    });
 
     test('returns the android key', async () => {
       const res = await request(app).get('/api/client-config');
@@ -84,6 +111,13 @@ describe('GET /api/client-config', () => {
     test('returns the iOS key', async () => {
       const res = await request(app).get('/api/client-config');
       expect(res.body.rcApiKeyIos).toBe('rcb_ios_test_key');
+    });
+
+    test('returns the Google Drive public config', async () => {
+      const res = await request(app).get('/api/client-config');
+      expect(res.body.googleOAuthClientId).toBe('cid.apps.googleusercontent.com');
+      expect(res.body.googleApiKey).toBe('dev-key');
+      expect(res.body.googleAppId).toBe('1234567890');
     });
 
     test('still carries Cache-Control: no-store when keys are set', async () => {
@@ -109,6 +143,12 @@ describe('GET /api/client-config', () => {
 
     test('api/client-config.js reads RC_API_KEY_IOS from process.env', () => {
       expect(src).toContain('RC_API_KEY_IOS');
+    });
+
+    test('api/client-config.js reads Google Drive env vars from process.env', () => {
+      expect(src).toContain('GOOGLE_OAUTH_CLIENT_ID');
+      expect(src).toContain('GOOGLE_API_KEY');
+      expect(src).toContain('GOOGLE_APP_ID');
     });
 
     test('api/index.js mounts the /client-config route', () => {

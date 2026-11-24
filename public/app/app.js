@@ -4501,28 +4501,27 @@ class VoiceIsolatePro {
   _writeDriveStatus(report) {
     const slot = typeof document !== 'undefined' ? document.getElementById('driveConfigStatus') : null;
     if (!slot || !report) return;
-    slot.textContent = report.message;
+    slot.textContent = report.configured ? (report.message || '') : '';
     slot.dataset.configured = report.configured ? '1' : '0';
   }
 
   async _paintDriveConfigStatus() {
     try {
-      const { describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
-      this._writeDriveStatus(describeDriveConfiguration());
+      const { loadDriveClientConfig, applyDriveFeatureFlag } = await import('/src/core/GoogleDriveBridge.js');
+      const report = await loadDriveClientConfig();
+      applyDriveFeatureFlag(report);
+      this._writeDriveStatus(report);
     } catch {
-      this._writeDriveStatus({
-        configured: false,
-        message: 'Google Drive status could not be read. Local WAV export still works.',
-      });
+      // Unconfigured: buttons stay hidden (they ship with the hidden attribute).
     }
   }
 
   async _openFromGoogleDrive() {
-    const { openMediaFileFromDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
-    const driveReport = describeDriveConfiguration();
+    const { openMediaFileFromDrive, loadDriveClientConfig, applyDriveFeatureFlag } = await import('/src/core/GoogleDriveBridge.js');
+    const driveReport = await loadDriveClientConfig();
+    applyDriveFeatureFlag(driveReport);
     this._writeDriveStatus(driveReport);
     if (!driveReport.configured) {
-      this.showNotification(driveReport.message, 'warn');
       return;
     }
     this.showNotification('Sign in to Google Drive to pick a file…', 'info');
@@ -4687,12 +4686,12 @@ class VoiceIsolatePro {
       this.showNotification('Nothing to save yet — process a file first.', 'info');
       return;
     }
-    const { saveBlobToDrive, describeDriveConfiguration } = await import('/src/core/GoogleDriveBridge.js');
+    const { saveBlobToDrive, loadDriveClientConfig, applyDriveFeatureFlag } = await import('/src/core/GoogleDriveBridge.js');
     const { encodeWav } = await import('/src/pipeline/ExportManager.js');
-    const driveReport = describeDriveConfiguration();
+    const driveReport = await loadDriveClientConfig();
+    applyDriveFeatureFlag(driveReport);
     this._writeDriveStatus(driveReport);
     if (!driveReport.configured) {
-      this.showNotification(driveReport.message, 'warn');
       return;
     }
     // Same crop and snapshot as the WAV download: Drive gets what the user hears.

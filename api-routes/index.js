@@ -7,7 +7,7 @@
  * Then: app.use('/api', apiRouter)
  *
  * Routes:
- *   /api/client-config     → Browser-safe runtime config (RC public SDK keys)
+ *   /api/client-config     → Browser-safe runtime config (RC public SDK keys, Google Drive Picker)
  *   /api/checkout          → Stripe Checkout session creation
  *   /api/webhook/stripe    → Stripe webhook handler
  *   /api/license/*         → License validation and activation

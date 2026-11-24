@@ -43,7 +43,7 @@ function isLegacyInlinePath(reqPath) {
 function buildCsp({ allowLegacyInline }) {
   const scriptSrc = allowLegacyInline
     ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com https://accounts.google.com"
-    : "script-src 'self' 'wasm-unsafe-eval'";
+    : "script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com https://accounts.google.com";
   return [
     "default-src 'self'",
     scriptSrc,
