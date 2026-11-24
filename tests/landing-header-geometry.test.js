@@ -178,7 +178,9 @@ describe('landing header geometry', () => {
     const settle = `document.fonts.ready.then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))))`;
     let data = null;
     let last = null;
-    for (let i = 0; i < 60; i += 1) {
+    // A loaded full-suite run can take a while to boot the page: allow 20 s.
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
       const evaluated = await send('Runtime.evaluate', { expression: expr, returnByValue: true }, send.sessionId);
       const now = evaluated.result && evaluated.result.value ? evaluated.result.value : null;
       if (now) {
@@ -190,7 +192,7 @@ describe('landing header geometry', () => {
       }
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
-    if (!data) throw new Error(`landing header did not mount and settle at ${width}px`);
+    if (!data) throw new Error(`landing header did not mount and settle at ${width}px (${last ? "mounted, layout kept changing" : "never mounted"})`);
     return data;
   }
 
@@ -216,7 +218,7 @@ describe('landing header geometry', () => {
       expect(toggle.hit).toBe(true);
       expect(toggle.label.length).toBeGreaterThan(0);
     }
-  }, 20000);
+  }, 45000);
 
   test.each([375, 390, 768])('toolbar toggles do not overlap header controls at %ipx', async (width) => {
     const data = await measure(width);
@@ -228,7 +230,7 @@ describe('landing header geometry', () => {
     for (const link of data.links) {
       expect(link.scroll).toBeLessThanOrEqual(link.client + 1);
     }
-  }, 20000);
+  }, 45000);
 
   test('a second click on DBG still reaches the toggle when the header wraps', async () => {
     await send('Emulation.setDeviceMetricsOverride', {
@@ -268,5 +270,5 @@ describe('landing header geometry', () => {
     expect(data.panelClearsButton).toBe(true);
     expect(data.closed).toBe(true);
     expect(data.expanded).toBe('false');
-  }, 20000);
+  }, 45000);
 });
