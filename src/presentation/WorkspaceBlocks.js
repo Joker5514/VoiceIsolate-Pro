@@ -18,7 +18,7 @@ export const WIDE_QUERY = '(min-width: 1280px)';
 
 export const BLOCKS = {
   stems: [
-    { id: 'nav', selector: '.v3-nav', label: 'Navigation', axes: 'width', minW: 180, maxW: 520, overlay: true, collapse: false, reorder: false },
+    { id: 'nav', selector: '.v3-nav', label: 'Navigation', axes: 'width', minW: 180, maxW: 520, overlay: true, collapse: false, maximize: false, reorder: false },
     { id: 'upload', selector: '#uploadPanel', label: 'Import', axes: 'height', minH: 140, reorder: true },
     { id: 'signal', selector: '#signalCanvasSection', label: 'Signal workspace', axes: 'both', minH: 160, minW: 280, maxW: 1400, reorder: true },
     { id: 'mixer', selector: '#enhancePanel', label: 'Stem mixer', axes: 'height', minH: 180, reorder: true },
