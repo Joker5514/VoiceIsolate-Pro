@@ -2665,15 +2665,16 @@ class VoiceIsolatePro {
         this.setStatus?.('ERROR');
       });
     };
+    // Clear the value as soon as the pick is read: handleFile() only reset it
+    // after its early returns (rejected type, superseded pick), so choosing the
+    // same file again fired no change event.
+    // Mark the canonical handler so mobile-upload-fix does not attach a second
+    // change listener and race a second handleFile() against this upload.
     bind('fileInput', d.fileInput, 'change', (e) => {
       const file = e.target?.files?.[0];
-      // Clear now: handleFile() only reset the value after its early returns
-      // (rejected type, superseded pick), so the same file then fired no change.
       resetFileInput(d.fileInput);
       acceptUpload(file);
     });
-    // Mark the canonical handler so mobile-upload-fix does not attach a second
-    // change listener and race a second handleFile() against this upload.
     if (d.fileInput?.dataset) d.fileInput.dataset.vipAppChangeBound = '1';
     // The mobile compatibility layer must not run a duplicate drop handler.
     if (d.dropZone) {

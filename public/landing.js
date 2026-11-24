@@ -1780,16 +1780,24 @@ function importBusyMessage() {
   return '';
 }
 
-async function onFileChosen() {
-  const file = ui.fileInput.files && ui.fileInput.files[0];
-  // Clear now, whatever happens next: a refused or failed pick used to keep
-  // the value, so choosing the same file again fired no change event.
+// A refused or failed pick used to keep the input's value, so choosing the
+// same file again fired no change event. Clear it once the pick is read.
+function clearFileInputValue() {
   try { ui.fileInput.value = ''; } catch { /* ignore */ }
+}
+
+async function onFileChosen() {
   try {
     const busy = importBusyMessage();
-    if (file && busy) { setStatus(busy, 'warn'); return; }
+    if (busy && ui.fileInput.files?.length) {
+      clearFileInputValue();
+      setStatus(busy, 'warn');
+      return;
+    }
     try { await primeAudioGesture(); } catch { /* best-effort */ }
-    await ingestFrom(file);
+    const pending = ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
+    clearFileInputValue();
+    await pending;
   } catch (err) {
     console.error('[VIP][landing] file choice failed:', err);
     setStatus(err?.message || 'Import failed', 'error');
