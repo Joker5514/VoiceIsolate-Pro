@@ -45,7 +45,7 @@ Published native asset metadata observed from GitHub Release `v25.0.3`:
 | `VoiceIsolate-Pro-android-debug.apk` | 101,650,376 bytes | `70317aaa84c3f2ca286115a878fd79978de80e8df0a2cc9538201bf9bf7dc626` | `2026-09-09T23:31:41Z` |
 | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | 144,667,075 bytes | `926cab42ff8453f812de52bd66368553f708c2747556ed191dabaca66f2ce4c8` | `2026-09-09T23:31:43Z` |
 
-The Android artifact is a **debug/sideload APK**. The Windows installer may be unsigned. Current `main` (`f5b271892de7bb8aca85b351062dd81f9191f756`) is newer than the release-note commit `038b3104e659be4c3914bd5ecd763e6141b98f16`. Do not describe Web, Android, Windows, `main`, and the release tag as the same build unless [`docs/releases/release-provenance.json`](docs/releases/release-provenance.json) proves it.
+The Android artifact is a **debug/sideload APK**. The Windows installer may be unsigned. The provenance review point recorded in [`docs/releases/release-provenance.json`](docs/releases/release-provenance.json) is reviewed source `f5b271892de7bb8aca85b351062dd81f9191f756` (2026-10-20), not the current `main` tip; the release notes name source commit `038b3104e659be4c3914bd5ecd763e6141b98f16`. Do not describe Web, Android, Windows, `main`, and the release tag as the same build unless that provenance file proves it.
 
 **iOS is outside the supported v1.0 platform scope** even though repository scaffolding/version metadata exists. No current iOS, macOS, or Linux artifact is published in `v25.0.3`.
 
