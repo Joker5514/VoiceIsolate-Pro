@@ -12,6 +12,11 @@ const GITHUB_API = `https://api.github.com/repos/${REPO}`;
 const PROD = 'https://voice-isolate-pro.vercel.app';
 const TIMEOUT_MS = 15_000;
 const RETRIES = 2;
+// Optional GitHub API credential. Anonymous calls are limited to 60 requests
+// per hour per IP, which shared CI/sandbox egress addresses routinely exhaust.
+// GITHUB_TOKEN is the GitHub Actions standard; GH_TOKEN is accepted as the
+// gh CLI spelling. The header is only ever sent to api.github.com.
+const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
 
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const provenanceDoc = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/releases/release-provenance.json'), 'utf8'));
@@ -44,8 +49,8 @@ function requestHeaders(url, extra = {}) {
   };
   if (target.hostname === 'api.github.com') {
     out.Accept = out.Accept || 'application/vnd.github+json';
-    if (process.env.GITHUB_TOKEN) {
-      out.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+    if (GITHUB_TOKEN) {
+      out.Authorization = `Bearer ${GITHUB_TOKEN}`;
     }
   }
   return out;
@@ -84,9 +89,32 @@ function assetByName(release, name) {
   return asset;
 }
 
+async function describeGitHubFailure(response) {
+  let detail = '';
+  try {
+    const body = await response.json();
+    if (body?.message) detail = `: ${body.message}`;
+  } catch {
+    // Error bodies are not always JSON; the status alone is still useful.
+  }
+  const remaining = response.headers.get('x-ratelimit-remaining');
+  const reset = Number(response.headers.get('x-ratelimit-reset'));
+  const resetHint = Number.isFinite(reset) && reset > 0
+    ? `; resets ${new Date(reset * 1000).toISOString()}`
+    : '';
+
+  if (response.status === 401) {
+    return `GitHub latest release API: HTTP 401 — rejected the configured GITHUB_TOKEN/GH_TOKEN${detail}`;
+  }
+  if (response.status === 403 && remaining === '0') {
+    return `GitHub latest release API: HTTP 403 — ${GITHUB_TOKEN ? 'the token' : 'anonymous requests'} hit the GitHub API rate limit (x-ratelimit-remaining: 0${resetHint})${detail}. Set GITHUB_TOKEN (or GH_TOKEN) to a token with read access to this public repository, or re-run after the reset.`;
+  }
+  return `GitHub latest release API: HTTP ${response.status}${detail}`;
+}
+
 async function validateGitHubRelease() {
   const response = await request(`${GITHUB_API}/releases/latest`, {}, 'GitHub latest release API');
-  assert(response.ok, `GitHub latest release API: HTTP ${response.status}`);
+  if (!response.ok) fail(await describeGitHubFailure(response));
   const release = await response.json();
   assert(release.tag_name === tag, `Latest release ${release.tag_name} does not match provenance tag ${tag}`);
   assert(provenanceDoc.productVersion === version, 'release-provenance productVersion does not match package.json');
@@ -200,6 +228,7 @@ async function validateLiveRoutes() {
 
 async function main() {
   console.log(`[downloads] validating VoiceIsolate Pro ${tag}`);
+  console.log(`[downloads] GitHub API auth: ${GITHUB_TOKEN ? 'token' : 'anonymous (60 requests/hour per IP)'}`);
   const observed = await validateGitHubRelease();
   validateRepositoryReferences(observed);
   await validateLiveRoutes();
