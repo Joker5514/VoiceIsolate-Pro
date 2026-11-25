@@ -66,6 +66,14 @@ The validator checks:
 5. The public Landing, Engineer, and download routes respond.
 6. Vercel download redirects and GitHub direct-download routes resolve without downloading the binaries.
 
+The GitHub API call is anonymous unless a token is supplied, and anonymous `api.github.com` requests are capped at **60 per hour per IP**. Shared CI runners, VPN egress, and sandboxes routinely exhaust that quota:
+
+```bash
+GITHUB_TOKEN=… pnpm downloads:validate   # GH_TOKEN also works (gh CLI spelling)
+```
+
+The token only needs read access to this public repository; it is sent to `api.github.com` and never to github.com, the Vercel routes, or the download hosts. If the quota is hit, the failure reports `x-ratelimit-remaining: 0` with the window's reset time from `x-ratelimit-reset` — re-run after that timestamp, or authenticate as above.
+
 Static Jest guardrails also live in `tests/download-links.test.js`.
 
 ## Packaging and rebuild rule
