@@ -2658,7 +2658,10 @@ class VoiceIsolatePro {
     }
     if (d.uploadZone) {
       d.uploadZone.addEventListener('click', (e) => {
-        if (e.target.closest('#fileBtn')) return;
+        // As on Stems: the Browse label's native activation is unreliable
+        // nested inside the zone button, so cancel it and drive the single
+        // hardened programmatic path — one click on the input per tap.
+        if (e.target.closest('#fileBtn')) e.preventDefault();
         openFilePicker();
       });
       d.uploadZone.addEventListener('keydown', e => {
