@@ -1838,7 +1838,13 @@ function wireUploadDropZone() {
       setStatus(importBusyMessage() || 'Import is busy. Try again in a moment.', 'warn');
       return;
     }
-    if (event.target.closest('#browseBtn') || event.target.closest('#openDriveBtn')) return;
+    if (event.target.closest('#openDriveBtn')) return;
+    // A tap on Browse must open the picker through the single hardened path
+    // below, not the label's native activation: the label is nested inside
+    // this zone button and the input sits 1px at the viewport corner, so
+    // the native activation opens no picker and the tap looks dead. Cancel
+    // it so the input is clicked exactly once, by openFilePicker.
+    if (event.target.closest('#browseBtn')) event.preventDefault();
     openPickerSafely();
   });
   zone.addEventListener('keydown', (event) => {

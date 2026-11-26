@@ -270,6 +270,7 @@
         <!-- Import → automatic local analysis -->
         <details class="panel vip-card v3-card v3-upload" id="uploadPanel" open aria-labelledby="uploadLabel" data-state="empty">
           <summary id="uploadLabel" class="v3-label">Import</summary>
+          <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/*,video/*" aria-label="Choose audio or video file">
           <div id="uploadZone" class="upload-zone v3-drop" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
             <svg class="upload-svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <p class="upload-title">Drop audio or video here</p>
@@ -278,7 +279,6 @@
               <label for="fileInput" id="browseBtn" class="btn btn-primary vip-tap" role="button">Browse files</label>
               <button id="openDriveBtn" class="btn btn-outline vip-tap" type="button" hidden title="Open audio/video from Google Drive (local processing)">Open from Drive</button>
             </span>
-            <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/*,video/*" aria-label="Choose audio or video file">
           </div>
           <div class="upload-row v3-row">
             <label for="modelSelect" class="inline-label">Outcome</label>

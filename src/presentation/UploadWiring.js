@@ -9,7 +9,9 @@
 
 /**
  * @param {HTMLInputElement|null|undefined} fileInput
- * @returns {boolean}
+ * @returns {boolean} false when the input is missing/disabled, or when the
+ *   single-picker guard swallowed this click as a repeat activation (no
+ *   picker opens then — callers must not treat it as a success).
  */
 export function openFilePicker(fileInput) {
   if (!fileInput || fileInput.disabled) return false;
@@ -91,7 +93,19 @@ export function openFilePicker(fileInput) {
     // Safety net — never leave the input permanently restyled.
     setTimeout(restore, 120_000);
 
+    // The single-picker guard may swallow this click as a repeat activation
+    // (a label tap just before a zone tap, a rapid re-tap). The click
+    // reports no error, but preventDefault means no picker opens — report
+    // failure so the caller shows the control as unavailable instead of a
+    // dead button. The guard records the swallow (below); the dispatch is
+    // synchronous, so reading it right after click() is exact.
+    swallowedClickByInput.delete(fileInput);
     fileInput.click();
+    if (swallowedClickByInput.get(fileInput)) {
+      swallowedClickByInput.delete(fileInput);
+      restore();
+      return false;
+    }
     opened = true;
   } catch {
     if (typeof fileInput.showPicker === 'function') {
@@ -152,6 +166,14 @@ export function fixUploadTouchTargets(root = globalThis.document) {
 export const PICKER_REOPEN_GUARD_MS = 1500;
 
 /**
+ * Inputs whose latest click the single-picker guard swallowed as a repeat
+ * activation. openFilePicker reads it right after its own click() (the
+ * dispatch is synchronous) so a swallowed click reports failure instead
+ * of a picker that never opened.
+ */
+const swallowedClickByInput = new WeakMap();
+
+/**
  * One file picker per gesture. A double-click, a double-tap, or a second tap
  * while the picker is still opening activated the input twice. Chrome then
  * opened two pickers: the file chosen in the first was dropped (no change
@@ -179,6 +201,9 @@ export function guardSinglePicker(fileInput, opts = {}) {
     if (openedAt && t - openedAt < PICKER_REOPEN_GUARD_MS) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      // Record the swallow so openFilePicker can report the click as failed
+      // instead of a success for a picker that never opened.
+      swallowedClickByInput.set(fileInput, true);
       return;
     }
     openedAt = t;
