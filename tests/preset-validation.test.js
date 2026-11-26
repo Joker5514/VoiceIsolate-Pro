@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const META_KEYS = new Set(['description', 'humRemoval']);
+const META_KEYS = new Set(['description', 'humRemoval', 'disabled', 'disabledReason', 'maskStrength']);
 const sliderMapSrc = fs.readFileSync(path.join(ROOT, 'public/app/slider-map.js'), 'utf8');
 
 function parseRegistry(src) {
@@ -94,8 +94,14 @@ describe('preset validation', () => {
     }
   });
 
-  test('Voice Clarity keeps whisperMode off (fast path)', () => {
-    expect(calibrated['Voice Clarity'].whisperMode).toBe(0);
+  // LM Arena fix session 4 (LOCAL 2026-11-25): Voice Clarity now uses the
+  // Light whisper path (whisperMode 1, whisperLift 8) so quiet speech is
+  // preserved instead of gated away. The old pin (whisperMode 0) is
+  // superseded — the whisper path runs inside the existing STFT pass, no
+  // extra transform, no added latency.
+  test('Voice Clarity uses the Light whisper path (session 4)', () => {
+    expect(calibrated['Voice Clarity'].whisperMode).toBe(1);
+    expect(calibrated['Voice Clarity'].whisperLift).toBe(8);
     expect(calibrated['Voice Clarity'].crowdNull).toBe(0);
   });
 
@@ -113,5 +119,23 @@ describe('preset validation', () => {
     const a = JSON.stringify(calibrated['Podcast Clean']);
     const b = JSON.stringify({ ...calibrated['Podcast Clean'] });
     expect(a).toBe(b);
+  });
+
+  // LM Arena fix session 2 (LOCAL 2026-11-25): disabled presets resolve to
+  // null unless explicitly acknowledged; aliases hit the same gate.
+  test('disabled presets resolve to null unless acknowledged (session 2)', async () => {
+    const mod = await import('../src/core/PresetCalibration.js');
+    expect(Object.keys(mod.PRESET_DISABLED).sort()).toEqual(['Aggressive Isolate', 'Room Echo Reduction']);
+    expect(mod.isPresetDisabled('Aggressive Isolate')).toBe(true);
+    expect(mod.isPresetDisabled('Room Echo Reduction')).toBe(true);
+    expect(mod.isPresetDisabled('Voice Clarity')).toBe(false);
+    expect(mod.resolveEngineerPreset('Aggressive Isolate')).toBeNull();
+    expect(mod.resolveEngineerPreset('Room Echo Reduction')).toBeNull();
+    // Alias resolves to the disabled preset first, then the gate applies.
+    expect(mod.resolveEngineerPreset('Whisper in a Club')).toBeNull();
+    expect(mod.resolveEngineerPreset('Aggressive Isolate', { acknowledged: true })).toBe('Aggressive Isolate');
+    expect(mod.resolveEngineerPreset('Voice Clarity')).toBe('Voice Clarity');
+    expect(mod.presetDisabledReason('Voice Clarity')).toBeNull();
+    expect(typeof mod.presetDisabledReason('Aggressive Isolate')).toBe('string');
   });
 });

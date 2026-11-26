@@ -1,0 +1,9 @@
+# Pinned reference-oracle dependencies for MET-01 (ESTOI).
+# Install into the project venv (never into system site-packages):
+#   python3 -m venv /home/hatch/vip-verify/.venv-estoi
+#   /home/hatch/vip-verify/.venv-estoi/bin/python -m pip install -r scripts/quality/estoi-requirements.txt
+# Regenerate fixtures with:
+#   /home/hatch/vip-verify/.venv-estoi/bin/python scripts/quality/estoi-oracle.py
+pystoi==0.4.1
+numpy==2.5.5
+scipy==1.18.1

@@ -117,6 +117,13 @@ export const PARAMETER_SCHEMA = Object.freeze([
   { id: 'whisperClarity', label: 'Whisper Clarity', category: 'whisper', min: 0, max: 100, default: 65, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'Process-time minimum gain floor / clarity for WhisperHunter.' },
   { id: 'whisperSensitivity', label: 'Whisper Sensitivity', category: 'whisper', min: 0, max: 100, default: 55, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'Process-time VAD energy sensitivity for quiet speech.' },
   { id: 'whisperThreshold', label: 'Whisper Threshold', category: 'whisper', min: 0, max: 100, default: 50, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'Process-time suppression curve steepness for WhisperHunter.' },
+  // LM Arena fix session 1 (LOCAL 2026-11-25): mask recalibration.
+  // Preset-only, NOT a slider (no SLIDER_REGISTRY entry): the fused ML
+  // mask is raised to this power (mask^s) in MLWorker. Default 1 =
+  // current behavior. A schema entry is REQUIRED (not optional, contra
+  // the session-1 note): valueForConfig returns 0 for ids with no entry,
+  // and s = 0 would mean mask^0 = unity (no masking at all).
+  { id: 'maskStrength', label: 'Mask Strength', category: 'whisper', min: 0, max: 1, default: 1, step: 0.01, unit: '', rt: false, path: 'offlineOnly', effect: 'Exponent applied to the fused ML mask (mask^s). 1 = as trained; lower values weaken the mask toward unity. Preset-only; set by the sweep, not by a slider.' },
   { id: 'transientShaper', label: 'Transient Shaper', category: 'whisper', min: -100, max: 100, default: 0, step: 5, unit: '', rt: false, path: 'offlineOnly', effect: 'Process-time bipolar consonant transient emphasis.' },
   { id: 'breathControl', label: 'Breath Control', category: 'whisper', min: 0, max: 100, default: 0, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'Attenuates breath noise between phrases.' },
   { id: 'roomCorrection', label: 'Room Correction', category: 'whisper', min: 0, max: 100, default: 0, step: 1, unit: '%', rt: false, path: 'offlineOnly', effect: 'Adds to dereverb for room tails.' },
@@ -188,7 +195,25 @@ export const ML_SPECTRAL_PARAM_IDS = Object.freeze([
   'musicKill', 'snrFloor', 'whisperMode', 'whisperClarity',
   'whisperSensitivity', 'whisperThreshold', 'transientShaper',
   'breathControl', 'roomCorrection', 'subHarmonic',
+  // Session 1 (LOCAL 2026-11-25): preset-only mask exponent. Once here it
+  // enters processingRevision automatically, so the stem cache keys on it.
+  'maskStrength',
 ]);
+
+/** Spectral ids that are worker-only: no slider, set by presets only. A Set
+ * (not an Array): public/app/app.js calls .has(id) on it in
+ * _setSliderUiInner, and .has does not exist on Arrays — an Array here
+ * threw TypeError on every slider set in the real app (caught by the full
+ * regression, 2026-11-25; no test had exercised the real _setSliderUiInner
+ * path before that). */
+export const WORKER_ONLY_SPECTRAL_IDS = Object.freeze(new Set([
+  // DSP-01 (LOCAL 2026-11-25): maskStrength is preset-only (the sweep sets
+  // it on Voice Clarity). UI preset application must still write it into
+  // VIP_PARAMS — _setSliderUiInner drops ids with no slider spec, so the
+  // worker-only list is the explicit carve-out. Keep this list in sync
+  // with tests/engineer-spectral-control-sensitivity.test.js.
+  'maskStrength',
+]));
 
 /** Stereo-only controls applied after stem expansion without another STFT. */
 export const ML_POST_STEM_PARAM_IDS = Object.freeze([
@@ -301,4 +326,5 @@ export default {
   snapshotParams,
   buildMlProcessingConfig,
   diffProcessingConfig,
+  WORKER_ONLY_SPECTRAL_IDS,
 };

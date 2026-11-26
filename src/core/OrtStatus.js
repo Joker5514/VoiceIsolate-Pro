@@ -7,6 +7,8 @@
 'use strict';
 
 import { explainProviderReady } from './ProviderHandshake.js';
+import { MODEL_MANIFEST } from './ModelManifest.js';
+import { clearAttestationSnapshot, recordAttestationSnapshot } from './CapabilityRegistry.js';
 
 /** @typedef {'unknown'|'probing'|'webgpu'|'wasm'|'error'} OrtProviderState */
 
@@ -19,6 +21,9 @@ import { explainProviderReady } from './ProviderHandshake.js';
  * @property {boolean} webgpuAvailable
  * @property {boolean} providerVerified true only after InferenceSession.create succeeds
  * @property {boolean} [runtimeLoaded]
+ * @property {string|null} [workerInstanceId] id of the worker whose attestation is current
+ * @property {object|null} [attestation] last validated worker attestation (read-only)
+ * @property {string[]} [modelsReady] model ids whose attestation state is 'ready'
  */
 
 /** @type {OrtStatusSnapshot} */
@@ -30,6 +35,9 @@ let _status = {
   webgpuAvailable: false,
   providerVerified: false,
   runtimeLoaded: false,
+  workerInstanceId: null,
+  attestation: null,
+  modelsReady: [],
 };
 
 /** @type {Set<(s: OrtStatusSnapshot) => void>} */
@@ -42,6 +50,7 @@ export function getOrtStatus() {
   return {
     ..._status,
     modelsLoaded: [..._status.modelsLoaded],
+    modelsReady: [...(_status.modelsReady || [])],
   };
 }
 
@@ -55,6 +64,9 @@ export function setOrtStatus(patch = {}) {
     modelsLoaded: patch.modelsLoaded
       ? [...patch.modelsLoaded]
       : _status.modelsLoaded,
+    modelsReady: patch.modelsReady
+      ? [...patch.modelsReady]
+      : (_status.modelsReady || []),
     updatedAt: Date.now(),
   };
   const snap = getOrtStatus();
@@ -149,11 +161,141 @@ export function providerLabel(provider) {
   return PROVIDER_LABEL[provider] || String(provider || 'unknown');
 }
 
+/** Valid capability states in a worker attestation. */
+export const ATTESTATION_CAPABILITY_STATES = Object.freeze(['pending', 'ready', 'degraded', 'unavailable']);
+
+/**
+ * ML-02: validate a worker attestation. Pure function (Node-testable).
+ * The worker is the authority on its own model state; the browser only
+ * checks the attestation's schema, freshness, instance, and that every
+ * shipped model it claims matches its manifest pin. A failed validation
+ * means the attestation is not trusted — it never marks a model ready.
+ *
+ * @param {object} attestation the worker's attestation object
+ * @param {{ manifest?: object, expectedInstanceId?: string|null, now?: number, maxAgeMs?: number }} [options]
+ * @returns {{ ok: boolean, errors: string[], readyModels: string[], degradedModels: string[], unavailableModels: string[], pendingModels: string[] }}
+ */
+export function validateWorkerAttestation(attestation, options = {}) {
+  const {
+    manifest = MODEL_MANIFEST,
+    expectedInstanceId = null,
+    now = Date.now(),
+    maxAgeMs = 5 * 60 * 1000,
+  } = options;
+  const errors = [];
+  const readyModels = [];
+  const degradedModels = [];
+  const unavailableModels = [];
+  const pendingModels = [];
+  if (!attestation || typeof attestation !== 'object') {
+    return { ok: false, errors: ['attestation is missing or not an object'], readyModels, degradedModels, unavailableModels, pendingModels };
+  }
+  if (attestation.schemaVersion !== 1) {
+    errors.push(`schemaVersion ${String(attestation.schemaVersion)} != 1`);
+  }
+  const instanceId = attestation.workerInstanceId;
+  if (typeof instanceId !== 'string' || instanceId.length === 0) {
+    errors.push('workerInstanceId is missing or not a string');
+  } else if (expectedInstanceId != null && instanceId !== expectedInstanceId) {
+    errors.push(`workerInstanceId '${instanceId}' != expected '${expectedInstanceId}' (worker restarted)`);
+  }
+  const issuedAt = attestation.issuedAt;
+  if (!Number.isFinite(issuedAt)) {
+    errors.push('issuedAt is missing or not a finite number');
+  } else {
+    if (issuedAt > now + 60 * 1000) errors.push('issuedAt is in the future (clock skew > 60 s)');
+    if (now - issuedAt > maxAgeMs) errors.push(`issuedAt is stale (${Math.round((now - issuedAt) / 1000)} s old, max ${Math.round(maxAgeMs / 1000)} s)`);
+  }
+  const caps = attestation.capabilities;
+  if (!caps || typeof caps !== 'object') {
+    errors.push('capabilities is missing or not an object');
+  } else {
+    for (const [id, entry] of Object.entries(manifest || {})) {
+      if (entry.shipped === false) continue;
+      const cap = caps[id];
+      if (!cap || typeof cap !== 'object') {
+        errors.push(`shipped model '${id}' has no capability in the attestation`);
+        continue;
+      }
+      if (!ATTESTATION_CAPABILITY_STATES.includes(cap.state)) {
+        errors.push(`model '${id}' has invalid state '${String(cap.state)}'`);
+        continue;
+      }
+      // A manifest entry with no string sha256 has no file pin to compare
+      // (deepfilternet3 is a composite with no file of its own — its parts
+      // carry the pins and its integrity evidence is the self-test output
+      // hash). Skipping the comparison here is correct, not a hole; the
+      // worker refuses to load any unpinned SHIPPED model (verifyIntegrity).
+      if (typeof entry.sha256 === 'string' && entry.sha256.length === 64
+        && typeof cap.sha256 === 'string' && cap.sha256 !== entry.sha256) {
+        errors.push(`model '${id}' capability sha256 does not match the manifest pin`);
+      }
+      if (cap.state === 'ready') readyModels.push(id);
+      else if (cap.state === 'degraded') degradedModels.push(id);
+      else if (cap.state === 'unavailable') unavailableModels.push(id);
+      else pendingModels.push(id);
+    }
+  }
+  const st = attestation.selfTest;
+  if (!st || typeof st !== 'object' || typeof st.passed !== 'boolean'
+    || typeof st.testVersion !== 'string' || typeof st.fixtureId !== 'string') {
+    errors.push('selfTest summary is missing or malformed');
+  }
+  if (!attestation.runtime || typeof attestation.runtime !== 'object'
+    || typeof attestation.runtime.executionProvider !== 'string') {
+    errors.push('runtime is missing or malformed');
+  }
+  return { ok: errors.length === 0, errors, readyModels, degradedModels, unavailableModels, pendingModels };
+}
+
 /**
  * Apply MLWorker `ready` / `error` / `warmed` messages.
  * @param {object} msg
  */
 export function applyMlWorkerMessage(msg = {}) {
+  if (msg.type === 'model-attestation' && msg.attestation) {
+    const att = msg.attestation;
+    // A different instance id means the worker was recycled: invalidate
+    // everything the previous worker attested before adopting the new one.
+    if (_status.workerInstanceId && att.workerInstanceId
+      && att.workerInstanceId !== _status.workerInstanceId) {
+      clearAttestationSnapshot();
+      setOrtStatus({
+        provider: 'probing',
+        providerVerified: false,
+        modelsLoaded: [],
+        modelsReady: [],
+        workerInstanceId: null,
+        attestation: null,
+        detail: 'ML worker restarted — previous attestation invalidated',
+      });
+    }
+    const result = validateWorkerAttestation(att, { expectedInstanceId: _status.workerInstanceId });
+    if (!result.ok) {
+      setOrtStatus({ detail: `Worker attestation rejected: ${result.errors.join('; ')}` });
+      return;
+    }
+    const snapshot = {};
+    for (const [id, cap] of Object.entries(att.capabilities || {})) {
+      snapshot[id] = {
+        id,
+        kind: 'model',
+        enabled: cap.state === 'ready',
+        status: cap.state,
+        reason: cap.reason || null,
+      };
+    }
+    recordAttestationSnapshot(snapshot);
+    setOrtStatus({
+      workerInstanceId: att.workerInstanceId,
+      attestation: att,
+      modelsReady: result.readyModels,
+      detail: result.degradedModels.length || result.unavailableModels.length
+        ? `Models degraded/unavailable: ${[...result.degradedModels, ...result.unavailableModels].join(', ')}`
+        : null,
+    });
+    return;
+  }
   if (msg.type === 'ort-provider' && msg.providerVerified === true) {
     const backend = String(msg.backend || '').toLowerCase();
     if (backend === 'webgpu' || backend === 'wasm') {
@@ -218,4 +360,6 @@ export default {
   formatOrtProviderLabel,
   probeWebGpuAvailable,
   applyMlWorkerMessage,
+  validateWorkerAttestation,
+  ATTESTATION_CAPABILITY_STATES,
 };

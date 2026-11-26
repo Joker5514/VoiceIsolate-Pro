@@ -114,11 +114,16 @@ describe('Presets', () => {
     expect(calibrated.Surveillance.nrAmount).toBeGreaterThanOrEqual(85);
   });
 
-  test('Standard Voice Clarity keeps extreme path off (fast path)', () => {
+  // LM Arena fix session 4 (LOCAL 2026-11-25): Voice Clarity now overrides
+  // the EXTREME_OFF default (whisperMode 0) with the Light whisper path
+  // (whisperMode 1, whisperLift 8) for whisper preservation. EXTREME_OFF
+  // itself still defaults whisperMode to 0; only Voice Clarity opts in.
+  test('Standard Voice Clarity uses the Light whisper path (session 4)', () => {
     expect(appJs).toContain('EXTREME_OFF');
     expect(appJs).toMatch(/const EXTREME_OFF[\s\S]*?whisperMode:\s*0/);
     expect(appJs).toMatch(/\.\.\.EXTREME_OFF/);
-    expect(calibrated['Voice Clarity'].whisperMode).toBe(0);
+    expect(calibrated['Voice Clarity'].whisperMode).toBe(1);
+    expect(calibrated['Voice Clarity'].whisperLift).toBe(8);
   });
 
   test('applyPreset resolves legacy names via resolvePresetName', () => {

@@ -14,6 +14,7 @@
 
 import { whisperProcessingPolicy } from './WhisperLogic.js';
 import { recommendFromAnalysis } from './RecommendationEngine.js';
+import { revalidatePreset } from './CapabilityRegistry.js';
 
 /** Unwanted sound classes we care about for isolation UX. */
 export const UNWANTED_CLASSES = Object.freeze([
@@ -429,6 +430,7 @@ export function buildJointProcessingPlan(analysis, envProfile = null, opts = {})
 
   // Hunter-driven preset nudge when analyzer is uncertain
   let preset = isolation.recommendedPreset;
+  let presetReasons = [];
   if (jointEnv?.dominantNoise === 'music' && (jointEnv.musicRatio || 0) > 0.4) {
     preset = 'Aggressive Isolate';
   } else if (jointEnv?.hasWhisper && (jointEnv.voiceRatio || 0) < 0.25) {
@@ -437,6 +439,18 @@ export function buildJointProcessingPlan(analysis, envProfile = null, opts = {})
     preset = 'Surveillance';
   } else if ((jointEnv?.snrDb ?? 12) < 6 && !jointEnv?.hasWhisper) {
     preset = 'Forensic Extract';
+  }
+
+  // UI-01 (LOCAL 2026-11-25): the hunter nudge above can name a disabled
+  // preset (music → Aggressive Isolate). Route through the capability
+  // registry — a disabled preset is substituted with the Standard profile
+  // and the reason is recorded, never silently recommended.
+  {
+    const checked = revalidatePreset(preset);
+    if (checked.substituted) {
+      preset = checked.preset;
+      presetReasons.push(checked.reason);
+    }
   }
 
   const steps = [
@@ -469,7 +483,7 @@ export function buildJointProcessingPlan(analysis, envProfile = null, opts = {})
     recommendedPreset: preset,
     recommendedStageConfig: isolation.recommendedStageConfig,
     findings: isolation.findings,
-    reasons: isolation.reasons,
+    reasons: [...isolation.reasons, ...presetReasons],
     confidence: isolation.confidence,
     autoApplySafe: isolation.autoApplySafe !== false && isolation.confidence >= 0.6,
     whisperPolicy: isolation.whisperPolicy,

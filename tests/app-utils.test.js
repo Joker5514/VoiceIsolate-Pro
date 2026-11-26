@@ -376,14 +376,18 @@ describe('applyPreset uses clampToSlider for clamping (source inspection)', () =
 
   test('app.js applyPreset delegates to _setSliderUi', () => {
     const methodSrc = appSrc.slice(appSrc.indexOf('applyPreset(name, options = {}) {'));
-    expect(methodSrc.slice(0, 800)).toContain('_setSliderUi(key, rawValue');
+    // Window covers the method prologue including the session-2 disabled-
+    // preset guard clause (was 800 before the guard was added).
+    expect(methodSrc.slice(0, 1400)).toContain('_setSliderUi(key, rawValue');
   });
 
   test('app.js applyPreset uses rawValue variable (not value)', () => {
     // v24 renamed value → rawValue in the for loop to clarify that clamping happens next.
     // Match the method definition (with opening brace) — not the first call site,
     // which is just an invocation inside an event handler.
+    // Window covers the method prologue including the session-2 disabled-
+    // preset guard clause (was 500 before the guard was added).
     const methodSrc = appSrc.slice(appSrc.indexOf('applyPreset(name, options = {}) {'));
-    expect(methodSrc.slice(0, 500)).toContain('rawValue');
+    expect(methodSrc.slice(0, 1200)).toContain('rawValue');
   });
 });

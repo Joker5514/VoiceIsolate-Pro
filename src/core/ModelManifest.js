@@ -87,6 +87,36 @@ export const MODEL_MANIFEST = Object.freeze({
     sizeBytes: 2027576,
     quantization: 'fp32',
     sha256: '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
+    /**
+     * Startup self-test pin (LM Arena fix session 3, LOCAL 2026-11-25).
+     * Fixture: scripts/quality/model-self-test.cjs — white-5db (seed 41)
+     * first 1 s (48000 samples) through the landing path; the pin is the
+     * sha256 of the clean-output Float32Array bytes, measured in Node/WASM.
+     * wasmMaxAbsDiff 0 = two runs bit-identical on this provider; re-measure
+     * if the provider or threading changes. No webgpuMaxAbsDiff is pinned:
+     * no WebGPU provider exists in this VM, so a WebGPU reference cannot be
+     * measured here — do not invent one.
+     */
+    selfTest: Object.freeze({
+      fixtureId: 'selftest-white-1s-v1',
+      expectedOutputSha256: 'ad4b995122e7d7a137890c29ec9adb755d373810325adcff584ac30a2d1955a4',
+      wasmMaxAbsDiff: 0,
+    }),
+    /**
+     * In-worker startup self-test pin (ML-02, LOCAL 2026-11-25).
+     * Fixture: MLWorker.workerSelfTestFixture — 1 s deterministic white
+     * noise (mulberry32 seed 41, amplitude 0.1) through the worker's own
+     * self-test path (hum filter + fused chain, processingConfig null).
+     * The pin is the sha256 of the clean-output Float32Array bytes,
+     * measured in Node/WASM (single thread) via the 'self-test' message;
+     * two fresh workers produced bit-identical hashes. The S3 pin above
+     * stays as the independent external check on a different fixture.
+     * No WebGPU pin: WebGPU runs are not bit-pinned (see runWorkerSelfTest).
+     */
+    workerSelfTest: Object.freeze({
+      fixtureId: 'worker-selftest-noise-1s-v1',
+      expectedOutputSha256: '3149a069cf9fdd747aba7545ecd57ec266e1d3603145d52733294925beecd4e6',
+    }),
     /** Inference strategy: STFT magnitude → mask → masked iSTFT overlap-add. */
     strategy: 'spectral-mask',
     fftSize: 4096,
@@ -155,6 +185,36 @@ export const MODEL_MANIFEST = Object.freeze({
     sizeBytes: 3870554,
     quantization: 'fp32',
     sha256: '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
+    /**
+     * Startup self-test pin (LM Arena fix session 3, LOCAL 2026-11-25).
+     * Fixture: scripts/quality/model-self-test.cjs — white-5db (seed 41)
+     * first 1 s (48000 samples) through the landing path; the pin is the
+     * sha256 of the clean-output Float32Array bytes, measured in Node/WASM.
+     * wasmMaxAbsDiff 0 = two runs bit-identical on this provider; re-measure
+     * if the provider or threading changes. No webgpuMaxAbsDiff is pinned:
+     * no WebGPU provider exists in this VM, so a WebGPU reference cannot be
+     * measured here — do not invent one.
+     */
+    selfTest: Object.freeze({
+      fixtureId: 'selftest-white-1s-v1',
+      expectedOutputSha256: '1841bfe8fd443de18b863dc35e87aafec92aeb295875be61f07172c74f0c3f5d',
+      wasmMaxAbsDiff: 0,
+    }),
+    /**
+     * In-worker startup self-test pin (ML-02, LOCAL 2026-11-25).
+     * Fixture: MLWorker.workerSelfTestFixture — 1 s deterministic white
+     * noise (mulberry32 seed 41, amplitude 0.1) through the worker's own
+     * self-test path (hum filter + fused chain, processingConfig null).
+     * The pin is the sha256 of the clean-output Float32Array bytes,
+     * measured in Node/WASM (single thread) via the 'self-test' message;
+     * two fresh workers produced bit-identical hashes. The S3 pin above
+     * stays as the independent external check on a different fixture.
+     * No WebGPU pin: WebGPU runs are not bit-pinned (see runWorkerSelfTest).
+     */
+    workerSelfTest: Object.freeze({
+      fixtureId: 'worker-selftest-noise-1s-v1',
+      expectedOutputSha256: '5c96c051d7f64485e6efb1aa4ffd0c08aacdaac1969102c7eb04637b88a6465d',
+    }),
     /** Inference strategy: STFT magnitude → mask → masked iSTFT overlap-add. */
     strategy: 'spectral-mask',
     fftSize: 4096,
@@ -276,6 +336,34 @@ export const MODEL_MANIFEST = Object.freeze({
     license: 'MIT OR Apache-2.0',
     backend: 'onnxruntime-web (3-session composite, wasm/webgpu)',
     fallback: 'bsrnn_vocals spectral-mask chain (via EnhanceGuard)',
+    /**
+     * Startup self-test pin (LM Arena fix session 3, LOCAL 2026-11-25).
+     * Same fixture as the spectral models; the pin is the sha256 of the
+     * composite's clean output, measured in Node/WASM. The three part files
+     * are hash-verified individually; this pin catches weight drift in the
+     * assembled composite. wasmMaxAbsDiff 0 = two runs bit-identical.
+     * No webgpuMaxAbsDiff is pinned (unmeasured — no WebGPU in this VM).
+     */
+    selfTest: Object.freeze({
+      fixtureId: 'selftest-white-1s-v1',
+      expectedOutputSha256: 'fa787daa4139857aa8a1c7173414a69060ca857f2915b69b0205103606c2ee52',
+      wasmMaxAbsDiff: 0,
+    }),
+    /**
+     * In-worker startup self-test pin (ML-02, LOCAL 2026-11-25).
+     * Fixture: MLWorker.workerSelfTestFixture — 1 s deterministic white
+     * noise (mulberry32 seed 41, amplitude 0.1) through the worker's own
+     * self-test path (hum filter + assembled composite, processingConfig
+     * null). The pin is the sha256 of the clean-output Float32Array bytes,
+     * measured in Node/WASM (single thread) via the 'self-test' message;
+     * two fresh workers produced bit-identical hashes. The S3 pin above
+     * stays as the independent external check on a different fixture.
+     * No WebGPU pin: WebGPU runs are not bit-pinned (see runWorkerSelfTest).
+     */
+    workerSelfTest: Object.freeze({
+      fixtureId: 'worker-selftest-noise-1s-v1',
+      expectedOutputSha256: 'e0975676404a8235e54bb9dcf6ea8520babdf06868ff4f6ae9e0d0a23a6bde82',
+    }),
   }),
 
   // ── Speaker embedding (optional ECAPA) ────────────────────────────────

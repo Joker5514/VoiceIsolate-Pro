@@ -6,7 +6,9 @@
 'use strict';
 
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
+import { PRESET_DISABLED, STANDARD_WORKER_KEYS, STANDARD_CONFIG_VERSION } from '../core/PresetCalibration.js';
 import { attachMLWorkerModelCache } from '../core/ModelCacheBridge.js';
+import { clearAttestationSnapshot } from '../core/CapabilityRegistry.js';
 import { applyMlWorkerMessage, setOrtStatus } from '../core/OrtStatus.js';
 
 /**
@@ -61,7 +63,12 @@ export function createMLWorker() {
   const workerUrl = resolveWorkerUrl('/src/workers/MLWorker.js');
   const worker = new Worker(workerUrl, { name: 'vip-ml-worker' });
   attachMLWorkerModelCache(worker);
-  setOrtStatus({ provider: 'probing', detail: null });
+  // ML-02: a new worker is a new instance — drop any attestation from the
+  // previous worker so stale "ready" state can never survive a recycle.
+  // (Single line: tests/architecture-v26.test.js asserts the wiring by
+  // source pattern `setOrtStatus({ provider: 'probing'`.)
+  clearAttestationSnapshot();
+  setOrtStatus({ provider: 'probing', detail: null, workerInstanceId: null, attestation: null, modelsReady: [] });
   worker.addEventListener('message', (ev) => {
     applyMlWorkerMessage(ev.data || {});
     logProviderMessage(ev.data || {});
@@ -129,5 +136,13 @@ export function initMLWorker(worker) {
     type: 'init',
     manifest: Object.values(MODEL_MANIFEST),
     useDesktopCache,
+    // DSP-01 / ML-01 (LOCAL 2026-11-25): the worker enforces these at the
+    // process boundary — a disabled profile is refused, and a canonical
+    // Standard claim must match this config exactly. Both derive from
+    // PresetCalibration (single source of truth), never hardcoded here.
+    // values is the WORKER subset (spectral keys only — gateThresh is a
+    // Live-Mix parameter the worker never consumes; see PresetCalibration).
+    disabledPresets: Object.keys(PRESET_DISABLED),
+    standardConfig: { version: STANDARD_CONFIG_VERSION, values: { ...STANDARD_WORKER_KEYS } },
   });
 }

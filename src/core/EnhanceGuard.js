@@ -52,15 +52,34 @@ export const FALLBACK_OUTCOME_ID = 'bsrnn_vocals';
 
 const DEFAULTS = Object.freeze({
   // Share of analysed speech time flagged as whisper that blocks auto-enhance.
-  whisperRatioBlock: 0.15,
+  // LM Arena fix session 4 (LOCAL 2026-11-25): 0.15 → 0.08. Session 2
+  // proposed Number.MIN_VALUE (effectively 0.0); REJECTED — it breaks the
+  // pinned test 'some confident whisper below the block ratio is still
+  // uncertain' (a 0.05 ratio must stay UNCERTAIN, not UNSUITABLE) and buys
+  // no routing protection: any whisperSec > 0 already falls back via
+  // UNCERTAIN for non-explicit requests, so zero only destroys the
+  // calibrated UNSUITABLE/UNCERTAIN distinction.
+  whisperRatioBlock: 0.08,
   // Any confident whisper region at all raises at least 'uncertain'.
+  // Session 4 proposed 0.5 → 0.35; REJECTED on the repo's own evidence —
+  // tests/vip032-unified-analysis-snapshot.test.js pins a 0.35-confidence
+  // whisper region as LOW confidence (< 0.5 → UNCERTAIN), and 0.35 would
+  // reclassify that boundary case itself as confident. The threshold only
+  // changes the verdict label (any whisperSec > 0 already falls back via
+  // UNCERTAIN), so 0.35 buys no routing protection. Kept at 0.5.
   whisperConfidenceMin: 0.5,
   // Below this SNR (dB) the reproduced failure classes (babble-like, clipped,
   // noisy) become likely and the analyser cannot name the cause.
-  snrUncertainDb: 6,
+  // Session 4: 6 → 8 dB (wider uncertain band; no pinned fixture sits in
+  // 6–8 dB, so this is directionally fail-closed and unmeasured).
+  snrUncertainDb: 8,
   // Speech below this share of the file means the dominant content is
   // non-speech (music/environment) — the class enhance handles worst.
-  speechRatioUncertain: 0.25,
+  // Session 4: 0.25 → 0.20 (narrower sparse-speech band). Only routing
+  // change in this set: speechRatio in [0.20, 0.25) no longer blocks.
+  // Unmeasured on pinned fixtures; the noise-only enhance result
+  // (+43.08 dB) suggests DFN3 excels when little speech is at risk.
+  speechRatioUncertain: 0.20,
 });
 
 /**

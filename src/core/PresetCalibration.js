@@ -7,6 +7,323 @@
 'use strict';
 
 import { bootstrapScenario } from './DspCalibration.js';
+import { buildMlProcessingConfig, getParamSpec } from './ParameterSchema.js';
+
+/**
+ * Canonical Standard configuration (DSP-01, LOCAL 2026-11-25).
+ *
+ * ONE validated processing configuration shared by the Landing default, the
+ * Stems default, the Engineer default, and RecommendationEngine-generated
+ * default plans. It IS the 'Voice Clarity' preset: maskStrength 0.15 is the
+ * sweep winner (scripts/quality/sweep-mask-strength.cjs, LOCAL) — the
+ * largest grid value passing all four Standard fixtures at ΔSI-SDR ≥ 0 dB
+ * (white +1.56, HVAC +1.05, hum +1.99, music +0.15).
+ *
+ * PROVISIONAL safe default, not a universal optimum: the music margin is
+ * +0.15 dB on a synthetic fixture and the real-audio music-bed stratum
+ * (Drive-video round 2) has veto power over finalizing it. Do not describe
+ * 0.15 as validated on real music until that stratum lands.
+ *
+ * The plan's snippet names the gate key `gateFloorDb`; the repo schema
+ * calls it `gateThresh` — same value, adapted to the existing schema.
+ */
+export const STANDARD_CONFIG_VERSION = 1;
+export const STANDARD_PROFILE_ID = 'voice-clarity';
+export const STANDARD_DEFAULT = Object.freeze({
+  profileId: STANDARD_PROFILE_ID,
+  profile: 'Voice Clarity',
+  maskStrength: 0.15,
+  whisperMode: 1,
+  whisperLift: 8,
+  gateThresh: -58,
+});
+
+/** The four canonical keys and their validated values. */
+export const STANDARD_CANONICAL_KEYS = Object.freeze({
+  maskStrength: 0.15,
+  whisperMode: 1,
+  whisperLift: 8,
+  gateThresh: -58,
+});
+
+/**
+ * The canonical keys the ML worker consumes and enforces (spectral group).
+ * gateThresh is NOT here: it is a Live-Mix realtime parameter (the vip-gate
+ * worklet threshold, `rt: true` in ParameterSchema) — part of the Standard
+ * PROFILE, set by the preset and applied at playback, but it never reaches
+ * the worker (buildMlProcessingConfig drops it from `spectral`, and the
+ * worker never reads it). The sweep's measured worker config is therefore
+ * these three keys; gateThresh −58 is an Engineer-preset Live-Mix tuning
+ * from the S4 whisper fix, governed at the resolver level (a diverged
+ * gateThresh still marks the config 'diverged') but enforced by the gate
+ * worklet, not the worker. The host forwards exactly this set as the
+ * worker's standardConfig; the worker refuses a canonical claim whose
+ * spectral values differ from it.
+ */
+export const STANDARD_WORKER_KEYS = Object.freeze({
+  maskStrength: 0.15,
+  whisperMode: 1,
+  whisperLift: 8,
+});
+
+/**
+ * Status of the canonical Standard default (DSP-01 + step-8 decision gate).
+ *
+ * 'provisional' — the 0.15 default is the best-measured safe default on
+ * the evidence so far (synthetic floor passes on all four Standard
+ * fixtures; Drive rounds 1–2 support it on real audio), but the +0.15 dB
+ * synthetic music margin is UNCONFIRMED on real audio: no clip in the
+ * 28-clip Drive inventory contains a music bed, and the external
+ * music-bed validation (step-8 gate) has not run. Do NOT change this to
+ * 'final' until that external recording is measured and passes; the
+ * consolidated quality gate (scripts/quality/quality-gate-consolidated.cjs)
+ * refuses a 'final' status without that evidence file.
+ */
+export const STANDARD_DEFAULT_STATUS = 'provisional';
+
+/** Names that resolve to the Standard profile (aliases included). */
+export function isStandardProfileName(name) {
+  if (!name) return true; // no preset named = the default = Standard
+  return resolvePresetName(name) === STANDARD_DEFAULT.profile;
+}
+
+/**
+ * Numeric overrides of the 'Voice Clarity' preset (numbers only), the
+ * values the sweep measured. Used as the base for the canonical build.
+ */
+export function getStandardDefaultOverrides() {
+  const preset = CALIBRATED_ENGINEER_PRESETS[STANDARD_DEFAULT.profile];
+  const out = {};
+  for (const [k, v] of Object.entries(preset)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Validate the four canonical keys in a values object.
+ * Missing keys are NOT errors here — the builder fills them from the
+ * canonical default and records the substitution. Present-but-invalid
+ * (non-finite or out of schema range) IS an error: a corrupt value must
+ * fail closed, never be silently "fixed" into the canonical value.
+ * @param {Record<string, unknown>} [values]
+ * @returns {{ ok: boolean, errors: string[] }}
+ */
+export function validateStandardConfig(values = {}) {
+  const errors = [];
+  for (const [id, canonical] of Object.entries(STANDARD_CANONICAL_KEYS)) {
+    if (values?.[id] === undefined || values?.[id] === null) continue;
+    const raw = values[id];
+    // Type first: a string-typed value ('0.15') arriving through the message
+    // protocol is a type/unit mismatch and must be refused, not coerced.
+    // Only genuine JS numbers are accepted for a canonical key.
+    if (typeof raw !== 'number') {
+      errors.push(`${id} is not a number (got ${typeof raw}: ${String(raw)})`);
+      continue;
+    }
+    const spec = getParamSpec(id);
+    const v = raw;
+    if (!Number.isFinite(v)) {
+      errors.push(`${id} is not a finite number (got ${String(values[id])})`);
+    } else if (spec && (v < spec.min || v > spec.max)) {
+      errors.push(`${id}=${v} is outside the schema range [${spec.min}, ${spec.max}]`);
+    } else if (id === 'whisperMode' && !Number.isInteger(v)) {
+      errors.push(`whisperMode=${v} is not an integer`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Build the canonical Standard processing config from effective values.
+ *
+ * Contract (DSP-01):
+ * - Starts from the 'Voice Clarity' preset numbers, overlaid with the
+ *   caller's effective values for the four canonical keys.
+ * - A canonical key ABSENT from the caller's values is filled from the
+ *   canonical default and recorded in `standard.substitutions` (safe
+ *   fallback, never silent: the substitution is in the returned config).
+ * - A canonical key PRESENT but invalid (non-finite / out of range)
+ *   throws — fail closed, no silent fallback to a harmful legacy value.
+ * - The result is frozen and carries a `standard` block: profileId,
+ *   configVersion, status 'canonical', the resolver/source id, the
+ *   requested values, the effective values, and every substitution.
+ * - `revision` is version-prefixed (`std1:emc1-…`) so a config-version
+ *   change invalidates cached plans even when the values are unchanged.
+ *   The underlying emc1- hash is untouched (see ParameterSchema).
+ * - A caller that wants a NON-canonical config must use
+ *   buildMlProcessingConfig directly (or resolveEngineerProcessingConfig,
+ *   which decides based on the active preset).
+ *
+ * @param {Record<string, number>} [values] effective values (e.g. from getEffectiveParams)
+ * @param {{ source?: string, requested?: Record<string, unknown>|null }} [options]
+ * @returns {ReturnType<typeof buildMlProcessingConfig> & { standard: object }}
+ */
+export function buildStandardProcessingConfig(values = {}, options = {}) {
+  const { source = 'canonical-standard', requested = null } = options;
+  const validation = validateStandardConfig(values);
+  if (!validation.ok) {
+    throw new Error(
+      `[VIP] Standard config rejected (${source}): ${validation.errors.join('; ')} — refusing to fall back to a legacy mask value.`,
+    );
+  }
+  const substitutions = [];
+  const effective = { ...getStandardDefaultOverrides() };
+  for (const [id, canonical] of Object.entries(STANDARD_CANONICAL_KEYS)) {
+    const raw = values?.[id];
+    if (raw === undefined || raw === null) {
+      effective[id] = canonical;
+      substitutions.push({
+        id,
+        requested: raw === undefined ? undefined : raw,
+        effective: canonical,
+        reason: 'missing — resolved to canonical Standard default',
+      });
+    } else {
+      effective[id] = Number(raw);
+    }
+  }
+  // Non-canonical effective values pass through untouched (coupling already
+  // applied by the caller); only the four canonical keys are governed here.
+  for (const [k, v] of Object.entries(values || {})) {
+    if (!(k in STANDARD_CANONICAL_KEYS)) effective[k] = v;
+  }
+  const built = buildMlProcessingConfig(effective);
+  const standard = Object.freeze({
+    profileId: STANDARD_PROFILE_ID,
+    profile: STANDARD_DEFAULT.profile,
+    configVersion: STANDARD_CONFIG_VERSION,
+    status: 'canonical',
+    source,
+    requested: requested === null ? null : { ...requested },
+    effective: Object.freeze({ ...STANDARD_CANONICAL_KEYS }),
+    substitutions: Object.freeze(substitutions),
+    divergences: Object.freeze([]),
+  });
+  return Object.freeze({
+    ...built,
+    revision: `std${STANDARD_CONFIG_VERSION}:${built.revision}`,
+    standard,
+  });
+}
+
+/**
+ * Resolve the processing config for an Engineer Process from effective
+ * values and the active preset name — the single decision point for the
+ * Engineer default path (DSP-01).
+ *
+ * - Active preset resolves to the Standard profile (or no preset named):
+ *   the four canonical keys are checked against the canonical values.
+ *   A key present, valid, but DIFFERENT from canonical is a user
+ *   divergence: the config is built plain (no standard claim) and the
+ *   divergence is returned so the caller can record it — the user changed
+ *   a control, so they no longer receive the measured configuration, and
+ *   the plan must not claim otherwise.
+ * - A key missing is filled by buildStandardProcessingConfig (recorded).
+ * - A key present but invalid throws (fail closed, via the builder).
+ * - Any other preset: plain buildMlProcessingConfig — the preset's own
+ *   values (maskStrength from the preset when it sets one, else the
+ *   schema default 1 = as trained). The standard block still records
+ *   which preset produced it, so the worker can reject disabled ones.
+ *
+ * @param {Record<string, number>} [effectiveValues]
+ * @param {string|null} [activePresetName]
+ * @param {{ source?: string }} [options]
+ * @returns {{ config: object, resolution: { mode: 'standard'|'diverged'|'preset', divergences: Array<object>, substitutions: Array<object> } }}
+ */
+export function resolveEngineerProcessingConfig(effectiveValues = {}, activePresetName = null, options = {}) {
+  const { source = 'engineer-process' } = options;
+  const values = effectiveValues || {};
+  const presetName = resolvePresetName(activePresetName);
+  const profileId = presetName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  if (presetName === STANDARD_DEFAULT.profile) {
+    // Validate FIRST: an out-of-range / non-number canonical value is a
+    // corrupt config and must throw (fail closed). Only in-range values
+    // can be user divergences — without this check an invalid value such
+    // as maskStrength 2 was classified as a "divergence" and silently
+    // clamped to 1 by the builder (found by tests/standard-config-parity).
+    const validation = validateStandardConfig(values);
+    if (!validation.ok) {
+      throw new Error(
+        `[VIP] Standard config rejected (${source}): ${validation.errors.join('; ')} — refusing to fall back to a legacy mask value.`,
+      );
+    }
+    const divergences = [];
+    for (const [id, canonical] of Object.entries(STANDARD_CANONICAL_KEYS)) {
+      const raw = values[id];
+      if (raw === undefined || raw === null) continue;
+      const v = Number(raw);
+      if (Number.isFinite(v) && v !== canonical) {
+        divergences.push({ id, requested: v, effective: v, reason: `differs from canonical Standard value ${canonical} (user control)` });
+      }
+    }
+    if (divergences.length > 0) {
+      const built = buildMlProcessingConfig(values);
+      return {
+        config: Object.freeze({
+          ...built,
+          standard: Object.freeze({
+            profileId: STANDARD_PROFILE_ID,
+            profile: STANDARD_DEFAULT.profile,
+            configVersion: STANDARD_CONFIG_VERSION,
+            status: 'diverged',
+            source,
+            requested: null,
+            effective: null,
+            substitutions: Object.freeze([]),
+            divergences: Object.freeze(divergences),
+          }),
+        }),
+        resolution: { mode: 'diverged', divergences, substitutions: [] },
+      };
+    }
+    const config = buildStandardProcessingConfig(values, { source, requested: null });
+    return {
+      config,
+      resolution: { mode: 'standard', divergences: [], substitutions: [...config.standard.substitutions] },
+    };
+  }
+  const built = buildMlProcessingConfig(values);
+  return {
+    config: Object.freeze({
+      ...built,
+      standard: Object.freeze({
+        profileId,
+        profile: presetName,
+        configVersion: STANDARD_CONFIG_VERSION,
+        status: 'preset',
+        source,
+        requested: null,
+        effective: null,
+        substitutions: Object.freeze([]),
+        divergences: Object.freeze([]),
+      }),
+    }),
+    resolution: { mode: 'preset', divergences: [], substitutions: [] },
+  };
+}
+
+/**
+ * Resolve the processing config for the shared stems path (DSP-01).
+ *
+ * Rule (the same rule `separateStems` applies — this is the testable home
+ * for it, so the Stems path is proven by the same code the path runs):
+ * - An explicit processingConfig always wins (including an explicit null).
+ * - No config + the single-bsrnn default chain → the canonical Standard
+ *   config (the only chain the sweep measured at maskStrength 0.15).
+ * - No config + any other chain → null (worker schema default,
+ *   maskStrength 1 = as trained). Assigning the Standard config to an
+ *   unmeasured chain would be a claim without evidence.
+ * @param {string[]} modelIds resolved model chain
+ * @param {object|undefined} processingConfig caller's config, if any
+ * @returns {object|null}
+ */
+export function resolveStemDefaultConfig(modelIds, processingConfig) {
+  if (processingConfig !== undefined) return processingConfig;
+  return (Array.isArray(modelIds) && modelIds.length === 1 && modelIds[0] === 'bsrnn_vocals')
+    ? buildStandardProcessingConfig({}, { source: 'stem-separation-default' })
+    : null;
+}
 
 /**
  * Extreme-off defaults for whisper-path controls (safe when not needed).
@@ -98,6 +415,21 @@ function base(overrides) {
 export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
   'Voice Clarity': base({
     description: 'Isolate speech and enhance intelligibility with balanced noise reduction',
+    // LM Arena fix session 4 (LOCAL 2026-11-25): whisper preservation.
+    // whisperMode 1 + whisperLift 8 route quiet speech through the
+    // Light whisper path (modeStrength 0.22) instead of gating it away;
+    // gateThresh −58 (from the clean-speech bootstrap −44; the session-4
+    // table quoted the schema default −42) keeps soft onsets audible.
+    gateThresh: -58,
+    whisperMode: 1,
+    whisperLift: 8,
+    // LM Arena fix session 1 (LOCAL 2026-11-25): mask recalibration.
+    // Sweep winner (scripts/quality/sweep-mask-strength.cjs, LOCAL):
+    // s=0.15 is the largest grid value passing all four Standard fixtures
+    // at ΔSI-SDR ≥ 0 dB (white +1.56, HVAC +1.05, hum +1.99, music +0.15).
+    // The session-1 starting candidate 0.25 failed on music (−0.06 dB);
+    // the model's estimates understated the improvement at every s.
+    maskStrength: 0.15,
   }),
   'Podcast Clean': base({
     description: 'Studio-clean podcast isolation with de-essing and steady loudness',
@@ -188,6 +520,10 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
   }),
   'Room Echo Reduction': base({
     description: 'Reduce room tone and reverb tails while preserving speech clarity',
+    // LM Arena fix session 2 (LOCAL 2026-11-25): disabled pending
+    // re-qualification — see PRESET_DISABLED below.
+    disabled: true,
+    disabledReason: 'Disabled: broad attenuation (speech-level ≈ −10 dB on every fixture) and hum/music below the floor. Re-qualification pending.',
     gateThresh: -50,
     nrAmount: 48,
     nrSmoothing: 40,
@@ -249,7 +585,12 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
     snrFloor: -56,
   }),
   'Aggressive Isolate': base({
-    description: 'Strong voice isolation against music beds and dense backgrounds',
+    // LM Arena fix session 2 (LOCAL 2026-11-25): the music-bed claim is
+    // withdrawn until the pinned music fixture measures it — the preset
+    // stays disabled (PRESET_DISABLED below) meanwhile.
+    description: 'Strong voice isolation for dense backgrounds',
+    disabled: true,
+    disabledReason: 'Disabled: fails every mandatory fixture at baseline (white −6.16 dB SI-SDR delta). Re-qualification pending.',
     gateThresh: -58,
     nrAmount: 88,
     nrSensitivity: 80,
@@ -286,11 +627,79 @@ export const CALIBRATED_ENGINEER_PRESETS = Object.freeze({
   }),
 });
 
-/** Presets removed in cleanup (redirect map for UI/tests). */
+/**
+ * Presets removed in cleanup (redirect map for UI/tests).
+ * NOTE: 'Whisper in a Club' redirects to 'Aggressive Isolate', which is
+ * disabled below — the redirect and the disablement compose: the alias
+ * resolves to the disabled preset, and resolveEngineerPreset returns null
+ * for it unless acknowledged. Old saved IDs hit the same gate.
+ */
 export const PRESET_REDIRECTS = Object.freeze({
   'Whisper in a Club': 'Aggressive Isolate',
   'Stadium Crowd': 'Surveillance',
 });
+
+/**
+ * Disabled presets (LM Arena fix session 2, LOCAL 2026-11-25).
+ *
+ * Both fail every mandatory fixture at the 492e971 baseline (Audio Truth
+ * Pack, LOCAL — synthetic fixtures, seed 41):
+ * - 'Aggressive Isolate': white −6.16, HVAC −4.00, hum −7.80, music −3.65,
+ *   whisper-white −4.21 dB SI-SDR delta; speech-level ≈ −11 dB on every
+ *   fixture. Re-qualification: ΔSI-SDR ≥ 0 dB on every mandatory fixture
+ *   (white, HVAC, hum, music, whisper-clean, whisper-white-10db) PLUS a
+ *   music-specific efficacy measure before any music-suppression wording
+ *   returns.
+ * - 'Room Echo Reduction': hum −3.28, music −1.09 dB; speech-level
+ *   ≈ −10 dB on every fixture (broad attenuation). Re-qualification:
+ *   ΔSI-SDR ≥ 0 dB on every mandatory fixture AND plain-SDR confirms the
+ *   broad attenuation is gone (no plain-SDR acceptance tolerance was
+ *   supplied — define one before qualifying).
+ *
+ * The audio of a disabled preset is still measurable (the Truth Pack runs
+ * it) — disablement is a selection policy, not a deletion. Nothing here
+ * changes any preset's audio; it only stops the preset being applied.
+ *
+ * Single source of truth: the `disabled` / `disabledReason` flags on the
+ * preset objects above. This map is derived from them so the resolver and
+ * the Engineer UI (which reads the flags off the preset objects) cannot
+ * drift apart.
+ */
+export const PRESET_DISABLED = Object.freeze(
+  Object.fromEntries(
+    Object.entries(CALIBRATED_ENGINEER_PRESETS)
+      .filter(([, p]) => p.disabled === true)
+      .map(([name, p]) => [name, p.disabledReason || 'Disabled pending re-qualification.']),
+  ),
+);
+
+/** True when the resolved preset is disabled (aliases resolve first). */
+export function isPresetDisabled(name) {
+  return Object.prototype.hasOwnProperty.call(PRESET_DISABLED, resolvePresetName(name));
+}
+
+/** The disablement reason for a preset, or null when it is not disabled. */
+export function presetDisabledReason(name) {
+  return PRESET_DISABLED[resolvePresetName(name)] ?? null;
+}
+
+/**
+ * Resolve a preset name for application. Disabled presets resolve to null
+ * unless the caller passes `{ acknowledged: true }` — an explicit,
+ * manual-only acknowledgement that the preset is disabled pending
+ * re-qualification. Aliases resolve first, so old saved IDs and both
+ * redirects hit the same gate.
+ * @param {string} name
+ * @param {{ acknowledged?: boolean }} [options]
+ * @returns {string|null}
+ */
+export function resolveEngineerPreset(name, options = {}) {
+  const resolved = resolvePresetName(name);
+  if (Object.prototype.hasOwnProperty.call(PRESET_DISABLED, resolved) && options.acknowledged !== true) {
+    return null;
+  }
+  return resolved;
+}
 
 /**
  * Resolve a preset name through redirects.
@@ -318,6 +727,20 @@ export default {
   EXTREME_OFF,
   CALIBRATED_ENGINEER_PRESETS,
   PRESET_REDIRECTS,
+  PRESET_DISABLED,
+  STANDARD_CONFIG_VERSION,
+  STANDARD_PROFILE_ID,
+  STANDARD_DEFAULT,
+  STANDARD_CANONICAL_KEYS,
+  STANDARD_WORKER_KEYS,
+  isStandardProfileName,
+  getStandardDefaultOverrides,
+  validateStandardConfig,
+  buildStandardProcessingConfig,
+  resolveEngineerProcessingConfig,
   resolvePresetName,
+  isPresetDisabled,
+  presetDisabledReason,
+  resolveEngineerPreset,
   getCalibratedPresets,
 };
