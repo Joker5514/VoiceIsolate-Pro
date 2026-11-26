@@ -941,7 +941,17 @@ async function onDownloadProcessed({ video = false, drive = false } = {}) {
           models: modelIds.map((id) => ({ id, sha256: MODEL_MANIFEST[id]?.sha256 || null })),
         },
         processing: {
-          parameters: null, // Landing has no process-time slider snapshot; null = not applicable
+          // DSP-01: Landing now HAS a process-time config — the plan's
+          // canonical Standard config for the Clean Speech default
+          // (profileId + configVersion + resolved values + substitutions),
+          // or null for non-default outcomes (worker schema default).
+          parameters: processPlan?.processingConfig
+            ? { profileId: processPlan.processingConfig.standard?.profileId || null,
+                configVersion: processPlan.processingConfig.standard?.configVersion ?? null,
+                revision: processPlan.processingConfig.revision || null,
+                spectral: { ...processPlan.processingConfig.spectral },
+                standard: processPlan.processingConfig.standard || null }
+            : null,
           operations: [{ id: 'separate', status: 'completed', detail: (processPlan?.label || null) }],
         },
       });
@@ -2074,8 +2084,12 @@ async function onProcess() {
     // Cancel aborts the job, which stops the hash at its next slice.
     let cacheKey;
     try {
+      // DSP-01 (LOCAL 2026-11-25): the cache key carries the processing
+      // revision — a config-version change invalidates cached stems even
+      // when the values are unchanged (std1:… vs emc1-…). A null config
+      // (non-default outcome) keeps '' as before.
       cacheKey = await stemCacheKeyAsync(source.channelData, source.sampleRate, modelIds,
-        source.sourceName, '', { maybeYield: yieldBudget, signal: job.controller.signal });
+        source.sourceName, processPlan.processingConfig?.revision || '', { maybeYield: yieldBudget, signal: job.controller.signal });
     } catch (err) {
       if (err?.name === 'AbortError') return; // cancelLandingJob already reset the UI
       throw err;
@@ -2123,6 +2137,11 @@ async function onProcess() {
     readyWorker.postMessage({ type: 'process', requestId: id, modelIds: [...modelIds],
       channelData, sampleRate: transferred.sampleRate,
       numberOfChannels: transferred.numberOfChannels, numberOfFrames: transferred.numberOfFrames,
+      // DSP-01: the plan's processing config (canonical Standard for the
+      // Clean Speech default; null for other outcomes — worker schema
+      // default). The worker echoes appliedProcessingConfigRevision in
+      // its stems reply, closing the provenance loop.
+      processingConfig: processPlan.processingConfig || null,
     }, channelData.map((channel) => channel.buffer));
   } catch (err) { failProcessing(err); }
 }

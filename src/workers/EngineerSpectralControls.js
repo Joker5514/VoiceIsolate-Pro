@@ -23,6 +23,7 @@
     whisperSensitivity: [0, 100], whisperThreshold: [0, 100],
     transientShaper: [-100, 100], breathControl: [0, 100],
     roomCorrection: [0, 100], subHarmonic: [0, 100],
+    fricativeGuard: [0, 1],
   });
 
   const DEFAULTS = Object.freeze({
@@ -33,6 +34,7 @@
     musicKill: 0, snrFloor: -52, whisperMode: 0, whisperClarity: 65,
     whisperSensitivity: 55, whisperThreshold: 50, transientShaper: 0,
     breathControl: 0, roomCorrection: 0, subHarmonic: 0,
+    fricativeGuard: 1,
   });
 
   function finite(value, fallback) {
@@ -51,6 +53,17 @@
     for (const [id, range] of Object.entries(RANGES)) {
       spectral[id] = clamp(finite(input.spectral[id], DEFAULTS[id]), range[0], range[1]);
     }
+    // DSP-02 scoping: the fricative guard was measured on the Voice Clarity
+    // profile only (canonical or diverged). It is ON by default for that
+    // profile and OFF for every other preset / unprofiled config, unless
+    // the caller sets fricativeGuard explicitly (measurement ablation).
+    // This keeps the pinned Whisper Boost / Surveillance goldens
+    // bit-identical (tests/perf-bundle-identity.test.js): the guard changes
+    // their output on whisper fixtures, and re-pinning those goldens is a
+    // separate, deliberate decision — not a side effect of this guard.
+    if (input.spectral.fricativeGuard === undefined) {
+      spectral.fricativeGuard = input.standard?.profileId === 'voice-clarity' ? 1 : 0;
+    }
     if (spectral.voiceFocusHi - spectral.voiceFocusLo < 300) {
       spectral.voiceFocusHi = Math.min(RANGES.voiceFocusHi[1], spectral.voiceFocusLo + 300);
     }
@@ -67,6 +80,44 @@
   const WHISPER_LIFT_KNEE = 0.1;
   /** Crowd Null confidence power smoothing per frame (one-pole, ≈1.4 hops). */
   const CONFIDENCE_SMOOTH = 0.5;
+
+  /**
+   * DSP-02 fricative guard (LOCAL 2026-11-25). The engineer processor was
+   * measured as the fricative-loss stage (ablation, measure-fricatives.cjs):
+   * removing it takes loud-speech fricative preservation from -2.34 dB to
+   * +1.59 dB, while the BSRNN mask alone preserves fricatives (+1.97 dB)
+   * and the HfPostFilter costs only ~0.2 dB. The loss is the focus-band
+   * shelf above voiceFocusHi (x0.585 above ~4.7 kHz on Voice Clarity) plus
+   * the NR / whisper-confidence terms as the noise floor adapts through a
+   * fricative — all of which treat sibilants as HF noise.
+   *
+   * Detection (per frame, on the INPUT magnitudes — before this pass's own
+   * attenuation) uses three signals, calibrated on the fixture set
+   * (fricative-guard-calibrate.cjs):
+   *   - HF ratio E(3.5-9 kHz)/(E(3.5-9 kHz)+E(0.3-3.4 kHz)): fricative
+   *     frames 0.52-0.81, vowel frames 0.09-0.17. Threshold 0.35/0.55.
+   *   - Vowel context: harmonic peakiness (max/mean power) in 0.3-3.4 kHz.
+   *     Vowel frames measure 77-111; every non-speech control frame measures
+   *     <= 11. A vowel frame within the last 300 ms is REQUIRED — hfRatio
+   *     and flatness alone cannot distinguish a fricative from a hiss
+   *     (hiss-s: hfRatio 0.97, flatness 0.49). Word-initial fricatives with
+   *     no preceding vowel are NOT protected (documented limitation).
+   *   - Temporal continuity: the evidence must persist across frames
+   *     (attack ramp over 2 frames, release decay) — a 1-frame HF burst is
+   *     a transient, not a fricative.
+   * Protection blends the per-bin gain toward FRICATIVE_GUARD_FLOOR in the
+   * fricative band, proportional to confidence — conservative when
+   * confidence is low, and never above the input (gain <= 1 in the band is
+   * untouched when already higher). The existing one-pole gain smoothing
+   * spreads the blend over frames, so there are no sudden gain steps.
+   */
+  const FRIC_BAND_LO_HZ = 2500;
+  const FRIC_BAND_HI_HZ = 9000;
+  const FRIC_HF_RATIO_LO = 0.35;
+  const FRIC_HF_RATIO_HI = 0.55;
+  const FRIC_VOWEL_PEAKINESS = 40;
+  const FRIC_VOWEL_WINDOW_SEC = 0.30;
+  const FRICATIVE_GUARD_FLOOR = 0.8;
 
   function smoothStep(value, edge0, edge1) {
     if (edge0 === edge1) return value >= edge1 ? 1 : 0;
@@ -128,6 +179,21 @@
     const whisperThreshold = 0.5 + (s.whisperThreshold / 100) * 2.5;
     const transientAmount = s.transientShaper / 100;
     const breathStrength = s.breathControl / 100;
+    // DSP-02 fricative guard: 0 disables it (measurement ablation only —
+    // the builder never emits the id, so sanitize defaults it to 1).
+    const guardEnabled = s.fricativeGuard > 0;
+    const fricKSp0 = Math.max(1, Math.ceil(300 / binHz));
+    const fricKSp1 = Math.min(bins - 1, Math.floor(3400 / binHz));
+    const fricKHf0 = Math.max(1, Math.ceil(3500 / binHz));
+    const fricKHf1 = Math.min(bins - 1, Math.floor(9000 / binHz));
+    const fricFrameSec = hop / sampleRate;
+    let fricVowelTimer = 0;
+    let fricConfidence = 0;
+    // DSP-02 diagnostics (last frame only; measurement/test use, not audio).
+    const fricDiagnostics = {
+      confidence: 0, hfRatio: 0, peakiness: 0, vowelTimer: 0,
+      meanNoiseRatioHf: 0,
+    };
     // Breath frames are quiet relative to the surrounding speech. frameEnergy
     // is in un-normalised STFT units (a −20 dBFS broadband signal measures ≈ 4
     // at this geometry), so a fixed constant cannot describe "between
@@ -147,6 +213,11 @@
       if (maxBins <= 0) return;
 
       let frameEnergy = 0;
+      // DSP-02 fricative detection features, from the INPUT magnitudes
+      // (before this pass's own attenuation).
+      let fricEHF = 0;
+      let fricESp = 0;
+      let fricMaxSp = 0;
       for (let k = 0; k < maxBins; k++) {
         const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
         frameMag[k] = mag;
@@ -156,10 +227,49 @@
           previousGain[k] = 1;
           previousMagnitude[k] = mag;
         }
+        if (guardEnabled) {
+          const src = sourceMagnitude[offset + k];
+          const p = src * src;
+          if (k >= fricKHf0 && k <= fricKHf1) fricEHF += p;
+          if (k >= fricKSp0 && k <= fricKSp1) {
+            fricESp += p;
+            if (p > fricMaxSp) fricMaxSp = p;
+          }
+        }
+      }
+      // DSP-02: update the fricative-guard confidence once per frame.
+      if (guardEnabled) {
+        const nSp = Math.max(1, fricKSp1 - fricKSp0 + 1);
+        const meanSp = fricESp / nSp;
+        const peakiness = fricMaxSp / (meanSp + EPSILON);
+        const isVowelFrame = meanSp > 1e-6 && peakiness > FRIC_VOWEL_PEAKINESS;
+        if (isVowelFrame) fricVowelTimer = FRIC_VOWEL_WINDOW_SEC;
+        else fricVowelTimer = Math.max(0, fricVowelTimer - fricFrameSec);
+        const hfRatio = fricEHF / (fricEHF + fricESp + EPSILON);
+        const hasEvidence = hfRatio > FRIC_HF_RATIO_LO && fricVowelTimer > 0;
+        const target = hasEvidence
+          ? smoothStep(hfRatio, FRIC_HF_RATIO_LO, FRIC_HF_RATIO_HI)
+          : 0;
+        if (target > fricConfidence) {
+          // Attack over ~2 frames so onsets are protected promptly; the
+          // ramp itself is the continuity requirement — a 1-frame HF burst
+          // reaches at most half confidence for one frame.
+          fricConfidence = Math.min(target, fricConfidence + 0.5);
+        } else {
+          // Release decay covers the fricative's decay tail.
+          fricConfidence = Math.max(target, fricConfidence * 0.6);
+        }
+        fricDiagnostics.confidence = fricConfidence;
+        fricDiagnostics.hfRatio = hfRatio;
+        fricDiagnostics.peakiness = peakiness;
+        fricDiagnostics.vowelTimer = fricVowelTimer;
       }
       frameEnergy = Math.sqrt(frameEnergy / Math.max(1, maxBins));
       if (!preRoll) speechLevel = Math.max(frameEnergy, speechLevel * speechLevelDecay);
       const breathFrame = breathStrength > 0 && frameEnergy < speechLevel * BREATH_RELATIVE_LEVEL;
+      // DSP-02 diagnostics: mean noiseRatio over the fricative HF band.
+      let fricNoiseRatioSum = 0;
+      let fricNoiseRatioCount = 0;
 
       for (let k = 0; k < maxBins; k++) {
         const hz = k * binHz;
@@ -170,6 +280,10 @@
           ? source
           : priorNoise + (source - priorNoise) * noiseTrack;
         const noiseRatio = clamp(noiseFloor[k] / source, 0, 1);
+        if (guardEnabled && k >= fricKHf0 && k <= fricKHf1) {
+          fricNoiseRatioSum += noiseRatio;
+          fricNoiseRatioCount++;
+        }
         let gain = Math.max(nrFloorGain, 1 - nrStrength * noiseRatio * 0.82);
 
         // Protect a soft speech band; the shape changes directly with both
@@ -257,6 +371,19 @@
           if (liftWeight > 0) gain *= 1 + (whisperLift - 1) * speechConfidence * liftWeight;
         }
 
+        // DSP-02 fricative guard: on high-confidence fricative frames,
+        // blend the gain toward the guard floor in the fricative band, so
+        // the focus shelf + NR / whisper terms cannot destroy the sibilant.
+        // Proportional to confidence (conservative when low); never raises
+        // a gain already above the floor; tapered at the band edges; the
+        // one-pole smoothing below spreads the blend over frames.
+        if (guardEnabled && fricConfidence > 0 && hz >= FRIC_BAND_LO_HZ && hz <= FRIC_BAND_HI_HZ) {
+          const bandW = smoothStep(hz, 2500, 3200) * (1 - smoothStep(hz, 8200, 9000));
+          if (bandW > 0 && gain < FRICATIVE_GUARD_FLOOR) {
+            gain += (FRICATIVE_GUARD_FLOOR - gain) * fricConfidence * bandW;
+          }
+        }
+
         // nrFloor is the minimum gain any bin may be reduced to by this pass.
         // The NR term alone bottoms out at 0.18 (−15 dB), above every value in
         // the control's −120..−20 dB range, so the floor binds on the combined
@@ -300,12 +427,17 @@
           im[k] *= scale;
         }
       }
+      if (guardEnabled && fricNoiseRatioCount > 0) {
+        fricDiagnostics.meanNoiseRatioHf = fricNoiseRatioSum / fricNoiseRatioCount;
+      }
       initialized = true;
     }
 
     return Object.freeze({
       revision: config.revision,
       applyFrame,
+      // DSP-02: last-frame guard diagnostics (measurement/test use only).
+      getGuardDiagnostics() { return { ...fricDiagnostics }; },
     });
   }
 

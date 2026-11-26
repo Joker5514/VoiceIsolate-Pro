@@ -10,6 +10,7 @@ import { describeTransferredChannels } from '../core/DecodedAudio.js';
 import { traceIngest } from '../core/ingestion-debug.js';
 import { DEFAULT_ML_MODEL_IDS } from '../core/ml-defaults.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
+import { resolveStemDefaultConfig } from '../core/PresetCalibration.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 import { clearStemCache, getCachedStems, setCachedStemsAsync, stemCacheKeyAsync } from './MLStemCache.js';
 import { copyChannelsToAudioBuffer, copyFloat32Channel, createYieldBudget } from './ui-yield.js';
@@ -221,8 +222,11 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     : options.modelId
       ? [options.modelId]
       : [...DEFAULT_ML_MODEL_IDS];
-  const processingRevision = typeof options.processingConfig?.revision === 'string'
-    ? options.processingConfig.revision
+  // DSP-01 (LOCAL 2026-11-25): the default-config rule lives in
+  // PresetCalibration.resolveStemDefaultConfig (same code the tests prove).
+  const processingConfig = resolveStemDefaultConfig(modelIds, options.processingConfig);
+  const processingRevision = typeof processingConfig?.revision === 'string'
+    ? processingConfig.revision
     : '';
   // Engineer spectral controls alter the reconstructed stems, so the result
   // cache must be keyed by their Process-time snapshot. Slider drags do not
@@ -301,7 +305,9 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     numberOfChannels: transferred.numberOfChannels,
     numberOfFrames: transferred.numberOfFrames,
     modelIds,
-    processingConfig: options.processingConfig || null,
+    // DSP-01: the resolved config (explicit, or the Standard default for
+    // the single-bsrnn chain) — never the raw option, which may be absent.
+    processingConfig: processingConfig || null,
   };
 
   return new Promise((resolve, reject) => {

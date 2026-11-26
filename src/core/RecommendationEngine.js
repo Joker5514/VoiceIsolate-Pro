@@ -8,6 +8,8 @@
 
 import { whisperProcessingPolicy } from './WhisperLogic.js';
 import { bootstrapScenario, clampGainStaging, HUM_DEFAULTS } from './DspCalibration.js';
+import { revalidatePreset } from './CapabilityRegistry.js';
+import { resolveEngineerProcessingConfig, getStandardDefaultOverrides, STANDARD_DEFAULT, STANDARD_CANONICAL_KEYS, CALIBRATED_ENGINEER_PRESETS } from './PresetCalibration.js';
 
 /** Engineer Mode preset names that remain after cleanup. */
 export const ENGINEER_PRESET_CATALOG = Object.freeze([
@@ -125,6 +127,21 @@ export function recommendFromAnalysis(analysis) {
     confidence = 0.6;
   }
 
+  // UI-01 (LOCAL 2026-11-25): the decision tree above may still name a
+  // disabled preset (music bed → Aggressive Isolate, high reverb → Room
+  // Echo Reduction). Route through the capability registry — never
+  // recommend a disabled capability. The registry is the authority; there
+  // is no hardcoded list here.
+  {
+    const checked = revalidatePreset(preset);
+    if (checked.substituted) {
+      preset = checked.preset;
+      scenario = 'cleanSpeech';
+      reasons.push(checked.reason);
+      confidence = Math.min(confidence, 0.6);
+    }
+  }
+
   const whisperPolicy = whisperProcessingPolicy(
     { whisperRegions, difficultSpeechRegions: difficult },
     { snrDb: snr },
@@ -185,6 +202,15 @@ export function recommendFromAnalysis(analysis) {
   stageConfig.outGain = g.outGainDb;
   if (g.limited) reasons.push('Gain staging clamped to prevent clipping');
 
+  // DSP-01 (LOCAL 2026-11-25): prune canonical keys that still carry
+  // their scenario-base value. The stage config is overlaid ONTO the
+  // preset at application time (Object.assign over preset values), so a
+  // base value here would silently undo the preset's canonical value —
+  // e.g. gateThresh -44 (cleanSpeech base) clobbering the Standard -58.
+  // A key an overlay deliberately changed is kept: that is a genuine
+  // divergence, recorded by the resolver below.
+  pruneUnchangedCanonicalKeys(stageConfig, base);
+
   const autoApplySafe = Boolean(
     whisperPolicy.autoApplySafe !== false
     && confidence >= 0.62
@@ -211,6 +237,49 @@ export function recommendFromAnalysis(analysis) {
     modelChain: pickModelChain(analysis),
   };
 
+  // DSP-01 (LOCAL 2026-11-25): resolve the recommendation into the
+  // processing config it would actually produce when applied. Effective
+  // values = the recommended preset's numbers, overlaid with this plan's
+  // stage config (stage overlays win — that is the application order:
+  // preset first, then stage). The resolution records whether the plan is
+  // the canonical Standard config, diverged from it (a stage overlay
+  // moved a canonical key), or another preset's config — requested vs
+  // effective, no silent downgrade. A disabled preset can never reach
+  // this point: it was re-routed above.
+  let resolvedProcessingConfig = null;
+  let resolution = null;
+  try {
+    const presetNumbers = preset === STANDARD_DEFAULT.profile
+      ? getStandardDefaultOverrides()
+      : presetNumbersFor(preset);
+    const effectiveValues = { ...presetNumbers, ...stageConfig };
+    const resolved = resolveEngineerProcessingConfig(effectiveValues, preset, { source: 'recommendation-engine' });
+    resolvedProcessingConfig = resolved.config;
+    resolution = resolved.resolution;
+    if (resolution.mode === 'diverged') {
+      reasons.push(`Recommendation diverges from the Standard config: ${resolution.divergences.map((d) => `${d.id}=${d.requested}`).join(', ')} (stage overlay).`);
+    }
+    if (resolution.mode === 'standard' && resolution.substitutions.length > 0) {
+      reasons.push(`Standard config resolved with substitutions: ${resolution.substitutions.map((s) => `${s.id}=${s.effective}`).join(', ')}.`);
+    }
+  } catch (err) {
+    // A corrupt stage value must fail the recommendation explicitly, not
+    // silently produce a legacy config.
+    reasons.push(`Processing-plan resolution failed: ${err?.message || err}`);
+    return {
+      recommendedPreset: preset,
+      recommendedStageConfig: stageConfig,
+      recommendedProcessingPlan,
+      reasons,
+      findings,
+      autoApplySafe: false,
+      confidence: Math.max(0, Math.min(1, confidence)),
+      resolvedProcessingConfig: null,
+      resolution: { mode: 'rejected', divergences: [], substitutions: [], error: String(err?.message || err) },
+    };
+  }
+  recommendedProcessingPlan.resolvedProcessingConfig = resolvedProcessingConfig;
+
   return {
     recommendedPreset: preset,
     recommendedStageConfig: stageConfig,
@@ -219,7 +288,45 @@ export function recommendFromAnalysis(analysis) {
     findings,
     autoApplySafe,
     confidence: Math.max(0, Math.min(1, confidence)),
+    resolvedProcessingConfig,
+    resolution,
   };
+}
+
+/**
+ * Numeric values of a named preset (numbers only), for plan resolution.
+ * @param {string} name
+ * @returns {Record<string, number>}
+ */
+function presetNumbersFor(name) {
+  const preset = CALIBRATED_ENGINEER_PRESETS[name];
+  if (!preset) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(preset)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Remove canonical keys from a stage config when they still equal the
+ * scenario-base value they were constructed from. Such a key is not a
+ * tuning decision — it is a construction artifact that would silently
+ * undo the recommended preset's canonical value when the stage config is
+ * overlaid onto the preset at application time. Keys an overlay
+ * deliberately changed are kept (genuine divergence, recorded by the
+ * resolver). Mutates and returns the stage config.
+ * @param {Record<string, number>} stageConfig
+ * @param {Record<string, number>} base scenario-base values
+ * @returns {Record<string, number>}
+ */
+function pruneUnchangedCanonicalKeys(stageConfig, base) {
+  for (const id of Object.keys(STANDARD_CANONICAL_KEYS)) {
+    if (stageConfig[id] !== undefined && base[id] !== undefined && stageConfig[id] === base[id]) {
+      delete stageConfig[id];
+    }
+  }
+  return stageConfig;
 }
 
 function emphasizeStages(preset, cfg) {
@@ -242,19 +349,32 @@ function pickModelChain(analysis) {
 }
 
 function emptyRecommendation(msg) {
+  const stageConfig = bootstrapScenario('cleanSpeech');
+  pruneUnchangedCanonicalKeys(stageConfig, { ...stageConfig });
+  let resolved = null;
+  try {
+    resolved = resolveEngineerProcessingConfig(
+      { ...getStandardDefaultOverrides(), ...stageConfig },
+      STANDARD_DEFAULT.profile,
+      { source: 'recommendation-engine-empty' },
+    );
+  } catch { /* empty recommendation stays unresolved */ }
   return {
     recommendedPreset: 'Voice Clarity',
-    recommendedStageConfig: bootstrapScenario('cleanSpeech'),
+    recommendedStageConfig: stageConfig,
     recommendedProcessingPlan: {
       steps: [],
       emphasize: [],
       whisperPolicy: whisperProcessingPolicy({ whisperRegions: [], difficultSpeechRegions: [] }),
       modelChain: ['rnnoise'],
+      resolvedProcessingConfig: resolved?.config || null,
     },
     reasons: [msg],
     findings: [],
     autoApplySafe: false,
     confidence: 0,
+    resolvedProcessingConfig: resolved?.config || null,
+    resolution: resolved?.resolution || { mode: 'rejected', divergences: [], substitutions: [], error: 'unresolved' },
   };
 }
 

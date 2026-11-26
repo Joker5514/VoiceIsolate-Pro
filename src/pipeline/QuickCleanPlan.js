@@ -1,6 +1,7 @@
 /** Outcome translation and device preflight. No audio or inference during preflight. */
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { SAMPLE_RATE } from '../core/audio-config.js';
+import { STANDARD_DEFAULT, buildStandardProcessingConfig } from '../core/PresetCalibration.js';
 
 export const QUICK_CLEAN_OUTCOMES = Object.freeze([
   Object.freeze({ id: 'bsrnn_vocals', label: 'Clean Speech',
@@ -35,9 +36,26 @@ export function resolveQuickCleanPlan(id, { manifest = MODEL_MANIFEST, backend =
       || !Number.isFinite(file.sizeBytes) || file.sizeBytes <= 0)) {
     throw new Error('This outcome has no shipped, integrity-pinned model chain. Choose another outcome.');
   }
+  // DSP-01 (LOCAL 2026-11-25): the 'bsrnn_vocals' (Clean Speech) outcome
+  // is the Landing default and carries the canonical Standard processing
+  // config — the config the sweep measured (Voice Clarity, maskStrength
+  // 0.15, whisperMode 1, whisperLift 8, gateThresh -58). The other
+  // outcomes keep NO processingConfig (null): their effective config at
+  // maskStrength 0.15 is UNMEASURED, and assigning the Standard config to
+  // them would be a claim without evidence. They resolve to the worker's
+  // schema default (maskStrength 1 = as trained) via separateStems.
+  // Requested vs effective is recorded in the config's `standard` block:
+  // the Landing default requests nothing and receives the canonical
+  // values, each recorded as a substitution.
+  const processingConfig = outcome.id === 'bsrnn_vocals'
+    ? buildStandardProcessingConfig({}, { source: 'quick-clean-plan:bsrnn_vocals' })
+    : null;
   return Object.freeze({ outcome: outcome.id, label: outcome.label,
     modelIds: Object.freeze([...outcome.modelIds]), sampleRate: SAMPLE_RATE,
-    background: outcome.background, downloadBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0) });
+    background: outcome.background, downloadBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
+    profileId: outcome.id === 'bsrnn_vocals' ? STANDARD_DEFAULT.profileId : null,
+    configVersion: outcome.id === 'bsrnn_vocals' ? processingConfig.standard.configVersion : null,
+    processingConfig });
 }
 
 export async function inspectQuickCleanDevice({ navigator: nav = globalThis.navigator } = {}) {

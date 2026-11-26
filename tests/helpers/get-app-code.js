@@ -141,9 +141,9 @@ function buildParameterSchemaShim() {
     fs.readFileSync(path.join(SRC_CORE_DIR, 'ParameterSchema.js'), 'utf8')
   );
   return `
-const { buildMlProcessingConfig, LIVE_MIX_PARAM_IDS } = (function _injectParameterSchema() {
+const { buildMlProcessingConfig, LIVE_MIX_PARAM_IDS, WORKER_ONLY_SPECTRAL_IDS } = (function _injectParameterSchema() {
 ${parameterSchema}
-  return { buildMlProcessingConfig, LIVE_MIX_PARAM_IDS };
+  return { buildMlProcessingConfig, LIVE_MIX_PARAM_IDS, WORKER_ONLY_SPECTRAL_IDS };
 })();
 `;
 }

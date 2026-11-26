@@ -111,7 +111,12 @@ describe('slider schema parity', () => {
     expect(appJs).toMatch(/buildMlProcessingConfig/);
     expect(appJs).toMatch(/processingConfig,/);
     expect(appJs).toMatch(/_stemProcessingRevision === processingRevision/);
-    expect(stemSeparationSrc).toMatch(/processingConfig: options\.processingConfig \|\| null/);
+    // DSP-01: the worker message carries the RESOLVED config (explicit
+    // option, else the canonical Standard default for the single-bsrnn
+    // chain, else null) — see PresetCalibration.resolveStemDefaultConfig,
+    // which separateStems calls. The raw option is no longer forwarded.
+    expect(stemSeparationSrc).toMatch(/processingConfig: processingConfig \|\| null/);
+    expect(stemSeparationSrc).toMatch(/resolveStemDefaultConfig/);
     expect(stemSeparationSrc).toMatch(/appliedProcessingConfigRevision/);
     expect(mlWorkerSrc).toMatch(/EngineerSpectralControls\.js/);
     expect(mlWorkerSrc).toMatch(/engineerProcessor\.applyFrame/);

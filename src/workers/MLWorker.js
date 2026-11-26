@@ -17,6 +17,15 @@
  *   → { type: 'init', manifest: ManifestEntry[] }
  *   ← { type: 'ready', backend: 'wasm', gpuCandidate: boolean, providerVerified: false }
  *   ← { type: 'ort-provider', backend: 'webgpu'|'wasm', providerVerified: true }
+ *   ← { type: 'model-attestation', attestation } (ML-02: after init and on
+ *       every capability change; schemaVersion, workerInstanceId, issuedAt,
+ *       per-model capabilities, self-test summary, runtime provider)
+ *   → { type: 'self-test', requestId, modelId, force? } (ML-02: run/return
+ *       the in-worker self-test verdict for one model)
+ *   ← { type: 'self-test-result', requestId, modelId, passed, state, ...verdict }
+ *   → { type: 'counters' } / { type: 'reset-counters' } (DSP-03: inference
+ *       counts at the session.run boundary)
+ *   ← { type: 'counters', requestId, sessionRuns, bySessionKey, startedAt }
  *   → { type: 'process', requestId, modelId, channelData: Float32Array[], sampleRate }
  *   → { type: 'process', requestId, modelIds: string[], channelData, sampleRate }
  *        (chain — runs models in series, e.g. vocals → denoise, for maximum
@@ -140,6 +149,9 @@ async function queuedSessionRun(sessionKey, session, feeds, requestId) {
   checkCancelled(requestId);
   try {
     checkCancelled(requestId);
+    // DSP-03: count at the actual model-invocation boundary. This is the
+    // only session.run call in the worker — every inference passes here.
+    recordSessionRun(sessionKey);
     const result = await session.run(feeds);
     checkCancelled(requestId);
     return result;
@@ -168,6 +180,398 @@ function announceVerifiedProvider(provider, sessionKey) {
     providerVerified: true,
     sessionKey,
   });
+}
+
+// ─── ML-01 / ML-02 / DSP-03 — integrity, self-test, attestation, counters ──
+// (LOCAL 2026-11-25, finish plan)
+//
+// Worker instance identity: a new Worker() boot gets a new id. The browser
+// records the first attestation's id as current; any later attestation with
+// a different id means the worker was recycled, and the browser invalidates
+// its stored attestation (ML-02: invalidated on restart OR model change).
+const WORKER_INSTANCE_ID = (() => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  } catch { /* fall through to the fallback below */ }
+  return `vip-worker-${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffffffff).toString(16)}`;
+})();
+const ATTESTATION_SCHEMA_VERSION = 1;
+const SELF_TEST_VERSION = 'worker-selftest-v1';
+const SELF_TEST_FIXTURE_ID = 'worker-selftest-noise-1s-v1';
+/** @type {Record<string, { id: string, state: 'pending'|'ready'|'degraded'|'unavailable', reason?: string|null, sha256?: string|null, provider?: string|null, selfTest?: object|null }>} */
+const MODEL_CAPABILITIES = Object.create(null);
+
+/** Disabled preset names, from the init payload (authoritative source: PresetCalibration via the host). */
+const _disabledPresets = new Set();
+/** Canonical Standard config, from the init payload (authoritative source: PresetCalibration via the host). */
+let _standardConfig = null;
+
+/**
+ * Merge a capability patch and re-emit the attestation. The worker is the
+ * authority on its own model state; the browser only validates the
+ * attestation it receives.
+ * @param {string} id
+ * @param {object} patch
+ */
+function setCapability(id, patch) {
+  const prev = MODEL_CAPABILITIES[id] || { id, state: 'pending', reason: null, sha256: null, provider: null, selfTest: null };
+  MODEL_CAPABILITIES[id] = { ...prev, ...patch, id };
+  emitAttestation();
+}
+
+function attestationSelfTestSummary() {
+  const caps = Object.values(MODEL_CAPABILITIES);
+  const pinned = caps.filter((c) => c.selfTest?.pinned === true);
+  const passed = pinned.filter((c) => c.selfTest?.passed === true).length;
+  const failed = pinned.filter((c) => c.selfTest?.passed === false).map((c) => c.id);
+  return {
+    passed: pinned.length > 0 && failed.length === 0 && passed === pinned.length,
+    testVersion: SELF_TEST_VERSION,
+    fixtureId: SELF_TEST_FIXTURE_ID,
+    pinned: pinned.length,
+    passedCount: passed,
+    failed,
+  };
+}
+
+function buildWorkerAttestation() {
+  const capabilities = Object.create(null);
+  for (const [id, cap] of Object.entries(MODEL_CAPABILITIES)) {
+    capabilities[id] = { ...cap, selfTest: cap.selfTest ? { ...cap.selfTest } : null };
+  }
+  return {
+    schemaVersion: ATTESTATION_SCHEMA_VERSION,
+    workerInstanceId: WORKER_INSTANCE_ID,
+    issuedAt: Date.now(),
+    capabilities,
+    selfTest: attestationSelfTestSummary(),
+    runtime: {
+      executionProvider: _announcedProvider || 'unverified',
+      backend: BACKEND || 'unverified',
+    },
+  };
+}
+
+function emitAttestation() {
+  self.postMessage({ type: 'model-attestation', attestation: buildWorkerAttestation() });
+}
+
+/**
+ * DSP-03: inference counters at the actual model-invocation boundary
+ * (queuedSessionRun is the only caller of session.run in this worker).
+ * A slider sweep that runs zero inference must leave these at zero; any
+ * claim of "no re-inference" is checkable against them.
+ */
+const _inferenceCounters = {
+  sessionRuns: 0,
+  bySessionKey: Object.create(null),
+  startedAt: Date.now(),
+};
+function recordSessionRun(sessionKey) {
+  _inferenceCounters.sessionRuns += 1;
+  _inferenceCounters.bySessionKey[sessionKey] = (_inferenceCounters.bySessionKey[sessionKey] || 0) + 1;
+}
+function getInferenceCounters() {
+  return {
+    sessionRuns: _inferenceCounters.sessionRuns,
+    bySessionKey: { ..._inferenceCounters.bySessionKey },
+    startedAt: _inferenceCounters.startedAt,
+  };
+}
+function resetInferenceCounters() {
+  _inferenceCounters.sessionRuns = 0;
+  _inferenceCounters.bySessionKey = Object.create(null);
+  _inferenceCounters.startedAt = Date.now();
+}
+
+/**
+ * ML-02 self-test fixture: 1 s of deterministic white noise at 48 kHz.
+ * mulberry32 uses integer ops only, so the fixture is bit-identical on
+ * every JS engine (no Math.sin / Math.random). It is NOT the S3 fixture
+ * (scripts/quality/model-self-test.cjs, talker + mix — not reproducible
+ * inside a classic worker); the S3 pins stay as the independent external
+ * check, and this fixture gets its own pins (workerSelfTest in the
+ * manifest, measured in Node via the 'self-test' message).
+ * @returns {Float32Array}
+ */
+function workerSelfTestFixture() {
+  const n = 48000;
+  const out = new Float32Array(n);
+  let seed = 41;
+  for (let i = 0; i < n; i++) {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    const u = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    out[i] = (u * 2 - 1) * 0.1;
+  }
+  return out;
+}
+
+async function sha256Float32Hex(arr) {
+  return sha256Hex(arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength));
+}
+
+/**
+ * Behavioral sanity for a model output: finite, correct length, sane level.
+ * Used as the fallback when an exact-hash comparison cannot apply (WebGPU
+ * runs are not bit-pinned — no WebGPU reference exists in this VM — and when
+ * a WASM hash mismatches: the model still proves it runs, but the capability
+ * is flagged degraded rather than silently trusted).
+ * @param {Float32Array} out
+ * @param {number} expectedLength
+ * @returns {{ ok: boolean, reason: string|null, rms: number, peak: number }}
+ */
+function selfTestBehavioralCheck(out, expectedLength) {
+  if (!out || out.length !== expectedLength) {
+    return { ok: false, reason: `output length ${out?.length ?? 0} !== ${expectedLength}`, rms: 0, peak: 0 };
+  }
+  let sumSq = 0;
+  let peak = 0;
+  for (let i = 0; i < out.length; i++) {
+    const v = out[i];
+    if (!Number.isFinite(v)) return { ok: false, reason: 'non-finite output sample', rms: 0, peak: 0 };
+    sumSq += v * v;
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
+  }
+  const rms = Math.sqrt(sumSq / out.length);
+  if (rms < 1e-6) return { ok: false, reason: 'silent output (rms < 1e-6)', rms, peak };
+  if (peak > 1.5) return { ok: false, reason: `output peak ${peak.toFixed(3)} > 1.5`, rms, peak };
+  return { ok: true, reason: null, rms, peak };
+}
+
+/**
+ * ML-02: run the in-worker self-test for one loaded model and return the
+ * verdict. Spectral-mask: hum-removed fixture → fused chain with
+ * processingConfig null (maskStrength 1 = as trained, matching the pin
+ * measurement) → output hash. DeepFilterNet composite: hum-removed
+ * fixture → runDeepFilterNetEntry → output hash. VAD: one 512-sample
+ * chunk through the session directly (mirrors runVadRequest's feed) →
+ * behavioral check only (no hash pin exists for VAD).
+ *
+ * passed === true only on an exact hash match against the manifest
+ * workerSelfTest pin AND only when the session backend is WASM (the pin
+ * is a WASM reference; no WebGPU reference exists in this VM — a WebGPU
+ * run records its hash but decides on the behavioral check alone).
+ * A WASM hash mismatch with a passing behavioral check is a SOFT failure
+ * (passed false, reason SELF_TEST_HASH_MISMATCH): thread-count
+ * nondeterminism can move last-ulp results between machines, which is
+ * not evidence of a corrupt model. The hard integrity gate is the
+ * manifest SHA-256 refusal in verifyIntegrity, not this. A behavioral
+ * failure or a thrown run is a HARD failure (passed false, reason
+ * SELF_TEST_FAILED) and the caller must refuse the session.
+ * @param {object} entry manifest entry
+ * @param {object} sessionOrSessions InferenceSession (or {enc, erb_dec, df_dec} for composites)
+ * @returns {Promise<{ passed: boolean|null, method: string, outputSha256: string|null, expectedSha256: string|null, reason: string|null, rms: number, peak: number }>}
+ */
+async function runWorkerSelfTest(entry, sessionOrSessions) {
+  const pin = entry.workerSelfTest || null;
+  const expectedSha256 = pin?.expectedOutputSha256 || null;
+  const fixture = workerSelfTestFixture();
+  let input = fixture;
+  if (typeof self.removeMainsHum === 'function') {
+    const r = await self.removeMainsHum(fixture, 48000, () => cancellationPoint(null));
+    input = r.samples;
+  }
+  const backend = sessionBackend(entry.id);
+  const noop = () => {};
+  let clean = null;
+  if (entry.strategy === 'spectral-mask') {
+    clean = await runFusedSpectralMaskChain(
+      [{ entry, session: sessionOrSessions }], input, noop, null, 48000, null,
+    );
+  } else if (entry.strategy === 'deepfilternet') {
+    clean = await runDeepFilterNetEntry(entry, sessionOrSessions, input, noop, null);
+  } else if (entry.strategy === 'vad') {
+    // One chunk, mirroring runVadRequest's feed (48 kHz → 16 kHz, step 3).
+    const step = 3;
+    const chunk = new Float32Array(SILERO_CHUNK);
+    for (let i = 0; i < SILERO_CHUNK; i++) {
+      const j = i * step;
+      const prev = j > 0 ? input[j - 1] : input[j];
+      const next = j < input.length - 1 ? input[j + 1] : input[j];
+      chunk[i] = 0.25 * prev + 0.5 * input[j] + 0.25 * next;
+    }
+    const state = new Float32Array(2 * 1 * 128);
+    const srData = typeof BigInt64Array !== 'undefined'
+      ? BigInt64Array.from([BigInt(SILERO_SR)])
+      : new Int32Array([SILERO_SR]);
+    const result = await queuedSessionRun(entry.id, sessionOrSessions, {
+      input: new ort.Tensor('float32', chunk, [1, SILERO_CHUNK]),
+      state: new ort.Tensor('float32', state, [2, 1, 128]),
+      sr: new ort.Tensor(typeof BigInt64Array !== 'undefined' ? 'int64' : 'int32', srData, []),
+    }, null);
+    const score = result.output?.data?.[0];
+    const ok = Number.isFinite(score) && score >= 0 && score <= 1;
+    return {
+      passed: ok,
+      method: 'behavioral',
+      outputSha256: null,
+      expectedSha256: null,
+      reason: ok ? null : `VAD self-test score ${String(score)} not in [0, 1]`,
+      rms: ok ? score : 0,
+      peak: ok ? score : 0,
+    };
+  } else {
+    return {
+      passed: null,
+      method: 'none',
+      outputSha256: null,
+      expectedSha256: null,
+      reason: `no worker self-test for strategy '${entry.strategy}'`,
+      rms: 0,
+      peak: 0,
+    };
+  }
+  const behavioral = selfTestBehavioralCheck(clean, input.length);
+  if (!behavioral.ok) {
+    return {
+      passed: false,
+      method: 'hash',
+      outputSha256: null,
+      expectedSha256,
+      reason: `SELF_TEST_FAILED: ${behavioral.reason}`,
+      rms: behavioral.rms,
+      peak: behavioral.peak,
+    };
+  }
+  const outputSha256 = await sha256Float32Hex(clean);
+  if (!expectedSha256) {
+    return {
+      passed: null,
+      method: 'hash',
+      outputSha256,
+      expectedSha256: null,
+      reason: 'SELF_TEST_UNPINNED: no workerSelfTest pin in manifest for this model',
+      rms: behavioral.rms,
+      peak: behavioral.peak,
+    };
+  }
+  if (backend !== 'wasm') {
+    // WebGPU runs are not bit-pinned; the hash is recorded for forensics
+    // but only the behavioral check decides.
+    return {
+      passed: true,
+      method: 'behavioral',
+      outputSha256,
+      expectedSha256,
+      reason: `hash recorded but not compared (backend ${backend} has no bit-pin)`,
+      rms: behavioral.rms,
+      peak: behavioral.peak,
+    };
+  }
+  if (outputSha256 === expectedSha256) {
+    return {
+      passed: true,
+      method: 'hash',
+      outputSha256,
+      expectedSha256,
+      reason: null,
+      rms: behavioral.rms,
+      peak: behavioral.peak,
+    };
+  }
+  return {
+    passed: false,
+    method: 'hash',
+    outputSha256,
+    expectedSha256,
+    reason: `SELF_TEST_HASH_MISMATCH: got ${outputSha256}, want ${expectedSha256} (behavioral check passed; see runWorkerSelfTest)`,
+    rms: behavioral.rms,
+    peak: behavioral.peak,
+  };
+}
+
+/**
+ * Record a self-test verdict in the capability table.
+ * @param {object} entry manifest entry
+ * @param {object} verdict runWorkerSelfTest result
+ * @returns {boolean} true when the session may be used, false on hard failure (caller must refuse it)
+ */
+function recordSelfTestVerdict(entry, verdict) {
+  const selfTest = {
+    passed: verdict.passed,
+    pinned: Boolean(verdict.expectedSha256),
+    method: verdict.method,
+    outputSha256: verdict.outputSha256,
+    expectedSha256: verdict.expectedSha256,
+    reason: verdict.reason,
+  };
+  if (verdict.passed === true) {
+    setCapability(entry.id, {
+      state: 'ready',
+      provider: sessionBackend(entry.id),
+      sha256: entry.sha256 || null,
+      selfTest,
+    });
+    return true;
+  }
+  if (verdict.passed === false && String(verdict.reason || '').startsWith('SELF_TEST_FAILED')) {
+    setCapability(entry.id, {
+      state: 'unavailable',
+      reason: verdict.reason,
+      provider: sessionBackend(entry.id),
+      sha256: entry.sha256 || null,
+      selfTest,
+    });
+    return false;
+  }
+  if (verdict.passed === false) {
+    // Hash mismatch with a passing behavioral check: degraded, usable.
+    setCapability(entry.id, {
+      state: 'degraded',
+      reason: verdict.reason,
+      provider: sessionBackend(entry.id),
+      sha256: entry.sha256 || null,
+      selfTest,
+    });
+    return true;
+  }
+  // passed === null: no pin (hash) or no test for this strategy (none).
+  setCapability(entry.id, {
+    state: verdict.method === 'none' ? 'ready' : 'degraded',
+    reason: verdict.reason,
+    provider: sessionBackend(entry.id),
+    sha256: entry.sha256 || null,
+    selfTest,
+  });
+  return true;
+}
+
+/**
+ * Run (or re-run) the self-test for one model and return the verdict.
+ * Composite entries test the assembled sessions; part entries refuse
+ * (test the composite instead). A cached session reuses its recorded
+ * verdict unless force re-runs the test.
+ * @param {object} entry
+ * @param {{ force?: boolean }} [options]
+ * @returns {Promise<object>} runWorkerSelfTest verdict
+ */
+async function runSelfTestForModel(entry, { force = false } = {}) {
+  if (entry.strategy === 'deepfilternet-part') {
+    throw new Error(`[VIP][MLWorker] '${entry.id}' is part of a composite model; self-test its composite entry instead.`);
+  }
+  if (entry.composite) {
+    const sessions = await getCompositeSessions(entry, null);
+    const verdict = await runWorkerSelfTest(entry, sessions);
+    if (!recordSelfTestVerdict(entry, verdict)) {
+      throw new Error(`[VIP][MLWorker] Self-test failed for '${entry.id}': ${verdict.reason}`);
+    }
+    return verdict;
+  }
+  const session = await getSession(entry, entry.id, { quiet: true });
+  if (!force) {
+    const recorded = MODEL_CAPABILITIES[entry.id]?.selfTest;
+    if (recorded) return recorded;
+  }
+  const verdict = await runWorkerSelfTest(entry, session);
+  if (!recordSelfTestVerdict(entry, verdict)) {
+    delete SESSIONS[entry.id];
+    throw new Error(`[VIP][MLWorker] Self-test failed for '${entry.id}': ${verdict.reason}`);
+  }
+  return verdict;
 }
 
 /** Active process request id for stage/progress messages. */
@@ -405,16 +809,36 @@ async function sha256Hex(arrayBuffer) {
 }
 
 /**
- * Verify model bytes against the manifest. A null manifest hash disables
- * verification with a loud warning (development only — see CLAUDE.md §3).
+ * Verify model bytes against the manifest.
+ *
+ * LM Arena fix session 3 (LOCAL 2026-11-25): the null-hash refusal is now
+ * generalised. Previously a null manifest hash disabled verification with a
+ * loud warning for every entry (development only — see CLAUDE.md §3), and
+ * only the universal_separator path refused explicitly. Now a SHIPPED entry
+ * (anything not explicitly `shipped: false`) with a missing or malformed
+ * hash refuses to load outright — an unpinned shipped model must never run.
+ * Explicitly unshipped entries (bsrnn_complex, sam_audio,
+ * universal_separator — all `shipped: false`, no hashes by design) keep
+ * the loud warning and skip verification, development-only. Do not invent
+ * hashes for them.
  */
 async function verifyIntegrity(entry, bytes) {
   if (entry.sha256 === null || entry.sha256 === undefined) {
-    console.warn(
-      `[VIP][MLWorker] Model '${entry.id}' has no pinned SHA-256 — ` +
-      'integrity verification SKIPPED. Pin the hash before shipping.'
+    if (entry.shipped === false) {
+      console.warn(
+        `[VIP][MLWorker] Model '${entry.id}' has no pinned SHA-256 — ` +
+        'integrity verification SKIPPED (unshipped entry, development only). Pin the hash before shipping.'
+      );
+      return;
+    }
+    throw new Error(
+      `[VIP][MLWorker] Model '${entry.id}' has no pinned SHA-256 — refusing to load an unpinned shipped model. Pin the hash before shipping.`
     );
-    return;
+  }
+  if (typeof entry.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(entry.sha256)) {
+    throw new Error(
+      `[VIP][MLWorker] Model '${entry.id}' has a malformed SHA-256 pin — refusing to load.`
+    );
   }
   const actual = await sha256Hex(bytes);
   if (actual !== entry.sha256) {
@@ -526,10 +950,24 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
     enableCpuMemArena: true,
     enableMemPattern: true,
   };
-  const create = (providers, buf) => ort.InferenceSession.create(buf, {
-    ...opts,
-    executionProviders: providers,
-  });
+  const create = async (providers, buf) => {
+    // ML-01 (TOCTOU rule): verify the EXACT bytes handed to the loader —
+    // not the bytes verified at fetch time. A mutation between fetch and
+    // create, or a stale cache entry, must never reach a session.
+    // Only entries with a valid pin can be re-verified here: the fetch
+    // boundary (fetchModelBytes → verifyIntegrity) already refuses
+    // unpinned shipped models and warns for unshipped dev entries, so an
+    // unpinned entry reaching here has no integrity claim to re-check.
+    // Test doubles and unshipped dev entries pass through; every shipped
+    // production model carries a pin and IS re-verified here.
+    if (typeof entry.sha256 === 'string' && /^[0-9a-f]{64}$/.test(entry.sha256)) {
+      await verifyIntegrity(entry, buf);
+    }
+    return ort.InferenceSession.create(buf, {
+      ...opts,
+      executionProviders: providers,
+    });
+  };
   // Slice: InferenceSession.create may detach/neuter the input ArrayBuffer.
   // Callers (and IDB cache entries) must keep a usable copy for retries.
   const safeBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
@@ -625,10 +1063,30 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
         `Compile ${entry.id} (WASM after device loss)`,
       );
       SESSIONS[sessionKey] = wasmSession;
+      // ML-02: self-test the WASM retry session too (same rules as below).
+      if (entry.strategy !== 'deepfilternet-part') {
+        const verdict = await runWorkerSelfTest(entry, wasmSession);
+        if (!recordSelfTestVerdict(entry, verdict)) {
+          delete SESSIONS[sessionKey];
+          throw new Error(`[VIP][MLWorker] Self-test failed for '${entry.id}': ${verdict.reason}`);
+        }
+      }
       if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
       return wasmSession;
     }
     SESSIONS[sessionKey] = session;
+    // ML-02: in-worker startup self-test, lazily on first session creation
+    // (warmup or first process). Composite parts are skipped here — they
+    // cannot run standalone; getCompositeSessions tests the assembled
+    // composite. A hard failure refuses the session (it is deleted above
+    // in recordSelfTestVerdict's false branch via the throw here).
+    if (entry.strategy !== 'deepfilternet-part') {
+      const verdict = await runWorkerSelfTest(entry, session);
+      if (!recordSelfTestVerdict(entry, verdict)) {
+        delete SESSIONS[sessionKey];
+        throw new Error(`[VIP][MLWorker] Self-test failed for '${entry.id}': ${verdict.reason}`);
+      }
+    }
     if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
     return session;
   })().finally(() => { delete _sessionInflight[sessionKey]; });
@@ -672,6 +1130,13 @@ async function warmupModels(modelIds) {
     try {
       const parts = entry.parts ? Object.values(entry.parts).map((p) => MANIFEST[p]) : [entry];
       for (const part of parts) await getSession(part, part.id, { quiet: true });
+      // ML-02: a composite entry's startup self-test runs on the assembled
+      // sessions (parts alone cannot run). Best-effort at warmup: a failure
+      // is recorded in the capability table and surfaced on first use.
+      if (entry.composite) {
+        try { await getCompositeSessions(entry, null); }
+        catch (err) { console.warn(`[VIP][MLWorker] Composite self-test failed for '${id}':`, err?.message || err); }
+      }
     } catch (err) {
       console.warn(`[VIP][MLWorker] Warmup failed for '${id}':`, err);
     }
@@ -1075,6 +1540,21 @@ async function runFusedSpectralMaskChain(
   const prevMask = new Float32Array(bins);
   let hasPrevMask = false;
   const maskSmooth = 0.55;
+  // Session 1 mask recalibration (LOCAL 2026-11-25): optional per-preset
+  // mask strength s in [0, 1] — the fused mask is raised to s (mask^s)
+  // before temporal smoothing. Absent/invalid/out-of-range → 1, the
+  // current behavior; s === 1 skips the pow so the default path is
+  // bit-identical (patch-neutrality control). Read from
+  // processingConfig.spectral (the builder output) — there is no bare
+  // `spectral` variable in this scope. No reroute, smoothing, fusion-loop,
+  // or STFT/iSTFT change. There is no fused-mask cache in this worker (the
+  // only caches are the model byte-cache and the per-model session cache);
+  // the stem cache keys on processingRevision, which covers spectral and
+  // therefore includes maskStrength once the builder emits it.
+  const _maskStrengthRaw = Number(processingConfig?.spectral?.maskStrength);
+  const maskStrength = Number.isFinite(_maskStrengthRaw)
+    ? Math.min(1, Math.max(0, _maskStrengthRaw))
+    : 1;
   const reroute = whisperRerouteEnabled(processingConfig);
   const rerouteK0 = Math.ceil(WHISPER_REROUTE_MIN_HZ / ((entry0.sampleRate || sampleRate) / N));
 
@@ -1131,6 +1611,9 @@ async function runFusedSpectralMaskChain(
       const off = b * bins;
       for (let k = 0; k < bins; k++) {
         let m = fusedMask[off + k];
+        // Mask-strength recalibration (session 1): weaken the fused mask
+        // before smoothing. s === 1 skips the pow (bit-identical default).
+        if (maskStrength !== 1) m = Math.pow(m, maskStrength);
         // One-pole temporal smooth (per bin) — after the first frame.
         if (hasPrevMask) {
           m = maskSmooth * prevMask[k] + (1 - maskSmooth) * m;
@@ -1228,6 +1711,17 @@ async function getCompositeSessions(entry, requestId) {
     if (!partEntry) throw new Error(`[VIP][MLWorker] '${entry.id}' part '${partId}' missing from manifest.`);
     sessions[part] = await getSessionForRequest(partEntry, requestId);
     checkCancelled(requestId);
+  }
+  // ML-02: self-test the ASSEMBLED composite (parts cannot run standalone),
+  // once per worker lifetime — the recorded verdict stands until the worker
+  // restarts (a model change needs a restart anyway). A re-run is available
+  // via the 'self-test' message. A hard failure refuses the composite; a
+  // hash mismatch degrades it.
+  if (!MODEL_CAPABILITIES[entry.id]?.selfTest) {
+    const verdict = await runWorkerSelfTest(entry, sessions);
+    if (!recordSelfTestVerdict(entry, verdict)) {
+      throw new Error(`[VIP][MLWorker] Self-test failed for '${entry.id}': ${verdict.reason}`);
+    }
   }
   return sessions;
 }
@@ -1640,6 +2134,39 @@ function assertInboundPcm(channelData, sampleRate) {
   }
 }
 
+/**
+ * DSP-01 worker-side enforcement of a processing config's `standard` block.
+ * Throws (fail closed) on a disabled profile or a canonical claim that does
+ * not match the init-provided Standard config. Non-canonical claims only
+ * get the disabled-profile check.
+ * @param {object} standard the config's `standard` block
+ * @param {object} processingConfig the full processing config
+ */
+function validateStandardBlock(standard, processingConfig) {
+  const profile = standard.profile;
+  if (typeof profile === 'string' && _disabledPresets.has(profile)) {
+    throw new Error(`[VIP][MLWorker] Refusing process: profile '${profile}' is disabled.`);
+  }
+  if (standard.status !== 'canonical') return;
+  if (!_standardConfig) {
+    throw new Error('[VIP][MLWorker] Refusing process: canonical Standard claim received but no standard config was provided at init.');
+  }
+  if (standard.configVersion !== _standardConfig.version) {
+    throw new Error(
+      `[VIP][MLWorker] Refusing process: canonical Standard config version ${standard.configVersion} != worker version ${_standardConfig.version}.`,
+    );
+  }
+  const values = _standardConfig.values || {};
+  for (const [id, expected] of Object.entries(values)) {
+    const actual = processingConfig?.spectral?.[id];
+    if (actual !== expected) {
+      throw new Error(
+        `[VIP][MLWorker] Refusing process: canonical Standard ${id}=${actual}, expected ${expected}.`,
+      );
+    }
+  }
+}
+
 async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate, processingConfig = null }) {
   checkCancelled(requestId);
   assertInboundPcm(channelData, sampleRate);
@@ -1718,6 +2245,18 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   }
   const engineerConfigAccepted = typeof self.sanitizeEngineerProcessingConfig === 'function'
     && Boolean(self.sanitizeEngineerProcessingConfig(processingConfig));
+  // DSP-01 (LOCAL 2026-11-25): validate the plan's `standard` block when
+  // present. The worker enforces what the plan claims: a disabled profile
+  // is refused outright; a 'canonical' claim must match the init-provided
+  // Standard config (version + all four values) exactly — a mismatch means
+  // host and worker disagree about what "Standard" is, and the process
+  // must fail closed rather than run an unmeasured configuration. Plain
+  // configs (no standard block, or status 'diverged'/'preset') keep the
+  // existing silent-clamp behavior for maskStrength (the plain builder
+  // already range-checked them; the clamp is defense-in-depth).
+  if (processingConfig?.standard) {
+    validateStandardBlock(processingConfig.standard, processingConfig);
+  }
   const requestedProcessingRevision = engineerConfigAccepted && typeof processingConfig?.revision === 'string'
     ? processingConfig.revision
     : null;
@@ -1921,6 +2460,27 @@ self.onmessage = async (event) => {
         MANIFEST = Object.create(null);
         for (const entry of msg.manifest || []) MANIFEST[entry.id] = entry;
         USE_DESKTOP_CACHE = Boolean(msg.useDesktopCache);
+        // ML-01/ML-02 (LOCAL 2026-11-25): the host forwards the
+        // authoritative disabled-preset list and canonical Standard config
+        // (both derived from PresetCalibration — never hardcoded here).
+        // The worker enforces them at the process boundary
+        // (validateStandardBlock) and reports model state via attestation.
+        _disabledPresets.clear();
+        for (const name of msg.disabledPresets || []) {
+          if (typeof name === 'string' && name) _disabledPresets.add(name);
+        }
+        _standardConfig = msg.standardConfig && typeof msg.standardConfig.version === 'number'
+          ? { version: msg.standardConfig.version, values: { ...(msg.standardConfig.values || {}) } }
+          : null;
+        // Capability table: shipped models start 'pending' (not yet loaded);
+        // explicitly unshipped entries are 'unavailable' with the reason.
+        for (const [id, entry] of Object.entries(MANIFEST)) {
+          if (entry.shipped === false) {
+            MODEL_CAPABILITIES[id] = { id, state: 'unavailable', reason: 'NOT_SHIPPED: model is not shipped', sha256: entry.sha256 || null, provider: null, selfTest: null };
+          } else {
+            MODEL_CAPABILITIES[id] = { id, state: 'pending', reason: null, sha256: entry.sha256 || null, provider: null, selfTest: null };
+          }
+        }
         if (typeof ort !== 'undefined' && ort.env?.wasm) {
           // Absolute /lib/ works for browser + Capacitor https origin + Electron vip://.
           ort.env.wasm.wasmPaths = '/lib/';
@@ -1965,6 +2525,43 @@ self.onmessage = async (event) => {
           reason: 'session-not-created',
           detail: 'Execution provider is not verified. A GPU adapter is only a candidate until InferenceSession.create succeeds.',
         });
+        // ML-02: initial attestation — all shipped models 'pending', so
+        // the browser must not treat any model as ready before its
+        // self-test verdict arrives.
+        emitAttestation();
+        break;
+      }
+      case 'self-test': {
+        const entry = MANIFEST[msg.modelId];
+        if (!entry) {
+          self.postMessage({ type: 'self-test-result', requestId: msg.requestId, modelId: msg.modelId, passed: false, reason: `Unknown model '${msg.modelId}'. Did 'init' run?` });
+          break;
+        }
+        try {
+          const verdict = await runSelfTestForModel(entry, { force: msg.force === true });
+          self.postMessage({
+            type: 'self-test-result',
+            requestId: msg.requestId,
+            modelId: msg.modelId,
+            state: MODEL_CAPABILITIES[msg.modelId]?.state || null,
+            ...verdict,
+          });
+        } catch (err) {
+          self.postMessage({ type: 'self-test-result', requestId: msg.requestId, modelId: msg.modelId, passed: false, reason: String(err?.message || err) });
+        }
+        break;
+      }
+      case 'counters': {
+        self.postMessage({ type: 'counters', requestId: msg.requestId, ...getInferenceCounters() });
+        break;
+      }
+      case 'reset-counters': {
+        resetInferenceCounters();
+        self.postMessage({ type: 'counters', requestId: msg.requestId, ...getInferenceCounters(), reset: true });
+        break;
+      }
+      case 'attestation': {
+        emitAttestation();
         break;
       }
       case 'process': {

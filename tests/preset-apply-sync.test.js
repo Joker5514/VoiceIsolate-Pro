@@ -53,6 +53,7 @@ function buildHarness() {
     'PRESETS', 'BRIDGE_RT_SLIDER_IDS', 'SLIDER_REG_BY_ID', 'SLIDER_BY_ID', 'WorkflowTier',
     'recommendEngineerPreset', 'createYieldBudget', 'structuredLog', 'globalThis',
     'resolvePresetNameLocal', 'buildMlProcessingConfig', 'diffProcessingConfig', 'window',
+    'WORKER_ONLY_SPECTRAL_IDS',
     `return class Harness {
       constructor() {
         this.params = {}; this._fileSeq = 1; this._userTouchedSliders = new Set();
@@ -68,6 +69,18 @@ function buildHarness() {
       _scheduleSessionPersist() {}
       showNotification() {}
       getEffectiveParams(p) { return { ...p }; }
+      // DSP-01: the real applyPreset/_applyPresetValues clear worker-only
+      // params the incoming preset does not set. Same behavior as
+      // public/app/app.js _clearWorkerOnlyParamsNotInPreset (the harness
+      // must provide every method the extracted bodies call).
+      _clearWorkerOnlyParamsNotInPreset(preset) {
+        if (!preset) return;
+        for (const id of WORKER_ONLY_SPECTRAL_IDS) {
+          if (Object.prototype.hasOwnProperty.call(preset, id)) continue;
+          if (window.VIP_PARAMS) delete window.VIP_PARAMS[id];
+          if (this.params) delete this.params[id];
+        }
+      }
       ${methodSource('applyPreset', 'name, options = {}')}
       ${methodSource('_applyPresetValues', 'presetName, options = {}')}
       ${methodSource('_autoCalibratePreset', 'buffer')}
@@ -80,6 +93,7 @@ function buildHarness() {
     { shouldSkipAutoCalibrate: () => false, getDefaultPreset: () => 'Podcast Clean' },
     recommendEngineerPreset, () => ({}), (level, msg, data) => logs.push({ level, msg, data }), {},
     (n) => (PRESETS[n] ? n : 'Voice Clarity'), S.buildMlProcessingConfig, S.diffProcessingConfig, win,
+    S.WORKER_ONLY_SPECTRAL_IDS,
   );
   const sel = fakeSelect('Podcast Clean');
   const app = new Harness(sel);
@@ -152,9 +166,12 @@ describe('Whisper Boost click -> Process -> calibrate (t24u repro)', () => {
 });
 
 describe('every preset button applies', () => {
+  // LM Arena fix session 2 (LOCAL 2026-11-25): 'Room Echo Reduction' and
+  // 'Aggressive Isolate' are disabled pending re-qualification — they are
+  // covered by the refusal test below, not by this applies-everywhere list.
   test.each([
     'Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Whisper Boost', 'Phone/Radio',
-    'Room Echo Reduction', 'Hum Removal', 'Aggressive Isolate', 'Surveillance',
+    'Hum Removal', 'Surveillance',
   ])('%s: dropdown syncs and Process-time snapshot carries its values', (name) => {
     const { app, sel, win } = buildHarness();
     const other = name === 'Forensic Extract' ? 'Whisper Boost' : 'Forensic Extract';
@@ -171,6 +188,24 @@ describe('every preset button applies', () => {
     expect(diff.preset).toBe(name);
     expect(diff.changedCount).toBeGreaterThan(0);
   });
+
+  // Session 2: an unacknowledged user pick of a disabled preset is refused
+  // (dropdown and _userPresetName keep the previous preset); an explicit
+  // manual-only acknowledgement applies it.
+  test.each(['Room Echo Reduction', 'Aggressive Isolate'])(
+    '%s: unacknowledged user pick is refused, acknowledged pick applies',
+    (name) => {
+      const { app, sel } = buildHarness();
+      app.applyPreset('Forensic Extract', { source: 'user' });
+      expect(sel.value).toBe('Forensic Extract');
+      app.applyPreset(name, { source: 'user' });
+      expect(sel.value).toBe('Forensic Extract');
+      expect(app._userPresetName).toBe('Forensic Extract');
+      app.applyPreset(name, { source: 'user', acknowledged: true });
+      expect(sel.value).toBe(name);
+      expect(app._userPresetName).toBe(name);
+    },
+  );
 });
 
 describe('programmatic applies clear the user pick (t26u follow-up)', () => {
@@ -198,7 +233,16 @@ describe('programmatic applies clear the user pick (t26u follow-up)', () => {
   test('a later user pick still wins', () => {
     const { app } = buildHarness();
     app.applyPreset('Podcast Clean');
-    app.applyPreset('Room Echo Reduction', { source: 'user' });
-    expect(app._userPresetName).toBe('Room Echo Reduction');
+    app.applyPreset('Surveillance', { source: 'user' });
+    expect(app._userPresetName).toBe('Surveillance');
+  });
+
+  // Session 2: a later user pick of a DISABLED preset does not win — the
+  // previous pick stands.
+  test('a later user pick of a disabled preset does not win', () => {
+    const { app } = buildHarness();
+    app.applyPreset('Podcast Clean');
+    app.applyPreset('Aggressive Isolate', { source: 'user' });
+    expect(app._userPresetName).toBeNull();
   });
 });

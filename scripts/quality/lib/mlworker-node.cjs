@@ -103,8 +103,23 @@ async function createMlWorker({ patchSource } = {}) {
     listeners.add(fn);
   });
 
+  // ML-02: capture the latest attestation (emitted at init and on every
+  // capability change) for tests and the self-test pin runner.
+  let lastAttestation = null;
+  listeners.add((m) => { if (m.type === 'model-attestation' && m.attestation) lastAttestation = m.attestation; });
+
+  // The real host forwards the authoritative disabled-preset list and
+  // canonical Standard config from PresetCalibration — the harness does
+  // the same so the worker enforces the real values here too.
+  const presetMod = await import(pathToFileURL(path.join(ROOT, 'src/core/PresetCalibration.js')).href);
+  const disabledPresets = Object.keys(presetMod.PRESET_DISABLED || {});
+  const standardConfig = {
+    version: presetMod.STANDARD_CONFIG_VERSION,
+    values: { ...(presetMod.STANDARD_WORKER_KEYS || {}) },
+  };
+
   const ready = waitFor((m) => m.type === 'ready' || m.type === 'error');
-  await self.onmessage({ data: { type: 'init', manifest } });
+  await self.onmessage({ data: { type: 'init', manifest, disabledPresets, standardConfig } });
   const first = await ready;
   if (first.type === 'error') throw new Error(`[quality] MLWorker init failed: ${first.message}`);
   const { backend } = first;
@@ -148,7 +163,62 @@ async function createMlWorker({ patchSource } = {}) {
     return { ...msg, elapsedMs: performance.now() - t0 };
   }
 
-  return { separate, cancelLast, backend, manifest };
+  return { separate, cancelLast, backend, manifest, send, on, selfTest, counters, resetCounters, getLastAttestation };
+
+  /**
+   * Send a raw message to the worker (self-test / counters / attestation
+   * queries and any other protocol message).
+   * @param {object} msg
+   */
+  function send(msg) {
+    void self.onmessage({ data: msg });
+  }
+
+  /**
+   * Subscribe to worker messages. Returns an unsubscribe function.
+   * @param {(msg: object) => void} fn
+   */
+  function on(fn) {
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  }
+
+  /** Latest 'model-attestation' received, or null before the first one. */
+  function getLastAttestation() {
+    return lastAttestation;
+  }
+
+  /**
+   * Run the worker's in-worker self-test for one model.
+   * @param {string} modelId
+   * @param {{ force?: boolean }} [options]
+   * @returns {Promise<object>} the 'self-test-result' message
+   */
+  async function selfTest(modelId, { force = false } = {}) {
+    const requestId = `st-${++seq}`;
+    const done = waitFor((m) => m.requestId === requestId && m.type === 'self-test-result');
+    void self.onmessage({ data: { type: 'self-test', requestId, modelId, force } });
+    return done;
+  }
+
+  /**
+   * Query the DSP-03 inference counters.
+   * @returns {Promise<{ sessionRuns: number, bySessionKey: object, startedAt: number }>}
+   */
+  async function counters() {
+    const requestId = `c-${++seq}`;
+    const done = waitFor((m) => m.requestId === requestId && m.type === 'counters');
+    void self.onmessage({ data: { type: 'counters', requestId } });
+    return done;
+  }
+
+  /** Reset the DSP-03 inference counters and return the (zeroed) counts. */
+  async function resetCounters() {
+    const requestId = `c-${++seq}`;
+    const done = waitFor((m) => m.requestId === requestId && m.type === 'counters');
+    void self.onmessage({ data: { type: 'reset-counters', requestId } });
+    return done;
+  }
 }
 
 module.exports = { createMlWorker, ROOT };

@@ -48,11 +48,13 @@ import {
   getCalibratedPresets,
   PRESET_REDIRECTS as CALIBRATED_PRESET_REDIRECTS,
   resolvePresetName as resolveCalibratedPresetName,
+  resolveEngineerProcessingConfig,
 } from '/src/core/PresetCalibration.js';
 import {
   buildMlProcessingConfig,
   diffProcessingConfig,
   LIVE_MIX_PARAM_IDS,
+  WORKER_ONLY_SPECTRAL_IDS,
   snapshotParams,
 } from '/src/core/ParameterSchema.js';
 import { encodeWavArrayBuffer } from '/src/core/WavEncoder.js';
@@ -174,6 +176,12 @@ function resolvePresetNameLocal(name) {
   if (typeof PRESETS !== 'undefined' && PRESETS[name]) return name;
   return redirects[name] || name || 'Voice Clarity';
 }
+
+// Disabled presets are read off the preset objects themselves
+// (PRESETS[name].disabled / .disabledReason, canonical in
+// src/core/PresetCalibration.js PRESET_DISABLED). No local mirror: the
+// preset-apply-sync harness evals applyPreset in isolation, so applyPreset
+// may only reference names already in its scope (PRESETS, and friends).
 
 /**
  * AudioBuffer.getChannelData, memoised per buffer. Chromium returns the same
@@ -3391,6 +3399,19 @@ class VoiceIsolatePro {
       if (this._isSliderLocked(id) && !force) return false;
       return this._setWhisperMode(rawValue);
     }
+    // DSP-01 (LOCAL 2026-11-25): worker-only spectral ids (maskStrength)
+    // have no slider spec by design — they are set by presets, never
+    // dragged. Write them into VIP_PARAMS / this.params and return true
+    // WITHOUT touching DOM or worklet paths: there is no slider row and
+    // no Live-Mix control for them. Slider locks do not apply (no slider
+    // to lock); the preset resolver is the authority on the value.
+    if (WORKER_ONLY_SPECTRAL_IDS.has(id)) {
+      const value = clampToSlider(id, rawValue);
+      window.VIP_PARAMS = window.VIP_PARAMS || {};
+      window.VIP_PARAMS[id] = value;
+      this.params[id] = value;
+      return true;
+    }
     // Presets / auto-calibrate must not overwrite locked sliders unless force.
     if (this._isSliderLocked(id) && !force) return false;
     const hasSpec = SLIDER_REG_BY_ID[id] || SLIDER_BY_ID[id];
@@ -3434,19 +3455,46 @@ class VoiceIsolatePro {
     return true;
   }
 
+  /**
+   * Clear worker-only spectral params (maskStrength) that the incoming
+   * preset does not set. VIP_PARAMS is a flat bag and applyPreset only
+   * sets keys — without this, switching from Voice Clarity (maskStrength
+   * 0.15) to a preset that does not set it would silently run that preset
+   * at 0.15, a value measured only for Voice Clarity. A preset that does
+   * not set a worker-only key runs the schema default (maskStrength 1 =
+   * as trained). Slider params are never touched here.
+   * @param {Record<string, unknown>} preset
+   */
+  _clearWorkerOnlyParamsNotInPreset(preset) {
+    if (!preset) return;
+    for (const id of WORKER_ONLY_SPECTRAL_IDS) {
+      if (Object.prototype.hasOwnProperty.call(preset, id)) continue;
+      if (window.VIP_PARAMS) delete window.VIP_PARAMS[id];
+      if (this.params) delete this.params[id];
+    }
+  }
+
   // ── Preset application ────────────────────────────────────────────────────
   applyPreset(name, options = {}) {
-    const { preserveWhisperMode = false, source = 'default' } = options;
+    const { preserveWhisperMode = false, source = 'default', acknowledged = false } = options;
     const resolved = resolvePresetNameLocal(name);
     const preset = PRESETS[resolved] || PRESETS[name];
+    // Disabled presets (session 2): unacknowledged requests resolve to
+    // null — refuse with the reason instead of applying. An explicit
+    // manual-only acknowledgement ({ acknowledged: true }) may still apply.
+    if (preset?.disabled && acknowledged !== true) {
+      this.showNotification(`Preset unavailable: ${resolved} — ${preset.disabledReason || 'Disabled pending re-qualification.'}`, 'warn');
+      return;
+    }
     if (!preset) return;
     name = resolved;
+    this._clearWorkerOnlyParamsNotInPreset(preset);
     const savedWhisper = preserveWhisperMode
       ? (window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 0)
       : null;
     Object.entries(preset).forEach(([key, rawValue]) => {
       if (preserveWhisperMode && key === 'whisperMode') return;
-      if (key === 'description') return;
+      if (key === 'description' || key === 'disabled' || key === 'disabledReason') return;
       if (this._isSliderLocked(key)) return;
       this._setSliderUi(key, rawValue, { notify: false });
     });
@@ -3483,12 +3531,17 @@ class VoiceIsolatePro {
    */
   _applyPresetValues(presetName, options = {}) {
     const { preserveWhisperMode = false, respectUserTouched = false, liveMixOnly = false } = options;
+    // Disabled presets (session 2): programmatic application (auto-calibrate,
+    // recommendations) never applies them — there is no acknowledgement path
+    // here by design.
+    if (PRESETS[presetName]?.disabled) return;
     const preset = PRESETS[presetName];
     if (!preset) return;
+    this._clearWorkerOnlyParamsNotInPreset(preset);
     Object.entries(preset).forEach(([key, rawValue]) => {
       if (preserveWhisperMode && key === 'whisperMode') return;
       if (liveMixOnly && !BRIDGE_RT_SLIDER_IDS.has(key)) return;
-      if (key === 'description') return;
+      if (key === 'description' || key === 'disabled' || key === 'disabledReason') return;
       if (this._isSliderLocked(key)) return;
       if (respectUserTouched && this._userTouchedSliders.has(key)) return;
       this._setSliderUi(key, rawValue, { notify: false });
@@ -3775,6 +3828,19 @@ class VoiceIsolatePro {
         if (row.presetName && this.dom?.presetSel) {
           this.dom.presetSel.value = row.presetName;
           this._activePresetName = row.presetName;
+          // DSP-01: a restored session can carry a worker-only value from
+          // a different preset (or a stale pre-fix value). Clear worker-only
+          // ids the restored preset does not set, so the restored preset
+          // runs its own values; then re-assert the restored preset's own
+          // worker-only values (no slider exists for them, so no user value
+          // can be clobbered — a stored value that differs is stale).
+          const restoredPreset = PRESETS[row.presetName] || PRESETS[resolvePresetNameLocal?.(row.presetName) || ''];
+          this._clearWorkerOnlyParamsNotInPreset(restoredPreset || {});
+          for (const id of WORKER_ONLY_SPECTRAL_IDS) {
+            if (restoredPreset && Object.prototype.hasOwnProperty.call(restoredPreset, id)) {
+              this._setSliderUi?.(id, restoredPreset[id], { notify: false, force: true });
+            }
+          }
         }
       } finally {
         this._programmaticSliderUpdate = false;
@@ -6198,14 +6264,34 @@ class VoiceIsolatePro {
     if (fileSeq !== this._fileSeq) return false;
     // Snapshot once per explicit Process. Offline/spectral controls cannot
     // truthfully alter already-iSTFT'd stems without another process pass.
-    const processingConfig = buildMlProcessingConfig(
-      this.getEffectiveParams(window.VIP_PARAMS || {}),
-    );
+    // DSP-01 (LOCAL 2026-11-25): resolve through the Standard resolver,
+    // not the plain builder. The active preset decides: Voice Clarity (or
+    // no preset named) → the canonical Standard config (maskStrength
+    // 0.15, recorded in config.standard); a user-diverged canonical key
+    // → plain build with the divergence recorded; any other preset → that
+    // preset's config. A present-but-invalid canonical value THROWS — the
+    // Process refuses to run on a corrupt config instead of silently
+    // falling back to a legacy mask (runPipeline's catch surfaces it).
+    const effectiveParams = this.getEffectiveParams(window.VIP_PARAMS || {});
+    let processingConfig;
+    let processingResolution;
+    try {
+      ({ config: processingConfig, resolution: processingResolution } =
+        resolveEngineerProcessingConfig(effectiveParams, this._activePresetName, { source: 'engineer-process' }));
+    } catch (err) {
+      structuredLog('error', '[VIP] Process refused — invalid processing config', { error: String(err?.message || err) });
+      this.showNotification?.(`Process refused: invalid processing config — ${err?.message || err}`, 'error');
+      throw err;
+    }
     const processingRevision = processingConfig.revision;
     // A fresh ML run on an unchanged file means a Process-time control moved.
     // Name it, so a level change between runs can be traced to its cause.
     const snapshotDiff = this._processSnapshotDiff(processingConfig);
-    structuredLog('info', '[VIP] Process-time snapshot', snapshotDiff);
+    structuredLog('info', '[VIP] Process-time snapshot', {
+      ...snapshotDiff,
+      standard: processingConfig.standard || null,
+      resolutionMode: processingResolution?.mode || null,
+    });
 
     // Reprocess with retained stems: skip ONNX (audit P-04) unless forced.
     if (this._canReuseRetainedStems(buf, fileSeq, processingRevision)) {
@@ -9098,7 +9184,7 @@ const WHISPER_HUNTER = {
 
     if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
 
-    if (PRESETS[basePreset]) {
+    if (PRESETS[basePreset] && !PRESETS[basePreset].disabled) {
       app.applyPreset(basePreset);
       if (staleFile()) throw Object.assign(new Error('WhisperHunter: file changed'), { code: 'STALE_FILE' });
       await app.morphSlidersTo(

@@ -172,6 +172,17 @@ const SPECTRAL_IDS = Object.freeze([
   'breathControl', 'roomCorrection', 'subHarmonic',
 ]);
 
+/**
+ * Process-time spectral ids the Engineer frame processor does NOT consume.
+ * maskStrength (LM Arena fix session 1, LOCAL 2026-11-25) is a worker-level
+ * mask exponent (MLWorker raises the fused mask to s) — the engineer
+ * processor's sanitizer drops it by design, so min/max would produce
+ * identical frames here. Its effect is measured by the sweep
+ * (scripts/quality/sweep-mask-strength.cjs), not by this harness. The
+ * equality test below excludes exactly this list, nothing else.
+ */
+const WORKER_ONLY_SPECTRAL_IDS = Object.freeze(['maskStrength']);
+
 describe('formant shift preserves bins it cannot source', () => {
   test('a −12 st shift does not erase the upper half of the spectrum', () => {
     const helper = loadSpectralControlHelper();
@@ -203,7 +214,9 @@ describe('Engineer spectral controls — every control changes the output', () =
   const frames = synthFrames({ frames: 60, onFrames: 20, period: 30 });
 
   test('the enumerated ids are exactly the schema\'s Process-time spectral ids', () => {
-    expect([...SPECTRAL_IDS].sort()).toEqual([...Schema.ML_SPECTRAL_PARAM_IDS].sort());
+    expect([...SPECTRAL_IDS].sort()).toEqual(
+      [...Schema.ML_SPECTRAL_PARAM_IDS].filter((id) => !WORKER_ONLY_SPECTRAL_IDS.includes(id)).sort(),
+    );
   });
 
   test.each([...SPECTRAL_IDS])('%s: min and max produce different frames', (id) => {

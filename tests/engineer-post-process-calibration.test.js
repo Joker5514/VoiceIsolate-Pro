@@ -21,11 +21,13 @@ function methodSource(name, signature) {
 }
 
 let LIVE;
+let S;
 let PRESETS;
 let recommendEngineerPreset;
 
 beforeAll(async () => {
-  ({ LIVE_MIX_PARAM_IDS: LIVE } = await import('../src/core/ParameterSchema.js'));
+  S = await import('../src/core/ParameterSchema.js');
+  ({ LIVE_MIX_PARAM_IDS: LIVE } = S);
   ({ getCalibratedPresets: PRESETS } = await import('../src/core/PresetCalibration.js'));
   PRESETS = PRESETS();
   ({ recommendEngineerPreset } = await import('../src/core/MixCalibration.js'));
@@ -41,6 +43,7 @@ function buildHarness({ skipAuto = false, suggestions = {} } = {}) {
   const factory = new Function(
     'PRESETS', 'BRIDGE_RT_SLIDER_IDS', 'SLIDER_REG_BY_ID', 'SLIDER_BY_ID', 'WorkflowTier',
     'recommendEngineerPreset', 'createYieldBudget', 'structuredLog', 'globalThis',
+    'window', 'WORKER_ONLY_SPECTRAL_IDS',
     `return class Harness {
       constructor() { this.writes = []; this.params = {}; this._fileSeq = 1; this._userTouchedSliders = new Set(); }
       _isSliderLocked() { return false; }
@@ -48,14 +51,28 @@ function buildHarness({ skipAuto = false, suggestions = {} } = {}) {
       _setSliderUi(id, v) { this.writes.push(id); this.params[id] = v; return true; }
       _syncBridgeParams() {}
       showNotification() {}
+      // DSP-01: the real _applyPresetValues clears worker-only params the
+      // incoming preset does not set. Same behavior as public/app/app.js
+      // _clearWorkerOnlyParamsNotInPreset (the harness must provide every
+      // method the extracted bodies call).
+      _clearWorkerOnlyParamsNotInPreset(preset) {
+        if (!preset) return;
+        for (const id of WORKER_ONLY_SPECTRAL_IDS) {
+          if (Object.prototype.hasOwnProperty.call(preset, id)) continue;
+          if (window.VIP_PARAMS) delete window.VIP_PARAMS[id];
+          if (this.params) delete this.params[id];
+        }
+      }
       ${methodSource('_applyPresetValues', 'presetName, options = {}')}
       ${methodSource('_autoCalibratePreset', 'buffer')}
     };`,
   );
+  const win = { VIP_PARAMS: {} };
   const Harness = factory(
     PRESETS, liveIds, byId, byId,
     { shouldSkipAutoCalibrate: () => skipAuto, getDefaultPreset: () => 'Podcast Clean' },
-    recommendEngineerPreset, () => ({}), () => {}, { AIIntelligence: AI },
+    recommendEngineerPreset, () => ({}), () => {}, { AIIntelligence: AI }, win,
+    S.WORKER_ONLY_SPECTRAL_IDS,
   );
   return { app: new Harness(), liveIds };
 }

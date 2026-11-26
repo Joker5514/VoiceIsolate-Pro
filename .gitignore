@@ -46,6 +46,13 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# ESTOI oracle venv (217 MB; recreate from scripts/quality/estoi-requirements.txt)
+.venv-estoi/
+
+# Generated quality-gate / Truth Pack report artifacts (regenerable by running the scripts)
+audio-truth-pack-results.json
+scripts/quality/quality-gate-consolidated-report.json
+
 # vercel
 .vercel
 
